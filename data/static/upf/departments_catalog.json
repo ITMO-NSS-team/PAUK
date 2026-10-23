@@ -1,0 +1,186 @@
+[
+  {
+    "uid": "upf",
+    "name_en": "Universitat Pompeu Fabra",
+    "name_local": "Universitat Pompeu Fabra",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04n0g0b29",
+    "type": "university"
+  },
+  {
+    "uid": "melis",
+    "name_en": "Department of Medicine and Life Sciences",
+    "name_local": "Department of Medicine and Life Sciences",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine and Life Sciences",
+      "MELIS",
+      "Departament de Medicina i Ciències de la Vida",
+      "Department of Experimental and Health Sciences",
+      "Faculty of Medicine and Life Sciences"
+    ]
+  },
+  {
+    "uid": "dtic",
+    "name_en": "Department of Information and Communication Technologies",
+    "name_local": "Department of Information and Communication Technologies",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Information and Communication Technologies",
+      "Department of Engineering"
+    ]
+  },
+  {
+    "uid": "polsoc",
+    "name_en": "Department of Political and Social Sciences",
+    "name_local": "Department of Political and Social Sciences",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Political and Social Sciences"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics and Business",
+    "name_local": "Department of Economics and Business",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics and Business"
+    ]
+  },
+  {
+    "uid": "trad",
+    "name_en": "Department of Translation and Language Sciences",
+    "name_local": "Department of Translation and Language Sciences",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Translation & Language Sciences",
+      "Department of Translation and Language Sciences"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Department of Law",
+    "name_local": "Department of Law",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Law"
+    ]
+  },
+  {
+    "uid": "comm",
+    "name_en": "Department of Communication",
+    "name_local": "Department of Communication",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Communication"
+    ]
+  },
+  {
+    "uid": "humanities",
+    "name_en": "Department of Humanities",
+    "name_local": "Department of Humanities",
+    "kind": "department",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Humanities"
+    ]
+  },
+  {
+    "uid": "cbc",
+    "name_en": "Center for Brain and Cognition",
+    "name_local": "Center for Brain and Cognition",
+    "kind": "center",
+    "parent": "dtic",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Brain and Cognition"
+    ]
+  },
+  {
+    "uid": "mtg",
+    "name_en": "Music Technology Group",
+    "name_local": "Music Technology Group",
+    "kind": "lab",
+    "parent": "dtic",
+    "aliases": [],
+    "context_aliases": [
+      "Music Technology Group"
+    ]
+  },
+  {
+    "uid": "bcnmedtech",
+    "name_en": "BCN MedTech",
+    "name_local": "BCN MedTech",
+    "kind": "lab",
+    "parent": "dtic",
+    "aliases": [],
+    "context_aliases": [
+      "BCN MedTech"
+    ]
+  },
+  {
+    "uid": "cng",
+    "name_en": "Computational Neuroscience Group",
+    "name_local": "Computational Neuroscience Group",
+    "kind": "lab",
+    "parent": "cbc",
+    "aliases": [],
+    "context_aliases": [
+      "Computational Neuroscience Group"
+    ]
+  },
+  {
+    "uid": "grib",
+    "name_en": "Research Programme on Biomedical Informatics",
+    "name_local": "Research Programme on Biomedical Informatics",
+    "kind": "lab",
+    "parent": "melis",
+    "aliases": [],
+    "context_aliases": [
+      "Research Programme on Biomedical Informatics",
+      "GRIB"
+    ]
+  },
+  {
+    "uid": "ibe",
+    "name_en": "Institute of Evolutionary Biology",
+    "name_local": "Institute of Evolutionary Biology",
+    "kind": "institute",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "IBE",
+      "Institute of Evolutionary Biology",
+      "Institut de Biologia Evolutiva"
+    ]
+  },
+  {
+    "uid": "tecnocampus",
+    "name_en": "TecnoCampus",
+    "name_local": "TecnoCampus",
+    "kind": "school",
+    "parent": "upf",
+    "aliases": [],
+    "context_aliases": [
+      "TecnoCampus",
+      "Tecnocampus"
+    ]
+  }
+]

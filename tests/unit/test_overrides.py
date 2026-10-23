@@ -41,40 +41,40 @@ class RecordTest(unittest.TestCase):
 
     def test_an_edit_is_stored_under_a_key_of_its_own(self):
         stored = record_override(self.db, "Person", "A1", "set",
-                                 {"name_ru": "Иванов И. И."}, actor="user:petrov")
+                                 {"name_local": "Иванов И. И."}, actor="user:petrov")
         self.assertEqual(stored["_id"], "node:Person:A1")
-        self.assertEqual(stored["fields"], {"name_ru": "Иванов И. И."})
+        self.assertEqual(stored["fields"], {"name_local": "Иванов И. И."})
         self.assertTrue(stored["active"])
 
     def test_editing_the_same_node_twice_keeps_both_fields(self):
         # Two people, two days, two different fields of one person: a
         # replace would silently drop the earlier edit.
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов И. И."})
         record_override(self.db, "Person", "A1", "set", {"email": "ivanov@itmo.ru"})
         (stored,) = active_overrides(self.db)
         self.assertEqual(stored["fields"],
-                         {"name_ru": "Иванов И. И.", "email": "ivanov@itmo.ru"})
+                         {"name_local": "Иванов И. И.", "email": "ivanov@itmo.ru"})
 
     def test_the_same_field_edited_again_takes_the_newer_value(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"})
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "второй"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "первый"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "второй"})
         (stored,) = active_overrides(self.db)
-        self.assertEqual(stored["fields"], {"name_ru": "второй"})
+        self.assertEqual(stored["fields"], {"name_local": "второй"})
 
     def test_the_automatic_value_recorded_is_the_original_one(self):
         # A second edit must not overwrite what the pipeline had with what
         # the previous manual edit left, or the conflict screen compares
         # an edit against an edit.
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"},
-                        auto_value={"name_ru": "Ivanov I."})
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "второй"},
-                        auto_value={"name_ru": "первый"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "первый"},
+                        auto_value={"name_local": "Ivanov I."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "второй"},
+                        auto_value={"name_local": "первый"})
         (stored,) = active_overrides(self.db)
-        self.assertEqual(stored["auto_value"], {"name_ru": "Ivanov I."})
+        self.assertEqual(stored["auto_value"], {"name_local": "Ivanov I."})
 
     def test_the_first_edit_is_when_it_was_created(self):
-        first = record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"})
-        second = record_override(self.db, "Person", "A1", "set", {"name_ru": "второй"})
+        first = record_override(self.db, "Person", "A1", "set", {"name_local": "первый"})
+        second = record_override(self.db, "Person", "A1", "set", {"name_local": "второй"})
         self.assertEqual(first["created_at"], second["created_at"])
         self.assertGreaterEqual(second["updated_at"], first["updated_at"])
 
@@ -84,11 +84,11 @@ class RecordTest(unittest.TestCase):
 
     def test_an_unknown_label_is_refused(self):
         with self.assertRaises(UnknownEntity):
-            record_override(self.db, "Employee", "A1", "set", {"name_ru": "x"})
+            record_override(self.db, "Employee", "A1", "set", {"name_local": "x"})
 
     def test_an_unknown_operation_is_refused(self):
         with self.assertRaises(UnknownEntity):
-            record_override(self.db, "Person", "A1", "archive", {"name_ru": "x"})
+            record_override(self.db, "Person", "A1", "archive", {"name_local": "x"})
 
     def test_a_set_that_sets_nothing_is_refused(self):
         with self.assertRaises(MutationError):
@@ -99,7 +99,7 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(stored["op"], "delete")
 
     def test_undoing_keeps_the_record(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов"})
         self.assertTrue(deactivate_override(self.db, "Person", "A1"))
         self.assertEqual(active_overrides(self.db), [])
         # Still on file: the panel has to show the edit existed.
@@ -112,7 +112,7 @@ class TombstoneTest(unittest.TestCase):
 
     def test_deleted_ids_are_reported_for_the_loader_to_skip(self):
         record_override(self.db, "Person", "A1", "delete")
-        record_override(self.db, "Person", "A2", "set", {"name_ru": "Иванов"})
+        record_override(self.db, "Person", "A2", "set", {"name_local": "Иванов"})
         self.assertEqual(tombstoned_ids(self.db, "Person"), {"A1"})
 
     def test_a_tombstone_is_scoped_to_its_label(self):
@@ -129,18 +129,18 @@ class ApplyTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.graph = FakeGraph()
-        self.graph.add("Person", "A1", name_en="Ivan Petrov", name_ru="Ivanov I.")
+        self.graph.add("Person", "A1", name_en="Ivan Petrov", name_local="Ivanov I.")
 
     def test_an_override_is_written_to_the_graph(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов И. И."})
         result = apply_overrides(self.graph, self.db)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И. И.")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов И. И.")
         self.assertEqual(result["overrides_applied"], 1)
 
     def test_applying_twice_writes_only_once(self):
         # Reapplying happens after every publish; a second write would
         # stamp an audit entry for a change nobody made.
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов И. И."})
         apply_overrides(self.graph, self.db)
         writes = self.graph.calls.count("upsert_nodes_batch")
         result = apply_overrides(self.graph, self.db)
@@ -148,12 +148,12 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual((result["overrides_applied"], result["overrides_unchanged"]), (0, 1))
 
     def test_an_override_wins_back_after_the_pipeline_overwrites_it(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов И. И."})
         apply_overrides(self.graph, self.db)
         # publish runs and puts the automatic value back
-        self.graph.upsert_nodes_batch("Person", [("A1", {"name_ru": "Ivanov I."})])
+        self.graph.upsert_nodes_batch("Person", [("A1", {"name_local": "Ivanov I."})])
         apply_overrides(self.graph, self.db)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И. И.")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов И. И.")
 
     def test_a_deletion_override_removes_the_node_again(self):
         record_override(self.db, "Person", "A1", "delete")
@@ -167,15 +167,15 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual((result["overrides_applied"], result["overrides_missing"]), (0, 0))
 
     def test_an_edit_whose_node_vanished_is_reported_not_raised(self):
-        record_override(self.db, "Person", "gone", "set", {"name_ru": "Иванов"})
+        record_override(self.db, "Person", "gone", "set", {"name_local": "Иванов"})
         result = apply_overrides(self.graph, self.db)
         self.assertEqual(result["overrides_missing"], 1)
 
     def test_an_undone_override_is_not_applied(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов И. И."})
         deactivate_override(self.db, "Person", "A1")
         apply_overrides(self.graph, self.db)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Ivanov I.")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Ivanov I.")
 
 
 if __name__ == "__main__":
@@ -293,14 +293,14 @@ class RelationshipOverrideTest(unittest.TestCase):
     def test_a_publish_does_not_rebuild_an_unlinked_edge(self):
         record_relationship_override(self.db, *self.TRIPLE)
         rows = {"persons.jsonl": [
-            {"id": "A1", "is_itmo": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
+            {"id": "A1", "is_member": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
         load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
         self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
                          self.graph.relationships)
 
     def test_without_the_override_the_edge_comes_back(self):
         rows = {"persons.jsonl": [
-            {"id": "A1", "is_itmo": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
+            {"id": "A1", "is_member": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
         load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
                       self.graph.relationships)
@@ -308,7 +308,7 @@ class RelationshipOverrideTest(unittest.TestCase):
     def test_only_the_named_edge_is_skipped(self):
         record_relationship_override(self.db, *self.TRIPLE)
         self.graph.add("Publication", "W2", title="another")
-        rows = {"persons.jsonl": [{"id": "A1", "is_itmo": True, "authored": [
+        rows = {"persons.jsonl": [{"id": "A1", "is_member": True, "authored": [
             {"publication_id": "W1", "position": 1}, {"publication_id": "W2", "position": 2}]}]}
         load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W2"),
@@ -387,12 +387,12 @@ class ConcurrentEditTest(unittest.TestCase):
     def test_a_second_editor_does_not_overwrite_the_first(self):
         # Both read the document before either writes - the situation a
         # read-then-replace loses.
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"},
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов"},
                         actor="user:petrov")
         record_override(self.db, "Person", "A1", "set", {"email": "i@itmo.ru"},
                         actor="user:ivanova")
         (stored,) = active_overrides(self.db)
-        self.assertEqual(stored["fields"], {"name_ru": "Иванов", "email": "i@itmo.ru"})
+        self.assertEqual(stored["fields"], {"name_local": "Иванов", "email": "i@itmo.ru"})
 
     def test_the_document_is_written_without_reading_it_first(self):
         # A read before the write is exactly the window where an edit is
@@ -406,18 +406,18 @@ class ConcurrentEditTest(unittest.TestCase):
             return original_find(*args, **kwargs)
 
         collection.find_one = watched
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов"})
         # One read is allowed: the document is read back at the end to
         # return what was actually stored.
         self.assertLessEqual(calls.count("find_one"), 1)
 
     def test_the_first_automatic_value_survives_a_later_edit(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"},
-                        auto_value={"name_ru": "Ivanov I."})
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "второй"},
-                        auto_value={"name_ru": "первый"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "первый"},
+                        auto_value={"name_local": "Ivanov I."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "второй"},
+                        auto_value={"name_local": "первый"})
         (stored,) = active_overrides(self.db)
-        self.assertEqual(stored["auto_value"], {"name_ru": "Ivanov I."})
+        self.assertEqual(stored["auto_value"], {"name_local": "Ivanov I."})
 
 
 class VanishingTargetTest(unittest.TestCase):
@@ -427,7 +427,7 @@ class VanishingTargetTest(unittest.TestCase):
         db = mongomock.MongoClient()["pauk_test"]
         graph = FakeGraph()
         graph.add("Person", "A1", name_en="Ivan")
-        record_override(db, "Person", "A1", "set", {"name_ru": "Иванов"})
+        record_override(db, "Person", "A1", "set", {"name_local": "Иванов"})
         original = graph.fetch_node_properties
 
         def read_then_vanish(label, node_id):
@@ -450,10 +450,10 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов Иван Петрович"},
-                        actor="user:roman", auto_value={"name_ru": "Иванов И."})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Иванов Иван Петрович"},
+                        actor="user:roman", auto_value={"name_local": "Иванов И."})
         record_override(self.db, "Person", "A1", "delete", actor="user:roman",
-                        snapshot={"name_ru": "Иванов Иван Петрович"})
+                        snapshot={"name_local": "Иванов Иван Петрович"})
 
     def document(self):
         return self.db[COLLECTION].find_one({"_id": "node:Person:A1"})
@@ -461,7 +461,7 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
     def test_the_delete_replaced_the_op_but_kept_the_fields(self):
         row = self.document()
         self.assertEqual(row["op"], "delete")
-        self.assertEqual(row["fields"], {"name_ru": "Иванов Иван Петрович"})
+        self.assertEqual(row["fields"], {"name_local": "Иванов Иван Петрович"})
 
     def test_withdrawing_the_deletion_leaves_the_edit_in_force(self):
         self.assertTrue(deactivate_override(self.db, "Person", "A1", only_op="delete"))
@@ -471,12 +471,12 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
 
     def test_the_edit_survives_the_next_publish(self):
         graph = FakeGraph()
-        graph.add("Person", "A1", name_ru="Иванов Иван Петрович")
+        graph.add("Person", "A1", name_local="Иванов Иван Петрович")
         deactivate_override(self.db, "Person", "A1", only_op="delete")
         load_prepared_rows(graph, {"persons.jsonl": [
-            {"id": "A1", "is_itmo": True, "name_ru": "Иванов И."}]}, set(), set())
+            {"id": "A1", "is_member": True, "name_local": "Иванов И."}]}, set(), set())
         apply_overrides(graph, self.db)
-        self.assertEqual(graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+        self.assertEqual(graph.nodes[("Person", "A1")]["name_local"], "Иванов Иван Петрович")
 
     def test_the_tombstone_is_gone(self):
         deactivate_override(self.db, "Person", "A1", only_op="delete")
@@ -485,7 +485,7 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
     def test_a_deletion_with_no_edit_behind_it_is_switched_off(self):
         db = mongomock.MongoClient()["pauk_other"]
         record_override(db, "Person", "A2", "delete", actor="user:roman",
-                        snapshot={"name_ru": "Петров"})
+                        snapshot={"name_local": "Петров"})
         self.assertTrue(deactivate_override(db, "Person", "A2", only_op="delete"))
         self.assertFalse(db[COLLECTION].find_one({"_id": "node:Person:A2"})["active"])
 
@@ -495,9 +495,9 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
         # that removes the record at the next publish.
         db = mongomock.MongoClient()["pauk_other"]
         record_override(db, "Person", "A2", DELETE, actor="user:roman",
-                        snapshot={"name_ru": "Петров"})
+                        snapshot={"name_local": "Петров"})
         deactivate_override(db, "Person", "A2", only_op=DELETE)
-        record_override(db, "Person", "A2", SET, {"name_ru": "Петров П."}, actor="user:roman")
+        record_override(db, "Person", "A2", SET, {"name_local": "Петров П."}, actor="user:roman")
         self.assertEqual(tombstoned_ids(db, "Person"), set())
         self.assertEqual(db[COLLECTION].find_one({"_id": "node:Person:A2"})["op"], SET)
 
@@ -516,7 +516,7 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        record_override(self.db, "Department", "D9", CREATE, {"name_ru": "Новая лаборатория"},
+        record_override(self.db, "Department", "D9", CREATE, {"name_local": "Новая лаборатория"},
                         actor="user:roman")
 
     def document(self, node_id="D9"):
@@ -527,7 +527,7 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
                         actor="user:roman", auto_value={"name_en": None})
         row = self.document()
         self.assertEqual(row["op"], CREATE)
-        self.assertEqual(row["fields"], {"name_ru": "Новая лаборатория", "name_en": "New lab"})
+        self.assertEqual(row["fields"], {"name_local": "Новая лаборатория", "name_en": "New lab"})
 
     def test_so_an_undo_aimed_at_the_edit_finds_nothing_to_switch_off(self):
         record_override(self.db, "Department", "D9", SET, {"name_en": "New lab"},
@@ -537,7 +537,7 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
 
     def test_a_restore_after_a_delete_brings_the_claim_back(self):
         record_override(self.db, "Department", "D9", DELETE, actor="user:roman",
-                        snapshot={"name_ru": "Новая лаборатория"})
+                        snapshot={"name_local": "Новая лаборатория"})
         self.assertTrue(deactivate_override(self.db, "Department", "D9", only_op=DELETE))
         row = self.document()
         self.assertTrue(row["active"])
@@ -552,6 +552,6 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
         self.assertTrue(self.document("D8")["active"])
 
     def test_a_record_the_pipeline_made_is_still_only_edited(self):
-        record_override(self.db, "Department", "D1", SET, {"name_ru": "Кафедра"},
+        record_override(self.db, "Department", "D1", SET, {"name_local": "Кафедра"},
                         actor="user:roman")
         self.assertEqual(self.document("D1")["op"], SET)

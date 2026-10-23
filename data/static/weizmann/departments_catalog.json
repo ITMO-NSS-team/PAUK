@@ -1,0 +1,302 @@
+[
+  {
+    "uid": "weizmann",
+    "name_en": "Weizmann Institute of Science",
+    "name_local": "Weizmann Institute of Science",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/0316ej306",
+    "type": "university"
+  },
+  {
+    "uid": "fbio",
+    "name_en": "Faculty of Biology",
+    "name_local": "Faculty of Biology",
+    "kind": "faculty",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biology"
+    ]
+  },
+  {
+    "uid": "fbiochem",
+    "name_en": "Faculty of Biochemistry",
+    "name_local": "Faculty of Biochemistry",
+    "kind": "faculty",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biochemistry"
+    ]
+  },
+  {
+    "uid": "fchem",
+    "name_en": "Faculty of Chemistry",
+    "name_local": "Faculty of Chemistry",
+    "kind": "faculty",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Chemistry"
+    ]
+  },
+  {
+    "uid": "fphys",
+    "name_en": "Faculty of Physics",
+    "name_local": "Faculty of Physics",
+    "kind": "faculty",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Physics"
+    ]
+  },
+  {
+    "uid": "fmath",
+    "name_en": "Faculty of Mathematics and Computer Science",
+    "name_local": "Faculty of Mathematics and Computer Science",
+    "kind": "faculty",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics and Computer Science"
+    ]
+  },
+  {
+    "uid": "molgen",
+    "name_en": "Department of Molecular Genetics",
+    "name_local": "Department of Molecular Genetics",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Genetics"
+    ]
+  },
+  {
+    "uid": "mcb",
+    "name_en": "Department of Molecular Cell Biology",
+    "name_local": "Department of Molecular Cell Biology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Cell Biology"
+    ]
+  },
+  {
+    "uid": "sysimm",
+    "name_en": "Department of Systems Immunology",
+    "name_local": "Department of Systems Immunology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Systems Immunology",
+      "Systems Immunology Department"
+    ]
+  },
+  {
+    "uid": "brain",
+    "name_en": "Department of Brain Sciences",
+    "name_local": "Department of Brain Sciences",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Brain Sciences"
+    ]
+  },
+  {
+    "uid": "irb",
+    "name_en": "Department of Immunology and Regenerative Biology",
+    "name_local": "Department of Immunology and Regenerative Biology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Immunology and Regenerative Biology",
+      "Immunology and Regenerative Biology"
+    ]
+  },
+  {
+    "uid": "molneuro",
+    "name_en": "Department of Molecular Neuroscience",
+    "name_local": "Department of Molecular Neuroscience",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Neuroscience"
+    ]
+  },
+  {
+    "uid": "bms",
+    "name_en": "Department of Biomolecular Sciences",
+    "name_local": "Department of Biomolecular Sciences",
+    "kind": "department",
+    "parent": "fbiochem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomolecular Sciences"
+    ]
+  },
+  {
+    "uid": "pes",
+    "name_en": "Department of Plant and Environmental Sciences",
+    "name_local": "Department of Plant and Environmental Sciences",
+    "kind": "department",
+    "parent": "fbiochem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plant and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "csb",
+    "name_en": "Department of Chemical and Structural Biology",
+    "name_local": "Department of Chemical and Structural Biology",
+    "kind": "department",
+    "parent": "fchem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Structural Biology"
+    ]
+  },
+  {
+    "uid": "mcms",
+    "name_en": "Department of Molecular Chemistry and Materials Science",
+    "name_local": "Department of Molecular Chemistry and Materials Science",
+    "kind": "department",
+    "parent": "fchem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Chemistry and Materials Science"
+    ]
+  },
+  {
+    "uid": "cbp",
+    "name_en": "Department of Chemical and Biological Physics",
+    "name_local": "Department of Chemical and Biological Physics",
+    "kind": "department",
+    "parent": "fchem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biological Physics"
+    ]
+  },
+  {
+    "uid": "eps",
+    "name_en": "Department of Earth and Planetary Sciences",
+    "name_local": "Department of Earth and Planetary Sciences",
+    "kind": "department",
+    "parent": "fchem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Planetary Sciences",
+      "Department of Earth and Planetary Science",
+      "Earth and Planetary Sciences"
+    ]
+  },
+  {
+    "uid": "crs",
+    "name_en": "Department of Chemical Research Support",
+    "name_local": "Department of Chemical Research Support",
+    "kind": "department",
+    "parent": "fchem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Research Support"
+    ]
+  },
+  {
+    "uid": "ppa",
+    "name_en": "Department of Particle Physics and Astrophysics",
+    "name_local": "Department of Particle Physics and Astrophysics",
+    "kind": "department",
+    "parent": "fphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Particle Physics and Astrophysics"
+    ]
+  },
+  {
+    "uid": "cmp",
+    "name_en": "Department of Condensed Matter Physics",
+    "name_local": "Department of Condensed Matter Physics",
+    "kind": "department",
+    "parent": "fphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Condensed Matter Physics"
+    ]
+  },
+  {
+    "uid": "pcs",
+    "name_en": "Department of Physics of Complex Systems",
+    "name_local": "Department of Physics of Complex Systems",
+    "kind": "department",
+    "parent": "fphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics of Complex Systems"
+    ]
+  },
+  {
+    "uid": "csam",
+    "name_en": "Department of Computer Science and Applied Mathematics",
+    "name_local": "Department of Computer Science and Applied Mathematics",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Applied Mathematics"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "sciteach",
+    "name_en": "Department of Science Teaching",
+    "name_local": "Department of Science Teaching",
+    "kind": "department",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Science Teaching"
+    ]
+  },
+  {
+    "uid": "lscf",
+    "name_en": "Department of Life Sciences Core Facilities",
+    "name_local": "Department of Life Sciences Core Facilities",
+    "kind": "department",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Sciences Core Facilities",
+      "Life Sciences Core Facilities"
+    ]
+  },
+  {
+    "uid": "vet",
+    "name_en": "Department of Veterinary Resources",
+    "name_local": "Department of Veterinary Resources",
+    "kind": "department",
+    "parent": "weizmann",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Veterinary Resources"
+    ]
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "key": "tcd",
+  "short_name": "Trinity College Dublin",
+  "short_name_local": "Trinity College Dublin",
+  "name_en": "Trinity College Dublin",
+  "name_local": "Trinity College Dublin",
+  "ror_id": "02tyrky19",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "tcd.ie"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TrinityCollegeDublin|TCD)(?![^\\W\\d_])",
+  "long_name": "College[\\s‐-]+of[\\s‐-]+the[\\s‐-]+Holy[\\s‐-]+and[\\s‐-]+Undivided[\\s‐-]+Trinity[\\s‐-]+of[\\s‐-]+Queen[\\s‐-]+Elizabeth[\\s‐-]+near[\\s‐-]+Dublin|Trinity[\\s‐-]+College[\\s‐-]+Dublin[\\s‐-]+The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dublin|Coláiste[\\s‐-]+na[\\s‐-]+Tríonóide[\\s‐-]+Baile[\\s‐-]+Átha[\\s‐-]+Cliath|Trinity[\\s‐-]+College[\\s‐-]+\\(Dublin\\)|The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dublin|Trinity[\\s‐-]+College[\\s‐-]+Dublin|Coláiste[\\s‐-]+na[\\s‐-]+Tríonóide|University[\\s‐-]+of[\\s‐-]+Dublin",
+  "marker_replacement": "TrinityCollegeDublin",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|d|dublin|east|floor|gatan|green|ireland|katu|laan|leinster|north|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west|éire",
+  "other_organisations": "St\\.? James[’']?s? Hospital|Tallaght University Hospital|University College Dublin|Dublin Dental University Hospital|Royal College of Surgeons|(?<![^\\W\\d_])RCSI(?![^\\W\\d_])|Children[’']s Health Ireland|Rotunda|Coombe|Children's\\ Health\\ Ireland\\ at\\ Crumlin|Coombe\\ Women\\ \\&\\ Infants\\ University\\ Hospital|Irish\\ Research\\ eLibrary|Rotunda\\ Hospital|Royal\\ Victoria\\ Eye\\ and\\ Ear\\ Hospital|St\\.\\ James's\\ Hospital|St\\.\\ Patrick's\\ Hospital|Tallaght\\ University\\ Hospital|UK\\ Web\\ Archive",
+  "identity": "(?<![^\\W\\d_])TCD(?![^\\W\\d_])|College[\\s‐-]+of[\\s‐-]+the[\\s‐-]+Holy[\\s‐-]+and[\\s‐-]+Undivided[\\s‐-]+Trinity[\\s‐-]+of[\\s‐-]+Queen[\\s‐-]+Elizabeth[\\s‐-]+near[\\s‐-]+Dublin|Trinity[\\s‐-]+College[\\s‐-]+Dublin[\\s‐-]+The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dublin|Coláiste[\\s‐-]+na[\\s‐-]+Tríonóide[\\s‐-]+Baile[\\s‐-]+Átha[\\s‐-]+Cliath|Trinity[\\s‐-]+College[\\s‐-]+\\(Dublin\\)|The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dublin|Trinity[\\s‐-]+College[\\s‐-]+Dublin|Coláiste[\\s‐-]+na[\\s‐-]+Tríonóide|University[\\s‐-]+of[\\s‐-]+Dublin",
+  "city": "Dublin",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tcd",
+  "site_url": "https://www.tcd.ie",
+  "unit_words": "school|institute|centre|center|discipline|department",
+  "external_authors": false
+}

@@ -1,0 +1,34 @@
+{
+  "key": "lyon1",
+  "short_name": "Lyon 1",
+  "short_name_local": "Lyon 1",
+  "name_en": "Lyon 1 Université",
+  "name_local": "Université Claude Bernard Lyon 1",
+  "ror_id": "029brtt94",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "d"
+  ],
+  "email_domains": [
+    "univ-lyon1.fr"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivClaudeBernardLyon|UCBL|UCBL1)(?![^\\W\\d_])",
+  "long_name": "Claude[\\s‐-]+Bernard[\\s‐-]+University[\\s‐-]+Lyon[\\s‐-]+1|Université[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|Universite[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|University[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1[\\s‐-]+University|Université[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon1|Université[\\s‐-]+Claude[\\s‐-]+Bernard|Université[\\s‐-]+de[\\s‐-]+Lyon[\\s‐-]+I|Université[\\s‐-]+de[\\s‐-]+Lyon[\\s‐-]+1|Lyon[\\s‐-]+1[\\s‐-]+University|Lyon[\\s‐-]+1[\\s‐-]+Université|Université[\\s‐-]+Lyon[\\s‐-]+1|Université[\\s‐-]+Lyon[\\s‐-]+I|Univ\\.[\\s‐-]+Lyon[\\s‐-]+1|Univ[\\s‐-]+Lyon[\\s‐-]+1|Lyon[\\s‐-]+I",
+  "marker_replacement": "UnivClaudeBernardLyon",
+  "place_words": "aleja|allee|auvergne|av|ave|avenue|bd|bldg|boulevard|box|bron|building|bénite|calle|campus|cedex|east|floor|france|gatan|katu|laan|lyon|north|novembre|oullins|piazza|pierre|platz|plaza|plein|po|rd|rhône|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|villeurbanne|vägen|weg|west",
+  "other_organisations": "CNRS|INSERM|Inserm|INRAE|Inria|Hospices Civils de Lyon|INSA[\\s-]Lyon|ENS[\\s-](?:de[\\s-])?Lyon|[ÉE]cole Normale Sup[ée]rieure|[ÉE]cole Centrale de Lyon|Centrale Lyon|Universit[ée] Jean Monnet|Universit[ée] Lumi[èe]re Lyon 2|Universit[ée] Jean Moulin|Centre L[ée]on B[ée]rard|VetAgro Sup|CPE Lyon|ENTPE|Centre\\ Léon\\ Bérard|Fédération\\ de\\ Recherche\\ PhotoVoltaïque|Fédération\\ de\\ Recherche\\ Spectroscopies\\ de\\ Photoémission|Fédération\\ de\\ Recherche\\ sur\\ l'Energie\\ Solaire|Hospices\\ Civils\\ de\\ Lyon|INFRANALYTICS|Laboratoire\\ Interuniversitaire\\ de\\ Biologie\\ de\\ la\\ Motricité",
+  "identity": "(?<![^\\W\\d_])UCBL(?![^\\W\\d_])|(?<![^\\W\\d_])UCBL1(?![^\\W\\d_])|Claude[\\s‐-]+Bernard[\\s‐-]+University[\\s‐-]+Lyon[\\s‐-]+1|Université[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|Universite[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|University[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1|Claude[\\s‐-]+Bernard[\\s‐-]+Lyon[\\s‐-]+1[\\s‐-]+University|Université[\\s‐-]+Claude[\\s‐-]+Bernard[\\s‐-]+Lyon1|Université[\\s‐-]+Claude[\\s‐-]+Bernard|Université[\\s‐-]+de[\\s‐-]+Lyon[\\s‐-]+I|Université[\\s‐-]+de[\\s‐-]+Lyon[\\s‐-]+1|Lyon[\\s‐-]+1[\\s‐-]+University|Lyon[\\s‐-]+1[\\s‐-]+Université|Université[\\s‐-]+Lyon[\\s‐-]+1|Université[\\s‐-]+Lyon[\\s‐-]+I|Univ\\.[\\s‐-]+Lyon[\\s‐-]+1|Univ[\\s‐-]+Lyon[\\s‐-]+1|Lyon[\\s‐-]+I",
+  "city": "Villeurbanne",
+  "staff_catalog": null,
+  "mongo_db": "pauk_lyon1",
+  "site_url": "https://www.univ-lyon1.fr",
+  "unit_words": "laboratoire|laboratory|institut|institute|centre|center|ufr|faculté|faculty",
+  "external_authors": false
+}

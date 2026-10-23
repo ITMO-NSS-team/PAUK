@@ -1,0 +1,37 @@
+{
+  "key": "vt",
+  "short_name": "Virginia Tech",
+  "short_name_local": "Virginia Tech",
+  "name_en": "Virginia Tech",
+  "name_local": "Virginia Tech",
+  "ror_id": "02smfhw86",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "vt.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:VirginiaTechUniv|Virginia\\ Tech)(?![^\\W\\d_])",
+  "long_name": "Institut[\\s‐-]+polytechnique[\\s‐-]+et[\\s‐-]+université[\\s‐-]+d'État[\\s‐-]+de[\\s‐-]+virginie|Instituto[\\s‐-]+Politécnico[\\s‐-]+y[\\s‐-]+Universidad[\\s‐-]+Estatal[\\s‐-]+de[\\s‐-]+Virginia|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute[\\s‐-]+and[\\s‐-]+State[\\s‐-]+University|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute[\\s‐-]+and[\\s‐-]+State[\\s‐-]+Univ|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute|Virginia[\\s‐-]+Tech[\\s‐-]+University",
+  "marker_replacement": "VirginiaTechUniv",
+  "place_words": "aleja|alexandria|allee|america|arlington|av|ave|avenue|bd|blacksburg|bldg|boulevard|box|building|calle|campus|east|floor|gatan|katu|laan|north|piazza|platz|plaza|plein|po|rd|road|roanoke|room|rue|south|st|states|str|straat|strasse|straße|street|tie|ul|united|us|usa|va|vej|via|viale|virginia|vägen|weg|west",
+  "other_organisations": "Carilion Clinic|Carilion Roanoke|University of Virginia|Virginia Commonwealth|George Mason|University of Maryland|Carilion\\ Roanoke\\ Memorial\\ Hospital|Hubbard\\ Brook\\ Long\\ Term\\ Ecological\\ Research|McMurdo\\ Dry\\ Valleys\\ Long\\ Term\\ Ecological\\ Research|Virginia\\ Coast\\ Reserve\\ Long\\ Term\\ Ecological\\ Research",
+  "identity": "(?<![^\\W\\d_])Virginia\\ Tech(?![^\\W\\d_])|Institut[\\s‐-]+polytechnique[\\s‐-]+et[\\s‐-]+université[\\s‐-]+d'État[\\s‐-]+de[\\s‐-]+virginie|Instituto[\\s‐-]+Politécnico[\\s‐-]+y[\\s‐-]+Universidad[\\s‐-]+Estatal[\\s‐-]+de[\\s‐-]+Virginia|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute[\\s‐-]+and[\\s‐-]+State[\\s‐-]+University|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute[\\s‐-]+and[\\s‐-]+State[\\s‐-]+Univ|Virginia[\\s‐-]+Polytechnic[\\s‐-]+Institute|Virginia[\\s‐-]+Tech[\\s‐-]+University",
+  "city": "Blacksburg",
+  "staff_catalog": null,
+  "mongo_db": "pauk_vt",
+  "site_url": "https://www.vt.edu",
+  "unit_words": "college|school|department|institute|center|centre",
+  "external_authors": false
+}

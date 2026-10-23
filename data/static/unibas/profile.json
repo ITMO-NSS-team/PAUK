@@ -1,0 +1,36 @@
+{
+  "key": "unibas",
+  "short_name": "Basel",
+  "short_name_local": "Uni Basel",
+  "name_en": "University of Basel",
+  "name_local": "Universität Basel",
+  "ror_id": "02s6k3f65",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "unibas.ch"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivBasel)(?![^\\W\\d_])",
+  "long_name": "Università[\\s‐-]+di[\\s‐-]+Basilea|University[\\s‐-]+of[\\s‐-]+Basel|Université[\\s‐-]+de[\\s‐-]+Bâle|Universität[\\s‐-]+Basel|Universitat[\\s‐-]+Basel|Basel[\\s‐-]+University|University[\\s‐-]+Basel|Univ\\.[\\s‐-]+of[\\s‐-]+Basel",
+  "marker_replacement": "UnivBasel",
+  "place_words": "aleja|allee|allschwil|av|ave|avenue|basel|bd|bldg|boulevard|box|building|bâle|calle|campus|ch|east|floor|gatan|grosse|hebelstrasse|katu|klingelbergstrasse|kreuzstrasse|laan|mattenstrasse|north|petersgraben|petersplatz|piazza|platz|plaza|plein|po|rd|ring|road|room|rue|schweiz|south|spitalstrasse|st|str|straat|strasse|straße|street|suisse|svizzera|switzerland|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "University Hospitals? (?:of )?Basel|Universitätsspital Basel|University Children[’']?s Hospital Basel|Swiss Tropical and Public Health Institute|Swiss TPH|Friedrich Miescher Institute|Swiss Institute of Bioinformatics|University of Bern|University of Zurich|ETH Zurich|Inselspital|Friedrich\\ Miescher\\ Institute|Swiss\\ Centre\\ for\\ Applied\\ Human\\ Toxicology|Swiss\\ National\\ Data\\ and\\ Service\\ Center\\ for\\ the\\ Humanities|Swiss\\ Tropical\\ and\\ Public\\ Health\\ Institute|University\\ Children’s\\ Hospital\\ Basel|University\\ Hospital\\ of\\ Basel|Universitäre\\ Psychiatrische\\ Kliniken\\ Basel",
+  "identity": "Università[\\s‐-]+di[\\s‐-]+Basilea|University[\\s‐-]+of[\\s‐-]+Basel|Université[\\s‐-]+de[\\s‐-]+Bâle|Universität[\\s‐-]+Basel|Universitat[\\s‐-]+Basel|Basel[\\s‐-]+University|University[\\s‐-]+Basel|Univ\\.[\\s‐-]+of[\\s‐-]+Basel",
+  "city": "Basel",
+  "staff_catalog": null,
+  "mongo_db": "pauk_unibas",
+  "site_url": "https://www.unibas.ch",
+  "unit_words": "faculty|fakultät|institute|institut|centre|center|biozentrum",
+  "external_authors": false
+}

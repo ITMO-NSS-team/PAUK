@@ -1,0 +1,1836 @@
+[
+  {
+    "uid": "cambridge",
+    "name_en": "University of Cambridge",
+    "name_local": "University of Cambridge",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/013meh722",
+    "type": "university"
+  },
+  {
+    "uid": "sch-arts-humanities",
+    "name_en": "School of Arts and Humanities",
+    "name_local": "School of Arts and Humanities",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "School of Arts and Humanities"
+    ]
+  },
+  {
+    "uid": "sch-hss",
+    "name_en": "School of the Humanities and Social Sciences",
+    "name_local": "School of the Humanities and Social Sciences",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "School of the Humanities and Social Sciences",
+      "School of Humanities and Social Sciences"
+    ]
+  },
+  {
+    "uid": "sch-biological",
+    "name_en": "School of Biological Sciences",
+    "name_local": "School of Biological Sciences",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "sch-clinical-medicine",
+    "name_en": "School of Clinical Medicine",
+    "name_local": "School of Clinical Medicine",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [
+      "University of Cambridge School of Clinical Medicine"
+    ],
+    "context_aliases": [
+      "School of Clinical Medicine",
+      "School of Medicine",
+      "Clinical School"
+    ]
+  },
+  {
+    "uid": "sch-physical",
+    "name_en": "School of Physical Sciences",
+    "name_local": "School of Physical Sciences",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physical Sciences"
+    ]
+  },
+  {
+    "uid": "sch-technology",
+    "name_en": "School of Technology",
+    "name_local": "School of Technology",
+    "kind": "school",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "School of Technology"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Cavendish Laboratory",
+    "name_local": "Cavendish Laboratory",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department",
+      "Cavendish Laboratory"
+    ]
+  },
+  {
+    "uid": "cavendish-astrophysics",
+    "name_en": "Astrophysics Group",
+    "name_local": "Astrophysics Group",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [
+      "Cavendish Astrophysics"
+    ],
+    "context_aliases": [
+      "Astrophysics Group"
+    ]
+  },
+  {
+    "uid": "tcm",
+    "name_en": "Theory of Condensed Matter Group",
+    "name_local": "Theory of Condensed Matter Group",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "Theory of Condensed Matter Group"
+    ]
+  },
+  {
+    "uid": "nanophotonics",
+    "name_en": "NanoPhotonics Centre",
+    "name_local": "NanoPhotonics Centre",
+    "kind": "center",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "NanoPhotonics Centre"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Yusuf Hamied Department of Chemistry",
+    "name_local": "Yusuf Hamied Department of Chemistry",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Chemistry Department",
+      "Yusuf Hamied Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "misfolding",
+    "name_en": "Centre for Misfolding Diseases",
+    "name_local": "Centre for Misfolding Diseases",
+    "kind": "center",
+    "parent": "chemistry",
+    "aliases": [
+      "Centre for Misfolding Diseases"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "earth-sciences",
+    "name_en": "Department of Earth Sciences",
+    "name_local": "Department of Earth Sciences",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth Sciences",
+      "Earth Sciences"
+    ]
+  },
+  {
+    "uid": "bullard",
+    "name_en": "Bullard Laboratories",
+    "name_local": "Bullard Laboratories",
+    "kind": "lab",
+    "parent": "earth-sciences",
+    "aliases": [
+      "Bullard Laboratories"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sedgwick",
+    "name_en": "Sedgwick Museum of Earth Sciences",
+    "name_local": "Sedgwick Museum of Earth Sciences",
+    "kind": "center",
+    "parent": "earth-sciences",
+    "aliases": [
+      "Sedgwick Museum of Earth Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "geography",
+    "name_en": "Department of Geography",
+    "name_local": "Department of Geography",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "spri",
+    "name_en": "Scott Polar Research Institute",
+    "name_local": "Scott Polar Research Institute",
+    "kind": "institute",
+    "parent": "geography",
+    "aliases": [
+      "Scott Polar Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ioa",
+    "name_en": "Institute of Astronomy",
+    "name_local": "Institute of Astronomy",
+    "kind": "institute",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Astronomy"
+    ]
+  },
+  {
+    "uid": "kicc",
+    "name_en": "Kavli Institute for Cosmology",
+    "name_local": "Kavli Institute for Cosmology",
+    "kind": "institute",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Kavli Institute for Cosmology"
+    ]
+  },
+  {
+    "uid": "damtp",
+    "name_en": "Department of Applied Mathematics and Theoretical Physics",
+    "name_local": "Department of Applied Mathematics and Theoretical Physics",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Mathematics and Theoretical Physics",
+      "DAMTP"
+    ]
+  },
+  {
+    "uid": "dpmms",
+    "name_en": "Department of Pure Mathematics and Mathematical Statistics",
+    "name_local": "Department of Pure Mathematics and Mathematical Statistics",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pure Mathematics and Mathematical Statistics",
+      "DPMMS"
+    ]
+  },
+  {
+    "uid": "statslab",
+    "name_en": "Statistical Laboratory",
+    "name_local": "Statistical Laboratory",
+    "kind": "lab",
+    "parent": "dpmms",
+    "aliases": [],
+    "context_aliases": [
+      "Statistical Laboratory"
+    ]
+  },
+  {
+    "uid": "cms",
+    "name_en": "Centre for Mathematical Sciences",
+    "name_local": "Centre for Mathematical Sciences",
+    "kind": "campus",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "materials",
+    "name_en": "Department of Materials Science and Metallurgy",
+    "name_local": "Department of Materials Science and Metallurgy",
+    "kind": "department",
+    "parent": "sch-physical",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Metallurgy",
+      "Department of Materials Science & Metallurgy",
+      "Department of Materials Science"
+    ]
+  },
+  {
+    "uid": "ccmm",
+    "name_en": "Cambridge Centre for Medical Materials",
+    "name_local": "Cambridge Centre for Medical Materials",
+    "kind": "center",
+    "parent": "materials",
+    "aliases": [
+      "Cambridge Centre for Medical Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "engineering",
+    "name_en": "Department of Engineering",
+    "name_local": "Department of Engineering",
+    "kind": "department",
+    "parent": "sch-technology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering",
+      "Engineering Department",
+      "Engineering Laboratory"
+    ]
+  },
+  {
+    "uid": "eng-electrical",
+    "name_en": "Electrical Engineering Division",
+    "name_local": "Electrical Engineering Division",
+    "kind": "department",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Electrical Engineering Division"
+    ]
+  },
+  {
+    "uid": "whittle",
+    "name_en": "Whittle Laboratory",
+    "name_local": "Whittle Laboratory",
+    "kind": "lab",
+    "parent": "engineering",
+    "aliases": [
+      "Whittle Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ifm",
+    "name_en": "Institute for Manufacturing",
+    "name_local": "Institute for Manufacturing",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Manufacturing"
+    ]
+  },
+  {
+    "uid": "graphene",
+    "name_en": "Cambridge Graphene Centre",
+    "name_local": "Cambridge Graphene Centre",
+    "kind": "center",
+    "parent": "engineering",
+    "aliases": [
+      "Cambridge Graphene Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cpds",
+    "name_en": "Centre for Photonic Devices and Sensors",
+    "name_local": "Centre for Photonic Devices and Sensors",
+    "kind": "center",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Photonic Devices and Sensors"
+    ]
+  },
+  {
+    "uid": "ceb",
+    "name_en": "Department of Chemical Engineering and Biotechnology",
+    "name_local": "Department of Chemical Engineering and Biotechnology",
+    "kind": "department",
+    "parent": "sch-technology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering and Biotechnology",
+      "Department of Chemical Engineering & Biotechnology"
+    ]
+  },
+  {
+    "uid": "cst",
+    "name_en": "Department of Computer Science and Technology",
+    "name_local": "Department of Computer Science and Technology",
+    "kind": "department",
+    "parent": "sch-technology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Technology",
+      "Department of Computer Science & Technology",
+      "Department of Computer Science",
+      "Computer Laboratory"
+    ]
+  },
+  {
+    "uid": "alta",
+    "name_en": "ALTA Institute",
+    "name_local": "ALTA Institute",
+    "kind": "institute",
+    "parent": "cst",
+    "aliases": [],
+    "context_aliases": [
+      "ALTA Institute"
+    ]
+  },
+  {
+    "uid": "iccs",
+    "name_en": "Institute of Computing for Climate Science",
+    "name_local": "Institute of Computing for Climate Science",
+    "kind": "institute",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Computing for Climate Science",
+      "Institute for Computing for Climate Science"
+    ]
+  },
+  {
+    "uid": "jbs",
+    "name_en": "Cambridge Judge Business School",
+    "name_local": "Cambridge Judge Business School",
+    "kind": "school",
+    "parent": "sch-technology",
+    "aliases": [],
+    "context_aliases": [
+      "Cambridge Judge Business School",
+      "Judge Business School"
+    ]
+  },
+  {
+    "uid": "ccaf",
+    "name_en": "Cambridge Centre for Alternative Finance",
+    "name_local": "Cambridge Centre for Alternative Finance",
+    "kind": "center",
+    "parent": "jbs",
+    "aliases": [],
+    "context_aliases": [
+      "Cambridge Centre for Alternative Finance"
+    ]
+  },
+  {
+    "uid": "cbr",
+    "name_en": "Centre for Business Research",
+    "name_local": "Centre for Business Research",
+    "kind": "center",
+    "parent": "jbs",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Business Research"
+    ]
+  },
+  {
+    "uid": "biochemistry",
+    "name_en": "Department of Biochemistry",
+    "name_local": "Department of Biochemistry",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry"
+    ]
+  },
+  {
+    "uid": "genetics",
+    "name_en": "Department of Genetics",
+    "name_local": "Department of Genetics",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Genetics"
+    ]
+  },
+  {
+    "uid": "pathology",
+    "name_en": "Department of Pathology",
+    "name_local": "Department of Pathology",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "pharmacology",
+    "name_en": "Department of Pharmacology",
+    "name_local": "Department of Pharmacology",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology"
+    ]
+  },
+  {
+    "uid": "pdn",
+    "name_en": "Department of Physiology Development and Neuroscience",
+    "name_local": "Department of Physiology Development and Neuroscience",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [
+      "Department of Physiology Development and Neuroscience"
+    ],
+    "context_aliases": [
+      "Department of Physiology",
+      "Development and Neuroscience",
+      "Physiological Laboratory"
+    ]
+  },
+  {
+    "uid": "plant-sciences",
+    "name_en": "Department of Plant Sciences",
+    "name_local": "Department of Plant Sciences",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plant Sciences"
+    ]
+  },
+  {
+    "uid": "crop-science",
+    "name_en": "Crop Science Centre",
+    "name_local": "Crop Science Centre",
+    "kind": "center",
+    "parent": "plant-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Crop Science Centre"
+    ]
+  },
+  {
+    "uid": "psychology",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "ccafr",
+    "name_en": "Centre for Child Adolescent and Family Research",
+    "name_local": "Centre for Child Adolescent and Family Research",
+    "kind": "center",
+    "parent": "psychology",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Child Adolescent and Family Research",
+      "Centre for Child"
+    ]
+  },
+  {
+    "uid": "zoology",
+    "name_en": "Department of Zoology",
+    "name_local": "Department of Zoology",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Zoology"
+    ]
+  },
+  {
+    "uid": "conservation-science",
+    "name_en": "Conservation Science Group",
+    "name_local": "Conservation Science Group",
+    "kind": "lab",
+    "parent": "zoology",
+    "aliases": [],
+    "context_aliases": [
+      "Conservation Science Group"
+    ]
+  },
+  {
+    "uid": "vetmed",
+    "name_en": "Department of Veterinary Medicine",
+    "name_local": "Department of Veterinary Medicine",
+    "kind": "department",
+    "parent": "sch-biological",
+    "aliases": [
+      "Queen's Veterinary School Hospital"
+    ],
+    "context_aliases": [
+      "Department of Veterinary Medicine"
+    ]
+  },
+  {
+    "uid": "viral-zoonotics",
+    "name_en": "Laboratory of Viral Zoonotics",
+    "name_local": "Laboratory of Viral Zoonotics",
+    "kind": "lab",
+    "parent": "vetmed",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Viral Zoonotics"
+    ]
+  },
+  {
+    "uid": "slcu",
+    "name_en": "Sainsbury Laboratory",
+    "name_local": "Sainsbury Laboratory",
+    "kind": "institute",
+    "parent": "sch-biological",
+    "aliases": [
+      "Sainsbury Laboratory Cambridge University"
+    ],
+    "context_aliases": [
+      "Sainsbury Laboratory"
+    ]
+  },
+  {
+    "uid": "gurdon",
+    "name_en": "The Gurdon Institute",
+    "name_local": "The Gurdon Institute",
+    "kind": "institute",
+    "parent": "sch-biological",
+    "aliases": [],
+    "context_aliases": [
+      "The Gurdon Institute",
+      "Gurdon Institute"
+    ]
+  },
+  {
+    "uid": "loke-centre",
+    "name_en": "Loke Centre for Trophoblast Research",
+    "name_local": "Loke Centre for Trophoblast Research",
+    "kind": "center",
+    "parent": "sch-biological",
+    "aliases": [
+      "Loke Centre for Trophoblast Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "stem-cell",
+    "name_en": "Wellcome-MRC Cambridge Stem Cell Institute",
+    "name_local": "Wellcome-MRC Cambridge Stem Cell Institute",
+    "kind": "institute",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Wellcome-MRC Cambridge Stem Cell Institute",
+      "Cambridge Stem Cell Institute",
+      "Jeffrey Cheah Biomedical Centre"
+    ]
+  },
+  {
+    "uid": "clin-neurosciences",
+    "name_en": "Department of Clinical Neurosciences",
+    "name_local": "Department of Clinical Neurosciences",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Neurosciences",
+      "Department of Clinical Neuroscience"
+    ]
+  },
+  {
+    "uid": "neurosurgery",
+    "name_en": "Division of Neurosurgery",
+    "name_local": "Division of Neurosurgery",
+    "kind": "department",
+    "parent": "clin-neurosciences",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Neurosurgery",
+      "Department of Neurosurgery"
+    ]
+  },
+  {
+    "uid": "brain-physics",
+    "name_en": "Brain Physics Laboratory",
+    "name_local": "Brain Physics Laboratory",
+    "kind": "lab",
+    "parent": "neurosurgery",
+    "aliases": [],
+    "context_aliases": [
+      "Brain Physics Laboratory"
+    ]
+  },
+  {
+    "uid": "wbic",
+    "name_en": "Wolfson Brain Imaging Centre",
+    "name_local": "Wolfson Brain Imaging Centre",
+    "kind": "center",
+    "parent": "clin-neurosciences",
+    "aliases": [
+      "Wolfson Brain Imaging Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hearing-group",
+    "name_en": "Cambridge Hearing Group",
+    "name_local": "Cambridge Hearing Group",
+    "kind": "lab",
+    "parent": "clin-neurosciences",
+    "aliases": [],
+    "context_aliases": [
+      "Cambridge Hearing Group"
+    ]
+  },
+  {
+    "uid": "psychiatry",
+    "name_en": "Department of Psychiatry",
+    "name_local": "Department of Psychiatry",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry"
+    ]
+  },
+  {
+    "uid": "autism-rc",
+    "name_en": "Autism Research Centre",
+    "name_local": "Autism Research Centre",
+    "kind": "center",
+    "parent": "psychiatry",
+    "aliases": [],
+    "context_aliases": [
+      "Autism Research Centre"
+    ]
+  },
+  {
+    "uid": "phpc",
+    "name_en": "Department of Public Health and Primary Care",
+    "name_local": "Department of Public Health and Primary Care",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Public Health and Primary Care",
+      "Public Health and Primary Care"
+    ]
+  },
+  {
+    "uid": "primary-care-unit",
+    "name_en": "Primary Care Unit",
+    "name_local": "Primary Care Unit",
+    "kind": "department",
+    "parent": "phpc",
+    "aliases": [],
+    "context_aliases": [
+      "Primary Care Unit"
+    ]
+  },
+  {
+    "uid": "bhf-ceu",
+    "name_en": "British Heart Foundation Cardiovascular Epidemiology Unit",
+    "name_local": "British Heart Foundation Cardiovascular Epidemiology Unit",
+    "kind": "department",
+    "parent": "phpc",
+    "aliases": [
+      "British Heart Foundation Cardiovascular Epidemiology Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ccge",
+    "name_en": "Centre for Cancer Genetic Epidemiology",
+    "name_local": "Centre for Cancer Genetic Epidemiology",
+    "kind": "center",
+    "parent": "phpc",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Cancer Genetic Epidemiology"
+    ]
+  },
+  {
+    "uid": "baker-genomics",
+    "name_en": "Cambridge Baker Systems Genomics Initiative",
+    "name_local": "Cambridge Baker Systems Genomics Initiative",
+    "kind": "program",
+    "parent": "phpc",
+    "aliases": [
+      "Cambridge Baker Systems Genomics Initiative"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "this-institute",
+    "name_en": "The Healthcare Improvement Studies Institute",
+    "name_local": "The Healthcare Improvement Studies Institute",
+    "kind": "institute",
+    "parent": "phpc",
+    "aliases": [
+      "The Healthcare Improvement Studies Institute",
+      "Healthcare Improvement Studies Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "medicine",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "anaesthesia",
+    "name_en": "Division of Anaesthesia",
+    "name_local": "Division of Anaesthesia",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Anaesthesia",
+      "Department of Anaesthesia"
+    ]
+  },
+  {
+    "uid": "emit",
+    "name_en": "Experimental Medicine and Immunotherapeutics",
+    "name_local": "Experimental Medicine and Immunotherapeutics",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Experimental Medicine and Immunotherapeutics"
+    ]
+  },
+  {
+    "uid": "miu",
+    "name_en": "Molecular Immunity Unit",
+    "name_local": "Molecular Immunity Unit",
+    "kind": "lab",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Molecular Immunity Unit"
+    ]
+  },
+  {
+    "uid": "oncology",
+    "name_en": "Department of Oncology",
+    "name_local": "Department of Oncology",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Oncology"
+    ]
+  },
+  {
+    "uid": "hutchison",
+    "name_en": "Hutchison/MRC Research Centre",
+    "name_local": "Hutchison/MRC Research Centre",
+    "kind": "center",
+    "parent": "oncology",
+    "aliases": [
+      "Hutchison/MRC Research Centre"
+    ],
+    "context_aliases": [
+      "Hutchison Research Centre"
+    ]
+  },
+  {
+    "uid": "haematology",
+    "name_en": "Department of Haematology",
+    "name_local": "Department of Haematology",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Haematology"
+    ]
+  },
+  {
+    "uid": "medical-genetics",
+    "name_en": "Department of Medical Genetics",
+    "name_local": "Department of Medical Genetics",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medical Genetics",
+      "Academic Department of Medical Genetics"
+    ]
+  },
+  {
+    "uid": "paediatrics",
+    "name_en": "Department of Paediatrics",
+    "name_local": "Department of Paediatrics",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Paediatrics"
+    ]
+  },
+  {
+    "uid": "radiology",
+    "name_en": "Department of Radiology",
+    "name_local": "Department of Radiology",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology"
+    ]
+  },
+  {
+    "uid": "surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynaecology",
+    "name_local": "Department of Obstetrics and Gynaecology",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynaecology"
+    ]
+  },
+  {
+    "uid": "clin-biochem",
+    "name_en": "Department of Clinical Biochemistry",
+    "name_local": "Department of Clinical Biochemistry",
+    "kind": "department",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Biochemistry"
+    ]
+  },
+  {
+    "uid": "cimr",
+    "name_en": "Cambridge Institute for Medical Research",
+    "name_local": "Cambridge Institute for Medical Research",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "CIMR",
+      "Keith Peters Building",
+      "Cambridge Institute for Medical Research"
+    ]
+  },
+  {
+    "uid": "citiid",
+    "name_en": "Cambridge Institute of Therapeutic Immunology and Infectious Disease",
+    "name_local": "Cambridge Institute of Therapeutic Immunology and Infectious Disease",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Cambridge Institute of Therapeutic Immunology and Infectious Disease"
+    ],
+    "context_aliases": [
+      "CITIID",
+      "Cambridge Institute of Therapeutic Immunology & Infectious Disease"
+    ]
+  },
+  {
+    "uid": "ims",
+    "name_en": "Wellcome-MRC Institute of Metabolic Science",
+    "name_local": "Wellcome-MRC Institute of Metabolic Science",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Wellcome-MRC Institute of Metabolic Science",
+      "Wellcome/MRC Institute of Metabolic Science"
+    ],
+    "context_aliases": [
+      "Institute of Metabolic Science"
+    ]
+  },
+  {
+    "uid": "mrc-epid",
+    "name_en": "MRC Epidemiology Unit",
+    "name_local": "MRC Epidemiology Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Medical Research Council Epidemiology Unit"
+    ],
+    "context_aliases": [
+      "IMS Epidemiology",
+      "Institute of Metabolic Science Epidemiology",
+      "Institute of Metabolic Science (IMS) Epidemiology",
+      "MRC Epidemiology Unit"
+    ]
+  },
+  {
+    "uid": "mrc-mdu",
+    "name_en": "MRC Metabolic Diseases Unit",
+    "name_local": "MRC Metabolic Diseases Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "MRC Metabolic Diseases Unit",
+      "Medical Research Council Metabolic Diseases Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mrc-bsu",
+    "name_en": "MRC Biostatistics Unit",
+    "name_local": "MRC Biostatistics Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "MRC Biostatistics Unit",
+      "Medical Research Council Biostatistics Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mrc-cbu",
+    "name_en": "MRC Cognition and Brain Sciences Unit",
+    "name_local": "MRC Cognition and Brain Sciences Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "MRC Cognition and Brain Sciences Unit",
+      "MRC Cognition & Brain Sciences Unit",
+      "Medical Research Council Cognition and Brain Sciences Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mrc-mbu",
+    "name_en": "MRC Mitochondrial Biology Unit",
+    "name_local": "MRC Mitochondrial Biology Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "MRC Mitochondrial Biology Unit",
+      "Medical Research Council Mitochondrial Biology Unit",
+      "Medical Research Council-Mitochondrial Biology Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mrc-tox",
+    "name_en": "MRC Toxicology Unit",
+    "name_local": "MRC Toxicology Unit",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "MRC Toxicology Unit",
+      "Medical Research Council Toxicology Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cruk-ci",
+    "name_en": "Cancer Research UK Cambridge Institute",
+    "name_local": "Cancer Research UK Cambridge Institute",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Li Ka Shing Centre",
+      "Cancer Research UK Cambridge Institute",
+      "CRUK Cambridge Institute"
+    ]
+  },
+  {
+    "uid": "cruk-centre",
+    "name_en": "Cancer Research UK Cambridge Centre",
+    "name_local": "Cancer Research UK Cambridge Centre",
+    "kind": "center",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Cancer Research UK Cambridge Centre",
+      "Cancer Research UK Cambridge Center",
+      "CRUK Cambridge Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "early-cancer",
+    "name_en": "Early Cancer Institute",
+    "name_local": "Early Cancer Institute",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Early Cancer Institute"
+    ]
+  },
+  {
+    "uid": "hlri",
+    "name_en": "Victor Phillip Dahdaleh Heart and Lung Research Institute",
+    "name_local": "Victor Phillip Dahdaleh Heart and Lung Research Institute",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Victor Phillip Dahdaleh Heart and Lung Research Institute",
+      "Victor Phillip Dahdaleh Heart & Lung Research Institute",
+      "Heart and Lung Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "milner",
+    "name_en": "Milner Therapeutics Institute",
+    "name_local": "Milner Therapeutics Institute",
+    "kind": "institute",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Milner Therapeutics Institute",
+      "Milner Therapeutic Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ccaim",
+    "name_en": "Cambridge Centre for AI in Medicine",
+    "name_local": "Cambridge Centre for AI in Medicine",
+    "kind": "center",
+    "parent": "sch-clinical-medicine",
+    "aliases": [
+      "Cambridge Centre for AI in Medicine"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "archaeology",
+    "name_en": "Department of Archaeology",
+    "name_local": "Department of Archaeology",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Archaeology"
+    ]
+  },
+  {
+    "uid": "mcdonald",
+    "name_en": "McDonald Institute for Archaeological Research",
+    "name_local": "McDonald Institute for Archaeological Research",
+    "kind": "institute",
+    "parent": "archaeology",
+    "aliases": [
+      "McDonald Institute for Archaeological Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "social-anthropology",
+    "name_en": "Department of Social Anthropology",
+    "name_local": "Department of Social Anthropology",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Social Anthropology"
+    ]
+  },
+  {
+    "uid": "land-economy",
+    "name_en": "Department of Land Economy",
+    "name_local": "Department of Land Economy",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Land Economy"
+    ]
+  },
+  {
+    "uid": "c-eenrg",
+    "name_en": "Centre for Environment Energy and Natural Resource Governance",
+    "name_local": "Centre for Environment Energy and Natural Resource Governance",
+    "kind": "center",
+    "parent": "land-economy",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Environment Energy and Natural Resource Governance",
+      "Centre for Environment",
+      "Energy and Natural Resource Governance"
+    ]
+  },
+  {
+    "uid": "education",
+    "name_en": "Faculty of Education",
+    "name_local": "Faculty of Education",
+    "kind": "faculty",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Education"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "Faculty of Economics",
+    "name_local": "Faculty of Economics",
+    "kind": "faculty",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics"
+    ]
+  },
+  {
+    "uid": "sociology",
+    "name_en": "Department of Sociology",
+    "name_local": "Department of Sociology",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociology"
+    ]
+  },
+  {
+    "uid": "criminology",
+    "name_en": "Institute of Criminology",
+    "name_local": "Institute of Criminology",
+    "kind": "institute",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Criminology"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculty of Law",
+    "kind": "faculty",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "property-law",
+    "name_en": "Cambridge Centre for Property Law",
+    "name_local": "Cambridge Centre for Property Law",
+    "kind": "center",
+    "parent": "law",
+    "aliases": [
+      "Cambridge Centre for Property Law"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hps",
+    "name_en": "Department of History and Philosophy of Science",
+    "name_local": "Department of History and Philosophy of Science",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of History and Philosophy of Science"
+    ]
+  },
+  {
+    "uid": "polis",
+    "name_en": "Department of Politics and International Studies",
+    "name_local": "Department of Politics and International Studies",
+    "kind": "department",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Politics and International Studies"
+    ]
+  },
+  {
+    "uid": "bennett",
+    "name_en": "Bennett Institute for Public Policy",
+    "name_local": "Bennett Institute for Public Policy",
+    "kind": "institute",
+    "parent": "polis",
+    "aliases": [],
+    "context_aliases": [
+      "Bennett Institute for Public Policy",
+      "Bennett School of Public Policy"
+    ]
+  },
+  {
+    "uid": "history",
+    "name_en": "Faculty of History",
+    "name_local": "Faculty of History",
+    "kind": "faculty",
+    "parent": "sch-hss",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of History"
+    ]
+  },
+  {
+    "uid": "architecture",
+    "name_en": "Department of Architecture",
+    "name_local": "Department of Architecture",
+    "kind": "department",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "english",
+    "name_en": "Faculty of English",
+    "name_local": "Faculty of English",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of English"
+    ]
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "Faculty of Philosophy",
+    "name_local": "Faculty of Philosophy",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Philosophy"
+    ]
+  },
+  {
+    "uid": "classics",
+    "name_en": "Faculty of Classics",
+    "name_local": "Faculty of Classics",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Classics"
+    ]
+  },
+  {
+    "uid": "ames",
+    "name_en": "Faculty of Asian and Middle Eastern Studies",
+    "name_local": "Faculty of Asian and Middle Eastern Studies",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Asian and Middle Eastern Studies"
+    ]
+  },
+  {
+    "uid": "mmll",
+    "name_en": "Faculty of Modern and Medieval Languages and Linguistics",
+    "name_local": "Faculty of Modern and Medieval Languages and Linguistics",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [
+      "Faculty of Modern and Medieval Languages and Linguistics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dtal",
+    "name_en": "Department of Theoretical and Applied Linguistics",
+    "name_local": "Department of Theoretical and Applied Linguistics",
+    "kind": "department",
+    "parent": "mmll",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Theoretical and Applied Linguistics"
+    ]
+  },
+  {
+    "uid": "ltl",
+    "name_en": "Language Technology Lab",
+    "name_local": "Language Technology Lab",
+    "kind": "lab",
+    "parent": "mmll",
+    "aliases": [],
+    "context_aliases": [
+      "Language Technology Lab"
+    ]
+  },
+  {
+    "uid": "music",
+    "name_en": "Faculty of Music",
+    "name_local": "Faculty of Music",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Music"
+    ]
+  },
+  {
+    "uid": "divinity",
+    "name_en": "Faculty of Divinity",
+    "name_local": "Faculty of Divinity",
+    "kind": "faculty",
+    "parent": "sch-arts-humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Divinity"
+    ]
+  },
+  {
+    "uid": "lcfi",
+    "name_en": "Leverhulme Centre for the Future of Intelligence",
+    "name_local": "Leverhulme Centre for the Future of Intelligence",
+    "kind": "center",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Leverhulme Centre for the Future of Intelligence"
+    ]
+  },
+  {
+    "uid": "cser",
+    "name_en": "Centre for the Study of Existential Risk",
+    "name_local": "Centre for the Study of Existential Risk",
+    "kind": "center",
+    "parent": "cambridge",
+    "aliases": [
+      "Centre for the Study of Existential Risk"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cisl",
+    "name_en": "Cambridge Institute for Sustainability Leadership",
+    "name_local": "Cambridge Institute for Sustainability Leadership",
+    "kind": "institute",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Cambridge Institute for Sustainability Leadership"
+    ]
+  },
+  {
+    "uid": "conservation-ri",
+    "name_en": "Conservation Research Institute",
+    "name_local": "Conservation Research Institute",
+    "kind": "institute",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Conservation Research Institute"
+    ]
+  },
+  {
+    "uid": "ice",
+    "name_en": "Institute of Continuing Education",
+    "name_local": "Institute of Continuing Education",
+    "kind": "institute",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Continuing Education"
+    ]
+  },
+  {
+    "uid": "research-computing",
+    "name_en": "Research Computing Services",
+    "name_local": "Research Computing Services",
+    "kind": "center",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Research Computing Services"
+    ]
+  },
+  {
+    "uid": "cares",
+    "name_en": "Cambridge Centre for Advanced Research and Education in Singapore",
+    "name_local": "Cambridge Centre for Advanced Research and Education in Singapore",
+    "kind": "center",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Cambridge Centre for Advanced Research and Education in Singapore"
+    ]
+  },
+  {
+    "uid": "col-christs",
+    "name_en": "Christ's College",
+    "name_local": "Christ's College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Christ's College"
+    ]
+  },
+  {
+    "uid": "col-churchill",
+    "name_en": "Churchill College",
+    "name_local": "Churchill College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Churchill College"
+    ]
+  },
+  {
+    "uid": "col-clare",
+    "name_en": "Clare College",
+    "name_local": "Clare College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Clare College"
+    ]
+  },
+  {
+    "uid": "col-clare-hall",
+    "name_en": "Clare Hall",
+    "name_local": "Clare Hall",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Clare Hall"
+    ]
+  },
+  {
+    "uid": "col-corpus",
+    "name_en": "Corpus Christi College",
+    "name_local": "Corpus Christi College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Corpus Christi College"
+    ]
+  },
+  {
+    "uid": "col-darwin",
+    "name_en": "Darwin College",
+    "name_local": "Darwin College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Darwin College"
+    ]
+  },
+  {
+    "uid": "col-downing",
+    "name_en": "Downing College",
+    "name_local": "Downing College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Downing College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-emmanuel",
+    "name_en": "Emmanuel College",
+    "name_local": "Emmanuel College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Emmanuel College"
+    ]
+  },
+  {
+    "uid": "col-fitzwilliam",
+    "name_en": "Fitzwilliam College",
+    "name_local": "Fitzwilliam College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Fitzwilliam College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-girton",
+    "name_en": "Girton College",
+    "name_local": "Girton College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Girton College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-caius",
+    "name_en": "Gonville and Caius College",
+    "name_local": "Gonville and Caius College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Gonville & Caius College"
+    ],
+    "context_aliases": [
+      "Gonville and Caius College"
+    ]
+  },
+  {
+    "uid": "col-homerton",
+    "name_en": "Homerton College",
+    "name_local": "Homerton College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Homerton College"
+    ]
+  },
+  {
+    "uid": "col-hughes",
+    "name_en": "Hughes Hall",
+    "name_local": "Hughes Hall",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Hughes Hall"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-jesus",
+    "name_en": "Jesus College",
+    "name_local": "Jesus College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Jesus College"
+    ]
+  },
+  {
+    "uid": "col-kings",
+    "name_en": "King's College",
+    "name_local": "King's College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "King's College"
+    ]
+  },
+  {
+    "uid": "col-lucy-cavendish",
+    "name_en": "Lucy Cavendish College",
+    "name_local": "Lucy Cavendish College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Lucy Cavendish College"
+    ]
+  },
+  {
+    "uid": "col-magdalene",
+    "name_en": "Magdalene College",
+    "name_local": "Magdalene College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Magdalene College"
+    ]
+  },
+  {
+    "uid": "col-murray-edwards",
+    "name_en": "Murray Edwards College",
+    "name_local": "Murray Edwards College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Murray Edwards College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-newnham",
+    "name_en": "Newnham College",
+    "name_local": "Newnham College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Newnham College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-pembroke",
+    "name_en": "Pembroke College",
+    "name_local": "Pembroke College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Pembroke College"
+    ]
+  },
+  {
+    "uid": "col-peterhouse",
+    "name_en": "Peterhouse",
+    "name_local": "Peterhouse",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Peterhouse"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-queens",
+    "name_en": "Queens' College",
+    "name_local": "Queens' College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Queens' College"
+    ]
+  },
+  {
+    "uid": "col-robinson",
+    "name_en": "Robinson College",
+    "name_local": "Robinson College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Robinson College"
+    ]
+  },
+  {
+    "uid": "col-st-catharines",
+    "name_en": "St Catharine's College",
+    "name_local": "St Catharine's College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "St Catharine's College"
+    ]
+  },
+  {
+    "uid": "col-st-edmunds",
+    "name_en": "St Edmund's College",
+    "name_local": "St Edmund's College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "St Edmund's College"
+    ]
+  },
+  {
+    "uid": "col-st-johns",
+    "name_en": "St John's College",
+    "name_local": "St John's College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "St John's College"
+    ]
+  },
+  {
+    "uid": "col-selwyn",
+    "name_en": "Selwyn College",
+    "name_local": "Selwyn College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Selwyn College"
+    ]
+  },
+  {
+    "uid": "col-sidney-sussex",
+    "name_en": "Sidney Sussex College",
+    "name_local": "Sidney Sussex College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [
+      "Sidney Sussex College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "col-trinity",
+    "name_en": "Trinity College",
+    "name_local": "Trinity College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity College"
+    ]
+  },
+  {
+    "uid": "col-trinity-hall",
+    "name_en": "Trinity Hall",
+    "name_local": "Trinity Hall",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Hall"
+    ]
+  },
+  {
+    "uid": "col-wolfson",
+    "name_en": "Wolfson College",
+    "name_local": "Wolfson College",
+    "kind": "college",
+    "parent": "cambridge",
+    "aliases": [],
+    "context_aliases": [
+      "Wolfson College"
+    ]
+  }
+]

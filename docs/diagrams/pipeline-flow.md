@@ -27,14 +27,14 @@ flowchart TD
         REV[("review_pairs")]
     end
 
-    STATIC[("data/static: departments_catalog.json,<br/>itmo_github_orgs.json, russian_names.csv")]
+    STATIC[("data/static: departments_catalog.json,<br/>github_orgs.json, russian_names.csv")]
     PDFS[("data/pdf/&lt;publication_id&gt;.pdf")]
     AUDIT[("data/audit/&lt;group&gt;/<br/>dedup_candidates.jsonl, github_matches.jsonl")]
     NEO[("Neo4j")]
-    CACHE[("data/cache/graph_snapshot_&lt;date&gt;.json")]
+    CACHE[("data/cache/<institution>/graph_snapshot_&lt;date&gt;.json")]
     WEB[("data/gui: graph-data.json + *-detail.json")]
 
-    CLI_COLLECT["pauk collect"] -->|"GET works by ITMO ROR / id"| OA
+    CLI_COLLECT["pauk collect"] -->|"GET works by the university's ROR / id"| OA
     OA -->|"append: openalex_works"| RAW
 
     CLI_NORM["pauk normalize"] -->|"reads the group's openalex_works<br/>+ get_models by id for cross-group references"| RAW
@@ -109,7 +109,7 @@ flowchart TD
 
     CLI_DEDUP["pauk dedup graph<br/>(on demand, not part of run)"] -->|"Cypher, the whole graph at once"| NEO
     CLI_DEDUP -->|"cross-group scan<br/>openalex_authors"| RAW
-    CLI_DEDUP -->|"journal"| CACHE_DIR[("data/cache/<br/>dedup_candidates_graph.jsonl")]
+    CLI_DEDUP -->|"journal"| CACHE_DIR[("data/cache/<institution>/<br/>dedup_candidates_graph.jsonl")]
     CLI_DEDUP -->|"held pairs"| REV
 
     CLI_CACHE["pauk cache export"] --> NEO

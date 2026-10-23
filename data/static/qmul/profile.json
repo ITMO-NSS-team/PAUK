@@ -1,0 +1,37 @@
+{
+  "key": "qmul",
+  "short_name": "QMUL",
+  "short_name_local": "QMUL",
+  "name_en": "Queen Mary University of London",
+  "name_local": "Queen Mary University of London",
+  "ror_id": "026zzn846",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "qmul.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:QueenMaryUnivLondon|QMUL)(?![^\\W\\d_])",
+  "long_name": "Barts[\\s‐-]+and[\\s‐-]+the[\\s‐-]+London[\\s‐-]+Faculty[\\s‐-]+of[\\s‐-]+Medicine[\\s‐-]+and[\\s‐-]+Dentistry|Barts[\\s‐-]+and[\\s‐-]+The[\\s‐-]+London[\\s‐-]+School[\\s‐-]+of[\\s‐-]+Medicine[\\s‐-]+and[\\s‐-]+Dentistry|Medical[\\s‐-]+College[\\s‐-]+of[\\s‐-]+St[\\s‐-]+Bartholomew's[\\s‐-]+Hospital|Queen[\\s‐-]+Mary[\\s‐-]+and[\\s‐-]+Westfield[\\s‐-]+College|London[\\s‐-]+Hospital[\\s‐-]+Medical[\\s‐-]+College|Queen[\\s‐-]+Mary[\\s‐-]+University[\\s‐-]+of[\\s‐-]+London|Queen[\\s‐-]+Mary,[\\s‐-]+Prifysgol[\\s‐-]+Llundain|Queen[\\s‐-]+Mary[\\s‐-]+University[\\s‐-]+London|Queen[\\s‐-]+Mary[\\s‐-]+Univ[\\s‐-]+London|Queen[\\s‐-]+Mary[\\s‐-]+University|Queen[\\s‐-]+Mary[\\s‐-]+College|Westfield[\\s‐-]+College",
+  "marker_replacement": "QueenMaryUnivLondon",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|britain|building|calle|campus|charterhouse|e|east|ec|end|england|floor|gatan|gb|great|katu|kingdom|laan|london|m|mile|north|piazza|platz|plaza|plein|po|rd|road|room|rue|scotland|smithfield|south|square|st|str|straat|strasse|straße|street|tie|turner|uk|ul|united|vej|via|viale|vägen|wales|weg|west|whitechapel",
+  "other_organisations": "Barts Health|Royal London Hospital|St Bartholomew[’']?s Hospital|University College London|University of Cambridge|University of Oxford|NIHR|Moorfields|Barts\\ Health\\ NHS\\ Trust|Broomfield\\ Hospital|Moorfields\\ Eye\\ Hospital|NIHR\\ Barts\\ Cardiovascular\\ Biomedical\\ Research\\ Unit|Queen's\\ Hospital|Whipps\\ Cross\\ University\\ Hospital",
+  "identity": "(?<![^\\W\\d_])QMUL(?![^\\W\\d_])|Barts[\\s‐-]+and[\\s‐-]+the[\\s‐-]+London[\\s‐-]+Faculty[\\s‐-]+of[\\s‐-]+Medicine[\\s‐-]+and[\\s‐-]+Dentistry|Barts[\\s‐-]+and[\\s‐-]+The[\\s‐-]+London[\\s‐-]+School[\\s‐-]+of[\\s‐-]+Medicine[\\s‐-]+and[\\s‐-]+Dentistry|Medical[\\s‐-]+College[\\s‐-]+of[\\s‐-]+St[\\s‐-]+Bartholomew's[\\s‐-]+Hospital|Queen[\\s‐-]+Mary[\\s‐-]+and[\\s‐-]+Westfield[\\s‐-]+College|London[\\s‐-]+Hospital[\\s‐-]+Medical[\\s‐-]+College|Queen[\\s‐-]+Mary[\\s‐-]+University[\\s‐-]+of[\\s‐-]+London|Queen[\\s‐-]+Mary,[\\s‐-]+Prifysgol[\\s‐-]+Llundain|Queen[\\s‐-]+Mary[\\s‐-]+University[\\s‐-]+London|Queen[\\s‐-]+Mary[\\s‐-]+Univ[\\s‐-]+London|Queen[\\s‐-]+Mary[\\s‐-]+University|Queen[\\s‐-]+Mary[\\s‐-]+College|Westfield[\\s‐-]+College",
+  "city": "London",
+  "staff_catalog": null,
+  "mongo_db": "pauk_qmul",
+  "site_url": "https://www.qmul.ac.uk",
+  "unit_words": "faculty|school|institute|centre|center|unit|department",
+  "external_authors": false
+}

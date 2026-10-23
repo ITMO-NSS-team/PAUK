@@ -1,0 +1,39 @@
+{
+  "key": "edinburgh",
+  "short_name": "Edinburgh University",
+  "short_name_local": "Edinburgh University",
+  "name_en": "University of Edinburgh",
+  "name_local": "University of Edinburgh",
+  "ror_id": "01nrxwf90",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "der",
+    "den",
+    "du",
+    "la",
+    "le",
+    "da",
+    "dos",
+    "di",
+    "del"
+  ],
+  "email_domains": [
+    "ed.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UEDIN|UoEdinburgh)(?![^\\W\\d_])",
+  "long_name": "(?:The\\s+)?Un(?:iv|vi)ersity\\s+of\\s+Edinburgh|Edinburgh\\s+Univ(?:ersity|\\.)?(?![^\\W\\d_])|Edinburgh\\s+U(?![^\\W\\d_])|Oilthigh\\s+Dh[uù]n\\s+[EÈ]ideann",
+  "marker_replacement": "UEDIN",
+  "place_words": "edinburgh|midlothian|lothian|roslin|scotland|uk|united|kingdom|great|britain|england|of|the|and|eh\\d{1,2}|\\d[a-z]{2}|eh\\d{1,2}\\d[a-z]{2}|road|rd|street|st|crescent|place|pl|square|drive|lane|hill|bridge|south|north|west|east|mains|mayfield|blackford|little|france|buccleuch|george|crichton|charles|crewe|peter|guthrie|tait|david|brewster|robert|stevenson|max|born|charlotte|auerbach|james|hutton|building|buildings|chancellor's|chancellor’s|chancellor′s|joseph|black|michael|swann|clerk|maxwell|ashworth|laboratories|sanderson|usher|hugh|robson|erskine|williamson|kings|king's|king’s|easter|bush|estate|campus|bioquarter|old|college|10|15a|29|3|47|49|5|5-7|4-5",
+  "other_organisations": "NHS\\s+Lothian|Royal\\s+Infirmary\\s+of\\s+Edinburgh|Edinburgh\\s+Royal\\s+Infirmary|Western\\s+General\\s+Hospital|Royal\\s+Hospital\\s+for\\s+(?:Sick\\s+Children|Children\\s+and\\s+Young\\s+People)|Royal\\s+Edinburgh\\s+Hospital|St\\.?\\s+John'?s\\s+Hospital|Heriot[-\\s]Watt|(?<![^\\W\\d_])SUPA(?![^\\W\\d_])|Royal\\s+Botanic\\s+Garden|(?<![^\\W\\d_])SRUC(?![^\\W\\d_])|Scotland'?s\\s+Rural\\s+College|International\\s+Livestock\\s+Research\\s+Institute|(?<![^\\W\\d_])ILRI(?![^\\W\\d_])|Health\\s+Data\\s+Research\\s+UK|Zhejiang\\s+University(?![-‐]University\\s+of\\s+Edinburgh)|Medicines\\s+and\\s+Healthcare\\s+products\\s+Regulatory\\s+Agency|Biosurv\\s+International|National\\s+Centre\\s+for\\s+Earth\\s+Observation|British\\s+Geological\\s+Survey|Moredun|(?<![^\\W\\d_])STFC(?![^\\W\\d_])|UK\\s+Astronomy\\s+Technology\\s+Centre|Public\\s+Health\\s+Scotland|Smart\\s+Data\\s+Foundry|DataLoch|Tackling\\s+Infections\\s+to\\s+Benefit\\s+Africa|Beiji?i?ng\\s+Institute\\s+of\\s+Technology|UK\\s+Longitudinal\\s+Linkage\\s+Collaboration",
+  "identity": "University\\s+of\\s+Edinburgh|Edinburgh\\s+University|Oilthigh\\s+Dh[uù]n\\s+[EÈ]ideann|ed\\.ac\\.uk",
+  "city": "Edinburgh",
+  "staff_catalog": null,
+  "mongo_db": "pauk_edinburgh",
+  "site_url": "https://www.ed.ac.uk",
+  "unit_words": "college|institute|deanery"
+}

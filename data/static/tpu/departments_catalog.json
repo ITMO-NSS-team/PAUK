@@ -1,0 +1,479 @@
+[
+  {
+    "uid": "tpu",
+    "name_en": "National Research Tomsk Polytechnic University",
+    "name_local": "Национальный исследовательский Томский политехнический университет",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00a45v709",
+    "type": "university"
+  },
+  {
+    "uid": "ispr",
+    "name_en": "School of Earth Sciences & Engineering",
+    "name_local": "Инженерная школа природных ресурсов",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Engineering School of Natural Resources",
+      "Инженерная школа природных ресурсов"
+    ],
+    "context_aliases": [
+      "School of Earth Sciences & Engineering",
+      "School of Earth Sciences and Engineering",
+      "School of Natural Resources",
+      "ИШПР"
+    ]
+  },
+  {
+    "uid": "ispr-geology",
+    "name_en": "Division for Geology",
+    "name_local": "Отделение геологии",
+    "kind": "department",
+    "parent": "ispr",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Geology",
+      "Geology Department",
+      "Отделение геологии"
+    ]
+  },
+  {
+    "uid": "ispr-chemeng",
+    "name_en": "Division for Chemical Engineering",
+    "name_local": "Отделение химической инженерии",
+    "kind": "department",
+    "parent": "ispr",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Chemical Engineering",
+      "Chemical Engineering Division",
+      "Department of Chemical Engineering",
+      "Отделение химической инженерии"
+    ]
+  },
+  {
+    "uid": "ispr-oilgas",
+    "name_en": "Division for Oil and Gas Engineering",
+    "name_local": "Отделение нефтегазового дела",
+    "kind": "department",
+    "parent": "ispr",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Oil and Gas Engineering",
+      "Department of Petroleum Engineering",
+      "Отделение нефтегазового дела"
+    ]
+  },
+  {
+    "uid": "ise",
+    "name_en": "School of Energy & Power Engineering",
+    "name_local": "Инженерная школа энергетики",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Инженерная школа энергетики"
+    ],
+    "context_aliases": [
+      "School of Energy & Power Engineering",
+      "School of Energy and Power Engineering",
+      "School of Energy Engineering",
+      "Engineering School of Energy",
+      "ИШЭ"
+    ]
+  },
+  {
+    "uid": "ise-power",
+    "name_en": "Division for Power and Electrical Engineering",
+    "name_local": "Отделение электроэнергетики и электротехники",
+    "kind": "department",
+    "parent": "ise",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Power and Electrical Engineering",
+      "Отделение электроэнергетики и электротехники"
+    ]
+  },
+  {
+    "uid": "ise-hmtl",
+    "name_en": "Heat and Mass Transfer Laboratory",
+    "name_local": "Лаборатория тепломассопереноса",
+    "kind": "lab",
+    "parent": "ise",
+    "aliases": [],
+    "context_aliases": [
+      "Heat and Mass Transfer Laboratory",
+      "Heat Mass Transfer Laboratory",
+      "Лаборатория тепломассопереноса"
+    ]
+  },
+  {
+    "uid": "iyatsh",
+    "name_en": "School of Nuclear Science & Engineering",
+    "name_local": "Инженерная школа ядерных технологий",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Инженерная школа ядерных технологий"
+    ],
+    "context_aliases": [
+      "School of Nuclear Science & Engineering",
+      "School of Nuclear Science and Engineering",
+      "Engineering School of Nuclear Technologies",
+      "ИЯТШ"
+    ]
+  },
+  {
+    "uid": "iyatsh-expphys",
+    "name_en": "Division for Experimental Physics",
+    "name_local": "Отделение экспериментальной физики",
+    "kind": "department",
+    "parent": "iyatsh",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Experimental Physics",
+      "Department of Experimental Physics",
+      "Отделение экспериментальной физики"
+    ]
+  },
+  {
+    "uid": "iyatsh-nfc",
+    "name_en": "Division for Nuclear Fuel Cycle",
+    "name_local": "Отделение ядерно-топливного цикла",
+    "kind": "department",
+    "parent": "iyatsh",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Nuclear Fuel Cycle",
+      "Nuclear Fuel Cycle Division",
+      "Отделение ядерно-топливного цикла"
+    ]
+  },
+  {
+    "uid": "iyatsh-weinberg",
+    "name_en": "B.P. Weinberg Research Center",
+    "name_local": "Научно-образовательный центр Б.П. Вейнберга",
+    "kind": "center",
+    "parent": "iyatsh",
+    "aliases": [
+      "Weinberg Research Center",
+      "B.P. Weinberg Research Center",
+      "Tomsk Polytechnic University Weinberg Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "iyatsh-reactor",
+    "name_en": "Research Nuclear Reactor Center",
+    "name_local": "Исследовательский ядерный реактор ТПУ",
+    "kind": "center",
+    "parent": "iyatsh",
+    "aliases": [],
+    "context_aliases": [
+      "Research Nuclear Reactor Center"
+    ]
+  },
+  {
+    "uid": "lab-plasma-hybrid",
+    "name_en": "Laboratory of Plasma Hybrid Systems",
+    "name_local": "Лаборатория плазменных гибридных систем",
+    "kind": "lab",
+    "parent": "iyatsh-weinberg",
+    "aliases": [
+      "Laboratory of Plasma Hybrid Systems"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ishitr",
+    "name_en": "School of Computer Science & Robotics",
+    "name_local": "Инженерная школа информационных технологий и робототехники",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Engineering School of Information Technology and Robotics",
+      "Инженерная школа информационных технологий и робототехники"
+    ],
+    "context_aliases": [
+      "School of Computer Science & Robotics",
+      "School of Computer Science and Robotics",
+      "ИШИТР"
+    ]
+  },
+  {
+    "uid": "ishitr-it",
+    "name_en": "Division for Information Technology",
+    "name_local": "Отделение информационных технологий",
+    "kind": "department",
+    "parent": "ishitr",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Information Technology",
+      "Department of Information Technology",
+      "Information Technology Department",
+      "Information Systems and Technologies Dep",
+      "Отделение информационных технологий"
+    ]
+  },
+  {
+    "uid": "ishitr-robotics",
+    "name_en": "Division for Automation and Robotics",
+    "name_local": "Отделение автоматизации и робототехники",
+    "kind": "department",
+    "parent": "ishitr",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Automation and Robotics",
+      "Division of Automation and Robotics",
+      "Division for Automation & Robotics",
+      "Отделение автоматизации и робототехники"
+    ]
+  },
+  {
+    "uid": "ishnpt",
+    "name_en": "School of Advanced Manufacturing Technologies",
+    "name_local": "Инженерная школа новых производственных технологий",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Engineering School of Advanced Manufacturing Technologies",
+      "Инженерная школа новых производственных технологий"
+    ],
+    "context_aliases": [
+      "School of Advanced Manufacturing Technologies",
+      "School of New Manufacturing Technologies",
+      "ИШНПТ"
+    ]
+  },
+  {
+    "uid": "ishnpt-matsci",
+    "name_en": "Division for Materials Science",
+    "name_local": "Отделение материаловедения",
+    "kind": "department",
+    "parent": "ishnpt",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Materials Science",
+      "Division for Material Science",
+      "Department of Materials Science",
+      "Отделение материаловедения"
+    ]
+  },
+  {
+    "uid": "ishnpt-mecheng",
+    "name_en": "Division for Mechanical Engineering",
+    "name_local": "Отделение машиностроения",
+    "kind": "department",
+    "parent": "ishnpt",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Mechanical Engineering",
+      "Department of Mechanical Engineering",
+      "Отделение машиностроения"
+    ]
+  },
+  {
+    "uid": "ishnpt-additive",
+    "name_en": "Additive Technologies Center",
+    "name_local": "Центр аддитивных технологий",
+    "kind": "center",
+    "parent": "ishnpt",
+    "aliases": [],
+    "context_aliases": [
+      "Additive Technologies Center"
+    ]
+  },
+  {
+    "uid": "ishnkb",
+    "name_en": "School of Non-Destructive Testing",
+    "name_local": "Инженерная школа неразрушающего контроля и безопасности",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Engineering School of Non-Destructive Testing and Safety",
+      "Engineering School of Nondestructive Testing",
+      "Инженерная школа неразрушающего контроля и безопасности"
+    ],
+    "context_aliases": [
+      "School of Non-Destructive Testing",
+      "Nondestructive Testing School",
+      "ИШНКБ"
+    ]
+  },
+  {
+    "uid": "ishnkb-control",
+    "name_en": "Division for Testing and Diagnostics",
+    "name_local": "Отделение контроля и диагностики",
+    "kind": "department",
+    "parent": "ishnkb",
+    "aliases": [],
+    "context_aliases": [
+      "Division for Testing and Diagnostics",
+      "Division for Control and Diagnostics",
+      "Department of Control and Diagnostics",
+      "Отделение контроля и диагностики"
+    ]
+  },
+  {
+    "uid": "ishhbmt",
+    "name_en": "Research School of Chemistry & Applied Biomedical Sciences",
+    "name_local": "Исследовательская школа химических и биомедицинских технологий",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Research School of Chemistry and Applied Biomedical Sciences",
+      "Research School of Chemistry & Applied Biomedical Sciences",
+      "Research School of Chemistry Applied Biomedical Sciences",
+      "Research School of Chemistry & Applied Biomedical Technology",
+      "Research School of Chemical and Biomedical Technologies"
+    ],
+    "context_aliases": [
+      "ИШХБМТ"
+    ]
+  },
+  {
+    "uid": "ishhbmt-kizhner",
+    "name_en": "N.M. Kizhner Research Center",
+    "name_local": "Научно-образовательный центр Н.М. Кижнера",
+    "kind": "center",
+    "parent": "ishhbmt",
+    "aliases": [
+      "Kizhner Research Center",
+      "N.M. Kizhner Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ishhbmt-oncotheranostics",
+    "name_en": "Research Centrum for Oncotheranostics",
+    "name_local": "Исследовательский центр онкотераностики",
+    "kind": "center",
+    "parent": "ishhbmt",
+    "aliases": [
+      "Research Centrum for Oncotheranostics",
+      "Research Center for Oncotheranostics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "pmscm-centre",
+    "name_en": "Physical Materials Science and Composite Materials Centre",
+    "name_local": "Центр физического материаловедения и композитных материалов",
+    "kind": "center",
+    "parent": "tpu",
+    "aliases": [
+      "Physical Materials Science and Composite Materials Centre",
+      "Physical Materials Science and Composite Materials Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "piezo-center",
+    "name_en": "International Research and Development Center Piezo- and Magnetoelectric Materials",
+    "name_local": "Международный научно-исследовательский центр «Пьезо- и магнитоэлектрические материалы»",
+    "kind": "center",
+    "parent": "tpu",
+    "aliases": [
+      "Piezo- and Magnetoelectric Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nano-center",
+    "name_en": "Innovation Center for Nanomaterials and Nanotechnologies",
+    "name_local": "Инновационный центр «Наноматериалы и нанотехнологии»",
+    "kind": "center",
+    "parent": "tpu",
+    "aliases": [
+      "Innovation Center for Nanomaterials and Nanotechnologies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ishfvp",
+    "name_en": "Research School of High-Energy Physics",
+    "name_local": "Исследовательская школа физики высокоэнергетических процессов",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Исследовательская школа физики высокоэнергетических процессов"
+    ],
+    "context_aliases": [
+      "Research School of Physics",
+      "ИШФВП",
+      "Research School of High-Energy Physics",
+      "Research School of High Energy Physics"
+    ]
+  },
+  {
+    "uid": "math-mathphys",
+    "name_en": "Mathematics and Mathematical Physics Division",
+    "name_local": "Отделение математики и математической физики",
+    "kind": "department",
+    "parent": "tpu",
+    "aliases": [],
+    "context_aliases": [
+      "Mathematics and Mathematical Physics Division",
+      "Department of Mathematics and Mathematical Physics",
+      "Department of High Mathematics and Mathematical Physics",
+      "Отделение математики и математической физики"
+    ]
+  },
+  {
+    "uid": "shbip",
+    "name_en": "School of Core Engineering Education",
+    "name_local": "Школа базовой инженерной подготовки",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "School of Core Engineering Education",
+      "Школа базовой инженерной подготовки"
+    ],
+    "context_aliases": [
+      "ШБИП"
+    ]
+  },
+  {
+    "uid": "ship",
+    "name_en": "School of Engineering Entrepreneurship",
+    "name_local": "Школа инженерного предпринимательства",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "School of Engineering Entrepreneurship",
+      "Школа инженерного предпринимательства"
+    ],
+    "context_aliases": [
+      "ШИП"
+    ]
+  },
+  {
+    "uid": "business-school",
+    "name_en": "TPU Business School",
+    "name_local": "Бизнес-школа ТПУ",
+    "kind": "school",
+    "parent": "tpu",
+    "aliases": [
+      "Tomsk Polytechnic University Business School",
+      "TPU Business School"
+    ],
+    "context_aliases": [
+      "Business School"
+    ]
+  },
+  {
+    "uid": "yurga",
+    "name_en": "Yurga Institute of Technology",
+    "name_local": "Юргинский технологический институт",
+    "kind": "campus",
+    "parent": "tpu",
+    "aliases": [
+      "Yurginsky Institute of Technology",
+      "Yurga Institute of Technology",
+      "Yurga Technological Institute",
+      "Iurga Technological Institute",
+      "Юргинский технологический институт"
+    ],
+    "context_aliases": []
+  }
+]

@@ -7,10 +7,11 @@ before any other note in `architecture/`.
 **Files:** nothing specific: an overview across all of `pauk/`; see the links
 below for the details of each subpackage.
 
-PAUK collects ITMO publications from OpenAlex, enriches them with data from
-external sources (Crossref, ORCID, GitHub), finds links to code in them, and
-loads the result into Neo4j. `pauk/gui/` reads the graph and draws an
-interactive map.
+PAUK collects a university's publications from OpenAlex, enriches them with
+data from external sources (Crossref, ORCID, GitHub), finds links to code in
+them, and loads the result into Neo4j. `pauk/gui/` reads the graph and draws
+an interactive map. Which university is a profile (`PAUK_INSTITUTION`: ITMO or
+UFJF): [institutions.md](institutions.md).
 
 It is a single Python package, `pauk/`.
 
@@ -34,7 +35,7 @@ Neo4j                                        accumulates across runs, MERGE
   |  pauk dedup graph (on demand)
 Neo4j                                        folds duplicates across groups
   |  pauk cache export
-data/cache/graph_snapshot_<dd-mm-yyyy>.json  snapshot on disk
+data/cache/<institution>/graph_snapshot_<dd-mm-yyyy>.json  snapshot on disk
   |  pauk gui build
 data/gui/{public,private}/*.json             data for the pauk/gui/web site
 ```
@@ -57,6 +58,7 @@ graph, not files on disk.
 
 | Package | What it does | Details |
 |---|---|---|
+| `pauk/institution.py` | university profiles: ROR, names, markers, domains | [institutions.md](institutions.md) |
 | `pauk/models/` | pydantic schema of the prepared rows | [models.md](models.md) |
 | `pauk/sources/` | HTTP clients for external APIs | [sources.md](sources.md) |
 | `pauk/storage/` | raw and prepared data in MongoDB | [storage.md](storage.md) |

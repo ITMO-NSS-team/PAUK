@@ -238,17 +238,17 @@ def coauthor_pairs(authors: list[str], external_ids: frozenset[str]) -> Iterable
 
     Every pair for a normal publication; for a large collaboration paper (more
     than `EDGE_THRESHOLDS.hyperauthor_pub_size` authors, up to ~1700 in the real
-    data) only pairs with at least one ITMO author, since all pairs would be
+    data) only pairs with at least one member author, since all pairs would be
     millions of edges between external people who never worked together.
 
     Args:
         authors: Sorted unique author ids of the publication.
-        external_ids: Authors that are not ITMO.
+        external_ids: Authors that are not members.
     """
     if len(authors) <= EDGE_THRESHOLDS.hyperauthor_pub_size:
         return combinations(authors, 2)
-    itmo = [a for a in authors if a not in external_ids]
-    return {(a, b) if a < b else (b, a) for a in itmo for b in authors if a != b}
+    members = [a for a in authors if a not in external_ids]
+    return {(a, b) if a < b else (b, a) for a in members for b in authors if a != b}
 
 
 # Jitter sigma when blending stranded nodes in (final 0..1000 units), and the
@@ -364,7 +364,7 @@ def fa2_blended_layout(
     return pos, stats
 
 
-# Jitter sigma for an external author around their ITMO coauthors (final
+# Jitter sigma for an external author around their member coauthors (final
 # 0..1000 units), grown with the number of externals sharing the same spot,
 # since ~1700 authors of one collaboration paper otherwise pile into one point.
 EXTERNAL_JITTER = 4.0
@@ -373,19 +373,19 @@ EXTERNAL_JITTER = 4.0
 def place_external_authors(
     pos: Mapping[str, tuple[float, float]], coauth: Mapping[tuple[str, str], int], external_ids: frozenset[str], seed: int
 ) -> dict[str, tuple[float, float]]:
-    """Places each external author at the weighted centroid of their ITMO coauthors, plus jitter.
+    """Places each external author at the weighted centroid of their member coauthors, plus jitter.
 
-    The weight is shared publications. The ITMO layout stays exactly what it is
+    The weight is shared publications. The members' layout stays exactly what it is
     without them.
 
     Args:
-        pos: Already laid out ITMO authors.
+        pos: Already laid out member authors.
         coauth: Coauthor pair -> shared publication count, externals included.
         external_ids: External authors.
         seed: Jitter seed.
 
     Returns:
-        Positions of every external author that has an ITMO coauthor in `pos`.
+        Positions of every external author that has a member coauthor in `pos`.
     """
     sums: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
     for (a, b), w in coauth.items():
@@ -445,7 +445,7 @@ class Layout:
     coauth: dict[tuple[str, str], int]
     """Author pairs -> number of shared publications (real, for coauth_edges)."""
     pub_pair_w: dict[tuple[str, str], int]
-    """Publication pairs -> number of shared ITMO authors (real, for pub_edges)."""
+    """Publication pairs -> number of shared member authors (real, for pub_edges)."""
     repo_edge_w: dict[tuple[str, str], float]
     """Repository pairs -> summed signal weight after the top-K cut (real, for repo_edges; layout adds department edges)."""
     repo_edge_via: dict[tuple[str, str], list[str]]
@@ -489,11 +489,11 @@ class GraphLayoutBuilder:
 
         # A plain dict, not a Counter: fractional department-edge weights get
         # blended in below, and Counter is typed int-only in typeshed. Layout is
-        # ITMO-only: externals outnumber ITMO ~3:1 and would pull the department
-        # clusters apart; they are placed next to their ITMO coauthors afterwards
+        # Members only: externals outnumber members ~3:1 and would pull the department
+        # clusters apart; they are placed next to their member coauthors afterwards
         # (place_external_authors).
         external = self.authorship.external_ids
-        itmo_ids = set(self.assignment.static_depts) - external
+        member_ids = set(self.assignment.static_depts) - external
         author_layout_w: dict[tuple[str, str], float] = {
             (a, b): w for (a, b), w in coauth.items() if a not in external and b not in external
         }
@@ -507,12 +507,12 @@ class GraphLayoutBuilder:
                 author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
         # Synthetic weak "same department" edges (see sparse_dept_edges), so
         # colleagues with no real connection don't scatter across the map.
-        for pair, w in sparse_dept_edges(itmo_ids, self.assignment.author_dept, rng).items():
+        for pair, w in sparse_dept_edges(member_ids, self.assignment.author_dept, rng).items():
             author_layout_w[pair] = author_layout_w.get(pair, 0) + w
 
         t0 = time.time()
         pos_authors, (n_giant, e_giant, n_small, n_single) = layouter.blended(
-            author_layout_w, itmo_ids, FA2_ITERATIONS.authors, MIN_SEPARATION.authors
+            author_layout_w, member_ids, FA2_ITERATIONS.authors, MIN_SEPARATION.authors
         )
         pos_authors.update(place_external_authors(pos_authors, coauth, external, seed))
         logger.info(
@@ -521,7 +521,7 @@ class GraphLayoutBuilder:
             n_giant, e_giant, n_small, n_single, MIN_SEPARATION.authors, time.time() - t0,
         )
 
-        # Publications: shared ITMO authors. The full graph is thousands of edges,
+        # Publications: shared member authors. The full graph is thousands of edges,
         # so layout uses only the top-K strongest links per publication; export
         # (pub_edges) gets the full pub_pair_w. A pair of publications by the same
         # author is an edge, weighted by how many authors they share.
@@ -568,7 +568,7 @@ class GraphLayoutBuilder:
 
         # Repositories: four signals, since a shared publication alone leaves
         # ~90% of repositories with no edge for FA2 to lay out. Shared publications
-        # include those with zero ITMO authors.
+        # include those with zero member authors.
         repo_ids = {r["id"] for r in self.db["repositories"]}
         repo_all_pubs: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_pubs"]:

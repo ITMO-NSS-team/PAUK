@@ -35,13 +35,13 @@ class DedupReviewRegressionTest(unittest.TestCase):
             ("Xiao-Long Wang", "Xiao-Long Wu"),
         ):
             with self.subTest(names=(first, second)):
-                people = [Person(id="A", name_raw=first, is_itmo=True), Person(id="B", name_raw=second, is_itmo=True)]
+                people = [Person(id="A", name_raw=first, is_member=True), Person(id="B", name_raw=second, is_member=True)]
                 self.assertEqual(list(candidate_person_pairs(people, None)), [])
 
     def test_connected_ambiguous_bridges_remain_separate(self):
         for field in ("orcid", "email"):
             with self.subTest(field=field):
-                people = {identifier: Person(id=identifier, is_itmo=True) for identifier in ("A", "B", "M", "N")}
+                people = {identifier: Person(id=identifier, is_member=True) for identifier in ("A", "B", "M", "N")}
                 setattr(people["A"], field, "one")
                 setattr(people["B"], field, "two")
                 edges = [("A", "M"), ("M", "B"), ("A", "N"), ("N", "B"), ("M", "N")]
@@ -52,8 +52,8 @@ class DedupReviewRegressionTest(unittest.TestCase):
                 self.assertTrue(any(row["status"] == "held" for row in report))
 
     def test_legacy_manual_answer_cannot_merge_a_multi_person_record(self):
-        first = Person(id="A", name_raw="Anna Sidorova and Ivan Petrov", is_itmo=True)
-        second = Person(id="B", name_raw="Anna Sidorova", is_itmo=True)
+        first = Person(id="A", name_raw="Anna Sidorova and Ivan Petrov", is_member=True)
+        second = Person(id="B", name_raw="Anna Sidorova", is_member=True)
         for candidates in ([], [(first, second)]):
             with self.subTest(blocked=bool(candidates)):
                 with patch("pauk.pipeline.stages.dedup._paired_persons", return_value=iter(candidates)):
@@ -66,8 +66,8 @@ class DedupReviewRegressionTest(unittest.TestCase):
 
     def test_graph_passes_parsed_names_and_aliases_to_the_planner(self):
         fields = {
-            "surname_ru": "Иванов", "surname_en": "Ivanov",
-            "first_name_ru": "Пётр", "first_name_en": "Petr",
+            "surname_local": "Иванов", "surname_en": "Ivanov",
+            "first_name_local": "Пётр", "first_name_en": "Petr",
             "other_names": ["P. S. Ivanov"], "name_variants": ["Ivanov P. S."],
         }
         client = Mock()
@@ -91,14 +91,14 @@ class DedupReviewRegressionTest(unittest.TestCase):
         self.assertEqual(client.fetch_persons_for_dedup(), [])
 
         query = transaction.run.call_args.args[0]
-        for field in ("surname_ru", "surname_en", "first_name_ru", "first_name_en", "other_names"):
+        for field in ("surname_local", "surname_en", "first_name_local", "first_name_en", "other_names"):
             with self.subTest(field=field):
                 self.assertIn(f"p.{field} AS {field}", query)
 
     def test_disagreement_keeps_the_guard_route_and_both_verdicts(self):
         people = [
-            Person(id="A", name_raw="Andrey V. Lyamin", is_itmo=True),
-            Person(id="B", name_raw="Andrey Volchek", is_itmo=True),
+            Person(id="A", name_raw="Andrey V. Lyamin", is_member=True),
+            Person(id="B", name_raw="Andrey Volchek", is_member=True),
         ]
         models = Mock()
         models.first_many.side_effect = lambda rows: {i: ModelVerdict(True, 0.9, "first") for i, _ in rows}

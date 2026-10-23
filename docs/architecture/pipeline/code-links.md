@@ -171,6 +171,26 @@ stage run (not per publication, no retries); on success, for such publications
 it calls `GET {url}/download?url=<urlencoded doi>`. Service details and
 configuration: [../deploy.md](../deploy.md).
 
+## Parallel downloads
+
+Downloading is nearly all of the stage's time: on UFJF one thread fetched
+about five PDFs a minute, publisher after slow publisher. `_fetch_all`
+downloads and extracts `PAUK_CODE_LINKS_CONCURRENCY` publications at once
+(8 by default, each thread with its own `HttpClient`) and hands them back in
+order; finding the links and writing the states stays in the main thread.
+
+Each download also has a whole-body deadline (`PDF_DOWNLOAD_DEADLINE`,
+300 s; the crawler's 180 s). The request timeout bounds a single socket
+read, so a server that trickles a few bytes at a time never trips it: on UFJF
+one such repository held a thread, and with it the ordered hand-back, for
+over half an hour. The deadline is enforced by a timer that shuts the socket
+down (`HttpClient._abort_read`), not by a check between chunks: a buffered read
+waits for a whole 64 KB chunk, and on KAIST one Korean journal's server took
+three hours to fill one. A host that asks to wait longer than `PDF_MAX_RETRY_WAIT`
+(120 s) before a retry is given up on: one journal's `Retry-After: 3600`,
+honoured three times, cost the HSE run three hours. A direct PDF link gets one
+retry (`PDF_RETRIES`) instead of the client's default three.
+
 ## Download and cache
 
 `data/pdf/<publication_id>.pdf` (`PdfStore`, with a `{fetched_at}` pointer in
@@ -213,7 +233,8 @@ case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
 ## `is_relevant`, `llm_confidence`, `llm_reason`
 
 `code_links` leaves ordinary found links with classification status `pending`
-and no verdict. The next stage, `link_relevance`, sends up to 12 unique contexts
+and no verdict. The next stage, `link_relevance` (publications in
+`PAUK_LINK_RELEVANCE_CONCURRENCY` threads, 8 by default), sends up to 12 unique contexts
 of one link per request. At the limit, at least one context of each available
 source type is kept first, then different PDFs/pages are prioritized, then
 remaining slots are filled in discovery order. Windows of the same source,

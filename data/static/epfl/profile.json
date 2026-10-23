@@ -1,0 +1,40 @@
+{
+  "key": "epfl",
+  "short_name": "EPFL",
+  "short_name_local": "EPFL",
+  "name_en": "Swiss Federal Institute of Technology in Lausanne",
+  "name_local": "École Polytechnique Fédérale de Lausanne",
+  "ror_id": "02s376052",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "di",
+    "da",
+    "van",
+    "von",
+    "der",
+    "du",
+    "des",
+    "la",
+    "le",
+    "dos",
+    "del",
+    "della"
+  ],
+  "email_domains": [
+    "epfl.ch"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:EPFL|EFPL|EPF\\s+Lausanne)(?![^\\W\\d_])",
+  "long_name": "(?:[ée]cole\\s+polyt[ée]chnique\\s+f[ée]d[ée]rale?\\s+de(?:\\s*\\(?\\s*lausanne)?|swiss\\s+federal\\s+institute\\s+of\\s+technology\\s+(?:in\\s+)?lausanne|federal\\s+institute\\s+of\\s+technology\\s+(?:in\\s+)?lausanne|polytechnical\\s+school\\s+of\\s+lausanne|eidgen(?:ö|oe|o)ssische\\s+technische\\s+hochschule\\s+lausanne|ETH\\s+Lausanne|politecnico\\s+federale\\s+di\\s+losanna|scola\\s+politecnica\\s+federala\\s+losanna)",
+  "marker_replacement": "EPFL",
+  "place_words": "lausanne|ecublens|switzerland|suisse|schweiz|svizzera|swiss|vaud|valais|wallis|ch|station|route|rte|rt|cantonale|rue|de|la|du|des|l|industrie|sion|neuchâtel|neuchatel|geneva|genève|geneve|versoix|sauverny|fribourg|martigny|chemin|pegasi|sorge|maladière|maladiere|ronquos|bâtiment|batiment|quartier|dorigny|unil|avenue|av|mines|bd|boulevard|pont|arve|saint|sulpice|campus|biotech|switzer|land",
+  "other_organisations": "(?<![^\\W\\d_])(?:UNIL|CHUV|HUG|PSI|Empa|WSL|SLF|Eawag|Idiap|SIB|CIBM|CECAM|CNRS|CSEM|HES-SO|ISREC-UNIL|SDSC|NCCR|MARVEL|CEPR|ETH\\s+Z(?:u|ü)rich|Paul\\s+Scherrer|Swiss\\s+Data\\s+Science\\s+Center|Swiss\\s+Institute\\s+of\\s+Bioinformatics|Swiss\\s+Finance\\s+Institute|Swiss\\s+Cancer\\s+Center\\s+L[ée]man|Agora\\s+Cancer|Ludwig\\s+Institute|Wyss\\s+Center|Nestl[ée]|Siemens|LIGENTEC|Asceneuron|Clinique\\s+Romande|Swiss\\s+Federal\\s+Laboratories|Swiss\\s+Federal\\s+Institute\\s+for\\s+Forest|Swiss\\s+Federal\\s+Institute\\s+of\\s+Aquatic)(?![^\\W\\d_])",
+  "identity": "(?<![^\\W\\d_])EPFL(?![^\\W\\d_])|[ée]cole\\s+polytechnique\\s+f[ée]d[ée]rale\\s+de\\s+lausanne|swiss\\s+federal\\s+institute\\s+of\\s+technology\\s+(?:in\\s+)?lausanne",
+  "city": "lausanne|ecublens",
+  "staff_catalog": null,
+  "mongo_db": "pauk_epfl",
+  "site_url": "https://www.epfl.ch",
+  "unit_words": "college|coll[èe]ge"
+}

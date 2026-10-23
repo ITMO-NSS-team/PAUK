@@ -75,7 +75,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Department",
         prop_fields=(
             "name_en",
-            "name_ru",
+            "name_local",
             "name_variants",
             "context_aliases",
             "kind",
@@ -91,21 +91,21 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     ),
     "organization": NodeSpec(
         labels="Organization",
-        prop_fields=("name_en", "name_ru", "ror_id", "country", "type"),
+        prop_fields=("name_en", "name_local", "ror_id", "country", "type"),
     ),
-    "itmo_person": NodeSpec(
+    "member_person": NodeSpec(
         labels="Person",
         prop_fields=(
-            "is_itmo",
+            "is_member",
             "openalex_id",
             "orcid",
             "name_raw",
             "name_variants",
             "email",  # one address for the card
             "emails",  # every known address - github_match identity, not a duplicate
-            "first_name_ru",
-            "second_name_ru",
-            "surname_ru",
+            "first_name_local",
+            "second_name_local",
+            "surname_local",
             "first_name_en",
             "second_name_en",
             "surname_en",
@@ -116,7 +116,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "scopus_id",
             "researcher_id",
             "dblp_id",
-            "name_ru",
+            "name_local",
             "name_en",
             "other_names",
             "biography",
@@ -158,16 +158,16 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     "external_person": NodeSpec(
         labels="Person",
         prop_fields=(
-            "is_itmo",
+            "is_member",
             "openalex_id",
             "orcid",
             "name_raw",
             "name_variants",
             "email",  # one address for the card
             "emails",  # every known address - github_match identity
-            "first_name_ru",
-            "second_name_ru",
-            "surname_ru",
+            "first_name_local",
+            "second_name_local",
+            "surname_local",
             "first_name_en",
             "second_name_en",
             "surname_en",
@@ -177,7 +177,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "scopus_id",
             "researcher_id",
             "dblp_id",
-            "name_ru",
+            "name_local",
             "name_en",
             "other_names",
             "biography",
@@ -311,12 +311,12 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
 def person_spec(row: dict) -> NodeSpec:
     """Which of the two person specs describes this row.
 
-    Persons share one file and one label; `is_itmo` picks the relationship
+    Persons share one file and one label; `is_member` picks the relationship
     whitelist, because an external person never gets BELONGS_TO or
     CONTRIBUTED_TO. Kept here rather than at the call site: a publish and
     an undone merge have to read the same row the same way.
     """
-    return NODE_REGISTRY["itmo_person" if row.get("is_itmo") else "external_person"]
+    return NODE_REGISTRY["member_person" if row.get("is_member") else "external_person"]
 
 
 def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:

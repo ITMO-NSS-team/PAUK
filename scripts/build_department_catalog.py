@@ -10,12 +10,12 @@ which exists only for the faculty/centre tier.
 
 Units without an official EN name (leaf laboratories) are left with an empty
 name_en, to be filled separately. The result is a draft: review it by hand
-before promoting to data/static/departments_catalog.json (read by
+before promoting to data/static/itmo/departments_catalog.json (read by
 pauk.storage.static.StaticStore).
 
 Run from the project root:
     uv run python scripts/build_department_catalog.py
-    uv run python scripts/build_department_catalog.py --out data/static/departments_catalog.json
+    uv run python scripts/build_department_catalog.py --out data/static/itmo/departments_catalog.json
 """
 
 import argparse
@@ -28,8 +28,8 @@ from pauk.sources.base import HttpClient
 
 logger = logging.getLogger(__name__)
 
-# The catalogue lives in data/static (read by pauk.storage.static.StaticStore).
-STATIC_DIR = Path(__file__).resolve().parents[1] / "data" / "static"
+# The ITMO catalogue lives in data/static/itmo (read by pauk.storage.static.StaticStore).
+STATIC_DIR = Path(__file__).resolve().parents[1] / "data" / "static" / "itmo"
 
 USER_AGENT = "ITMO-Research-Monitor/1.0 (pauk)"
 STRUCTURE_URL_RU = "https://itmo.ru/ru/department_units/obshchaya_struktura_universiteta.htm"
@@ -62,7 +62,7 @@ def _clean(raw: str) -> str:
 def parse_ru_tree(html: str) -> list[dict]:
     """Scientific-section units with hierarchy inferred from <ul> depth.
 
-    Returns {name_ru, faculty_id, school_ru} in document order; school_ru is the
+    Returns {name_local, faculty_id, school_ru} in document order; school_ru is the
     nearest top-level ancestor (megafaculty / standalone top unit), and top-level
     units are their own school. Non-research units are filtered out.
     """
@@ -86,11 +86,11 @@ def parse_ru_tree(html: str) -> list[dict]:
             if depth == 1:
                 last_top = name
             rows.append(
-                {"name_ru": name, "faculty_id": id_by_name.get(name), "school_ru": name if depth == 1 else last_top}
+                {"name_local": name, "faculty_id": id_by_name.get(name), "school_ru": name if depth == 1 else last_top}
             )
     seen, uniq = set(), []
     for row in rows:
-        key = (row["name_ru"].lower(), row["school_ru"].lower())
+        key = (row["name_local"].lower(), row["school_ru"].lower())
         if key not in seen:
             seen.add(key)
             uniq.append(row)
@@ -143,7 +143,7 @@ def build_catalog() -> list[dict]:
     http = HttpClient(TIMEOUT, {"User-Agent": USER_AGENT})
     ru_units = parse_ru_tree(http.get_text(STRUCTURE_URL_RU))
     en_by_id = official_en_by_id(http.get_text(STRUCTURE_URL_EN))
-    school_en = {u["name_ru"]: en_by_id.get(u["faculty_id"], "") for u in ru_units if u["school_ru"] == u["name_ru"]}
+    school_en = {u["name_local"]: en_by_id.get(u["faculty_id"], "") for u in ru_units if u["school_ru"] == u["name_local"]}
     logger.info("scientific units: %d | official EN from EN page: %d", len(ru_units), len(en_by_id))
 
     catalog, no_en = [], 0
@@ -151,27 +151,27 @@ def build_catalog() -> list[dict]:
         name_en = en_by_id.get(u["faculty_id"], "")
         if not name_en:
             no_en += 1
-        is_top = u["school_ru"] == u["name_ru"]
+        is_top = u["school_ru"] == u["name_local"]
         parent_name = ROOT_EN if is_top else (school_en.get(u["school_ru"]) or u["school_ru"])
         catalog.append(
             {
                 "uid": _slug(name_en),
                 "name_en": name_en,
-                "name_ru": u["name_ru"],
-                "kind": _kind(name_en or u["name_ru"]),
+                "name_local": u["name_local"],
+                "kind": _kind(name_en or u["name_local"]),
                 "parent": _slug(parent_name),
                 "aliases": [],
                 "context_aliases": [],
             }
         )
-    catalog.sort(key=lambda d: (d["parent"] or "", d["name_ru"].lower()))
+    catalog.sort(key=lambda d: (d["parent"] or "", d["name_local"].lower()))
     # The root organisation is an Organization node (not matched, no aliases):
     # fill ror_id by hand from the ROR registry.
     catalog.append(
         {
             "uid": _slug(ROOT_EN),
             "name_en": ROOT_EN,
-            "name_ru": ROOT_RU,
+            "name_local": ROOT_RU,
             "kind": "organization",
             "parent": None,
             "ror_id": "",
@@ -191,7 +191,7 @@ def main() -> None:
         "--out",
         type=Path,
         default=default_out,
-        help="where to write the draft JSON (default data/static/*.draft.json; "
+        help="where to write the draft JSON (default data/static/itmo/*.draft.json; "
         "the live departments_catalog.json is never overwritten).",
     )
     args = parser.parse_args()

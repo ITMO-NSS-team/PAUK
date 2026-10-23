@@ -7,11 +7,11 @@ Persons
 
     1. ORCID: two persons carrying the same ORCID are the same author.
     2. Name variant: one person's display name is among the other's OpenAlex
-       name variants, both are ITMO-affiliated, and they share a coauthor.
-    3. Identical name plus corroboration: two ITMO-affiliated persons with
+       name variants, both are members, and they share a coauthor.
+    3. Identical name plus corroboration: two member persons with
        identical full display names who also share a coauthor, a department
        or a research field.
-    4. Staff record: two ITMO-affiliated persons whose names resolve to the
+    4. Staff record: two member persons whose names resolve to the
        same row of the official staff catalog (one row is one employee). This
        bridges spellings the other rules cannot, e.g. "Alexey Valentinovich
        Dukhanov" and "A. V. Dukhanov".
@@ -22,7 +22,7 @@ Persons
     given as initials is never enough alone. An explicitly different identity
     field (ORCID, email, GitHub login, Google Scholar id, staff record) always
     keeps a pair separate. Pairs with weaker evidence (a variant match without
-    a shared coauthor, a namesake outside ITMO, a single-token name, an
+    a shared coauthor, a namesake outside the university, a single-token name, an
     identical name with nothing corroborating it) are not merged automatically;
     they go to the review journal with the reason.
 
@@ -389,7 +389,7 @@ def plan_person_merges(
         same_name = first_name == second_name
         if not variant_evidence and not same_name and not same_staff:
             continue
-        both_itmo = first.is_itmo and second.is_itmo
+        both_members = first.is_member and second.is_member
         multi_token = len(first_name.split()) > 1
         shared = corroborating_coauthors(first, second)
         shared_departments = set(first.department_ids) & set(second.department_ids)
@@ -398,25 +398,25 @@ def plan_person_merges(
         corroboration = bool(shared or shared_departments or shared_fields)
         initials_only = _is_initials_name(first.name_raw or "")
 
-        if same_staff and both_itmo:
+        if same_staff and both_members:
             plan_pair(first, second, "staff_catalog")
-        elif variant_evidence and both_itmo and shared:
+        elif variant_evidence and both_members and shared:
             plan_pair(first, second, "name_variant")
-        elif same_name and both_itmo and multi_token and not initials_only and corroboration:
+        elif same_name and both_members and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
-        elif (first.is_itmo or second.is_itmo) and frozenset(
+        elif (first.is_member or second.is_member) and frozenset(
                 (first.id, second.id)) not in decisions:
             # Already asked and answered; re-asking every run would flood the queue.
             reasons = []
-            if not both_itmo:
-                reasons.append("only one person is ITMO-affiliated")
-            if same_name and both_itmo and not multi_token:
+            if not both_members:
+                reasons.append("only one person is a member")
+            if same_name and both_members and not multi_token:
                 reasons.append("single-token display name")
-            if same_name and both_itmo and multi_token and initials_only:
+            if same_name and both_members and multi_token and initials_only:
                 reasons.append("name is given as initials")
-            if same_name and both_itmo and multi_token and not initials_only and not corroboration:
+            if same_name and both_members and multi_token and not initials_only and not corroboration:
                 reasons.append("identical name with nothing corroborating it")
-            if variant_evidence and both_itmo and not shared:
+            if variant_evidence and both_members and not shared:
                 reasons.append("no shared coauthors")
             reason = "; ".join(reasons)
             report.append({
@@ -1372,7 +1372,8 @@ class DedupStage(EnrichmentStage):
         path = catalog_path(self.config)
         catalog = RussianNamesCatalog.load_if_present(path)
         if catalog is None:
-            logger.info("dedup: no staff catalog at %s, merging on names and profiles alone", path)
+            logger.info("dedup: no staff catalog at %s, merging on names and profiles alone",
+                        path or "(none for this university)")
             return {}
         chosen = review.staff_choices(self.prepared.db, folded_ids(people))
         # Asked here rather than in the naming stage: this is the rule the answer
@@ -1399,7 +1400,19 @@ class DedupStage(EnrichmentStage):
         return {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
-        """Person ids the selection allows to participate in merging."""
+        """Person ids the selection allows to participate in merging.
+
+        Without external authors in the graph a pair needs a member on one
+        side: two external records are never published, and resolving them
+        would spend model calls on consortium papers' coauthors.
+        """
+        scope = self._selection_scope(people)
+        if self.config.institution.external_authors:
+            return scope
+        members = {person.id for person in people if person.is_member}
+        return members if scope is None else scope & members
+
+    def _selection_scope(self, people: list[Person]) -> set[str] | None:
         if self.selection is None:
             return None
         if self.selection.entity == "persons":

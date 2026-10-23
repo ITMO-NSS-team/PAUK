@@ -1,0 +1,35 @@
+{
+  "key": "uab",
+  "short_name": "UAB",
+  "short_name_local": "UAB",
+  "name_en": "Universitat Autònoma de Barcelona",
+  "name_local": "Universitat Autònoma de Barcelona",
+  "ror_id": "052g8jq94",
+  "language": "Catalan",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "del",
+    "la",
+    "las",
+    "los",
+    "y",
+    "i"
+  ],
+  "email_domains": [
+    "uab.cat"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivAutonomaBarcelona)(?![^\\W\\d_])",
+  "long_name": "Bartzelonako[\\s‐-]+Unibertsitate[\\s‐-]+Autonomoa|Autonomous[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Barcelona|Universidade[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universidad[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autònoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autonoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universidad[\\s‐-]+Autonoma[\\s‐-]+de[\\s‐-]+Barcelona|Univ[\\s‐-]+Autonoma[\\s‐-]+Barcelona",
+  "marker_replacement": "UnivAutonomaBarcelona",
+  "place_words": "aleja|allee|av|ave|avenue|badalona|barcelona|bd|bellaterra|bldg|boulevard|box|building|calle|campus|catalonia|catalunya|cerdanyola|del|east|espana|españa|floor|gatan|katu|laan|north|piazza|platz|plaza|plein|po|rd|road|room|rue|sabadell|south|spain|st|str|straat|strasse|straße|street|tie|uab|ul|valles|vallès|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Hospital|Vall d[’']Hebron|Institut de Recerca Sant Pau|IR SANT PAU|Parc Taul[íi]|Germans Trias|Instituto de Salud Carlos III|(?<![^\\W\\d_])CIBER|(?<![^\\W\\d_])CSIC(?![^\\W\\d_])|(?<![^\\W\\d_])ICREA(?![^\\W\\d_])|CERCA|Institut Català de Paleontologia|Centre de Recerca en Sanitat Animal|(?<![^\\W\\d_])IRTA(?![^\\W\\d_])|Computer Vision Center|Barcelona\\ School\\ of\\ Economics|Centre\\ d'Esclerosi\\ Múltiple\\ de\\ Catalunya|Centre\\ de\\ Recerca\\ Matemàtica|Centre\\ for\\ Demographic\\ Studies|Centre\\ for\\ Research\\ on\\ Ecology\\ and\\ Forestry\\ Applications|Computer\\ Vision\\ Center|Corporació\\ Sanitària\\ Parc\\ Taulí|Fundació\\ Autònoma\\ Solidària|Fundació\\ Salut\\ i\\ Envelliment\\ UAB|Hospital\\ Universitari\\ Germans\\ Trias\\ i\\ Pujol|Hospital\\ Universitario\\ Dexeus|Hospital\\ de\\ Sant\\ Pau|Hospital\\ del\\ Mar\\ Research\\ Institute|Institut\\ Barcelona\\ d'Estudis\\ Internacionals|Institut\\ Català\\ d'Oncologia|Institut\\ Català\\ de\\ Paleontologia\\ Miquel\\ Crusafont|Institut\\ Universitari\\ d'Investigació\\ en\\ Atenció\\ Primària\\ Jordi\\ Gol|Institut\\ d'Estudis\\ Espacials\\ de\\ Catalunya|Institut\\ d'Investigació\\ Sanitària\\ Acreditat\\ Institut\\ de\\ Recerca\\ \\-\\ Hospital\\ Universitari\\ Vall\\ d'Hebron|Institut\\ d'Investigació\\ en\\ Ciències\\ de\\ la\\ Salut\\ Germans\\ Trias\\ i\\ Pujol|Institut\\ de\\ Recerca\\ Sant\\ Pau|Institute\\ for\\ High\\ Energy\\ Physics|Institute\\ of\\ Research\\ and\\ Innovation\\ Parc\\ Tauli|IrsiCaixa|MAGIC\\ Telescopes|Puigvert\\ Foundation|Vall\\ d'Hebron\\ Institut\\ de\\ Recerca|Vall\\ d'Hebron\\ Institute\\ of\\ Oncology",
+  "identity": "Bartzelonako[\\s‐-]+Unibertsitate[\\s‐-]+Autonomoa|Autonomous[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Barcelona|Universidade[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universidad[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autònoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autonoma[\\s‐-]+de[\\s‐-]+Barcelona|Universitat[\\s‐-]+Autónoma[\\s‐-]+de[\\s‐-]+Barcelona|Universidad[\\s‐-]+Autonoma[\\s‐-]+de[\\s‐-]+Barcelona|Univ[\\s‐-]+Autonoma[\\s‐-]+Barcelona",
+  "city": "Cerdanyola\\ del\\ Vallès",
+  "staff_catalog": null,
+  "mongo_db": "pauk_uab",
+  "site_url": "https://www.uab.cat",
+  "unit_words": "faculty|facultat|department|departament|institute|institut|school|escola|centre|center",
+  "external_authors": false
+}

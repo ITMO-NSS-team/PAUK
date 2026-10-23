@@ -1,0 +1,51 @@
+name,country,ror,openalex_id,works,articles,datasets,h_index
+Australian National University,AU,https://ror.org/019wvm592,I118347636,7601,4517,387,1083
+UCLouvain,BE,https://ror.org/02495e989,I95674353,5291,3244,422,894
+Université de Montréal,CA,https://ror.org/0161xgx34,I70931966,9231,6382,345,1021
+McMaster University,CA,https://ror.org/02fa3aq29,I98251732,9034,6531,130,1335
+University of Waterloo,CA,https://ror.org/01aff2v68,I151746483,7850,4439,378,783
+École Polytechnique Fédérale de Lausanne,CH,https://ror.org/02s376052,I5124864,9103,4034,1533,1194
+University of Geneva,CH,https://ror.org/01swzsf04,I114457229,7488,4775,364,1041
+University of Basel,CH,https://ror.org/02s6k3f65,I1850255,6509,4485,308,925
+Czech Technical University in Prague,CZ,https://ror.org/03kqpb082,I44504214,3197,1706,260,506
+Technische Universität Dresden,DE,https://ror.org/042aqky30,I78650965,8672,5469,290,870
+University of Tübingen,DE,https://ror.org/03a1kwz48,I8087733,8419,5250,339,937
+Humboldt-Universität zu Berlin,DE,https://ror.org/01hcx6992,I39343248,8298,5811,243,821
+Friedrich-Alexander-Universität Erlangen-Nürnberg,DE,https://ror.org/00f7hpc57,I181369854,8074,4902,604,898
+Technische Universität Darmstadt,DE,https://ror.org/05n911h24,I31512782,4184,2060,188,521
+Technical University of Denmark,DK,https://ror.org/04qtj9h94,I96673099,8236,4092,1218,1020
+University of Tartu,EE,https://ror.org/03z77qz90,I56085075,3713,2001,201,761
+Universitat Autònoma de Barcelona,ES,https://ror.org/052g8jq94,I123044942,9298,6774,436,783
+Universitat Pompeu Fabra,ES,https://ror.org/04n0g0b29,I170486558,3475,2178,166,747
+Aalto University,FI,https://ror.org/020hwjq30,I9927081,4873,2661,186,509
+Lyon 1 Université,FR,https://ror.org/029brtt94,I100532134,7752,4957,365,839
+École Polytechnique,FR,https://ror.org/05hy3tk52,I142476485,2515,1248,71,737
+Queen Mary University of London,GB,https://ror.org/026zzn846,I166337079,8611,5391,228,1055
+University of Warwick,GB,https://ror.org/01a77tt86,I39555362,7089,4318,258,806
+Cardiff University,GB,https://ror.org/03kk7td41,I79510175,6658,4127,419,1264
+Durham University,GB,https://ror.org/01v29qb04,I190082696,5781,3236,306,718
+Trinity College Dublin,IE,https://ror.org/02tyrky19,I205274468,6196,3904,195,926
+Tel Aviv University,IL,https://ror.org/04mhzgx49,I16391192,9418,6585,259,1021
+Technion – Israel Institute of Technology,IL,https://ror.org/03qryx823,I174306211,5026,3110,95,760
+Weizmann Institute of Science,IL,https://ror.org/0316ej306,I53964585,2672,1386,215,1074
+Politecnico di Milano,IT,https://ror.org/01nffqt88,I93860229,8938,4778,507,548
+University of Pisa,IT,https://ror.org/03ad39j10,I108290504,7560,5217,201,905
+Keio University,JP,https://ror.org/02kn6nx58,I203951103,5923,4204,79,734
+Korea Advanced Institute of Science and Technology,KR,https://ror.org/05apxxy63,I157485424,7936,3801,1054,707
+Pohang University of Science and Technology,KR,https://ror.org/04xysgw12,I123900574,3038,2143,53,593
+Leiden University,NL,https://ror.org/027bh9e22,I121797337,7959,4870,449,923
+Wageningen University & Research,NL,https://ror.org/04qw24q55,I913481162,7838,4302,713,987
+Radboud University Nijmegen,NL,https://ror.org/016xsfp80,I145872427,7624,5379,228,1140
+Eindhoven University of Technology,NL,https://ror.org/02c2kyt77,I83019370,4731,2468,131,667
+University of Auckland,NZ,https://ror.org/03b94tp07,I154130895,7844,5272,323,784
+University of Warsaw,PL,https://ror.org/039bjqg32,I4654613,6777,4445,663,615
+Stockholm University,SE,https://ror.org/05f0yaq80,I161593684,6693,3960,394,971
+KTH Royal Institute of Technology,SE,https://ror.org/026vcq606,I86987016,5942,3371,218,734
+Chalmers University of Technology,SE,https://ror.org/040wg7k59,I66862912,4935,2602,228,562
+National Taiwan University,TW,https://ror.org/05bqach95,I16733864,9442,6470,213,752
+Northeastern University,US,https://ror.org/04t5xt781,I12912129,9304,4606,652,706
+Brown University,US,https://ror.org/05gq02987,I27804330,9073,6214,284,1123
+Case Western Reserve University,US,https://ror.org/051fd9666,I58956616,8621,5483,1060,1158
+Carnegie Mellon University,US,https://ror.org/05x2bcf33,I74973139,8313,2702,220,1193
+Virginia Tech,US,https://ror.org/02smfhw86,I859038795,8216,4455,547,834
+Rice University,US,https://ror.org/008zs3103,I74775410,4244,2370,236,953

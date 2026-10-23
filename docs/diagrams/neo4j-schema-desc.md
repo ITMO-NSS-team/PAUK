@@ -16,11 +16,11 @@ graph even if the pydantic model has them (see
 ### 1. `Person`
 
 > **Node label:** `Person`
-> A researcher or author, from ITMO or external, told apart by the `is_itmo`
+> A researcher or author, a member of the university or external, told apart by the `is_member`
 > property, not by the label.
 
 * **`id`** (`ID`, *Unique*): author identifier (the bare OpenAlex author ID).
-* **`is_itmo`** (`Boolean`): ITMO membership. A "sticky" property: once set to
+* **`is_member`** (`Boolean`): membership of the university (`PAUK_INSTITUTION`). A "sticky" property: once set to
   `true`, a later external row for the same person never lowers it to `false`.
 * **`openalex_id`** (`String`): OpenAlex identifier.
 * **`orcid`** (`String`): ORCID identifier.
@@ -30,17 +30,17 @@ graph even if the pydantic model has them (see
 * **`second_name_en`** (`String`): second name (patronymic) in English, if known.
 * **`surname_en`** (`String`): surname in English.
 * **`name_variants`** (`List[String]`): name spelling variants.
-* **`name_ru`** (`String`): full name in Russian.
-* **`first_name_ru`** (`String`): first name in Russian.
-* **`second_name_ru`** (`String`): second name (patronymic) in Russian.
-* **`surname_ru`** (`String`): surname in Russian.
+* **`name_local`** (`String`): full name in the university's language (Russian for ITMO, Portuguese for UFJF).
+* **`first_name_local`** (`String`): first name in the university's language (Russian for ITMO, Portuguese for UFJF).
+* **`second_name_local`** (`String`): second name (patronymic), ITMO only.
+* **`surname_local`** (`String`): surname in the university's language (Russian for ITMO, Portuguese for UFJF).
 * **`email`** (`String`): one e-mail address, for the card.
 * **`emails`** (`List[String]`): every known address; the matcher identifies
   accounts by them.
 * **`degree`** (`String`): academic degree.
 * **`github`** (`String`): GitHub profile.
 * **`google_scholar`** (`String`): Google Scholar profile.
-* **`thesis`** (`String`): dissertation or qualifying work (ITMO persons only).
+* **`thesis`** (`String`): dissertation or qualifying work (member persons only).
 * **`scopus_id`** (`String`): Scopus identifier.
 * **`researcher_id`** (`String`): Web of Science ResearcherID.
 * **`dblp_id`** (`String`): dblp identifier.
@@ -93,15 +93,15 @@ graph even if the pydantic model has them (see
 ### 3. `Department`
 
 > **Node label:** `Department`
-> An ITMO unit (megafaculty, faculty, institute, center, department, lab).
+> A unit of the university (megafaculty, faculty, institute, center, department, lab, campus, program).
 
 * **`id`** (`ID`, *Unique*): a human-readable uid slug derived from `name_en`.
 * **`name_en`** (`String`): name in English.
-* **`name_ru`** (`String`): name in Russian.
+* **`name_local`** (`String`): name in the university's language (Russian for ITMO, Portuguese for UFJF).
 * **`name_variants`** (`List[String]`): spelling variants.
 * **`context_aliases`** (`List[String]`): generic aliases matched only next to
-  an ITMO marker in an affiliation.
-* **`kind`** (`String`): level: `megafaculty | faculty | institute | center | department | lab`.
+  the university's marker in an affiliation.
+* **`kind`** (`String`): level: `megafaculty | faculty | institute | center | department | lab | campus | program | school`.
 * **`parent_id`** (`String`): uid of the parent `Department` (for a nested unit).
 * **`organization_id`** (`String`): uid of the `Organization` (for a top-level unit).
 
@@ -113,13 +113,13 @@ edge up the hierarchy.
 ### 4. `Organization`
 
 > **Node label:** `Organization`
-> An organization, a root of the org hierarchy (ITMO, and co-affiliations).
+> An organization, a root of the org hierarchy (the university, and co-affiliations).
 > Several organizations coexist in the graph as separate roots.
 
 * **`id`** (`ID`, *Unique*): uid slug.
 * **`name_en`** (`String`, *Unique*): name in English.
-* **`name_ru`** (`String`): name in Russian.
-* **`ror_id`** (`String`): identifier in the ROR registry (for ITMO, `https://ror.org/04txgxn49`).
+* **`name_local`** (`String`): name in the university's language (Russian for ITMO, Portuguese for UFJF).
+* **`ror_id`** (`String`): identifier in the ROR registry (`https://ror.org/04txgxn49` for ITMO, `https://ror.org/04yqw9c44` for UFJF).
 * **`country`** (`String`): country.
 * **`type`** (`String`): organization type (`university`, ...).
 
@@ -193,7 +193,7 @@ edge up the hierarchy.
 
 ### 2. `BELONGS_TO`
 
-> **Connects:** `Person {is_itmo: true}` -> `Department`. The author's
+> **Connects:** `Person {is_member: true}` -> `Department`. The author's
 > membership in a unit (derived by matching affiliations against the catalog).
 > No properties.
 
@@ -201,7 +201,7 @@ edge up the hierarchy.
 
 ### 3. `CONTRIBUTED_TO`
 
-> **Connects:** `Person {is_itmo: true}` -> `Repository`. Participation in a
+> **Connects:** `Person {is_member: true}` -> `Repository`. Participation in a
 > repository's development.
 
 * **`role`** (`String`): role in development.
@@ -219,7 +219,7 @@ edge up the hierarchy.
 ### 5. `PRODUCED_BY`
 
 > **Connects:** `Publication` -> `Department`. The publication was produced by
-> the unit (by the departments of its ITMO authors). No properties.
+> the unit (by the departments of its member authors). No properties.
 
 ---
 
@@ -245,7 +245,7 @@ edge up the hierarchy.
 ### 7. `DEVELOPED_BY`
 
 > **Connects:** `Repository` -> `Department`. The repository is developed by the
-> unit (by the departments of its ITMO contributors). No properties.
+> unit (by the departments of its member contributors). No properties.
 
 ---
 

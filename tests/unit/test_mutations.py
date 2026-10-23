@@ -140,19 +140,19 @@ class FakeGraph:
     # against this fake end to end.
 
     def upsert_person_nodes_batch(self, nodes):
-        """Persons carry the sticky is_itmo rule of the real client.
+        """Persons carry the sticky is_member rule of the real client.
 
-        A row arriving with is_itmo=False never downgrades a node that is
+        A row arriving with is_member=False never downgrades a node that is
         already ITMO.
         """
         self.calls.append("upsert_person_nodes_batch")
         nodes = list(nodes)
-        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_itmo"))
-                  or bool(props.get("is_itmo"))
+        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_member"))
+                  or bool(props.get("is_member"))
                   for node_id, props in nodes}
         self.upsert_nodes_batch("Person", nodes)
-        for node_id, is_itmo in sticky.items():
-            self.nodes[("Person", node_id)]["is_itmo"] = is_itmo
+        for node_id, is_member in sticky.items():
+            self.nodes[("Person", node_id)]["is_member"] = is_member
 
     def merge_publication_nodes_batch(self, merges):
         self.calls.append("merge_publication_nodes_batch")
@@ -205,7 +205,7 @@ class FakeGraph:
                     works += 1
                 elif rel_type == "BELONGS_TO" and department is None:
                     named = self.nodes.get((tgt_label, tgt_id), {})
-                    department = named.get("name_ru") or named.get("name_en")
+                    department = named.get("name_local") or named.get("name_en")
             facts[node_id] = {"orcid": props.get("orcid"), "email": props.get("email"),
                               "department": department, "works": works}
         return facts
@@ -240,9 +240,9 @@ class WhitelistTest(unittest.TestCase):
                              set(NODE_FIELDS))
 
     def test_a_person_field_from_either_registry_entry_is_editable(self):
-        # Person is in the registry twice, ITMO and external; the two
+        # Person is in the registry twice, member and external; the two
         # field lists have to be unioned or half of them read as unknown.
-        self.assertIn("degree", NODE_FIELDS["Person"])       # itmo_person only
+        self.assertIn("degree", NODE_FIELDS["Person"])       # member_person only
         self.assertIn("orcid", NODE_FIELDS["Person"])        # both
 
     def test_the_offered_fields_never_include_ones_every_write_refuses(self):
@@ -310,21 +310,21 @@ class NodeEditTest(unittest.TestCase):
             create_node(self.graph, "Person", "A1", {"name_en": "Someone else"})
 
     def test_updating_changes_only_the_fields_given(self):
-        updated = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
-        self.assertEqual(updated["name_ru"], "Иванов И. И.")
+        updated = update_node(self.graph, "Person", "A1", {"name_local": "Иванов И. И."})
+        self.assertEqual(updated["name_local"], "Иванов И. И.")
         self.assertEqual(updated["name_en"], "Ivan Petrov")
 
     def test_an_edit_based_on_a_stale_read_is_refused(self):
         seen = read_node(self.graph, "Person", "A1")["updated_at"]
-        update_node(self.graph, "Person", "A1", {"name_ru": "первый"})  # someone else saves
+        update_node(self.graph, "Person", "A1", {"name_local": "первый"})  # someone else saves
         with self.assertRaises(VersionConflict):
-            update_node(self.graph, "Person", "A1", {"name_ru": "второй"}, expected_updated_at=seen)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "первый")
+            update_node(self.graph, "Person", "A1", {"name_local": "второй"}, expected_updated_at=seen)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "первый")
 
     def test_an_edit_matching_what_was_read_goes_through(self):
         seen = read_node(self.graph, "Person", "A1")["updated_at"]
-        update_node(self.graph, "Person", "A1", {"name_ru": "Иванов"}, expected_updated_at=seen)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
+        update_node(self.graph, "Person", "A1", {"name_local": "Иванов"}, expected_updated_at=seen)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов")
 
     def test_deleting_a_lone_node(self):
         self.assertEqual(delete_node(self.graph, "Person", "A1"), 1)
@@ -429,8 +429,8 @@ class StoredShapeTest(unittest.TestCase):
         self.assertIn("ITMO", node["affiliations"])
 
     def test_plain_fields_are_left_alone(self):
-        node = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
-        self.assertEqual(node["name_ru"], "Иванов И. И.")
+        node = update_node(self.graph, "Person", "A1", {"name_local": "Иванов И. И."})
+        self.assertEqual(node["name_local"], "Иванов И. И.")
 
     def test_a_list_of_plain_values_is_not_json_encoded(self):
         # name_variants is a list too, but the loader stores it as a list:

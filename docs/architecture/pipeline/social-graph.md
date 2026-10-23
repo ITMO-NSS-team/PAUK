@@ -16,7 +16,7 @@ account or on a lab's account, and nothing in the publications leads to it.
 
 ## How the walk goes
 
-The starting point is a confirmed account or an ITMO organization. The stage
+The starting point is a confirmed account or an organization of the university. The stage
 takes that account's public repositories and collects participants from them;
 those participants become candidates like any others.
 
@@ -31,18 +31,28 @@ would give several hundred starting points and thousands of repositories.
 ## Which organization counts as ours
 
 An organization is confirmed if its login is in the curated catalog
-(`itmo_github_orgs.json` in the static directory) or if it explicitly names
-ITMO in its login, name, description or company. Otherwise every organization
+(`github_orgs.json` in the static directory) or if it explicitly names
+the university (the profile's `identity` pattern) in its login, name,
+description or company. Otherwise every organization
 whose library a paper cited would qualify, google and microsoft included.
 
-Saint Petersburg is only a weak signal: such an organization is logged as
-possible but not walked. A link to a confirmed ITMO contributor also does not
+The city (Saint Petersburg for ITMO, Juiz de Fora for UFJF) is only a weak
+signal: such an organization is logged as possible (reason `city`) but not
+walked. A link to a confirmed member contributor (reason
+`member_contributor`) also does not
 confirm an organization, since an employee may commit to someone else's lab. A
 real lab with an empty profile is added to the curated catalog. If the owner of
 a known repository is in the catalog, a missing profile or an unknown account
 type does not prevent starting the walk from it. An explicit type `user` rules
 out using the account as an organization seed even if it is in the catalog. For
 owners outside the catalog a profile with type `organization` is required.
+
+## Requests per walked repository
+
+The owner's repository list already carries each repository's metadata and
+owner, so a walked repository costs its contributors and up to three pages of
+commits on REST, and its new accounts one GraphQL query per 50
+(`GitHubClient.get_users`).
 
 ## Limits of the walk
 

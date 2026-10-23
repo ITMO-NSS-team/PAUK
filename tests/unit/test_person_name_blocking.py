@@ -18,7 +18,7 @@ from pauk.pipeline.person_name_blocking import (
 
 
 def person(identifier, name=None, **kwargs):
-    return Person(id=identifier, name_raw=name, is_itmo=True, **kwargs)
+    return Person(id=identifier, name_raw=name, is_member=True, **kwargs)
 
 
 def pairs(people, scope=None, staff=None):

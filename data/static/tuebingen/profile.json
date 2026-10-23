@@ -1,0 +1,36 @@
+{
+  "key": "tuebingen",
+  "short_name": "Tübingen",
+  "short_name_local": "Uni Tübingen",
+  "name_en": "University of Tübingen",
+  "name_local": "Eberhard Karls Universität Tübingen",
+  "ror_id": "03a1kwz48",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "uni-tuebingen.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivTuebingen)(?![^\\W\\d_])",
+  "long_name": "Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University,[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Universität[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Universität[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Univ\\.[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Univ[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University|University[\\s‐-]+of[\\s‐-]+Tuebingen|University[\\s‐-]+of[\\s‐-]+Tübingen|University[\\s‐-]+of[\\s‐-]+Tubingen|Universität[\\s‐-]+Tübingen|Universitat[\\s‐-]+Tubingen|Tuebingen[\\s‐-]+University|Tübingen[\\s‐-]+University|Univ[\\s‐-]+Tubingen|Univ[\\s‐-]+Tübingen",
+  "marker_replacement": "UnivTuebingen",
+  "place_words": "aleja|allee|av|ave|avenue|baden|bd|bldg|boulevard|box|building|calle|campus|deutschland|east|floor|gatan|germany|katu|laan|morgenstelle|north|piazza|platz|plaza|plein|po|rd|road|room|rue|sand|south|st|str|straat|strasse|straße|street|tie|tubingen|tuebingen|tübingen|ul|vej|via|viale|vägen|weg|west|württemberg",
+  "other_organisations": "University Hospital (?:of )?T(?:ü|ue|u)bingen|Universitätsklinikum Tübingen|T(?:ü|ue|u)bingen University Hospital|(?<![^\\W\\d_])DZNE(?![^\\W\\d_])|(?<![^\\W\\d_])DZIF(?![^\\W\\d_])|(?<![^\\W\\d_])DKTK(?![^\\W\\d_])|German Cancer Consortium|German Center for|Max Planck Institute|Robert Bosch|Dr\\. Margarete Fischer-Bosch|NMI Natural and Medical Sciences Institute|Klinikum\\ Esslingen|Universitätsklinikum\\ Tübingen",
+  "identity": "Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University,[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Universität[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Universität[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tuebingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Univ\\.[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+Univ[\\s‐-]+Tübingen|Eberhard[\\s‐-]+Karls[\\s‐-]+University|University[\\s‐-]+of[\\s‐-]+Tuebingen|University[\\s‐-]+of[\\s‐-]+Tübingen|University[\\s‐-]+of[\\s‐-]+Tubingen|Universität[\\s‐-]+Tübingen|Universitat[\\s‐-]+Tubingen|Tuebingen[\\s‐-]+University|Tübingen[\\s‐-]+University|Univ[\\s‐-]+Tubingen|Univ[\\s‐-]+Tübingen",
+  "city": "Tübingen",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tuebingen",
+  "site_url": "https://uni-tuebingen.de",
+  "unit_words": "faculty|fakultät|institute|institut|centre|center|zentrum",
+  "external_authors": false
+}

@@ -1,0 +1,26 @@
+{
+  "key": "tpu",
+  "short_name": "TPU",
+  "short_name_local": "ТПУ",
+  "name_en": "National Research Tomsk Polytechnic University",
+  "name_local": "Национальный исследовательский Томский политехнический университет",
+  "ror_id": "00a45v709",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "tpu.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TPU|НИ\\s*ТПУ|ТПУ)(?![^\\W\\d_])",
+  "long_name": "(?:(?:Federal\\s+State\\s+Autonomous\\s+Educational\\s+Institution\\s+of\\s+Higher\\s+Education\\s+)?[\"“«]?\\s*National\\s+Re-?s(?:ea|e)?rch\\s+)?Tomsk\\s+(?:National\\s+Research\\s+)?Polytechnic(?:al)?\\s+University|(?:ФГАОУ\\s+ВО\\s+[«\"]?\\s*)?(?:Национальный\\s+исследовательский\\s+)?Томский\\s+политехнический\\s+(?:университет?|ун-т)",
+  "marker_replacement": "TPU",
+  "place_words": "tomsk|томск|tomskaya|томская|russia|russi|россия|russian|российская|federation|федерация|the|lenin|lenina|ленина|avenue|avn|ave|av|prospect|prospekt|pr|пр|проспект|street|st|str|ул|г|oblast|область|region|obl",
+  "other_organisations": "Russian\\s+Academy\\s+of\\s+Sciences?|(?<![^\\W\\d_])(?:SB\\s+RAS|RAS|РАН|СО\\s+РАН|JINR|ОИЯИ|ISPMS|ИФПМ|IAO|ICG|IBCh|TUSUR|ТУСУР|MEPhI|МИФИ|Skoltech|INFN|LIFT|CNBR|SAPHIR|ANID|FLNP|LHEP)(?![^\\W\\d_])|Siberian\\s+Branch|Kutateladze|Кутателадзе|Institute\\s+of\\s+Thermophysics|Tomsk\\s+National\\s+Research\\s+Medical\\s+Cent(?:er|re)|Tomsk\\s+Scientific\\s+Cent(?:er|re)|Cancer\\s+Research\\s+Institute|Cardiology\\s+Research\\s+Institute|Mental\\s+Health\\s+Research\\s+Institute|Научно-исследовательский\\s+институт\\s+онкологии|Joint\\s+Institute\\s+for\\s+Nuclear\\s+Research|Institute\\s+for\\s+Nuclear\\s+Research|Kurchatov|Bogoliubov\\s+Laboratory|Frank\\s+Laboratory|Frumkin\\s+Institute|Institute\\s+of\\s+Strength\\s+Physics|Zuev\\s+Institute|Institute\\s+of\\s+Atmospheric\\s+Optics|Institute\\s+of\\s+High\\s+Current\\s+Electronics|Budker\\s+Institute|Shemyakin|Institute\\s+of\\s+Cytology\\s+and\\s+Genetics|Trofimuk|Institute\\s+of\\s+Applied\\s+Problems\\s+of\\s+Physics|Institute\\s+of\\s+Natural\\s+and\\s+Technical\\s+Sciences|Institute\\s+of\\s+Applied\\s+Mathematics\\s+and\\s+Computer\\s+Science|Federal\\s+Research\\s+Cent(?:er|re)|TomskNIPIneft|ТомскНИПИнефть|RN-Upstream|Siberian\\s+Chemical\\s+Combine|Sirius|Skolkovo|Sechenov|Medical\\s+city|Life\\s+Improvement\\s+by\\s+Future\\s+Technology|Zelman\\s+Center|Millennium\\s+Institute|Kepler\\s+Center|Research\\s+Center\\s+for\\s+Translational\\s+Medicine|Laboratori\\s+Nazionali|Ministry\\s+of\\s+(?:Health|Science|Education)|Key\\s+Laboratory",
+  "identity": "(?<![^\\W\\d_])TPU(?![^\\W\\d_])|Tomsk\\s+Polytechnic(?:al)?\\s+University|Томский\\s+политехнический\\s+университет",
+  "city": "Tomsk|Томск",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tpu",
+  "site_url": "https://tpu.ru",
+  "unit_words": "school"
+}

@@ -1,4 +1,4 @@
-"""Find ITMO accounts through the repositories a paper never cited.
+"""Find member accounts through the repositories a paper never cited.
 
 The harvest reaches only people who worked on code a paper linked to.
 Most employees who write code never had it cited: the repository sits on
@@ -6,13 +6,13 @@ their own account, or on a lab's, with nothing pointing at it from a
 publication.
 
 This walks outward from what is already known. Every confirmed account and
-every ITMO-affiliated organization is a seed; their public repositories are
+every organization of the university is a seed; their public repositories are
 harvested for the people behind them, and those people are matched like any
 other candidate. A person found this way becomes a seed once github_match confirms them,
 so running the two in turn walks the graph outward one ring at a time.
 
-An organization is only followed when it says ITMO itself (in its login,
-its profile, or data/static/itmo_github_orgs.json); otherwise the walk would
+An organization is only followed when it names the university itself (in its
+login, its profile, or data/static/<institution>/github_orgs.json); otherwise the walk would
 enter every organization whose library a paper cited.
 
 Seeds are only confirmed accounts: following unproven ones would multiply
@@ -25,12 +25,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Iterable
 
+from pauk.institution import Institution
 from pauk.models import GitHubProfile, Person, Repository
+from pauk.settings import settings
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
-from .github_match import ITMO_IDENTITY_PATTERN, PETERSBURG_PATTERN, GitHubMatchStage
+from .github_match import GitHubMatchStage
 from .repo_people import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -44,52 +46,54 @@ MAX_REPOS_PER_SEED = 30
 MAX_RINGS = 5
 
 
-def itmo_organization_status(login: str, profile: GitHubProfile | None,
-                             catalog: frozenset[str], *,
-                             repositories: Iterable[Repository] = (),
-                             confirmed: Collection[str] = ()) -> tuple[str, str]:
-    """Classify the evidence that an organization belongs to ITMO.
+def member_organization_status(login: str, profile: GitHubProfile | None,
+                               catalog: frozenset[str], *,
+                               repositories: Iterable[Repository] = (),
+                               confirmed: Collection[str] = (),
+                               institution: Institution | None = None) -> tuple[str, str]:
+    """Classify the evidence that an organization belongs to the university.
 
     Only ``confirmed`` organizations are safe traversal seeds. ``possible`` is
     diagnostic: a city or contributor can guide a review but must not make us
-    walk every Saint Petersburg organization.
+    walk every organization in the city.
     """
+    institution = institution or settings.institution
     login_lower = login.lower()
     if login_lower in catalog:
         return "confirmed", "catalog"
-    if ITMO_IDENTITY_PATTERN.search(login):
+    if institution.identity_re.search(login):
         return "confirmed", "login"
     profile = profile or GitHubProfile(id="", login=login)
     identity_text = " ".join(filter(None, (
         profile.name, profile.description, profile.company,
     )))
-    if ITMO_IDENTITY_PATTERN.search(identity_text):
+    if institution.identity_re.search(identity_text):
         return "confirmed", "profile"
     weak_text = " ".join(filter(None, (
         profile.name, profile.description, profile.company, profile.location,
     )))
-    if PETERSBURG_PATTERN.search(weak_text):
-        return "possible", "petersburg"
+    if institution.city_re.search(weak_text):
+        return "possible", "city"
     confirmed_lower = {item.lower() for item in confirmed}
     if any(
         (repository.owner_login or "").lower() == login_lower
         and any(contributor.lower() in confirmed_lower for contributor in repository.contributors)
         for repository in repositories
     ):
-        # An employee may contribute to upstream projects outside ITMO.
-        return "possible", "itmo_contributor"
+        # An employee may contribute to upstream projects outside the university.
+        return "possible", "member_contributor"
     return "not_confirmed", ""
 
 
 class SocialGraphStage(EnrichmentStage):
-    """Harvests repositories of accounts already tied to ITMO."""
+    """Harvests repositories of accounts already tied to the university."""
 
     name = "social_graph"
 
     def _seeds(self, people: list[Person], repositories: list[Repository],
                profiles: dict[str, GitHubProfile]) -> list[str]:
         confirmed = {person.github for person in people if person.github}
-        catalog = StaticStore(self.config.static_dir).itmo_github_orgs
+        catalog = StaticStore(self.config.static_dir).github_orgs
         owner_logins = {repository.owner_login for repository in repositories
                         if repository.owner_login}
 
@@ -102,22 +106,27 @@ class SocialGraphStage(EnrichmentStage):
                 account_type is None and login.lower() in catalog
             ):
                 continue
-            status, reason = itmo_organization_status(
+            status, reason = member_organization_status(
                 login, profile, catalog, repositories=repositories, confirmed=confirmed,
+                institution=self.config.institution,
             )
             if status == "confirmed":
-                logger.info("social_graph: confirmed ITMO organization %s (%s)", login, reason)
+                logger.info("social_graph: confirmed member organization %s (%s)", login, reason)
                 organizations.append(login)
             elif status == "possible":
-                logger.info("social_graph: possible ITMO organization %s (%s), not a seed",
+                logger.info("social_graph: possible member organization %s (%s), not a seed",
                             login, reason)
         return sorted(confirmed | set(organizations))
 
     def _harvest(self, client: GitHubClient, owner: str, name: str, url: str,
-                 profiles: dict[str, GitHubProfile]) -> int:
-        """Accounts behind one repository, added to the candidate pool."""
+                 profiles: dict[str, GitHubProfile], payload: dict | None = None) -> int:
+        """Accounts behind one repository, added to the candidate pool.
+
+        `payload` is the repository as the owner's repository list served it;
+        given, it saves a request.
+        """
         try:
-            payload = client.get_repository(owner, name)
+            payload = payload or client.get_repository(owner, name)
             contributors = client.contributors(owner, name)
             identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
         except Exception:
@@ -134,15 +143,17 @@ class SocialGraphStage(EnrichmentStage):
                 logins.add(login)
 
         added = 0
+        new = [login for login in sorted(logins) if f"github_{login.lower()}" not in profiles]
+        try:
+            fetched_profiles = client.get_users(new) if new else {}
+        except Exception:
+            fetched_profiles = {login: {} for login in new}
         for login in sorted(logins):
             profile_id = f"github_{login.lower()}"
             emails, commit_names = identities.get(login, (set(), set()))
             known = profiles.get(profile_id)
             if known is None:
-                try:
-                    user = client.get_user(login)
-                except Exception:
-                    user = {}
+                user = fetched_profiles.get(login, {})
                 self.raw.append("github_user", user, {"login": login})
                 added += 1
             else:
@@ -190,7 +201,7 @@ class SocialGraphStage(EnrichmentStage):
             walked_seeds.update(seeds)
             logger.info("social_graph: ring %d, %d new seeds", ring, len(seeds))
 
-            fresh: list[tuple[str, str, str]] = []
+            fresh: list[tuple[str, str, str, dict]] = []
             for seed in seeds:
                 try:
                     owned = client.user_repositories(seed, MAX_REPOS_PER_SEED)
@@ -204,13 +215,13 @@ class SocialGraphStage(EnrichmentStage):
                     if len(parts) != 2:
                         continue
                     visited.add(url)
-                    fresh.append((parts[0], parts[1], url))
+                    fresh.append((parts[0], parts[1], url, repository))
 
             if not fresh:
                 logger.info("social_graph: ring %d walked nothing new, converged", ring)
                 break
-            for owner, name, url in fresh:
-                added_profiles += self._harvest(client, owner, name, url, profiles)
+            for owner, name, url, payload in fresh:
+                added_profiles += self._harvest(client, owner, name, url, profiles, payload)
             walked += len(fresh)
             rings = ring
             logger.info("social_graph: ring %d walked %d repositories", ring, len(fresh))

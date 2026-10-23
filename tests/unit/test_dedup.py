@@ -41,7 +41,7 @@ CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
            email=None, github=None, departments=()):
     return Person(
-        id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, orcid=orcid,
+        id=pid, openalex_id=pid, is_member=itmo, name_raw=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
         email=email, github=github, department_ids=list(departments),
         authored=[{"publication_id": w, "position": 1} for w in works],
@@ -308,7 +308,7 @@ class DedupStageTest(unittest.TestCase):
         ])
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
         (candidate,) = self.journal("held")
-        self.assertEqual(candidate["held_because"], ["only one person is ITMO-affiliated"])
+        self.assertEqual(candidate["held_because"], ["only one person is a member"])
 
     def test_single_token_name_is_only_a_candidate(self):
         result, _ = self.run_stage([
@@ -898,7 +898,7 @@ class GraphDedupTest(unittest.TestCase):
         self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
                             [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
         catalog = RussianNamesCatalog([{
-            "name_ru": "Духанов Алексей Валентинович", "surname": "Духанов",
+            "name_local": "Духанов Алексей Валентинович", "surname": "Духанов",
             "name": "Алексей", "patronymic": "Валентинович", "degree": "д.т.н.",
         }])
         removed, report = dedup_graph_persons(client, {}, catalog)
@@ -1044,7 +1044,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
         # A2 -AUTHORED{position}-> W1: the surviving edge needs both.
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
+        client.upsert_person_nodes_batch([("A1", {"is_member": True}), ("A2", {"is_member": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"affiliation": "ITMO"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
@@ -1057,7 +1057,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
     def test_canonical_edge_values_win_over_the_duplicates(self):
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
+        client.upsert_person_nodes_batch([("A1", {"is_member": True}), ("A2", {"is_member": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"position": 5, "affiliation": "Old"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
@@ -1297,7 +1297,7 @@ class ReviewDecisionsTest(unittest.TestCase):
         self.raw = RawStore(self.db, "sample")
 
     def namesakes(self):
-        """Two ITMO people with one name and nothing else in common.
+        """Two members with one name and nothing else in common.
 
         Exactly the pair the rules refuse: identical name, no shared
         coauthor, no shared department, no shared field.

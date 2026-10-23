@@ -1,0 +1,921 @@
+[
+  {
+    "uid": "umontreal",
+    "name_en": "University of Montreal",
+    "name_local": "Université de Montréal",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/0161xgx34",
+    "type": "university"
+  },
+  {
+    "uid": "fas",
+    "name_en": "Faculty of Arts and Sciences",
+    "name_local": "Faculté des arts et des sciences",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts and Sciences",
+      "Faculté des arts et des sciences"
+    ]
+  },
+  {
+    "uid": "fas-anthropology",
+    "name_en": "Department of Anthropology",
+    "name_local": "Département d'anthropologie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anthropology",
+      "Département d'anthropologie"
+    ]
+  },
+  {
+    "uid": "fas-chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "Département de chimie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Département de chimie",
+      "Chemistry Department"
+    ]
+  },
+  {
+    "uid": "fas-communication",
+    "name_en": "Department of Communication",
+    "name_local": "Département de communication",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Communication",
+      "Département de communication"
+    ]
+  },
+  {
+    "uid": "fas-criminology",
+    "name_en": "School of Criminology",
+    "name_local": "École de criminologie",
+    "kind": "school",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "School of Criminology",
+      "École de criminologie",
+      "Ecole de criminologie"
+    ]
+  },
+  {
+    "uid": "fas-demography",
+    "name_en": "Department of Demography",
+    "name_local": "Département de démographie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Demography",
+      "Département de démographie"
+    ]
+  },
+  {
+    "uid": "fas-economics",
+    "name_en": "Department of Economics",
+    "name_local": "Département de sciences économiques",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics",
+      "Département de sciences économiques"
+    ]
+  },
+  {
+    "uid": "fas-geography",
+    "name_en": "Department of Geography",
+    "name_local": "Département de géographie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography",
+      "Département de géographie"
+    ]
+  },
+  {
+    "uid": "fas-history",
+    "name_en": "Department of History",
+    "name_local": "Département d'histoire",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of History",
+      "Département d'histoire"
+    ]
+  },
+  {
+    "uid": "fas-diro",
+    "name_en": "Department of Computer Science and Operations Research",
+    "name_local": "Département d'informatique et de recherche opérationnelle",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Operations Research",
+      "Département d'informatique et de recherche opérationnelle",
+      "DIRO"
+    ]
+  },
+  {
+    "uid": "fas-linguistics",
+    "name_en": "Department of Linguistics and Translation",
+    "name_local": "Département de linguistique et de traduction",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Linguistics and Translation",
+      "Département de linguistique et de traduction"
+    ]
+  },
+  {
+    "uid": "fas-mathstat",
+    "name_en": "Department of Mathematics and Statistics",
+    "name_local": "Département de mathématiques et de statistique",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics and Statistics",
+      "Département de mathématiques et de statistique"
+    ]
+  },
+  {
+    "uid": "fas-philosophy",
+    "name_en": "Department of Philosophy",
+    "name_local": "Département de philosophie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Philosophy",
+      "Département de philosophie"
+    ]
+  },
+  {
+    "uid": "fas-physics",
+    "name_en": "Department of Physics",
+    "name_local": "Département de physique",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Département de physique",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "fas-psychology",
+    "name_en": "Department of Psychology",
+    "name_local": "Département de psychologie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology",
+      "Département de psychologie"
+    ]
+  },
+  {
+    "uid": "fas-polisci",
+    "name_en": "Department of Political Science",
+    "name_local": "Département de science politique",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Political Science",
+      "Département de science politique"
+    ]
+  },
+  {
+    "uid": "fas-biosci",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "Département de sciences biologiques",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences",
+      "Département de sciences biologiques"
+    ]
+  },
+  {
+    "uid": "fas-sociology",
+    "name_en": "Department of Sociology",
+    "name_local": "Département de sociologie",
+    "kind": "department",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociology",
+      "Département de sociologie"
+    ]
+  },
+  {
+    "uid": "fas-psychoeducation",
+    "name_en": "School of Psychoeducation",
+    "name_local": "École de psychoéducation",
+    "kind": "school",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychoeducation",
+      "École de psychoéducation",
+      "Ecole de psychoéducation"
+    ]
+  },
+  {
+    "uid": "fas-industrial-relations",
+    "name_en": "School of Industrial Relations",
+    "name_local": "École de relations industrielles",
+    "kind": "school",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "School of Industrial Relations",
+      "École de relations industrielles"
+    ]
+  },
+  {
+    "uid": "fas-social-work",
+    "name_en": "School of Social Work",
+    "name_local": "École de travail social",
+    "kind": "school",
+    "parent": "fas",
+    "aliases": [],
+    "context_aliases": [
+      "School of Social Work",
+      "École de travail social"
+    ]
+  },
+  {
+    "uid": "fas-ebsi",
+    "name_en": "School of Library and Information Science",
+    "name_local": "École de bibliothéconomie et des sciences de l'information",
+    "kind": "school",
+    "parent": "fas",
+    "aliases": [
+      "École de bibliothéconomie et des sciences de l'information"
+    ],
+    "context_aliases": [
+      "School of Library and Information Science",
+      "EBSI"
+    ]
+  },
+  {
+    "uid": "fas-courtois",
+    "name_en": "Institut Courtois",
+    "name_local": "Institut Courtois",
+    "kind": "institute",
+    "parent": "fas",
+    "aliases": [
+      "Institut Courtois"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "irex",
+    "name_en": "Trottier Institute for Research on Exoplanets",
+    "name_local": "Institut Trottier de recherche sur les exoplanètes",
+    "kind": "institute",
+    "parent": "fas-physics",
+    "aliases": [
+      "Trottier Institute for Research on Exoplanets",
+      "Institut Trottier de recherche sur les exoplanètes"
+    ],
+    "context_aliases": [
+      "iREx"
+    ]
+  },
+  {
+    "uid": "irbv",
+    "name_en": "Plant Biology Research Institute",
+    "name_local": "Institut de recherche en biologie végétale",
+    "kind": "institute",
+    "parent": "fas",
+    "aliases": [
+      "Institut de recherche en biologie végétale"
+    ],
+    "context_aliases": [
+      "Plant Biology Research Institute",
+      "IRBV"
+    ]
+  },
+  {
+    "uid": "medicine",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculté de médecine",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Faculté de médecine",
+      "Faculty of Medecine",
+      "Faculté de Médicine"
+    ]
+  },
+  {
+    "uid": "med-anesthesiology",
+    "name_en": "Department of Anesthesiology and Pain Medicine",
+    "name_local": "Département d'anesthésiologie et de médecine de la douleur",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anesthesiology and Pain Medicine",
+      "Department of Anesthesiology",
+      "Département d'anesthésiologie et de médecine de la douleur"
+    ]
+  },
+  {
+    "uid": "med-biochemistry",
+    "name_en": "Department of Biochemistry and Molecular Medicine",
+    "name_local": "Département de biochimie et médecine moléculaire",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Molecular Medicine",
+      "Department of Biochemistry",
+      "Département de biochimie et médecine moléculaire"
+    ]
+  },
+  {
+    "uid": "med-surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "Département de chirurgie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery",
+      "Département de chirurgie"
+    ]
+  },
+  {
+    "uid": "med-surgery-urology",
+    "name_en": "Division of Urology",
+    "name_local": "Service d'urologie",
+    "kind": "department",
+    "parent": "med-surgery",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Urology",
+      "Department of Urology",
+      "Service d'urologie"
+    ]
+  },
+  {
+    "uid": "med-medicine",
+    "name_en": "Department of Medicine",
+    "name_local": "Département de médecine",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine",
+      "Département de médecine"
+    ]
+  },
+  {
+    "uid": "med-family-emergency",
+    "name_en": "Department of Family Medicine and Emergency Medicine",
+    "name_local": "Département de médecine de famille et de médecine d'urgence",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Family Medicine and Emergency Medicine",
+      "Département de médecine de famille et de médecine d'urgence"
+    ]
+  },
+  {
+    "uid": "med-microbiology",
+    "name_en": "Department of Microbiology Infectious Diseases and Immunology",
+    "name_local": "Département de microbiologie infectiologie et immunologie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology Infectious Diseases and Immunology",
+      "Département de microbiologie infectiologie et immunologie",
+      "Department of Microbiology",
+      "Département de microbiologie"
+    ]
+  },
+  {
+    "uid": "med-neurosciences",
+    "name_en": "Department of Neurosciences",
+    "name_local": "Département de neurosciences",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosciences",
+      "Department of Neuroscience",
+      "Département de neurosciences"
+    ]
+  },
+  {
+    "uid": "med-nutrition",
+    "name_en": "Department of Nutrition",
+    "name_local": "Département de nutrition",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nutrition",
+      "Département de nutrition"
+    ]
+  },
+  {
+    "uid": "med-obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Département d'obstétrique-gynécologie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology",
+      "Department of Obstetrics-Gynecology",
+      "Department of Obstetrics-Gynaecology",
+      "Département d'obstétrique-gynécologie",
+      "Département d'obstétrique et gynécologie"
+    ]
+  },
+  {
+    "uid": "med-ophthalmology",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Département d'ophtalmologie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology",
+      "Département d'ophtalmologie"
+    ]
+  },
+  {
+    "uid": "med-pathology",
+    "name_en": "Department of Pathology and Cell Biology",
+    "name_local": "Département de pathologie et biologie cellulaire",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology and Cell Biology",
+      "Département de pathologie et biologie cellulaire"
+    ]
+  },
+  {
+    "uid": "med-pediatrics",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Département de pédiatrie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics",
+      "Département de pédiatrie"
+    ]
+  },
+  {
+    "uid": "med-pharmacology",
+    "name_en": "Department of Pharmacology and Physiology",
+    "name_local": "Département de pharmacologie et physiologie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology and Physiology",
+      "Département de pharmacologie et physiologie"
+    ]
+  },
+  {
+    "uid": "med-psychiatry",
+    "name_en": "Department of Psychiatry and Addictology",
+    "name_local": "Département de psychiatrie et d'addictologie",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Addictology",
+      "Department of Psychiatry and Addiction",
+      "Department of Psychiatry",
+      "Département de psychiatrie et d'addictologie"
+    ]
+  },
+  {
+    "uid": "med-radiology",
+    "name_en": "Department of Radiology Radiation Oncology and Nuclear Medicine",
+    "name_local": "Département de radiologie radio-oncologie et médecine nucléaire",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology Radiation Oncology and Nuclear Medicine",
+      "Département de radiologie radio-oncologie et médecine nucléaire",
+      "Department of Radiology",
+      "Département de radiologie"
+    ]
+  },
+  {
+    "uid": "med-rehabilitation",
+    "name_en": "School of Rehabilitation",
+    "name_local": "École de réadaptation",
+    "kind": "school",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "School of Rehabilitation",
+      "École de réadaptation",
+      "Ecole de réadaptation"
+    ]
+  },
+  {
+    "uid": "med-speech-audiology",
+    "name_en": "School of Speech-Language Pathology and Audiology",
+    "name_local": "École d'orthophonie et d'audiologie",
+    "kind": "school",
+    "parent": "medicine",
+    "aliases": [
+      "École d'orthophonie et d'audiologie",
+      "École d’orthophonie et d’audiologie"
+    ],
+    "context_aliases": [
+      "School of Speech-Language Pathology and Audiology",
+      "School of Speech Language Pathology and Audiology"
+    ]
+  },
+  {
+    "uid": "med-kinesiology",
+    "name_en": "School of Kinesiology and Physical Activity Sciences",
+    "name_local": "École de kinésiologie et des sciences de l'activité physique",
+    "kind": "school",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "School of Kinesiology and Physical Activity Sciences",
+      "École de kinésiologie et des sciences de l'activité physique",
+      "École de kinésiologie et des sciences de l’activité physique"
+    ]
+  },
+  {
+    "uid": "med-biomedical-engineering",
+    "name_en": "Institute of Biomedical Engineering",
+    "name_local": "Institut de génie biomédical",
+    "kind": "institute",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biomedical Engineering",
+      "Institut de génie biomédical"
+    ]
+  },
+  {
+    "uid": "espum",
+    "name_en": "School of Public Health",
+    "name_local": "École de santé publique",
+    "kind": "school",
+    "parent": "umontreal",
+    "aliases": [
+      "ESPUM",
+      "École de santé publique de l'Université de Montréal"
+    ],
+    "context_aliases": [
+      "School of Public Health",
+      "École de santé publique",
+      "Ecole de santé publique"
+    ]
+  },
+  {
+    "uid": "espum-dmsp",
+    "name_en": "Department of Social and Preventive Medicine",
+    "name_local": "Département de médecine sociale et préventive",
+    "kind": "department",
+    "parent": "espum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Social and Preventive Medicine",
+      "Department of Social and Preventative Medicine",
+      "Département de médecine sociale et préventive"
+    ]
+  },
+  {
+    "uid": "espum-dsest",
+    "name_en": "Department of Environmental and Occupational Health",
+    "name_local": "Département de santé environnementale et santé au travail",
+    "kind": "department",
+    "parent": "espum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental and Occupational Health",
+      "Département de santé environnementale et santé au travail"
+    ]
+  },
+  {
+    "uid": "espum-dgeps",
+    "name_en": "Department of Health Management Evaluation and Policy",
+    "name_local": "Département de gestion d'évaluation et de politique de santé",
+    "kind": "department",
+    "parent": "espum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Management Evaluation and Policy",
+      "Département de gestion d'évaluation et de politique de santé"
+    ]
+  },
+  {
+    "uid": "cresp",
+    "name_en": "Center for Public Health Research",
+    "name_local": "Centre de recherche en santé publique",
+    "kind": "center",
+    "parent": "espum",
+    "aliases": [
+      "Center for Public Health Research"
+    ],
+    "context_aliases": [
+      "CReSP",
+      "Centre de recherche en santé publique"
+    ]
+  },
+  {
+    "uid": "vet",
+    "name_en": "Faculty of Veterinary Medicine",
+    "name_local": "Faculté de médecine vétérinaire",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Veterinary Medicine",
+      "Faculté de médecine vétérinaire"
+    ]
+  },
+  {
+    "uid": "vet-clinical-sciences",
+    "name_en": "Department of Clinical Sciences",
+    "name_local": "Département de sciences cliniques",
+    "kind": "department",
+    "parent": "vet",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Sciences",
+      "Département de sciences cliniques"
+    ]
+  },
+  {
+    "uid": "vet-pathology",
+    "name_en": "Department of Pathology and Microbiology",
+    "name_local": "Département de pathologie et microbiologie",
+    "kind": "department",
+    "parent": "vet",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology and Microbiology",
+      "Département de pathologie et microbiologie"
+    ]
+  },
+  {
+    "uid": "vet-biomedicine",
+    "name_en": "Department of Veterinary Biomedicine",
+    "name_local": "Département de biomédecine vétérinaire",
+    "kind": "department",
+    "parent": "vet",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Veterinary Biomedicine",
+      "Département de biomédecine vétérinaire"
+    ]
+  },
+  {
+    "uid": "vet-grepaq",
+    "name_en": "Groupe de Recherche en Pharmacologie Animale du Québec",
+    "name_local": "Groupe de Recherche en Pharmacologie Animale du Québec",
+    "kind": "lab",
+    "parent": "vet",
+    "aliases": [
+      "Groupe de Recherche en Pharmacologie Animale du Québec"
+    ],
+    "context_aliases": [
+      "GREPAQ"
+    ]
+  },
+  {
+    "uid": "campus-saint-hyacinthe",
+    "name_en": "Saint-Hyacinthe Campus",
+    "name_local": "Campus de Saint-Hyacinthe",
+    "kind": "campus",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Saint-Hyacinthe Campus",
+      "Campus de Saint-Hyacinthe"
+    ]
+  },
+  {
+    "uid": "pharmacy",
+    "name_en": "Faculty of Pharmacy",
+    "name_local": "Faculté de pharmacie",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Pharmacy",
+      "Faculté de pharmacie"
+    ]
+  },
+  {
+    "uid": "nursing",
+    "name_en": "Faculty of Nursing",
+    "name_local": "Faculté des sciences infirmières",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Nursing",
+      "Faculté des sciences infirmières"
+    ]
+  },
+  {
+    "uid": "dentistry",
+    "name_en": "Faculty of Dental Medicine",
+    "name_local": "Faculté de médecine dentaire",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Dental Medicine",
+      "Faculté de médecine dentaire",
+      "Faculty of Dentistry"
+    ]
+  },
+  {
+    "uid": "dent-stomatology",
+    "name_en": "Department of Stomatology",
+    "name_local": "Département de stomatologie",
+    "kind": "department",
+    "parent": "dentistry",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Stomatology",
+      "Département de stomatologie"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculté de droit",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law",
+      "Faculté de droit"
+    ]
+  },
+  {
+    "uid": "crdp",
+    "name_en": "Public Law Research Centre",
+    "name_local": "Centre de recherche en droit public",
+    "kind": "center",
+    "parent": "law",
+    "aliases": [
+      "Centre de recherche en droit public"
+    ],
+    "context_aliases": [
+      "Public Law Research Centre",
+      "CRDP"
+    ]
+  },
+  {
+    "uid": "music",
+    "name_en": "Faculty of Music",
+    "name_local": "Faculté de musique",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Music",
+      "Faculté de musique"
+    ]
+  },
+  {
+    "uid": "amenagement",
+    "name_en": "Faculty of Environmental Design",
+    "name_local": "Faculté de l'aménagement",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [
+      "Faculté de l'aménagement"
+    ],
+    "context_aliases": [
+      "Faculty of Environmental Design"
+    ]
+  },
+  {
+    "uid": "education",
+    "name_en": "Faculty of Education",
+    "name_local": "Faculté des sciences de l'éducation",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Education",
+      "Faculté des sciences de l'éducation"
+    ]
+  },
+  {
+    "uid": "continuing-education",
+    "name_en": "Faculty of Continuing Education",
+    "name_local": "Faculté de la formation continue",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Continuing Education",
+      "Faculté de la formation continue"
+    ]
+  },
+  {
+    "uid": "graduate-studies",
+    "name_en": "Faculty of Graduate and Postdoctoral Studies",
+    "name_local": "Faculté des études supérieures et postdoctorales",
+    "kind": "faculty",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Graduate and Postdoctoral Studies",
+      "Faculté des études supérieures et postdoctorales"
+    ]
+  },
+  {
+    "uid": "optometry",
+    "name_en": "School of Optometry",
+    "name_local": "École d'optométrie",
+    "kind": "school",
+    "parent": "umontreal",
+    "aliases": [],
+    "context_aliases": [
+      "School of Optometry",
+      "École d'optométrie"
+    ]
+  },
+  {
+    "uid": "crm",
+    "name_en": "Centre de recherches mathématiques",
+    "name_local": "Centre de recherches mathématiques",
+    "kind": "center",
+    "parent": "umontreal",
+    "aliases": [
+      "Centre for Mathematical Research"
+    ],
+    "context_aliases": [
+      "Centre de recherches mathématiques"
+    ]
+  },
+  {
+    "uid": "brams",
+    "name_en": "International Laboratory for Brain Music and Sound Research",
+    "name_local": "Laboratoire international de recherche sur le cerveau la musique et le son",
+    "kind": "lab",
+    "parent": "umontreal",
+    "aliases": [
+      "International Laboratory for Brain Music and Sound Research"
+    ],
+    "context_aliases": [
+      "BRAMS"
+    ]
+  },
+  {
+    "uid": "circa",
+    "name_en": "Interdisciplinary Research Centre on the Brain and Learning",
+    "name_local": "Centre Interdisciplinaire de Recherche sur le Cerveau et l'Apprentissage",
+    "kind": "center",
+    "parent": "umontreal",
+    "aliases": [
+      "Centre Interdisciplinaire de Recherche sur le Cerveau et l'Apprentissage",
+      "Centre Interdisciplinaire de Recherche sur le Cerveau et l’Apprentissage"
+    ],
+    "context_aliases": [
+      "CIRCA"
+    ]
+  }
+]

@@ -1,0 +1,379 @@
+[
+  {
+    "uid": "auckland",
+    "name_en": "University of Auckland",
+    "name_local": "University of Auckland",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03b94tp07",
+    "type": "university"
+  },
+  {
+    "uid": "fmhs",
+    "name_en": "Faculty of Medical and Health Sciences",
+    "name_local": "Faculty of Medical and Health Sciences",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medical and Health Sciences"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "fed",
+    "name_en": "Faculty of Engineering and Design",
+    "name_local": "Faculty of Engineering and Design",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Engineering and Design",
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "fae",
+    "name_en": "Faculty of Arts and Education",
+    "name_local": "Faculty of Arts and Education",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts and Education"
+    ]
+  },
+  {
+    "uid": "fbe",
+    "name_en": "University of Auckland Business School",
+    "name_local": "University of Auckland Business School",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [
+      "University of Auckland Business School"
+    ],
+    "context_aliases": [
+      "Business School"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculty of Law",
+    "kind": "faculty",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "abi",
+    "name_en": "Auckland Bioengineering Institute",
+    "name_local": "Auckland Bioengineering Institute",
+    "kind": "institute",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Auckland Bioengineering Institute"
+    ]
+  },
+  {
+    "uid": "liggins",
+    "name_en": "Liggins Institute",
+    "name_local": "Liggins Institute",
+    "kind": "institute",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Liggins Institute"
+    ]
+  },
+  {
+    "uid": "cbr",
+    "name_en": "Centre for Brain Research",
+    "name_local": "Centre for Brain Research",
+    "kind": "center",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Brain Research"
+    ]
+  },
+  {
+    "uid": "mwc",
+    "name_en": "Maurice Wilkins Centre for Molecular Biodiscovery",
+    "name_local": "Maurice Wilkins Centre for Molecular Biodiscovery",
+    "kind": "center",
+    "parent": "auckland",
+    "aliases": [],
+    "context_aliases": [
+      "Maurice Wilkins Centre for Molecular Biodiscovery",
+      "Maurice Wilkins Centre"
+    ]
+  },
+  {
+    "uid": "ims",
+    "name_en": "Institute of Marine Science",
+    "name_local": "Institute of Marine Science",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Marine Science"
+    ]
+  },
+  {
+    "uid": "pop",
+    "name_en": "School of Population Health",
+    "name_local": "School of Population Health",
+    "kind": "school",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Population Health"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "School of Medicine",
+    "name_local": "School of Medicine",
+    "kind": "school",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "medsci",
+    "name_en": "School of Medical Sciences",
+    "name_local": "School of Medical Sciences",
+    "kind": "school",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Medical Sciences"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "School of Pharmacy",
+    "name_local": "School of Pharmacy",
+    "kind": "school",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Pharmacy"
+    ]
+  },
+  {
+    "uid": "nurs",
+    "name_en": "School of Nursing",
+    "name_local": "School of Nursing",
+    "kind": "school",
+    "parent": "fmhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nursing"
+    ]
+  },
+  {
+    "uid": "physio",
+    "name_en": "Department of Physiology",
+    "name_local": "Department of Physiology",
+    "kind": "department",
+    "parent": "medsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physiology"
+    ]
+  },
+  {
+    "uid": "anat",
+    "name_en": "Department of Anatomy and Medical Imaging",
+    "name_local": "Department of Anatomy and Medical Imaging",
+    "kind": "department",
+    "parent": "medsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anatomy and Medical Imaging"
+    ]
+  },
+  {
+    "uid": "mmp",
+    "name_en": "Department of Molecular Medicine and Pathology",
+    "name_local": "Department of Molecular Medicine and Pathology",
+    "kind": "department",
+    "parent": "medsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Medicine and Pathology"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "dmed",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "psymed",
+    "name_en": "Department of Psychological Medicine",
+    "name_local": "Department of Psychological Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychological Medicine"
+    ]
+  },
+  {
+    "uid": "ophth",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Department of Ophthalmology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "sbs",
+    "name_en": "School of Biological Sciences",
+    "name_local": "School of Biological Sciences",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "scs",
+    "name_en": "School of Chemical Sciences",
+    "name_local": "School of Chemical Sciences",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemical Sciences"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "School of Computer Science",
+    "name_local": "School of Computer Science",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science"
+    ]
+  },
+  {
+    "uid": "env",
+    "name_en": "School of Environment",
+    "name_local": "School of Environment",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Environment"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "School of Psychology",
+    "name_local": "School of Psychology",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychology"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical and Mechatronics Engineering",
+    "name_local": "Department of Mechanical and Mechatronics Engineering",
+    "kind": "department",
+    "parent": "fed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical and Mechatronics Engineering"
+    ]
+  },
+  {
+    "uid": "civ",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "fed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical Computer and Software Engineering",
+    "name_local": "Department of Electrical Computer and Software Engineering",
+    "kind": "department",
+    "parent": "fed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical",
+      "Computer and Software Engineering"
+    ]
+  },
+  {
+    "uid": "cme",
+    "name_en": "Department of Chemical and Materials Engineering",
+    "name_local": "Department of Chemical and Materials Engineering",
+    "kind": "department",
+    "parent": "fed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Materials Engineering"
+    ]
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "key": "leiden",
+  "short_name": "Leiden",
+  "short_name_local": "Universiteit Leiden",
+  "name_en": "Leiden University",
+  "name_local": "Universiteit Leiden",
+  "ror_id": "027bh9e22",
+  "language": "Dutch",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "de",
+    "der",
+    "den",
+    "ten",
+    "ter",
+    "het",
+    "in",
+    "t"
+  ],
+  "email_domains": [
+    "leidenuniv.nl"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:LeidenUniv)(?![^\\W\\d_])",
+  "long_name": "Leiden[\\s‐-]+University(?![\\s‐-]+Medical)|University[\\s‐-]+of[\\s‐-]+Leiden|Rijksuniversiteit[\\s‐-]+Leiden|Universiteit[\\s‐-]+Leiden",
+  "marker_replacement": "LeidenUniv",
+  "place_words": "albinusdreef|aleja|allee|av|ave|avenue|bd|bldg|bohrweg|boulevard|box|building|calle|campus|east|einsteinweg|floor|gatan|hague|holland|katu|laan|leiden|nederland|netherlands|niels|north|o|p|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|sylviusweg|the|tie|ul|vej|via|viale|vägen|wassenaarseweg|weg|west",
+  "other_organisations": "Leiden University Medical Cent(?:er|re)|(?<![^\\W\\d_])LUMC(?![^\\W\\d_])|Delft University|Naturalis|Erasmus|Leiden\\ University\\ Medical\\ Center",
+  "identity": "Leiden[\\s‐-]+University(?![\\s‐-]+Medical)|University[\\s‐-]+of[\\s‐-]+Leiden|Rijksuniversiteit[\\s‐-]+Leiden|Universiteit[\\s‐-]+Leiden",
+  "city": "Leiden",
+  "staff_catalog": null,
+  "mongo_db": "pauk_leiden",
+  "site_url": "https://www.universiteitleiden.nl",
+  "unit_words": "institute|faculty|centre|center|observatory|laboratory|division",
+  "external_authors": false
+}

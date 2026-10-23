@@ -1,0 +1,36 @@
+{
+  "key": "fau",
+  "short_name": "FAU",
+  "short_name_local": "FAU",
+  "name_en": "Friedrich-Alexander-Universität Erlangen-Nürnberg",
+  "name_local": "Friedrich-Alexander-Universität Erlangen-Nürnberg",
+  "ror_id": "00f7hpc57",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "fau.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:FAUErlangenUniv|FAU\\ Erlangen\\-Nürnberg|FAU\\ Erlangen\\-Nuremberg|FAU\\ Erlangen)(?![^\\W\\d_])",
+  "long_name": "Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität[\\s‐-]+\\(FAU\\)[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universitaet[\\s‐-]+Erlangen[\\s‐-]+Nuernberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|University[\\s‐-]+of[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität|University[\\s‐-]+of[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University|Friedrich[\\s‐-]+Alexander[\\s‐-]+University|Universität[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Universitat[\\s‐-]+Erlangen[\\s‐-]+Nurnberg|Univ[\\s‐-]+Erlangen[\\s‐-]+Nurnberg",
+  "marker_replacement": "FAUErlangenUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bavaria|bayern|bd|bldg|boulevard|box|building|calle|campus|deutschland|east|egerlandstr|erlangen|floor|fürth|gatan|germany|katu|laan|martensstrasse|north|nuernberg|nuremberg|nürnberg|piazza|platz|plaza|plein|po|rd|road|room|rue|schwabachanlage|south|st|str|straat|strasse|straße|street|tie|ul|ulmenweg|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Universitätsklinikum Erlangen|Uniklinikum Erlangen|University Hospital Erlangen|Erlangen University Hospital|Max Planck Institute|Fraunhofer|Deutsches Zentrum (?:für )?Immuntherapie|Bavarian Cancer Research Center|Comprehensive Cancer Center Erlangen|Helmholtz|Bayreuth\\ Medical\\ Center|Universitätsklinikum\\ Erlangen|Verein\\ für\\ Nationales\\ Hochleistungsrechnen\\ –\\ NHR\\-Verein\\ e\\.V\\.",
+  "identity": "(?<![^\\W\\d_])FAU\\ Erlangen\\-Nürnberg(?![^\\W\\d_])|(?<![^\\W\\d_])FAU\\ Erlangen\\-Nuremberg(?![^\\W\\d_])|(?<![^\\W\\d_])FAU\\ Erlangen(?![^\\W\\d_])|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität[\\s‐-]+\\(FAU\\)[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universitaet[\\s‐-]+Erlangen[\\s‐-]+Nuernberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|University[\\s‐-]+of[\\s‐-]+Erlangen[\\s‐-]+Nuremberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+Universität|University[\\s‐-]+of[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Friedrich[\\s‐-]+Alexander[\\s‐-]+University|Friedrich[\\s‐-]+Alexander[\\s‐-]+University|Universität[\\s‐-]+Erlangen[\\s‐-]+Nürnberg|Universitat[\\s‐-]+Erlangen[\\s‐-]+Nurnberg|Univ[\\s‐-]+Erlangen[\\s‐-]+Nurnberg",
+  "city": "Erlangen",
+  "staff_catalog": null,
+  "mongo_db": "pauk_fau",
+  "site_url": "https://www.fau.de",
+  "unit_words": "faculty|fakultät|institute|institut|department|centre|center|lab|zentrum",
+  "external_authors": false
+}

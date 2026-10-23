@@ -1,0 +1,37 @@
+{
+  "key": "auckland",
+  "short_name": "Auckland",
+  "short_name_local": "Waipapa Taumata Rau",
+  "name_en": "University of Auckland",
+  "name_local": "University of Auckland",
+  "ror_id": "03b94tp07",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "auckland.ac.nz"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivAuckland)(?![^\\W\\d_])",
+  "long_name": "The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Auckland|University[\\s‐-]+of[\\s‐-]+Auckland|Waipapa[\\s‐-]+Taumata[\\s‐-]+Rau|Univ\\.[\\s‐-]+of[\\s‐-]+Auckland|Univ[\\s‐-]+Auckland",
+  "marker_replacement": "UnivAuckland",
+  "place_words": "aleja|allee|aotearoa|auckland|av|ave|avenue|bag|bd|bldg|boulevard|box|building|calle|campus|central|centre|east|floor|gatan|grafton|katu|laan|mail|new|north|nz|piazza|platz|plaza|plein|po|private|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west|zealand",
+  "other_organisations": "Auckland City Hospital|Middlemore|Starship|Auckland University of Technology|University of Otago|Te Whatu Ora|Health New Zealand|Cancer\\ Trials\\ New\\ Zealand|Middlemore\\ Hospital|Te\\ Pūnaha\\ Matatini",
+  "identity": "The[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Auckland|University[\\s‐-]+of[\\s‐-]+Auckland|Waipapa[\\s‐-]+Taumata[\\s‐-]+Rau|Univ\\.[\\s‐-]+of[\\s‐-]+Auckland|Univ[\\s‐-]+Auckland",
+  "city": "Auckland",
+  "staff_catalog": null,
+  "mongo_db": "pauk_auckland",
+  "site_url": "https://www.auckland.ac.nz",
+  "unit_words": "faculty|school|department|institute|centre|center",
+  "external_authors": false
+}

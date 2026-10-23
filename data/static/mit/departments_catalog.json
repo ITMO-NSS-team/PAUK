@@ -1,0 +1,986 @@
+[
+  {
+    "uid": "mit",
+    "name_en": "Massachusetts Institute of Technology",
+    "name_local": "Massachusetts Institute of Technology",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/042nb2s44",
+    "type": "university"
+  },
+  {
+    "uid": "sap",
+    "name_en": "School of Architecture and Planning",
+    "name_local": "School of Architecture and Planning",
+    "kind": "school",
+    "parent": "mit",
+    "aliases": [
+      "MIT School of Architecture and Planning"
+    ],
+    "context_aliases": [
+      "School of Architecture and Planning"
+    ]
+  },
+  {
+    "uid": "architecture",
+    "name_en": "Department of Architecture",
+    "name_local": "Department of Architecture",
+    "kind": "department",
+    "parent": "sap",
+    "aliases": [
+      "MIT Department of Architecture"
+    ],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "building-tech",
+    "name_en": "Building Technology Program",
+    "name_local": "Building Technology Program",
+    "kind": "program",
+    "parent": "architecture",
+    "aliases": [],
+    "context_aliases": [
+      "Building Technology Program"
+    ]
+  },
+  {
+    "uid": "dusp",
+    "name_en": "Department of Urban Studies and Planning",
+    "name_local": "Department of Urban Studies and Planning",
+    "kind": "department",
+    "parent": "sap",
+    "aliases": [
+      "MIT DUSP"
+    ],
+    "context_aliases": [
+      "Department of Urban Studies and Planning",
+      "DUSP"
+    ]
+  },
+  {
+    "uid": "senseable",
+    "name_en": "Senseable City Lab",
+    "name_local": "Senseable City Lab",
+    "kind": "lab",
+    "parent": "dusp",
+    "aliases": [
+      "Senseable City Lab",
+      "MIT Senseable City Lab",
+      "Senseable City Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "media-lab",
+    "name_en": "MIT Media Lab",
+    "name_local": "MIT Media Lab",
+    "kind": "lab",
+    "parent": "sap",
+    "aliases": [
+      "MIT Media Lab",
+      "MIT Media Laboratory"
+    ],
+    "context_aliases": [
+      "Media Lab",
+      "Media Laboratory"
+    ]
+  },
+  {
+    "uid": "mas",
+    "name_en": "Program in Media Arts and Sciences",
+    "name_local": "Program in Media Arts and Sciences",
+    "kind": "program",
+    "parent": "media-lab",
+    "aliases": [
+      "Program in Media Arts and Sciences"
+    ],
+    "context_aliases": [
+      "Media Arts and Sciences"
+    ]
+  },
+  {
+    "uid": "tangible-media",
+    "name_en": "Tangible Media Group",
+    "name_local": "Tangible Media Group",
+    "kind": "lab",
+    "parent": "media-lab",
+    "aliases": [
+      "Tangible Media Group"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "soe",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "mit",
+    "aliases": [
+      "MIT School of Engineering"
+    ],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "aeroastro",
+    "name_en": "Department of Aeronautics and Astronautics",
+    "name_local": "Department of Aeronautics and Astronautics",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT AeroAstro"
+    ],
+    "context_aliases": [
+      "Department of Aeronautics and Astronautics",
+      "Aeronautics and Astronautics",
+      "AeroAstro"
+    ]
+  },
+  {
+    "uid": "be",
+    "name_en": "Department of Biological Engineering",
+    "name_local": "Department of Biological Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT Department of Biological Engineering"
+    ],
+    "context_aliases": [
+      "Department of Biological Engineering",
+      "Biological Engineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT Department of Chemical Engineering"
+    ],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT Department of Civil and Environmental Engineering"
+    ],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "eecs",
+    "name_en": "Department of Electrical Engineering and Computer Science",
+    "name_local": "Department of Electrical Engineering and Computer Science",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT EECS"
+    ],
+    "context_aliases": [
+      "Department of Electrical Engineering and Computer Science",
+      "Electrical Engineering and Computer Science",
+      "EECS"
+    ]
+  },
+  {
+    "uid": "dmse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT DMSE"
+    ],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "DMSE"
+    ]
+  },
+  {
+    "uid": "meche",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [
+      "MIT MechE",
+      "MIT Department of Mechanical Engineering"
+    ],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "nse",
+    "name_en": "Department of Nuclear Science and Engineering",
+    "name_local": "Department of Nuclear Science and Engineering",
+    "kind": "department",
+    "parent": "soe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Science and Engineering",
+      "Nuclear Science and Engineering"
+    ]
+  },
+  {
+    "uid": "imes",
+    "name_en": "Institute for Medical Engineering and Science",
+    "name_local": "Institute for Medical Engineering and Science",
+    "kind": "institute",
+    "parent": "soe",
+    "aliases": [
+      "Institute for Medical Engineering and Science",
+      "Institute for Medical Engineering & Science",
+      "MIT IMES"
+    ],
+    "context_aliases": [
+      "IMES"
+    ]
+  },
+  {
+    "uid": "lcp",
+    "name_en": "Laboratory for Computational Physiology",
+    "name_local": "Laboratory for Computational Physiology",
+    "kind": "lab",
+    "parent": "imes",
+    "aliases": [
+      "MIT Laboratory for Computational Physiology"
+    ],
+    "context_aliases": [
+      "Laboratory for Computational Physiology"
+    ]
+  },
+  {
+    "uid": "critical-data",
+    "name_en": "MIT Critical Data",
+    "name_local": "MIT Critical Data",
+    "kind": "lab",
+    "parent": "imes",
+    "aliases": [
+      "MIT Critical Data"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "shass",
+    "name_en": "School of Humanities Arts and Social Sciences",
+    "name_local": "School of Humanities Arts and Social Sciences",
+    "kind": "school",
+    "parent": "mit",
+    "aliases": [
+      "MIT SHASS"
+    ],
+    "context_aliases": [
+      "School of Humanities Arts and Social Sciences",
+      "School of Humanities"
+    ]
+  },
+  {
+    "uid": "anthropology",
+    "name_en": "Anthropology Section",
+    "name_local": "Anthropology Section",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Anthropology Section",
+      "Department of Anthropology"
+    ]
+  },
+  {
+    "uid": "cmsw",
+    "name_en": "Comparative Media Studies/Writing",
+    "name_local": "Comparative Media Studies/Writing",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [
+      "Comparative Media Studies/Writing"
+    ],
+    "context_aliases": [
+      "Comparative Media Studies"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "Department of Economics",
+    "name_local": "Department of Economics",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [
+      "MIT Department of Economics"
+    ],
+    "context_aliases": [
+      "Department of Economics"
+    ]
+  },
+  {
+    "uid": "global-languages",
+    "name_en": "Global Languages",
+    "name_local": "Global Languages",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [
+      "MIT Global Languages"
+    ],
+    "context_aliases": [
+      "Global Languages"
+    ]
+  },
+  {
+    "uid": "history",
+    "name_en": "History Section",
+    "name_local": "History Section",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "History Section",
+      "Department of History"
+    ]
+  },
+  {
+    "uid": "linguistics-philosophy",
+    "name_en": "Department of Linguistics and Philosophy",
+    "name_local": "Department of Linguistics and Philosophy",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Linguistics and Philosophy",
+      "Linguistics and Philosophy"
+    ]
+  },
+  {
+    "uid": "literature",
+    "name_en": "Literature Section",
+    "name_local": "Literature Section",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Literature Section"
+    ]
+  },
+  {
+    "uid": "mta",
+    "name_en": "Music and Theater Arts",
+    "name_local": "Music and Theater Arts",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Music and Theater Arts"
+    ]
+  },
+  {
+    "uid": "polisci",
+    "name_en": "Department of Political Science",
+    "name_local": "Department of Political Science",
+    "kind": "department",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Political Science"
+    ]
+  },
+  {
+    "uid": "sts",
+    "name_en": "Program in Science Technology and Society",
+    "name_local": "Program in Science Technology and Society",
+    "kind": "program",
+    "parent": "shass",
+    "aliases": [],
+    "context_aliases": [
+      "Program in Science Technology and Society",
+      "STS Program"
+    ]
+  },
+  {
+    "uid": "sloan",
+    "name_en": "MIT Sloan School of Management",
+    "name_local": "MIT Sloan School of Management",
+    "kind": "school",
+    "parent": "mit",
+    "aliases": [
+      "MIT Sloan"
+    ],
+    "context_aliases": [
+      "Sloan School of Management"
+    ]
+  },
+  {
+    "uid": "sos",
+    "name_en": "School of Science",
+    "name_local": "School of Science",
+    "kind": "school",
+    "parent": "mit",
+    "aliases": [
+      "MIT School of Science"
+    ],
+    "context_aliases": [
+      "School of Science"
+    ]
+  },
+  {
+    "uid": "biology",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT Department of Biology"
+    ],
+    "context_aliases": [
+      "Department of Biology",
+      "Biology Department"
+    ]
+  },
+  {
+    "uid": "bcs",
+    "name_en": "Department of Brain and Cognitive Sciences",
+    "name_local": "Department of Brain and Cognitive Sciences",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT Brain and Cognitive Sciences"
+    ],
+    "context_aliases": [
+      "Department of Brain and Cognitive Sciences",
+      "Department of Brain and Cognitive Science",
+      "Department of Brain & Cognitive Sciences",
+      "Brain and Cognitive Sciences"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT Department of Chemistry"
+    ],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "eaps",
+    "name_en": "Department of Earth Atmospheric and Planetary Sciences",
+    "name_local": "Department of Earth Atmospheric and Planetary Sciences",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT EAPS",
+      "MIT Department of Earth"
+    ],
+    "context_aliases": [
+      "Department of Earth Atmospheric and Planetary Sciences",
+      "Department of Earth Atmospheric & Planetary Sciences",
+      "Department of Earth",
+      "Atmospheric and Planetary Sciences",
+      "Atmospheric & Planetary Sciences",
+      "Atmospheric and Planetary Science",
+      "and Planetary Sciences",
+      "EAPS"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT Department of Mathematics"
+    ],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "sos",
+    "aliases": [
+      "MIT Department of Physics"
+    ],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "ctp",
+    "name_en": "Center for Theoretical Physics",
+    "name_local": "Center for Theoretical Physics",
+    "kind": "center",
+    "parent": "physics",
+    "aliases": [
+      "MIT Center for Theoretical Physics"
+    ],
+    "context_aliases": [
+      "Center for Theoretical Physics",
+      "Center for Theoretical Physics - a Leinweber Institute",
+      "Center for Theoretical Physics -a Leinweber Institute"
+    ]
+  },
+  {
+    "uid": "scc",
+    "name_en": "MIT Schwarzman College of Computing",
+    "name_local": "MIT Schwarzman College of Computing",
+    "kind": "college",
+    "parent": "mit",
+    "aliases": [
+      "Schwarzman College of Computing",
+      "Stephen A. Schwarzman College of Computing"
+    ],
+    "context_aliases": [
+      "College of Computing"
+    ]
+  },
+  {
+    "uid": "idss",
+    "name_en": "Institute for Data Systems and Society",
+    "name_local": "Institute for Data Systems and Society",
+    "kind": "institute",
+    "parent": "scc",
+    "aliases": [
+      "MIT IDSS"
+    ],
+    "context_aliases": [
+      "Institute for Data Systems and Society",
+      "Institute for Data",
+      "IDSS"
+    ]
+  },
+  {
+    "uid": "lids",
+    "name_en": "Laboratory for Information and Decision Systems",
+    "name_local": "Laboratory for Information and Decision Systems",
+    "kind": "lab",
+    "parent": "idss",
+    "aliases": [
+      "Laboratory for Information and Decision Systems",
+      "Laboratory for Information & Decision Systems",
+      "MIT LIDS"
+    ],
+    "context_aliases": [
+      "LIDS"
+    ]
+  },
+  {
+    "uid": "ccse",
+    "name_en": "Center for Computational Science and Engineering",
+    "name_local": "Center for Computational Science and Engineering",
+    "kind": "center",
+    "parent": "scc",
+    "aliases": [
+      "MIT Center for Computational Science and Engineering"
+    ],
+    "context_aliases": [
+      "Center for Computational Science and Engineering"
+    ]
+  },
+  {
+    "uid": "csail",
+    "name_en": "Computer Science and Artificial Intelligence Laboratory",
+    "name_local": "Computer Science and Artificial Intelligence Laboratory",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "Computer Science and Artificial Intelligence Laboratory",
+      "Computer Science & Artificial Intelligence Laboratory",
+      "Computer Science and Artificial Intelligence Lab",
+      "MIT CSAIL",
+      "CSAIL"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "futuretech",
+    "name_en": "MIT FutureTech",
+    "name_local": "MIT FutureTech",
+    "kind": "lab",
+    "parent": "csail",
+    "aliases": [
+      "MIT FutureTech"
+    ],
+    "context_aliases": [
+      "FutureTech"
+    ]
+  },
+  {
+    "uid": "mit-ibm",
+    "name_en": "MIT-IBM Watson AI Lab",
+    "name_local": "MIT-IBM Watson AI Lab",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "MIT-IBM Watson AI Lab",
+      "MIT - IBM Watson AI Lab",
+      "MIT–IBM Watson AI Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rle",
+    "name_en": "Research Laboratory of Electronics",
+    "name_local": "Research Laboratory of Electronics",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "Research Laboratory of Electronics",
+      "MIT RLE"
+    ],
+    "context_aliases": [
+      "RLE"
+    ]
+  },
+  {
+    "uid": "mtl",
+    "name_en": "Microsystems Technology Laboratories",
+    "name_local": "Microsystems Technology Laboratories",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "Microsystems Technology Laboratories",
+      "MIT Microsystems Technology Laboratories",
+      "MIT MTL"
+    ],
+    "context_aliases": [
+      "Microsystems Technology Laboratory"
+    ]
+  },
+  {
+    "uid": "lns",
+    "name_en": "Laboratory for Nuclear Science",
+    "name_local": "Laboratory for Nuclear Science",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "MIT Laboratory for Nuclear Science"
+    ],
+    "context_aliases": [
+      "Laboratory for Nuclear Science"
+    ]
+  },
+  {
+    "uid": "psfc",
+    "name_en": "Plasma Science and Fusion Center",
+    "name_local": "Plasma Science and Fusion Center",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "Plasma Science and Fusion Center",
+      "MIT Plasma Science and Fusion Center",
+      "MIT-Plasma Science and Fusion Center",
+      "MIT PSFC"
+    ],
+    "context_aliases": [
+      "PSFC"
+    ]
+  },
+  {
+    "uid": "mki",
+    "name_en": "MIT Kavli Institute for Astrophysics and Space Research",
+    "name_local": "MIT Kavli Institute for Astrophysics and Space Research",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "Kavli Institute for Astrophysics & Space Research",
+      "MIT Kavli Institute"
+    ],
+    "context_aliases": [
+      "Kavli Institute for Astrophysics and Space Research"
+    ]
+  },
+  {
+    "uid": "ligo",
+    "name_en": "MIT LIGO Laboratory",
+    "name_local": "MIT LIGO Laboratory",
+    "kind": "lab",
+    "parent": "mki",
+    "aliases": [
+      "MIT LIGO Laboratory",
+      "MIT LIGO"
+    ],
+    "context_aliases": [
+      "LIGO Laboratory"
+    ]
+  },
+  {
+    "uid": "isn",
+    "name_en": "Institute for Soldier Nanotechnologies",
+    "name_local": "Institute for Soldier Nanotechnologies",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "Institute for Soldier Nanotechnologies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lincoln",
+    "name_en": "Lincoln Laboratory",
+    "name_local": "Lincoln Laboratory",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "MIT Lincoln Laboratory",
+      "MIT Lincoln Lab"
+    ],
+    "context_aliases": [
+      "Lincoln Laboratory"
+    ]
+  },
+  {
+    "uid": "haystack",
+    "name_en": "Haystack Observatory",
+    "name_local": "Haystack Observatory",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "Haystack Observatory",
+      "MIT Haystack Observatory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "spectroscopy",
+    "name_en": "G. R. Harrison Spectroscopy Laboratory",
+    "name_local": "G. R. Harrison Spectroscopy Laboratory",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "G. R. Harrison Spectroscopy Laboratory",
+      "G.R. Harrison Spectroscopy Laboratory",
+      "Harrison Spectroscopy Laboratory"
+    ],
+    "context_aliases": [
+      "Spectroscopy Laboratory"
+    ]
+  },
+  {
+    "uid": "lbrc",
+    "name_en": "Laser Biomedical Research Center",
+    "name_local": "Laser Biomedical Research Center",
+    "kind": "center",
+    "parent": "spectroscopy",
+    "aliases": [
+      "Laser Biomedical Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "koch",
+    "name_en": "Koch Institute for Integrative Cancer Research",
+    "name_local": "Koch Institute for Integrative Cancer Research",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "David H. Koch Center for Integrative Cancer Research"
+    ],
+    "context_aliases": [
+      "Koch Institute for Integrative Cancer Research",
+      "Koch Institute"
+    ]
+  },
+  {
+    "uid": "mcgovern",
+    "name_en": "McGovern Institute for Brain Research",
+    "name_local": "McGovern Institute for Brain Research",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "McGovern Institute of Brain Research"
+    ],
+    "context_aliases": [
+      "McGovern Institute",
+      "McGovern Institute for Brain Research"
+    ]
+  },
+  {
+    "uid": "autism-center",
+    "name_en": "Hock E. Tan and K. Lisa Yang Center for Autism Research",
+    "name_local": "Hock E. Tan and K. Lisa Yang Center for Autism Research",
+    "kind": "center",
+    "parent": "mcgovern",
+    "aliases": [
+      "Hock E. Tan and K. Lisa Yang Center for Autism Research",
+      "Yang Center for Autism Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "picower",
+    "name_en": "Picower Institute for Learning and Memory",
+    "name_local": "Picower Institute for Learning and Memory",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "Picower Institute for Learning and Memory",
+      "Picower Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cbmm",
+    "name_en": "Center for Brains Minds and Machines",
+    "name_local": "Center for Brains Minds and Machines",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "Center for Brains Minds and Machines",
+      "Center for Brains Minds & Machines"
+    ],
+    "context_aliases": [
+      "Center for Brains",
+      "CBMM"
+    ]
+  },
+  {
+    "uid": "yang-tan",
+    "name_en": "Yang Tan Collective",
+    "name_local": "Yang Tan Collective",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "Yang Tan Collective"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bionics",
+    "name_en": "K. Lisa Yang Center for Bionics",
+    "name_local": "K. Lisa Yang Center for Bionics",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "K. Lisa Yang Center for Bionics",
+      "Yang Center for Bionics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cua",
+    "name_en": "MIT-Harvard Center for Ultracold Atoms",
+    "name_local": "MIT-Harvard Center for Ultracold Atoms",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "MIT-Harvard Center for Ultracold Atoms",
+      "Harvard-MIT Center for Ultracold Atoms",
+      "Center for Ultracold Atoms"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "iaifi",
+    "name_en": "NSF AI Institute for Artificial Intelligence and Fundamental Interactions",
+    "name_local": "NSF AI Institute for Artificial Intelligence and Fundamental Interactions",
+    "kind": "institute",
+    "parent": "mit",
+    "aliases": [
+      "IAIFI"
+    ],
+    "context_aliases": [
+      "NSF AI Institute for Artificial Intelligence and Fundamental Interactions",
+      "Institute for Artificial Intelligence and Fundamental Interactions"
+    ]
+  },
+  {
+    "uid": "orc",
+    "name_en": "Operations Research Center",
+    "name_local": "Operations Research Center",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "MIT Operations Research Center"
+    ],
+    "context_aliases": [
+      "Operations Research Center"
+    ]
+  },
+  {
+    "uid": "ctl",
+    "name_en": "Center for Transportation & Logistics",
+    "name_local": "Center for Transportation & Logistics",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "MIT Center for Transportation & Logistics",
+      "MIT Center for Transportation and Logistics",
+      "MIT CTL"
+    ],
+    "context_aliases": [
+      "Center for Transportation & Logistics",
+      "Center for Transportation and Logistics"
+    ]
+  },
+  {
+    "uid": "csss",
+    "name_en": "Center for Sustainability Science and Strategy",
+    "name_local": "Center for Sustainability Science and Strategy",
+    "kind": "center",
+    "parent": "mit",
+    "aliases": [
+      "MIT Center for Sustainability Science and Strategy"
+    ],
+    "context_aliases": [
+      "Center for Sustainability Science and Strategy"
+    ]
+  },
+  {
+    "uid": "csb",
+    "name_en": "Computational and Systems Biology Program",
+    "name_local": "Computational and Systems Biology Program",
+    "kind": "program",
+    "parent": "mit",
+    "aliases": [],
+    "context_aliases": [
+      "Computational and Systems Biology Program",
+      "Computational and Systems Biology"
+    ]
+  },
+  {
+    "uid": "mit-whoi",
+    "name_en": "MIT-WHOI Joint Program in Oceanography/Applied Ocean Science and Engineering",
+    "name_local": "MIT-WHOI Joint Program in Oceanography/Applied Ocean Science and Engineering",
+    "kind": "program",
+    "parent": "mit",
+    "aliases": [
+      "MIT-WHOI Joint Program",
+      "MIT/WHOI Joint Program",
+      "MIT-WHOI Joint Program in Oceanography"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "tsl",
+    "name_en": "MIT Teaching Systems Lab",
+    "name_local": "MIT Teaching Systems Lab",
+    "kind": "lab",
+    "parent": "mit",
+    "aliases": [
+      "MIT Teaching Systems Lab"
+    ],
+    "context_aliases": [
+      "Teaching Systems Lab"
+    ]
+  }
+]

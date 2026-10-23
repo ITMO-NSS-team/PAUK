@@ -1,0 +1,41 @@
+{
+  "key": "cambridge",
+  "short_name": "Cambridge",
+  "short_name_local": "Cambridge",
+  "name_en": "University of Cambridge",
+  "name_local": "University of Cambridge",
+  "ror_id": "013meh722",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "der",
+    "den",
+    "da",
+    "di",
+    "du",
+    "le",
+    "la",
+    "del",
+    "dos",
+    "das",
+    "ter"
+  ],
+  "email_domains": [
+    "cam.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:CAMBRIDGEUNIV|Univ\\.?\\s+of\\s+Cambrid?ge|Cambridge\\s+U\\.)(?![^\\W\\d_])",
+  "long_name": "(?:The\\s+)?Chancellor\\s*,?\\s*Masters\\s*,?\\s+and\\s+Scholars\\s+of\\s+the\\s+University\\s+of\\s+Cambridge|Univ(?:ersity|\\.)?\\s+of\\s+Cambrid?ge|Cambridge\\s+Univ(?:ersity|\\.)(?!\\s+(?:Hospitals?|Press|Health|Assessment|Library))|Prifysgol\\s+Caergrawnt",
+  "marker_replacement": "CAMBRIDGEUNIV",
+  "place_words": "cambridge|cambrige|cambridgeshire|uk|united|kingdom|england|great|britain|gb|madingley|lensfield|downing|road|rd|street|st|site|jj|j|thomson|avenue|ave|charles|babbage|wilberforce|tennis|court|hills|trinity|ln|lane|robinson|way|trumpington|puddicombe|philippa|fawcett|drive|mill|chaucer|papworth|hinxton|box|cb\\d+[a-z]*|\\d[a-z]{2}|\\d+[a-z]?",
+  "other_organisations": "Addenbrooke'?’?s|Addenbrookes|Cambridge\\s+University\\s+Hospitals|Royal\\s+Papworth|Rosie\\s+Hospital|Fulbourn|NHS|National\\s+Health\\s+Service|NIHR|National\\s+Institute\\s+for\\s+Health\\s+Research|Wellcome\\s+Sanger|Sanger\\s+Institute|Wellcome\\s+Genome\\s+Campus|EMBL|European\\s+Bioinformatics\\s+Institute|MRC\\s+Laboratory\\s+of\\s+Molecular\\s+Biology|Babraham\\s+Institute|Faraday\\s+Institution|Alan\\s+Turing\\s+Institute|UK\\s+Dementia\\s+Research\\s+Institute|British\\s+Antarctic\\s+Survey|Diamond\\s+Light\\s+Source|Rutherford\\s+Appleton|Harwell|Anglia\\s+Ruskin|NIAB|Cambridge\\s+University\\s+Press|Marine\\s+Biological\\s+Laboratory|CNRS|National\\s+Institutes\\s+of\\s+Health|Chinese\\s+Academy\\s+of\\s+Sciences|UCL|Imperial\\s+College|Nanyang\\s+Technological|CREATE\\s+Tower",
+  "identity": "University\\s+of\\s+Cambridge|Cambridge\\s+University(?!\\s+(?:Hospitals?|Press))|cam\\.ac\\.uk",
+  "city": "Cambrid?ge",
+  "staff_catalog": null,
+  "mongo_db": "pauk_cambridge",
+  "site_url": "https://www.cam.ac.uk",
+  "unit_words": "college"
+}

@@ -9,9 +9,22 @@ Enriches `Person` from the author's own records: the OpenAlex author API and
 ORCID. The same stage also contains a separate Crossref pass, unrelated in
 code: a backfill of coauthors' ORCIDs by the publication's DOI.
 
-## Main pass: one author at a time
+## Main pass: one author at a time, eight at once
 
-For each `Person` that needs attention (`needs_attempt`):
+For each `Person` that needs attention (`needs_attempt`), in
+`PAUK_PERSONS_CONCURRENCY` threads (8 by default; each thread has its own
+clients). The per-host rate limiter in `pauk/sources/base.py` (`HOST_RATES`,
+shared by all threads) keeps the requests inside each API's limit: OpenAlex
+20/s (30/s allowed with a key), ORCID 10/s (12/s allowed). On UFJF one thread
+did ~4,500 people an hour, ~0.5 s per request.
+
+When the university's profile leaves external coauthors out of the graph
+(`Institution.external_authors`, false for every university but ITMO), only
+members are enriched: an external coauthor stays as normalize made them.
+
+ORCID is read as a registered public API client when `ORCID_CLIENT_ID` and
+`ORCID_CLIENT_SECRET` are set (100,000 reads a day instead of 25,000 per IP;
+the read-public token is requested once per process).
 
 1. With an `openalex_id`, `GET /authors/{id}`: updates `name_raw`, collects name
    variants (`name_variants`), the ORCID (if not yet known) and the author's
@@ -34,9 +47,15 @@ For each `Person` that needs attention (`needs_attempt`):
      known directories (ResearchGate, Scopus, Web of Science and similar),
      become `homepage`, from which the `emails` stage later extracts an
      address.
-3. `is_itmo` is recomputed: at least one affiliation with ITMO's ROR anywhere
-   makes the person ITMO, even if no single work claimed it (`ITMO_ROR_ID` is
-   the same as in `normalize.py`).
+3. `is_member` is recomputed (`persons.is_member`): a person is a member when
+   a collected work lists them with the university's ROR (`Authorship.is_member`,
+   set by normalize) or their ORCID record has an employment at it. The OpenAlex
+   author profile does not count: it pools the institutions of every work, and
+   on consortium papers OpenAlex hands authors the consortium's institutions,
+   so 35 ATLAS physicists who never named UFJF became its members. Rows
+   normalized before `Authorship.is_member` existed keep their membership by work.
+   Organisations with a ROR of their own (medical centres, affiliated
+   hospitals) are not the university: only its own ROR counts.
 4. **Filling a missing authorship affiliation**
    (`_fill_missing_affiliations`): self-deposit venues (Zenodo, SSRN) often do
    not say where a given coauthor worked at the time. The author's own records
@@ -61,7 +80,12 @@ responses to be fetched again. The state has a `request_key` (OpenAlex id, ORCID
 or DOI): a completed request for an old identifier does not block a request
 once the identifier has been refined.
 
-## Crossref pass: per publication, not per author
+## Crossref pass: per publication, not per author (off by default)
+
+Runs only with `PAUK_CROSSREF_ENABLED=true`. On a year of UFJF it filled 79
+ORCIDs for 21,000 people (0.4%) from 3,349 requests, 11% of which failed on
+DataCite DOIs (Zenodo, arXiv), and matching by surname can hand a namesake's
+ORCID to the wrong person, whose ORCID record is then read as theirs.
 
 A separate loop whose resumability key is not `Person.processing["persons"]`
 but `Publication.processing["crossref"]`. For each publication with a DOI whose

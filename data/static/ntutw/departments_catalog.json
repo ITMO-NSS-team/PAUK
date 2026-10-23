@@ -1,0 +1,400 @@
+[
+  {
+    "uid": "ntutw",
+    "name_en": "National Taiwan University",
+    "name_local": "國立臺灣大學",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05bqach95",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "College of Medicine",
+    "name_local": "College of Medicine",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [
+      "National Taiwan University College of Medicine"
+    ],
+    "context_aliases": [
+      "College of Medicine",
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "cph",
+    "name_en": "College of Public Health",
+    "name_local": "College of Public Health",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Public Health"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "College of Engineering",
+    "name_local": "College of Engineering",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Engineering"
+    ]
+  },
+  {
+    "uid": "eecs",
+    "name_en": "College of Electrical Engineering and Computer Science",
+    "name_local": "College of Electrical Engineering and Computer Science",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Electrical Engineering and Computer Science"
+    ]
+  },
+  {
+    "uid": "sci",
+    "name_en": "College of Science",
+    "name_local": "College of Science",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Science"
+    ]
+  },
+  {
+    "uid": "life",
+    "name_en": "College of Life Science",
+    "name_local": "College of Life Science",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Life Science"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "College of Bioresources and Agriculture",
+    "name_local": "College of Bioresources and Agriculture",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Bioresources and Agriculture"
+    ]
+  },
+  {
+    "uid": "mgmt",
+    "name_en": "College of Management",
+    "name_local": "College of Management",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Management"
+    ]
+  },
+  {
+    "uid": "socsci",
+    "name_en": "College of Social Sciences",
+    "name_local": "College of Social Sciences",
+    "kind": "college",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "College of Social Sciences"
+    ]
+  },
+  {
+    "uid": "im",
+    "name_en": "Department of Internal Medicine",
+    "name_local": "Department of Internal Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Internal Medicine",
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "onc",
+    "name_en": "Department of Oncology",
+    "name_local": "Department of Oncology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Oncology"
+    ]
+  },
+  {
+    "uid": "ophth",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Department of Ophthalmology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "gicm",
+    "name_en": "Graduate Institute of Clinical Medicine",
+    "name_local": "Graduate Institute of Clinical Medicine",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Institute of Clinical Medicine"
+    ]
+  },
+  {
+    "uid": "iepm",
+    "name_en": "Institute of Epidemiology and Preventive Medicine",
+    "name_local": "Institute of Epidemiology and Preventive Medicine",
+    "kind": "institute",
+    "parent": "cph",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Epidemiology and Preventive Medicine"
+    ]
+  },
+  {
+    "uid": "ieohs",
+    "name_en": "Institute of Environmental and Occupational Health Sciences",
+    "name_local": "Institute of Environmental and Occupational Health Sciences",
+    "kind": "institute",
+    "parent": "cph",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Environmental and Occupational Health Sciences"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ce",
+    "name_en": "Department of Civil Engineering",
+    "name_local": "Department of Civil Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "env",
+    "name_en": "Graduate Institute of Environmental Engineering",
+    "name_local": "Graduate Institute of Environmental Engineering",
+    "kind": "institute",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Institute of Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "csie",
+    "name_en": "Department of Computer Science and Information Engineering",
+    "name_local": "Department of Computer Science and Information Engineering",
+    "kind": "department",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Information Engineering"
+    ]
+  },
+  {
+    "uid": "gipo",
+    "name_en": "Graduate Institute of Photonics and Optoelectronics",
+    "name_local": "Graduate Institute of Photonics and Optoelectronics",
+    "kind": "institute",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Institute of Photonics and Optoelectronics"
+    ]
+  },
+  {
+    "uid": "gice",
+    "name_en": "Graduate Institute of Communication Engineering",
+    "name_local": "Graduate Institute of Communication Engineering",
+    "kind": "institute",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Institute of Communication Engineering"
+    ]
+  },
+  {
+    "uid": "giee",
+    "name_en": "Graduate Institute of Electronics Engineering",
+    "name_local": "Graduate Institute of Electronics Engineering",
+    "kind": "institute",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Institute of Electronics Engineering"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geosciences",
+    "name_local": "Department of Geosciences",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geosciences"
+    ]
+  },
+  {
+    "uid": "ocean",
+    "name_en": "Institute of Oceanography",
+    "name_local": "Institute of Oceanography",
+    "kind": "institute",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Oceanography"
+    ]
+  },
+  {
+    "uid": "ls",
+    "name_en": "Department of Life Science",
+    "name_local": "Department of Life Science",
+    "kind": "department",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Science"
+    ]
+  },
+  {
+    "uid": "bme2",
+    "name_en": "Department of Biomechatronics Engineering",
+    "name_local": "Department of Biomechatronics Engineering",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomechatronics Engineering"
+    ]
+  },
+  {
+    "uid": "gsat",
+    "name_en": "Graduate School of Advanced Technology",
+    "name_local": "Graduate School of Advanced Technology",
+    "kind": "school",
+    "parent": "ntutw",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Advanced Technology"
+    ]
+  }
+]

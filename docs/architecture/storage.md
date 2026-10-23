@@ -247,7 +247,7 @@ separate document for the corrective semantic retry too; its number is in
   replaces it via `os.replace()` only after a successful close. Used for
   snapshots (`pauk/cache/graph_snapshot.py`), the site data
   (`pauk/gui/graph_builder/builder.py`) and local journals such as the dedup
-  candidates (`data/audit/<group>/dedup_candidates.jsonl`, path from
+  candidates (`data/audit/<institution>/<group>/dedup_candidates.jsonl`, path from
   `Settings.audit_dir`). Text mode only (`mode="w", encoding="utf-8"`); it
   does not suit binary data.
 - **`atomic_write_bytes(target, data)`**: the same trick for bytes already in
@@ -265,14 +265,16 @@ separate document for the corrective semantic retry too; its number is in
 ## `static.py::StaticStore`
 
 File-based: a versioned reference, not intermediate pipeline data. The
-department catalog is read first from `data/static/departments.jsonl` if it
-exists, otherwise from `data/static/departments_catalog.json`. A department's
+department catalog is read first from `data/static/<institution>/departments.jsonl`
+if it exists, otherwise from `data/static/<institution>/departments_catalog.json`
+(`Settings.static_dir`, one folder per university). A department's
 id is the `uid` of its catalog entry; `parent` references another entry's
 `uid` (an unknown parent raises `ValueError`), and entries with `kind:
 organization` become `Organization` rows.
 
 ## Configuration
 
-`MONGO_URI` (default `mongodb://localhost:27017`) and `MONGO_DB` (default
-`pauk`) in `.env`, the same pattern as `NEO4J_URI`/`NEO4J_USER`/
+`MONGO_URI` (default `mongodb://localhost:27017`) and `MONGO_DB` (default: the
+university's own database, `pauk` for ITMO and `pauk_ufjf` for UFJF, see
+[institutions.md](institutions.md)) in `.env`, the same pattern as `NEO4J_URI`/`NEO4J_USER`/
 `NEO4J_PASSWORD` in `pauk/settings.py`.

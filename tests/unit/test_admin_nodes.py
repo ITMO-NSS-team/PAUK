@@ -102,7 +102,7 @@ class NodeScreenTest(unittest.TestCase):
         create_user(self.db, "guest", "hunter2", role="viewer")
         self.graph = FakePanelGraph()
         self.graph.nodes[("Person", "A1")] = {
-            "id": "A1", "name_en": "Ivan Petrov", "name_ru": "Иван Петров",
+            "id": "A1", "name_en": "Ivan Petrov", "name_local": "Иван Петров",
             "orcid": "0000-0002-1825-0097", "updated_at": "2026-08-01"}
         self.graph.nodes[("Person", "A2")] = {"id": "A2", "name_en": "Anna Petrova"}
 
@@ -315,16 +315,16 @@ class NodeScreenTest(unittest.TestCase):
     def test_an_edit_reaches_the_graph_and_is_recorded_as_a_decision(self):
         csrf = self.sign_in()
         response = self.client.post("/nodes/Person/A1",
-                                    data={"csrf": csrf, "name_ru": "Пётр Иванов", "note": "по письму"})
+                                    data={"csrf": csrf, "name_local": "Пётр Иванов", "note": "по письму"})
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Пётр Иванов")
         (override,) = active_overrides(self.db)
-        self.assertEqual(override["fields"], {"name_ru": "Пётр Иванов"})
+        self.assertEqual(override["fields"], {"name_local": "Пётр Иванов"})
         self.assertEqual(override["actor"], "user:roman")
         self.assertEqual(override["note"], "по письму")
         # What the pipeline had is kept, so the conflict screen can later
         # say what the source now claims.
-        self.assertEqual(override["auto_value"], {"name_ru": "Иван Петров"})
+        self.assertEqual(override["auto_value"], {"name_local": "Иван Петров"})
 
     def test_submitting_the_form_unchanged_records_nothing(self):
         csrf = self.sign_in()
@@ -334,9 +334,9 @@ class NodeScreenTest(unittest.TestCase):
     def test_only_the_changed_field_is_written(self):
         csrf = self.sign_in()
         self.client.post("/nodes/Person/A1",
-                         data={"csrf": csrf, "name_en": "Ivan Petrov", "name_ru": "Пётр Иванов"})
+                         data={"csrf": csrf, "name_en": "Ivan Petrov", "name_local": "Пётр Иванов"})
         (override,) = active_overrides(self.db)
-        self.assertEqual(set(override["fields"]), {"name_ru"})
+        self.assertEqual(set(override["fields"]), {"name_local"})
 
     def test_clearing_a_box_stores_nothing_rather_than_an_empty_string(self):
         csrf = self.sign_in()
@@ -352,29 +352,29 @@ class NodeScreenTest(unittest.TestCase):
         csrf = self.sign_in()
         response = self.client.post(
             "/nodes/Person/A1",
-            data={"csrf": csrf, "name_ru": "Пётр", "is_admin": "yes", "id": "hacked"})
+            data={"csrf": csrf, "name_local": "Пётр", "is_admin": "yes", "id": "hacked"})
         self.assertEqual(response.status_code, 303)
         node = self.graph.nodes[("Person", "A1")]
-        self.assertEqual(node["name_ru"], "Пётр")
+        self.assertEqual(node["name_local"], "Пётр")
         self.assertNotIn("is_admin", node)
         self.assertEqual(node["id"], "A1")
 
     def test_an_edit_without_the_csrf_token_is_refused(self):
         self.sign_in()
-        response = self.client.post("/nodes/Person/A1", data={"name_ru": "Взлом"})
+        response = self.client.post("/nodes/Person/A1", data={"name_local": "Взлом"})
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иван Петров")
 
     def test_an_edit_with_a_forged_csrf_token_is_refused(self):
         self.sign_in()
-        response = self.client.post("/nodes/Person/A1", data={"csrf": "forged", "name_ru": "Взлом"})
+        response = self.client.post("/nodes/Person/A1", data={"csrf": "forged", "name_local": "Взлом"})
         self.assertEqual(response.status_code, 403)
 
     def test_a_viewer_cannot_edit(self):
         csrf = self.sign_in(login="guest")
-        response = self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_ru": "Правка"})
+        response = self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_local": "Правка"})
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иван Петров")
 
     def test_a_viewer_can_still_read(self):
         self.sign_in(login="guest")
@@ -561,11 +561,11 @@ class CreateNodeTest(unittest.TestCase):
         # the record, and a prune would take it for a leftover.
         csrf = self.sign_in()
         self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9",
-                                                    "name_ru": "Новый"})
+                                                    "name_local": "Новый"})
         (claim,) = list(self.db[COLLECTION].find())
         self.assertEqual((claim["op"], claim["target_id"], claim["active"]),
                          (CREATE, "A9", True))
-        self.assertEqual(claim["fields"], {"name_ru": "Новый"})
+        self.assertEqual(claim["fields"], {"name_local": "Новый"})
 
     def test_a_node_without_an_id_is_refused(self):
         csrf = self.sign_in()
@@ -804,7 +804,7 @@ class ConcurrentEditTest(unittest.TestCase):
         for who in ("roman", "petrov"):
             create_user(self.db, who, "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван")
+        self.graph.add("Person", "A1", name_local="Иван")
 
         app = build(Settings(), self.db)
         from pauk.admin import deps
@@ -828,11 +828,11 @@ class ConcurrentEditTest(unittest.TestCase):
         first, form_first = self.open_form("roman")
         second, form_second = self.open_form("petrov")
 
-        first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
-        response = second.post("/nodes/Person/A1", data={**form_second, "name_ru": "Иоанн"})
+        first.post("/nodes/Person/A1", data={**form_first, "name_local": "Пётр"})
+        response = second.post("/nodes/Person/A1", data={**form_second, "name_local": "Иоанн"})
 
         self.assertIn("stale=1", response.headers["location"])
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Пётр")
 
     def test_the_refusal_is_explained_on_the_page(self):
         client, _ = self.open_form("roman")
@@ -842,16 +842,16 @@ class ConcurrentEditTest(unittest.TestCase):
     def test_reopening_the_page_lets_the_edit_go_through(self):
         first, form_first = self.open_form("roman")
         second, form_second = self.open_form("petrov")
-        first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
-        second.post("/nodes/Person/A1", data={**form_second, "name_ru": "Иоанн"})
+        first.post("/nodes/Person/A1", data={**form_first, "name_local": "Пётр"})
+        second.post("/nodes/Person/A1", data={**form_second, "name_local": "Иоанн"})
 
         # Reading the page again picks up the new updated_at. The client
         # has to be the one that read it: the csrf token belongs to that
         # session, not to the earlier one.
         again, fresh = self.open_form("petrov")
-        response = again.post("/nodes/Person/A1", data={**fresh, "name_ru": "Иоанн"})
+        response = again.post("/nodes/Person/A1", data={**fresh, "name_local": "Иоанн"})
         self.assertIn("saved=1", response.headers["location"])
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иоанн")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иоанн")
 
     def test_the_form_carries_the_moment_it_was_rendered(self):
         _, form = self.open_form("roman")
@@ -859,7 +859,7 @@ class ConcurrentEditTest(unittest.TestCase):
 
     def test_an_edit_still_works_when_nobody_else_touched_the_record(self):
         client, form = self.open_form("roman")
-        response = client.post("/nodes/Person/A1", data={**form, "name_ru": "Пётр"})
+        response = client.post("/nodes/Person/A1", data={**form, "name_local": "Пётр"})
         self.assertIn("saved=1", response.headers["location"])
 
 
@@ -1134,7 +1134,7 @@ class VanishedRecordTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        self.graph.add("Person", "A1", name_local="Иван Петров")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
@@ -1144,18 +1144,18 @@ class VanishedRecordTest(unittest.TestCase):
     def test_the_save_is_answered_not_crashed(self):
         self.graph.nodes.pop(("Person", "A1"))
         response = self.client.post("/nodes/Person/A1",
-                                    data={"csrf": self.csrf, "name_ru": "Иван"})
+                                    data={"csrf": self.csrf, "name_local": "Иван"})
         self.assertEqual(response.status_code, 303)
 
     def test_it_lands_on_the_record_s_own_page(self):
         self.graph.nodes.pop(("Person", "A1"))
         response = self.client.post("/nodes/Person/A1",
-                                    data={"csrf": self.csrf, "name_ru": "Иван"})
+                                    data={"csrf": self.csrf, "name_local": "Иван"})
         self.assertEqual(response.headers["location"], "/nodes/Person/A1")
 
     def test_nothing_is_recorded_as_a_decision(self):
         self.graph.nodes.pop(("Person", "A1"))
-        self.client.post("/nodes/Person/A1", data={"csrf": self.csrf, "name_ru": "Иван"})
+        self.client.post("/nodes/Person/A1", data={"csrf": self.csrf, "name_local": "Иван"})
         self.assertEqual(list(active_overrides(self.db)), [])
 
 
@@ -1254,7 +1254,7 @@ class UnaddressableIdTest(unittest.TestCase):
 
     def create(self, node_id):
         return self.client.post("/nodes/Person/new",
-                                data={"csrf": self.csrf, "id": node_id, "name_ru": "Иван"})
+                                data={"csrf": self.csrf, "id": node_id, "name_local": "Иван"})
 
     def test_a_line_break_is_refused(self):
         self.assertEqual(self.create("A1\nвторая строка").status_code, 400)
@@ -1289,7 +1289,7 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иванов И.", name_en="I. Ivanov")
+        self.graph.add("Person", "A1", name_local="Иванов И.", name_en="I. Ivanov")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False,
@@ -1303,7 +1303,7 @@ class TwoStoresOneChangeTest(unittest.TestCase):
 
     def edit(self):
         return self.client.post("/nodes/Person/A1", data={
-            "csrf": self.csrf, "name_ru": "Пётр Иванов", "seen_at": self.seen()})
+            "csrf": self.csrf, "name_local": "Пётр Иванов", "seen_at": self.seen()})
 
     @staticmethod
     def unreachable(*args, **kwargs):
@@ -1319,7 +1319,7 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         with self.mongo_is_down():
             response = self.edit()
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И.")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов И.")
 
     def test_the_refusal_says_what_is_wrong(self):
         with self.mongo_is_down():
@@ -1329,7 +1329,7 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         with self.mongo_dies_mid_request():
             response = self.edit()
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И.")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов И.")
 
     def test_nothing_is_left_behind_in_the_decisions(self):
         with self.mongo_dies_mid_request():
@@ -1362,7 +1362,7 @@ class TwoStoresOneChangeTest(unittest.TestCase):
     def test_an_ordinary_edit_still_goes_through(self):
         response = self.edit()
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Пётр Иванов")
         self.assertEqual(self.db[COLLECTION].count_documents({}), 1)
 
 
@@ -1378,7 +1378,7 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иванов И.")
+        self.graph.add("Person", "A1", name_local="Иванов И.")
         self.graph.add("Publication", "W1", title="Статья")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
@@ -1408,13 +1408,13 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         # only be learned from the store that is refusing to answer.
         with patch.object(nodes, "deactivate_override", self.unreachable):
             response = self.client.post("/nodes/Person/new", data={
-                "csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
+                "csrf": self.csrf, "id": "A9", "name_local": "Новый"})
         self.assertEqual(response.status_code, 503)
         self.assertNotIn(("Person", "A9"), self.graph.nodes)
 
     def test_restoring_takes_the_record_away_again(self):
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
-                        snapshot={"name_ru": "Петров"})
+                        snapshot={"name_local": "Петров"})
         with patch.object(nodes, "deactivate_override", self.unreachable):
             response = self.client.post("/nodes/Person/restore/A2",
                                         data={"csrf": self.csrf})
@@ -1425,7 +1425,7 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         # Somebody attached the record while this was going on. Undoing
         # would take their links with it, so it does not.
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
-                        snapshot={"name_ru": "Петров"})
+                        snapshot={"name_local": "Петров"})
         self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W1")] = {}
         with patch.object(nodes, "deactivate_override", self.unreachable):
             response = self.client.post("/nodes/Person/restore/A2",
@@ -1491,10 +1491,10 @@ class HandMadeIsClaimedTest(unittest.TestCase):
 
     def test_a_claimed_record_keeps_its_fields_through_a_reapply(self):
         self.client.post("/nodes/Person/new",
-                         data={"csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
-        self.graph.nodes[("Person", "A9")]["name_ru"] = "Затёрли"
+                         data={"csrf": self.csrf, "id": "A9", "name_local": "Новый"})
+        self.graph.nodes[("Person", "A9")]["name_local"] = "Затёрли"
         apply_overrides(self.graph, self.db)
-        self.assertEqual(self.graph.nodes[("Person", "A9")]["name_ru"], "Новый")
+        self.assertEqual(self.graph.nodes[("Person", "A9")]["name_local"], "Новый")
 
     def test_a_record_with_no_fields_is_still_claimed(self):
         # An id and nothing else is a legitimate record to invent, and a
@@ -1505,14 +1505,14 @@ class HandMadeIsClaimedTest(unittest.TestCase):
 
     def test_editing_the_record_leaves_it_claimed(self):
         self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
-        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_local": "Правка"})
         self.assertEqual(self.claims(), [("node", CREATE, "A9")])
 
     def test_and_the_decisions_page_offers_no_undo_for_it(self):
         # An edit must not turn the claim into an undoable "set": the undo
         # would take the claim with it and the next prune would remove the record.
         self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
-        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_local": "Правка"})
         self.assertNotIn('action="/overrides/undo"', self.client.get("/overrides").text)
 
     def test_a_forged_undo_of_the_claim_is_refused(self):

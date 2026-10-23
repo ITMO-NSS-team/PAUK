@@ -1,0 +1,823 @@
+[
+  {
+    "uid": "spbu",
+    "name_en": "Saint Petersburg State University",
+    "name_local": "Санкт-Петербургский государственный университет",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/023znxa73",
+    "type": "university"
+  },
+  {
+    "uid": "chem",
+    "name_en": "Institute of Chemistry",
+    "name_local": "Институт химии",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [
+      "SPbU Institute of Chemistry"
+    ],
+    "context_aliases": [
+      "Institute of Chemistry",
+      "Institute for Chemistry",
+      "Chemistry Institute",
+      "Department of Chemistry",
+      "Институт химии"
+    ]
+  },
+  {
+    "uid": "chem-analytical",
+    "name_en": "Department of Analytical Chemistry",
+    "name_local": "Кафедра аналитической химии",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Analytical Chemistry",
+      "Кафедра аналитической химии"
+    ]
+  },
+  {
+    "uid": "chem-organic",
+    "name_en": "Department of Organic Chemistry",
+    "name_local": "Кафедра органической химии",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Organic Chemistry",
+      "Кафедра органической химии"
+    ]
+  },
+  {
+    "uid": "chem-colloid",
+    "name_en": "Department of Colloid Chemistry",
+    "name_local": "Кафедра коллоидной химии",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Colloid Chemistry",
+      "Кафедра коллоидной химии"
+    ]
+  },
+  {
+    "uid": "chem-thermo",
+    "name_en": "Department of Chemical Thermodynamics and Kinetics",
+    "name_local": "Кафедра химической термодинамики и кинетики",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Thermodynamics and Kinetics",
+      "Кафедра химической термодинамики и кинетики"
+    ]
+  },
+  {
+    "uid": "chem-quantum",
+    "name_en": "Department of Quantum Chemistry",
+    "name_local": "Кафедра квантовой химии",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Quantum Chemistry",
+      "Quantum Chemistry Department",
+      "Кафедра квантовой химии"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Faculty of Biology",
+    "name_local": "Биологический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biology",
+      "Biological Faculty",
+      "Biology Faculty",
+      "Биологический факультет"
+    ]
+  },
+  {
+    "uid": "bio-genetics",
+    "name_en": "Department of Genetics and Biotechnology",
+    "name_local": "Кафедра генетики и биотехнологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Genetics and Biotechnology",
+      "Кафедра генетики и биотехнологии"
+    ]
+  },
+  {
+    "uid": "bio-appl-ecology",
+    "name_en": "Department of Applied Ecology",
+    "name_local": "Кафедра прикладной экологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Ecology",
+      "Кафедра прикладной экологии"
+    ]
+  },
+  {
+    "uid": "bio-invert-zoology",
+    "name_en": "Department of Invertebrate Zoology",
+    "name_local": "Кафедра зоологии беспозвоночных",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Invertebrate Zoology",
+      "Кафедра зоологии беспозвоночных"
+    ]
+  },
+  {
+    "uid": "bio-vert-zoology",
+    "name_en": "Department of Vertebrate Zoology",
+    "name_local": "Кафедра зоологии позвоночных",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Vertebrate Zoology",
+      "Кафедра зоологии позвоночных"
+    ]
+  },
+  {
+    "uid": "bio-entomology",
+    "name_en": "Department of Entomology",
+    "name_local": "Кафедра энтомологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Entomology",
+      "Кафедра энтомологии"
+    ]
+  },
+  {
+    "uid": "bio-embryology",
+    "name_en": "Department of Embryology",
+    "name_local": "Кафедра эмбриологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Embryology",
+      "Кафедра эмбриологии"
+    ]
+  },
+  {
+    "uid": "bio-plant-phys",
+    "name_en": "Department of Plant Physiology and Biochemistry",
+    "name_local": "Кафедра физиологии и биохимии растений",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plant Physiology and Biochemistry",
+      "Кафедра физиологии и биохимии растений"
+    ]
+  },
+  {
+    "uid": "bio-cytology",
+    "name_en": "Department of Cytology and Histology",
+    "name_local": "Кафедра цитологии и гистологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cytology and Histology",
+      "Кафедра цитологии и гистологии"
+    ]
+  },
+  {
+    "uid": "bio-hna",
+    "name_en": "Department of Higher Nervous Activity and Psychophysiology",
+    "name_local": "Кафедра высшей нервной деятельности и психофизиологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Higher Nervous Activity and Psychophysiology",
+      "Кафедра высшей нервной деятельности и психофизиологии"
+    ]
+  },
+  {
+    "uid": "bio-microbiology",
+    "name_en": "Department of Microbiology",
+    "name_local": "Кафедра микробиологии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology",
+      "Кафедра микробиологии"
+    ]
+  },
+  {
+    "uid": "bio-biochemistry",
+    "name_en": "Department of Biochemistry",
+    "name_local": "Кафедра биохимии",
+    "kind": "department",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry",
+      "Кафедра биохимии"
+    ]
+  },
+  {
+    "uid": "lab-amyloid",
+    "name_en": "Laboratory of Amyloid Biology",
+    "name_local": "Лаборатория биологии амилоидов",
+    "kind": "lab",
+    "parent": "bio",
+    "aliases": [
+      "Laboratory of Amyloid Biology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-macroecology",
+    "name_en": "Laboratory of Macroecology & Biogeography of Invertebrates",
+    "name_local": "Лаборатория макроэкологии и биогеографии беспозвоночных",
+    "kind": "lab",
+    "parent": "bio",
+    "aliases": [
+      "Laboratory of Macroecology & Biogeography of Invertebrates",
+      "Laboratory of Macroecology and Biogeography of Invertebrates"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-behav-neurodynamics",
+    "name_en": "Laboratory of Behavioural Neurodynamics",
+    "name_local": "Лаборатория поведенческой нейродинамики",
+    "kind": "lab",
+    "parent": "spbu",
+    "aliases": [
+      "Laboratory of Behavioural Neurodynamics",
+      "Laboratory of Behavioral Neurodynamics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "phys",
+    "name_en": "Faculty of Physics",
+    "name_local": "Физический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Physics",
+      "Department of Physics",
+      "Physics Faculty",
+      "Institute of Physics",
+      "Физический факультет"
+    ]
+  },
+  {
+    "uid": "phys-atmos",
+    "name_en": "Department of Atmospheric Physics",
+    "name_local": "Кафедра физики атмосферы",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Atmospheric Physics",
+      "Кафедра физики атмосферы"
+    ]
+  },
+  {
+    "uid": "phys-biophys",
+    "name_en": "Department of Molecular Biophysics and Polymer Physics",
+    "name_local": "Кафедра молекулярной биофизики и физики полимеров",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Biophysics and Polymer Physics",
+      "Кафедра молекулярной биофизики и физики полимеров"
+    ]
+  },
+  {
+    "uid": "phys-nuclear-methods",
+    "name_en": "Department of Nuclear Physics Research Methods",
+    "name_local": "Кафедра ядерно-физических методов исследования",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Physics Research Methods",
+      "Кафедра ядерно-физических методов исследования"
+    ]
+  },
+  {
+    "uid": "phys-earth",
+    "name_en": "Department of Earth's Physics",
+    "name_local": "Кафедра физики Земли",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth's Physics",
+      "Earth's Physics Department",
+      "Department of Earth Physics",
+      "Кафедра физики Земли"
+    ]
+  },
+  {
+    "uid": "lab-spin-optics",
+    "name_en": "Spin Optics Laboratory",
+    "name_local": "Лаборатория оптики спина",
+    "kind": "lab",
+    "parent": "phys",
+    "aliases": [
+      "Spin Optics Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-ozone",
+    "name_en": "Ozone Layer and the Upper Atmosphere Research Laboratory",
+    "name_local": "Лаборатория исследования озонового слоя и верхней атмосферы",
+    "kind": "lab",
+    "parent": "phys",
+    "aliases": [
+      "Ozone Layer and the Upper Atmosphere Research Laboratory",
+      "Ozone Layer and Upper Atmosphere Research Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-photoactive",
+    "name_en": "Laboratory of Photoactive Nanocomposite Materials",
+    "name_local": "Лаборатория «Фотоактивные нанокомпозитные материалы»",
+    "kind": "lab",
+    "parent": "spbu",
+    "aliases": [
+      "Laboratory of Photoactive Nanocomposite Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "earth",
+    "name_en": "Institute of Earth Sciences",
+    "name_local": "Институт наук о Земле",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Earth Sciences",
+      "Institute of Earth Science",
+      "Институт наук о Земле"
+    ]
+  },
+  {
+    "uid": "earth-crystallography",
+    "name_en": "Department of Crystallography",
+    "name_local": "Кафедра кристаллографии",
+    "kind": "department",
+    "parent": "earth",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Crystallography",
+      "Кафедра кристаллографии"
+    ]
+  },
+  {
+    "uid": "mcs",
+    "name_en": "Faculty of Mathematics and Computer Science",
+    "name_local": "Факультет математики и компьютерных наук",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics and Computer Science",
+      "Department of Mathematics and Computer Science",
+      "Факультет математики и компьютерных наук"
+    ]
+  },
+  {
+    "uid": "matmech",
+    "name_en": "Faculty of Mathematics and Mechanics",
+    "name_local": "Математико-механический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics and Mechanics",
+      "Faculty of Mechanics and Mathematics",
+      "Mathematics and Mechanics Faculty",
+      "Математико-механический факультет"
+    ]
+  },
+  {
+    "uid": "astro",
+    "name_en": "Sobolev Astronomical Institute",
+    "name_local": "Астрономический институт им. В. В. Соболева",
+    "kind": "institute",
+    "parent": "matmech",
+    "aliases": [
+      "Sobolev Astronomical Institute"
+    ],
+    "context_aliases": [
+      "Astronomical Institute",
+      "Астрономический институт"
+    ]
+  },
+  {
+    "uid": "apmath",
+    "name_en": "Faculty of Applied Mathematics and Control Processes",
+    "name_local": "Факультет прикладной математики — процессов управления",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [
+      "Faculty of Applied Mathematics and Control Processes"
+    ],
+    "context_aliases": [
+      "Факультет прикладной математики"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "Medical Institute",
+    "name_local": "Медицинский институт",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [
+      "Медицинский институт Санкт-Петербургского государственного университета"
+    ],
+    "context_aliases": [
+      "Medical Institute",
+      "Institute of Medicine",
+      "Faculty of Medicine",
+      "Medical Faculty",
+      "Медицинский институт",
+      "Медицинский факультет"
+    ]
+  },
+  {
+    "uid": "med-faculty-surgery",
+    "name_en": "Department of Faculty Surgery",
+    "name_local": "Кафедра факультетской хирургии",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Faculty Surgery",
+      "Кафедра факультетской хирургии"
+    ]
+  },
+  {
+    "uid": "dent",
+    "name_en": "Faculty of Dentistry and Medical Technologies",
+    "name_local": "Факультет стоматологии и медицинских технологий",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Dentistry and Medical Technologies",
+      "Факультет стоматологии и медицинских технологий"
+    ]
+  },
+  {
+    "uid": "itbm",
+    "name_en": "Institute of Translational Biomedicine",
+    "name_local": "Институт трансляционной биомедицины",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Translational Biomedicine",
+      "Institute for Translational Biomedicine",
+      "Department of Translational Biomedicine",
+      "Институт трансляционной биомедицины"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Факультет психологии",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology",
+      "Department of Psychology",
+      "Факультет психологии"
+    ]
+  },
+  {
+    "uid": "child-speech",
+    "name_en": "Child Speech Research Group",
+    "name_local": "Группа исследования детской речи",
+    "kind": "lab",
+    "parent": "spbu",
+    "aliases": [
+      "Child Speech Research Group"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "polit",
+    "name_en": "Faculty of Political Science",
+    "name_local": "Факультет политологии",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Political Science",
+      "Факультет политологии"
+    ]
+  },
+  {
+    "uid": "pr-politics",
+    "name_en": "Department of Public Relations in Politics and Public Administration",
+    "name_local": "Кафедра связей с общественностью в политике и государственном управлении",
+    "kind": "department",
+    "parent": "spbu",
+    "aliases": [
+      "Department of Public Relations in Politics and Public Administration"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hist",
+    "name_en": "Institute of History",
+    "name_local": "Институт истории",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of History",
+      "Институт истории"
+    ]
+  },
+  {
+    "uid": "gsom",
+    "name_en": "Graduate School of Management",
+    "name_local": "Высшая школа менеджмента",
+    "kind": "school",
+    "parent": "spbu",
+    "aliases": [
+      "St Petersburg State University Graduate School of Management",
+      "Saint Petersburg State University Graduate School of Management",
+      "GSOM SPbU"
+    ],
+    "context_aliases": [
+      "Graduate School of Management",
+      "GSOM",
+      "Высшая школа менеджмента"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Faculty of Economics",
+    "name_local": "Экономический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics",
+      "Экономический факультет"
+    ]
+  },
+  {
+    "uid": "econ-credit",
+    "name_en": "Department of Credit Theory and Financial Management",
+    "name_local": "Кафедра теории кредита и финансового менеджмента",
+    "kind": "department",
+    "parent": "econ",
+    "aliases": [
+      "Department of Credit Theory and Financial Management"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-asian-econ",
+    "name_en": "Laboratory for Asian Economic Studies",
+    "name_local": "Лаборатория исследования экономик Азии",
+    "kind": "lab",
+    "parent": "spbu",
+    "aliases": [
+      "Laboratory for Asian Economic Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ceba",
+    "name_en": "Center of Econometrics and Business Analytics",
+    "name_local": "Центр эконометрики и бизнес-аналитики",
+    "kind": "center",
+    "parent": "spbu",
+    "aliases": [
+      "Center of Econometrics and Business Analytics",
+      "Centre of Econometrics and Business Analytics"
+    ],
+    "context_aliases": [
+      "CEBA"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Юридический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law",
+      "Law Faculty",
+      "Юридический факультет"
+    ]
+  },
+  {
+    "uid": "philology",
+    "name_en": "Faculty of Philology",
+    "name_local": "Филологический факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Philology",
+      "Филологический факультет"
+    ]
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "Institute of Philosophy",
+    "name_local": "Институт философии",
+    "kind": "institute",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Philosophy",
+      "Институт философии"
+    ]
+  },
+  {
+    "uid": "ir",
+    "name_en": "Faculty of International Relations",
+    "name_local": "Факультет международных отношений",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of International Relations",
+      "Факультет международных отношений"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "Faculty of Sociology",
+    "name_local": "Факультет социологии",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Sociology",
+      "Факультет социологии"
+    ]
+  },
+  {
+    "uid": "journalism",
+    "name_en": "School of Journalism and Mass Communications",
+    "name_local": "Высшая школа журналистики и массовых коммуникаций",
+    "kind": "school",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "School of Journalism and Mass Communications",
+      "Высшая школа журналистики и массовых коммуникаций"
+    ]
+  },
+  {
+    "uid": "oriental",
+    "name_en": "Faculty of Asian and African Studies",
+    "name_local": "Восточный факультет",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Asian and African Studies",
+      "Oriental Faculty",
+      "Восточный факультет"
+    ]
+  },
+  {
+    "uid": "liberal-arts",
+    "name_en": "Faculty of Liberal Arts and Sciences",
+    "name_local": "Факультет свободных искусств и наук",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Liberal Arts and Sciences",
+      "Факультет свободных искусств и наук"
+    ]
+  },
+  {
+    "uid": "arts",
+    "name_en": "Faculty of Arts",
+    "name_local": "Факультет искусств",
+    "kind": "faculty",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts",
+      "Факультет искусств"
+    ]
+  },
+  {
+    "uid": "research-park",
+    "name_en": "Research Park",
+    "name_local": "Научный парк",
+    "kind": "center",
+    "parent": "spbu",
+    "aliases": [
+      "SPbU Research Park"
+    ],
+    "context_aliases": [
+      "Research Park",
+      "Научный парк"
+    ]
+  },
+  {
+    "uid": "rc-nano",
+    "name_en": "Interdisciplinary Resource Centre for Nanotechnology",
+    "name_local": "Междисциплинарный ресурсный центр по направлению «Нанотехнологии»",
+    "kind": "center",
+    "parent": "research-park",
+    "aliases": [
+      "Interdisciplinary Resource Centre for Nanotechnology",
+      "Interdisciplinary Resource Center for Nanotechnology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rc-optical",
+    "name_en": "Center for Optical and Laser Materials Research",
+    "name_local": "Ресурсный центр «Оптические и лазерные методы исследования вещества»",
+    "kind": "center",
+    "parent": "research-park",
+    "aliases": [
+      "Center for Optical and Laser Materials Research",
+      "Centre for Optical and Laser Materials Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rc-molcell",
+    "name_en": "Center for Molecular and Cell Technologies",
+    "name_local": "Ресурсный центр «Развитие молекулярных и клеточных технологий»",
+    "kind": "center",
+    "parent": "research-park",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Molecular and Cell Technologies",
+      "Centre for Molecular and Cell Technologies"
+    ]
+  },
+  {
+    "uid": "lab-nmr",
+    "name_en": "Laboratory of Biomolecular NMR",
+    "name_local": "Лаборатория биомолекулярного ЯМР",
+    "kind": "lab",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Biomolecular NMR"
+    ]
+  },
+  {
+    "uid": "transgenesis",
+    "name_en": "Center for Transgenesis and Genome Editing",
+    "name_local": "Центр трансгенеза и редактирования генома",
+    "kind": "center",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Transgenesis and Genome Editing",
+      "Centre for Transgenesis and Genome Editing"
+    ]
+  },
+  {
+    "uid": "microplastics",
+    "name_en": "Microplastics Research Center",
+    "name_local": "Центр исследования микропластика",
+    "kind": "center",
+    "parent": "spbu",
+    "aliases": [],
+    "context_aliases": [
+      "Microplastics Research Center",
+      "Analytical Laboratory for Microplastics Research"
+    ]
+  }
+]

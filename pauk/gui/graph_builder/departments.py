@@ -1,7 +1,7 @@
 """Assigns a department to every author/publication/repository.
 
 Rules are in `docs/architecture/gui.md`: a publication gets the majority vote
-among its ITMO authors; an author gets their most recent publication's
+among its member authors; an author gets their most recent publication's
 department; a repository gets the majority among the departments of the
 publications it implements. Ties break by id, not by global popularity, or
 large departments would only keep growing.
@@ -177,7 +177,7 @@ class DepartmentAssigner:
                 pub_dept_rows[pid].append(did)
 
         # Step 3: a publication's primary department is the majority vote among
-        # its authors' static_depts (only ITMO people have BELONGS_TO, so
+        # its authors' static_depts (only members have BELONGS_TO, so
         # external coauthors never vote), falling back to the first PRODUCED_BY.
         pub_primary: dict[str, str | None] = {}
         for pid in authorship.pub_ids:
@@ -220,7 +220,7 @@ class DepartmentAssigner:
 
         # Step 6: a repository's primary department is the majority vote among
         # the departments of the publications it implements, falling back to
-        # DEVELOPED_BY, then to its ITMO contributors' departments.
+        # DEVELOPED_BY, then to its member contributors' departments.
         repo_dept: dict[str, str | None] = {}
         for row in db["repositories"]:
             rid = row["id"]

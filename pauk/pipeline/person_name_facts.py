@@ -40,7 +40,7 @@ def name_comparison_facts(first: Person, second: Person) -> dict:
     spelling only; neither establishes that the records identify one person.
     """
     parsed = [
-        parse_name(person.name_raw, tuple(value for value in (person.surname_ru, person.surname_en) if value))
+        parse_name(person.name_raw, tuple(value for value in (person.surname_local, person.surname_en) if value))
         for person in (first, second)
     ]
     alternatives = []

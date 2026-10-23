@@ -9,6 +9,19 @@ Reads the `repo_links` collection (every link found by `code_links`). For each
 link of the form `github.com/owner/repo` (exactly two path segments) it queries
 the GitHub API.
 
+## GraphQL first, REST as the fallback
+
+GitHub allows 5,000 REST requests an hour per token, and REST costs two per
+repository (the metadata, then `/readme`). Before the loop the stage hands every
+pending repository to `GitHubClient.prefetch_repositories`, which loads 25 per
+GraphQL query (one point of GraphQL's own 5,000-an-hour budget): metadata in
+the REST payload's shape, and `has_readme` from whether `HEAD:` holds one of the
+usual README names (`README.md`, `README.rst`, `README`, ...; REST's `/readme`
+accepts any README, so an unusual name may read as none). `get_repository` and
+`has_readme` then answer from that. A repository GraphQL does not know raises
+the same 404 as REST; a failed GraphQL query leaves its 25 to REST. Without a
+token nothing is prefetched.
+
 ## One request per repository per run
 
 Many publications can mention the same repository. All `cited_urls` are

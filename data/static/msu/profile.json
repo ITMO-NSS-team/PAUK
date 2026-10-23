@@ -1,0 +1,26 @@
+{
+  "key": "msu",
+  "short_name": "Lomonosov MSU",
+  "short_name_local": "МГУ",
+  "name_en": "Lomonosov Moscow State University",
+  "name_local": "Московский государственный университет имени М.В. Ломоносова",
+  "ror_id": "010pmpe69",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "msu.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:lomonosovmsu|lomonosov\\s+msu|мгу)(?![^\\W\\d_])",
+  "long_name": "(?:m\\s*\\.?\\s*v\\s*\\.?\\s*)?lomonosov\\s+moscow\\s+(?:state\\s+)?university|moscow\\s+(?:m\\s*\\.?\\s*v\\s*\\.?\\s*)?lomonosov\\s+state\\s+university|lomonosov\\s+state\\s+university|moscow\\s+state\\s+university(?!\\s+(?:of|for|named)(?![^\\W\\d_]))|московский\\s+государственный\\s+университет\\s*(?:имени|им\\.?)\\s*(?:м\\s*\\.?\\s*в\\s*\\.?\\s*)?ломоносова|московский\\s+государственный\\s+университет(?=\\s*(?:[»\"),;]|$))|мгу\\s*(?:имени|им\\.?)\\s*(?:м\\s*\\.?\\s*в\\s*\\.?\\s*)?ломоносова|moskovskii\\s+gosudarstvennyi\\s+universitet(?:\\s+imeni\\s+(?:m\\s*\\.?\\s*v\\s*\\.?\\s*)?lomonosova)?",
+  "marker_replacement": "LomonosovMSU",
+  "place_words": "moscow|москва|moskva|russia|россия|russian|federation|российская|федерация|rf|рф|fed|leninskie|leninskiye|leninskye|lenenkie|leninsky|leninskiy|ленинские|gory|горы|lenin|hills|vorobievy|vorobyovy|gsp|гсп|build|bld|building|стр|строение|lomonosovskij|lomonosovsky|lomonosovskiy|prospekt|prospect|avenue|universitetskij|universitetsky|pr|г|ул|д",
+  "other_organisations": "russian\\s+academy\\s+of\\s+sciences?|(?<![^\\W\\d_])(?:ras|ран|mipt|mephi|hse|misis|rudn|jinr|skoltech|smbu)(?![^\\W\\d_])|shenzhen\\s+msu\\W*bit|msu\\W*bit\\s+university|sechenov|skolkovo|higher\\s+school\\s+of\\s+economics|kurchatov|lebedev|steklov|keldysh|zelinsky|engelhardt|shemyakin|joint\\s+institute\\s+for\\s+nuclear\\s+research|institute\\s+for\\s+nuclear\\s+research|obukhov|shirshov|vavilov|bauman|topchiev|enikolopov|emanuel|frumkin|semenov|severtsov|dokuchaev|burnazyan|kulakov|almazov|pirogov|botkin|bochkov|vladimirsky|lopatkin|kurnakov|skryabin|pushchino|mechnikov|vega\\s+institute|korea\\s+electrotechnology|russian\\s+quantum\\s+center|ministry\\s+of\\s+health|department\\s+of\\s+healthcare|bach\\s+institute|schmidt\\s+institute|water\\s+problems\\s+institute|institute\\s+of\\s+gene\\s+biology|institute\\s+of\\s+forest\\s+science|institute\\s+of\\s+geography|institute\\s+of\\s+geology\\s+of\\s+ore\\s+deposits|trusted\\s+ai\\s+research\\s+center|moscow\\s+independent\\s+research\\s+institute|sirius|rosbiotech|moscow\\s+aviation\\s+institute",
+  "identity": "(?<![^\\W\\d_])(?:lomonosov\\s+msu|мгу)(?![^\\W\\d_])|lomonosov\\s+moscow\\s+state\\s+university|moscow\\s+state\\s+university|московский\\s+государственный\\s+университет",
+  "city": "moscow|москва",
+  "staff_catalog": null,
+  "mongo_db": "pauk_msu",
+  "site_url": "https://www.msu.ru",
+  "unit_words": "institute|institut|museum|clinic|school|garden"
+}

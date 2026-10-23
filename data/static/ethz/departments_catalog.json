@@ -1,0 +1,1512 @@
+[
+  {
+    "uid": "ethz",
+    "name_en": "Swiss Federal Institute of Technology in Zurich",
+    "name_local": "Eidgenössische Technische Hochschule Zürich",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05a28rw58",
+    "type": "university"
+  },
+  {
+    "uid": "d-arch",
+    "name_en": "Department of Architecture",
+    "name_local": "Departement Architektur",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-ARCH"
+    ],
+    "context_aliases": [
+      "Department of Architecture",
+      "Departement Architektur"
+    ]
+  },
+  {
+    "uid": "d-baug",
+    "name_en": "Department of Civil Environmental and Geomatic Engineering",
+    "name_local": "Departement Bau Umwelt und Geomatik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-BAUG"
+    ],
+    "context_aliases": [
+      "Department of Civil Environmental and Geomatic Engineering",
+      "Environmental and Geomatic Engineering",
+      "Department of Civil",
+      "Departement Bau Umwelt und Geomatik"
+    ]
+  },
+  {
+    "uid": "d-biol",
+    "name_en": "Department of Biology",
+    "name_local": "Departement Biologie",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-BIOL"
+    ],
+    "context_aliases": [
+      "Department of Biology",
+      "Departement Biologie"
+    ]
+  },
+  {
+    "uid": "d-bsse",
+    "name_en": "Department of Biosystems Science and Engineering",
+    "name_local": "Departement Biosysteme",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-BSSE",
+      "Department for Biosystems Science and Engineering"
+    ],
+    "context_aliases": [
+      "Department of Biosystems Science and Engineering",
+      "Departement Biosysteme"
+    ]
+  },
+  {
+    "uid": "d-chab",
+    "name_en": "Department of Chemistry and Applied Biosciences",
+    "name_local": "Departement Chemie und Angewandte Biowissenschaften",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-CHAB",
+      "Department of Chemistry and Applied Biosciences ETH"
+    ],
+    "context_aliases": [
+      "Department of Chemistry and Applied Biosciences",
+      "Department of Chemistry and Applied Bioscience",
+      "Department of Chemistry",
+      "Departement Chemie und Angewandte Biowissenschaften"
+    ]
+  },
+  {
+    "uid": "d-erdw",
+    "name_en": "Department of Earth and Planetary Sciences",
+    "name_local": "Departement Erd- und Planetenwissenschaften",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-ERDW",
+      "D-EAPS",
+      "D–EAPS"
+    ],
+    "context_aliases": [
+      "Department of Earth and Planetary Sciences",
+      "Department of Earth Sciences",
+      "Earth Sciences",
+      "Departement Erdwissenschaften",
+      "Departement Erd- und Planetenwissenschaften"
+    ]
+  },
+  {
+    "uid": "d-gess",
+    "name_en": "Department of Humanities Social and Political Sciences",
+    "name_local": "Departement Geistes- Sozial- und Staatswissenschaften",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-GESS"
+    ],
+    "context_aliases": [
+      "Department of Humanities",
+      "Social and Political Sciences",
+      "Department of Humanities Social and Political Sciences"
+    ]
+  },
+  {
+    "uid": "d-hest",
+    "name_en": "Department of Health Sciences and Technology",
+    "name_local": "Departement Gesundheitswissenschaften und Technologie",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-HEST"
+    ],
+    "context_aliases": [
+      "Department of Health Sciences and Technology",
+      "Department of Health Science and Technology",
+      "Department of Health Sciences & Technology",
+      "Departement Gesundheitswissenschaften und Technologie"
+    ]
+  },
+  {
+    "uid": "d-infk",
+    "name_en": "Department of Computer Science",
+    "name_local": "Departement Informatik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-INFK"
+    ],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Departement Informatik"
+    ]
+  },
+  {
+    "uid": "d-itet",
+    "name_en": "Department of Information Technology and Electrical Engineering",
+    "name_local": "Departement Informationstechnologie und Elektrotechnik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-ITET"
+    ],
+    "context_aliases": [
+      "Department of Information Technology and Electrical Engineering",
+      "Department of Electrical Engineering",
+      "Departement Informationstechnologie und Elektrotechnik"
+    ]
+  },
+  {
+    "uid": "d-math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Departement Mathematik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-MATH"
+    ],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Departement Mathematik"
+    ]
+  },
+  {
+    "uid": "d-matl",
+    "name_en": "Department of Materials",
+    "name_local": "Departement Materialwissenschaft",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-MATL"
+    ],
+    "context_aliases": [
+      "Department of Materials",
+      "Departement Materialwissenschaft"
+    ]
+  },
+  {
+    "uid": "d-mavt",
+    "name_en": "Department of Mechanical and Process Engineering",
+    "name_local": "Departement Maschinenbau und Verfahrenstechnik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-MAVT"
+    ],
+    "context_aliases": [
+      "Department of Mechanical and Process Engineering",
+      "Department of Mechanical Engineering",
+      "Departement Maschinenbau und Verfahrenstechnik"
+    ]
+  },
+  {
+    "uid": "d-mtec",
+    "name_en": "Department of Management Technology and Economics",
+    "name_local": "Departement Management Technologie und Ökonomie",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-MTEC",
+      "ETH Zurich Dept. of Management"
+    ],
+    "context_aliases": [
+      "Department of Management Technology and Economics",
+      "Department of Management",
+      "Dept. of Management",
+      "Departement Management Technologie und Ökonomie"
+    ]
+  },
+  {
+    "uid": "d-phys",
+    "name_en": "Department of Physics",
+    "name_local": "Departement Physik",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-PHYS"
+    ],
+    "context_aliases": [
+      "Department of Physics",
+      "Departement Physik"
+    ]
+  },
+  {
+    "uid": "d-usys",
+    "name_en": "Department of Environmental Systems Science",
+    "name_local": "Departement Umweltsystemwissenschaften",
+    "kind": "department",
+    "parent": "ethz",
+    "aliases": [
+      "D-USYS"
+    ],
+    "context_aliases": [
+      "Department of Environmental Systems Science",
+      "Department of Environmental Systems Sciences",
+      "Department of Environmental System Sciences",
+      "Department of Environmental System Science",
+      "Environmental Systems Science",
+      "Departement Umweltsystemwissenschaften"
+    ]
+  },
+  {
+    "uid": "ita",
+    "name_en": "Institute of Technology in Architecture",
+    "name_local": "Institut für Technologie in der Architektur",
+    "kind": "institute",
+    "parent": "d-arch",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Technology in Architecture",
+      "Institute for Technology in Architecture"
+    ]
+  },
+  {
+    "uid": "arch-building-systems",
+    "name_en": "Chair of Architecture and Building Systems",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ita",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Architecture and Building Systems"
+    ]
+  },
+  {
+    "uid": "ifu",
+    "name_en": "Institute of Environmental Engineering",
+    "name_local": "Institut für Umweltingenieurwissenschaften",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Environmental Engineering",
+      "Institute for Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "vaw",
+    "name_en": "Laboratory of Hydraulics Hydrology and Glaciology",
+    "name_local": "Versuchsanstalt für Wasserbau Hydrologie und Glaziologie",
+    "kind": "lab",
+    "parent": "d-baug",
+    "aliases": [
+      "Hydrology and Glaciology (VAW)"
+    ],
+    "context_aliases": [
+      "Laboratory of Hydraulics",
+      "Hydrology and Glaciology",
+      "Laboratory of Hydraulics Hydrology and Glaciology",
+      "VAW-Glaciology"
+    ]
+  },
+  {
+    "uid": "ivt",
+    "name_en": "Institute for Transport Planning and Systems",
+    "name_local": "Institut für Verkehrsplanung und Transportsysteme",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Transport Planning and Systems"
+    ]
+  },
+  {
+    "uid": "ikg",
+    "name_en": "Institute of Cartography and Geoinformation",
+    "name_local": "Institut für Kartografie und Geoinformation",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Cartography and Geoinformation"
+    ]
+  },
+  {
+    "uid": "igp",
+    "name_en": "Institute of Geodesy and Photogrammetry",
+    "name_local": "Institut für Geodäsie und Photogrammetrie",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Geodesy and Photogrammetry"
+    ]
+  },
+  {
+    "uid": "igt",
+    "name_en": "Institute for Geotechnical Engineering",
+    "name_local": "Institut für Geotechnik",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Geotechnical Engineering"
+    ]
+  },
+  {
+    "uid": "ibk",
+    "name_en": "Institute of Structural Engineering",
+    "name_local": "Institut für Baustatik und Konstruktion",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [
+      "Institute of Structural Engineering ETH"
+    ],
+    "context_aliases": [
+      "Institute of Structural Engineering"
+    ]
+  },
+  {
+    "uid": "ifb",
+    "name_en": "Institute for Building Materials",
+    "name_local": "Institut für Baustoffe",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Building Materials",
+      "Institute for Building Materials (IfB)"
+    ]
+  },
+  {
+    "uid": "irl",
+    "name_en": "Institute for Spatial and Landscape Development",
+    "name_local": "Institut für Raum- und Landschaftsentwicklung",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Spatial and Landscape Development"
+    ]
+  },
+  {
+    "uid": "ibi",
+    "name_en": "Institute of Construction and Infrastructure Management",
+    "name_local": "Institut für Bau- und Infrastrukturmanagement",
+    "kind": "institute",
+    "parent": "d-baug",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Construction and Infrastructure Management"
+    ]
+  },
+  {
+    "uid": "sustainable-construction",
+    "name_en": "Chair of Sustainable Construction",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Sustainable Construction"
+    ]
+  },
+  {
+    "uid": "ibc",
+    "name_en": "Institute of Biochemistry",
+    "name_local": "Institut für Biochemie",
+    "kind": "institute",
+    "parent": "d-biol",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biochemistry"
+    ]
+  },
+  {
+    "uid": "imb",
+    "name_en": "Institute of Microbiology",
+    "name_local": "Institut für Mikrobiologie",
+    "kind": "institute",
+    "parent": "d-biol",
+    "aliases": [
+      "Institute of Microbiology and Swiss Institute of Bioinformatics"
+    ],
+    "context_aliases": [
+      "Institute of Microbiology"
+    ]
+  },
+  {
+    "uid": "mbb",
+    "name_en": "Institute of Molecular Biology and Biophysics",
+    "name_local": "Institut für Molekularbiologie und Biophysik",
+    "kind": "institute",
+    "parent": "d-biol",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Biology and Biophysics"
+    ]
+  },
+  {
+    "uid": "imsb",
+    "name_en": "Institute of Molecular Systems Biology",
+    "name_local": "Institut für Molekulare Systembiologie",
+    "kind": "institute",
+    "parent": "d-biol",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Systems Biology",
+      "Institute for Molecular Systems Biology"
+    ]
+  },
+  {
+    "uid": "imhs",
+    "name_en": "Institute of Molecular Health Sciences",
+    "name_local": "Institut für Molekulare Gesundheitswissenschaften",
+    "kind": "institute",
+    "parent": "d-biol",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Health Sciences"
+    ]
+  },
+  {
+    "uid": "loc",
+    "name_en": "Laboratory of Organic Chemistry",
+    "name_local": "Laboratorium für Organische Chemie",
+    "kind": "lab",
+    "parent": "d-chab",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Organic Chemistry",
+      "Laboratory for Organic Chemistry",
+      "Laboratorium für Organische Chemie"
+    ]
+  },
+  {
+    "uid": "lac",
+    "name_en": "Laboratory of Inorganic Chemistry",
+    "name_local": "Laboratorium für Anorganische Chemie",
+    "kind": "lab",
+    "parent": "d-chab",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Inorganic Chemistry",
+      "Institute of Inorganic Chemistry",
+      "Laboratory of Inorganic Chemistry Department of Chemistry and Applied Biosciences"
+    ]
+  },
+  {
+    "uid": "icb",
+    "name_en": "Institute for Chemical and Bioengineering",
+    "name_local": "Institut für Chemie- und Bioingenieurwissenschaften",
+    "kind": "institute",
+    "parent": "d-chab",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Chemical and Bioengineering"
+    ]
+  },
+  {
+    "uid": "ips",
+    "name_en": "Institute of Pharmaceutical Sciences",
+    "name_local": "Institut für Pharmazeutische Wissenschaften",
+    "kind": "institute",
+    "parent": "d-chab",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "imps",
+    "name_en": "Institute of Molecular Physical Science",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "d-chab",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Physical Science",
+      "Institute of Molecular Physical Sciences",
+      "Institute for Molecular Physical Sciences",
+      "Institute for Molecular Physical Science"
+    ]
+  },
+  {
+    "uid": "igp-erdw",
+    "name_en": "Institute of Geochemistry and Petrology",
+    "name_local": "Institut für Geochemie und Petrologie",
+    "kind": "institute",
+    "parent": "d-erdw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Geochemistry and Petrology"
+    ]
+  },
+  {
+    "uid": "igp-geophysics",
+    "name_en": "Institute of Geophysics",
+    "name_local": "Institut für Geophysik",
+    "kind": "institute",
+    "parent": "d-erdw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Geophysics"
+    ]
+  },
+  {
+    "uid": "geological-institute",
+    "name_en": "Geological Institute",
+    "name_local": "Geologisches Institut",
+    "kind": "institute",
+    "parent": "d-erdw",
+    "aliases": [],
+    "context_aliases": [
+      "Geological Institute"
+    ]
+  },
+  {
+    "uid": "structural-geology",
+    "name_en": "Structural Geology and Tectonics Group",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "geological-institute",
+    "aliases": [],
+    "context_aliases": [
+      "Structural Geology and Tectonics Group"
+    ]
+  },
+  {
+    "uid": "sed",
+    "name_en": "Swiss Seismological Service",
+    "name_local": "Schweizerischer Erdbebendienst",
+    "kind": "center",
+    "parent": "d-erdw",
+    "aliases": [
+      "Schweizerischer Erdbebendienst"
+    ],
+    "context_aliases": [
+      "Swiss Seismological Service"
+    ]
+  },
+  {
+    "uid": "bulgg",
+    "name_en": "Bedretto Underground Laboratory for Geosciences and Geoenergies",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-erdw",
+    "aliases": [
+      "Bedretto Underground Lab",
+      "ETH - BULGG"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ifnh",
+    "name_en": "Institute of Food Nutrition and Health",
+    "name_local": "Institut für Lebensmittelwissenschaften Ernährung und Gesundheit",
+    "kind": "institute",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Food",
+      "Institute of Food Nutrition and Health",
+      "Nutrition and Health"
+    ]
+  },
+  {
+    "uid": "ibm-biomech",
+    "name_en": "Institute for Biomechanics",
+    "name_local": "Institut für Biomechanik",
+    "kind": "institute",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Biomechanics",
+      "Institute of Biomechanics"
+    ]
+  },
+  {
+    "uid": "ihmss",
+    "name_en": "Institute of Human Movement Sciences and Sport",
+    "name_local": "Institut für Bewegungswissenschaften und Sport",
+    "kind": "institute",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Human Movement Sciences and Sport"
+    ]
+  },
+  {
+    "uid": "itm",
+    "name_en": "Institute of Translational Medicine",
+    "name_local": "Institut für Translationale Medizin",
+    "kind": "institute",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Translational Medicine"
+    ]
+  },
+  {
+    "uid": "ifn",
+    "name_en": "Institute for Neuroscience",
+    "name_local": "Institut für Neurowissenschaften",
+    "kind": "institute",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Neuroscience"
+    ]
+  },
+  {
+    "uid": "translational-nutrition",
+    "name_en": "Laboratory of Translational Nutrition Biology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ifnh",
+    "aliases": [
+      "Laboratory of Translational Nutrition Biology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "food-systems-biotech",
+    "name_en": "Laboratory of Food Systems Biotechnology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ifnh",
+    "aliases": [
+      "Laboratory of Food Systems Biotechnology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "movement-biomechanics",
+    "name_en": "Laboratory for Movement Biomechanics",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ibm-biomech",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Movement Biomechanics"
+    ]
+  },
+  {
+    "uid": "applied-mechanobiology",
+    "name_en": "Laboratory of Applied Mechanobiology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "itm",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Applied Mechanobiology"
+    ]
+  },
+  {
+    "uid": "tebl",
+    "name_en": "Tissue Engineering + Biofabrication Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Tissue Engineering + Biofabrication Laboratory"
+    ]
+  },
+  {
+    "uid": "smslab",
+    "name_en": "Sensory-Motor Systems Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-hest",
+    "aliases": [],
+    "context_aliases": [
+      "Sensory-Motor Systems Lab",
+      "Sensory-Motor System Lab"
+    ]
+  },
+  {
+    "uid": "exercise-physiology",
+    "name_en": "Exercise Physiology Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ihmss",
+    "aliases": [],
+    "context_aliases": [
+      "Exercise Physiology Lab"
+    ]
+  },
+  {
+    "uid": "toxicology",
+    "name_en": "Laboratory of Toxicology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ifnh",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Toxicology"
+    ]
+  },
+  {
+    "uid": "health-ethics",
+    "name_en": "Health Ethics & Policy Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "itm",
+    "aliases": [],
+    "context_aliases": [
+      "Health Ethics & Policy Lab",
+      "Health Ethics and Policy Lab"
+    ]
+  },
+  {
+    "uid": "ibt",
+    "name_en": "Institute for Biomedical Engineering",
+    "name_local": "Institut für Biomedizinische Technik",
+    "kind": "institute",
+    "parent": "d-itet",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "lbb",
+    "name_en": "Laboratory of Biosensors and Bioelectronics",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ibt",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Biosensors and Bioelectronics"
+    ]
+  },
+  {
+    "uid": "ini",
+    "name_en": "Institute of Neuroinformatics",
+    "name_local": "Institut für Neuroinformatik",
+    "kind": "institute",
+    "parent": "d-itet",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Neuroinformatics",
+      "Institute for Neuroinformatics"
+    ]
+  },
+  {
+    "uid": "iis",
+    "name_en": "Integrated Systems Laboratory",
+    "name_local": "Institut für Integrierte Systeme",
+    "kind": "lab",
+    "parent": "d-itet",
+    "aliases": [
+      "Integrated Systems Laboratory of ETH"
+    ],
+    "context_aliases": [
+      "Integrated Systems Laboratory",
+      "Integrated Systems Laboratory (IIS)"
+    ]
+  },
+  {
+    "uid": "cvl",
+    "name_en": "Computer Vision Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-itet",
+    "aliases": [],
+    "context_aliases": [
+      "Computer Vision Laboratory",
+      "Computer Vision Lab"
+    ]
+  },
+  {
+    "uid": "ifa",
+    "name_en": "Automatic Control Laboratory",
+    "name_local": "Institut für Automatik",
+    "kind": "lab",
+    "parent": "d-itet",
+    "aliases": [],
+    "context_aliases": [
+      "Automatic Control Laboratory",
+      "Automatic Control Laboratory (IfA)"
+    ]
+  },
+  {
+    "uid": "ief",
+    "name_en": "Institute of Electromagnetic Fields",
+    "name_local": "Institut für Elektromagnetische Felder",
+    "kind": "institute",
+    "parent": "d-itet",
+    "aliases": [
+      "Institute of Electromagnetic Fields (IEF) ETH"
+    ],
+    "context_aliases": [
+      "Institute of Electromagnetic Fields",
+      "D-ITET Institute of Electromagnetic Fields",
+      "Electromagnetic Fields Laboratory"
+    ]
+  },
+  {
+    "uid": "eeh",
+    "name_en": "Institute for Power Systems and High Voltage Technology",
+    "name_local": "Institut für Elektrische Energieübertragung und Hochspannungstechnik",
+    "kind": "institute",
+    "parent": "d-itet",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Power Systems and High Voltage Technology"
+    ]
+  },
+  {
+    "uid": "psl",
+    "name_en": "Power Systems Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "eeh",
+    "aliases": [],
+    "context_aliases": [
+      "Power Systems Laboratory"
+    ]
+  },
+  {
+    "uid": "safari",
+    "name_en": "SAFARI Research Group",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-itet",
+    "aliases": [
+      "SAFARI Research Group"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "spcl",
+    "name_en": "Scalable Parallel Computing Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-infk",
+    "aliases": [
+      "Scalable Parallel Computing Lab",
+      "Scalable Parallel Computing Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "agentic-systems",
+    "name_en": "Agentic Systems Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ethz",
+    "aliases": [
+      "Agentic Systems Lab ETH"
+    ],
+    "context_aliases": [
+      "Agentic Systems Lab"
+    ]
+  },
+  {
+    "uid": "ai-center",
+    "name_en": "ETH AI Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [
+      "ETH AI Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "seminar-statistics",
+    "name_en": "Seminar for Statistics",
+    "name_local": "Seminar für Statistik",
+    "kind": "institute",
+    "parent": "d-math",
+    "aliases": [
+      "Seminar for Statistics",
+      "Seminar für Statistik"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ifor",
+    "name_en": "Institute for Operations Research",
+    "name_local": "Institut für Operations Research",
+    "kind": "institute",
+    "parent": "d-math",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Operations Research"
+    ]
+  },
+  {
+    "uid": "fim",
+    "name_en": "Institute for Mathematical Research",
+    "name_local": "Forschungsinstitut für Mathematik",
+    "kind": "institute",
+    "parent": "d-math",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Mathematical Research"
+    ]
+  },
+  {
+    "uid": "mesoscopic",
+    "name_en": "Laboratory for Mesoscopic Systems",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-matl",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Mesoscopic Systems"
+    ]
+  },
+  {
+    "uid": "iepe",
+    "name_en": "Institute of Energy and Process Engineering",
+    "name_local": "Institut für Energie- und Verfahrenstechnik",
+    "kind": "institute",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Energy and Process Engineering",
+      "Institute of Energy and Process Engineering (IEPE)"
+    ]
+  },
+  {
+    "uid": "ifd",
+    "name_en": "Institute of Fluid Dynamics",
+    "name_local": "Institut für Fluiddynamik",
+    "kind": "institute",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Fluid Dynamics"
+    ]
+  },
+  {
+    "uid": "idsc",
+    "name_en": "Institute for Dynamic Systems and Control",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Dynamic Systems and Control"
+    ]
+  },
+  {
+    "uid": "imes",
+    "name_en": "Institute for Mechanical Systems",
+    "name_local": "Institut für Mechanische Systeme",
+    "kind": "institute",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Mechanical Systems"
+    ]
+  },
+  {
+    "uid": "iris",
+    "name_en": "Institute of Robotics and Intelligent Systems",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Robotics and Intelligent Systems"
+    ]
+  },
+  {
+    "uid": "asl",
+    "name_en": "Autonomous Systems Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iris",
+    "aliases": [],
+    "context_aliases": [
+      "Autonomous Systems Lab",
+      "Autonomous Systems Lab (ASL)"
+    ]
+  },
+  {
+    "uid": "rsl",
+    "name_en": "Robotic Systems Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iris",
+    "aliases": [],
+    "context_aliases": [
+      "Robotic Systems Lab",
+      "Robotic Systems Lab (RSL)"
+    ]
+  },
+  {
+    "uid": "msrl",
+    "name_en": "Multi-Scale Robotics Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iris",
+    "aliases": [
+      "Multi‐Scale Robotics Lab ETH"
+    ],
+    "context_aliases": [
+      "Multi-Scale Robotics Lab",
+      "Multi‐Scale Robotics Lab"
+    ]
+  },
+  {
+    "uid": "srl",
+    "name_en": "Soft Robotics Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iris",
+    "aliases": [],
+    "context_aliases": [
+      "Soft Robotics Lab"
+    ]
+  },
+  {
+    "uid": "pse-nanoparticle",
+    "name_en": "Nanoparticle Systems Engineering Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iepe",
+    "aliases": [],
+    "context_aliases": [
+      "Nanoparticle Systems Engineering Laboratory"
+    ]
+  },
+  {
+    "uid": "lese",
+    "name_en": "Laboratory of Energy Science and Engineering",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iepe",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Energy Science and Engineering"
+    ]
+  },
+  {
+    "uid": "nanophotonic-systems",
+    "name_en": "Nanophotonic Systems Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-mavt",
+    "aliases": [],
+    "context_aliases": [
+      "Nanophotonic Systems Laboratory"
+    ]
+  },
+  {
+    "uid": "advanced-manufacturing",
+    "name_en": "Advanced Manufacturing Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-mavt",
+    "aliases": [
+      "Advanced Manufacturing Lab ETH"
+    ],
+    "context_aliases": [
+      "Advanced Manufacturing Laboratory",
+      "Advanced Manufacturing Lab"
+    ]
+  },
+  {
+    "uid": "rre",
+    "name_en": "Reliability and Risk Engineering",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iepe",
+    "aliases": [],
+    "context_aliases": [
+      "Reliability and Risk Engineering"
+    ]
+  },
+  {
+    "uid": "nanomaterials-health",
+    "name_en": "Nanomaterials in Health Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iepe",
+    "aliases": [],
+    "context_aliases": [
+      "Nanomaterials in Health Laboratory"
+    ]
+  },
+  {
+    "uid": "kof",
+    "name_en": "KOF Swiss Economic Institute",
+    "name_local": "KOF Konjunkturforschungsstelle",
+    "kind": "institute",
+    "parent": "d-mtec",
+    "aliases": [
+      "KOF ETH",
+      "KOF Swiss Economic Institute",
+      "KOF Konjunkturforschungsstelle"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ipa",
+    "name_en": "Institute for Particle Physics and Astrophysics",
+    "name_local": "Institut für Teilchen- und Astrophysik",
+    "kind": "institute",
+    "parent": "d-phys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Particle Physics and Astrophysics",
+      "Institute for Particle Physics & Astrophysics",
+      "Institute for Particle Physics"
+    ]
+  },
+  {
+    "uid": "itp",
+    "name_en": "Institute for Theoretical Physics",
+    "name_local": "Institut für Theoretische Physik",
+    "kind": "institute",
+    "parent": "d-phys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Theoretical Physics",
+      "Institut für Theoretische Physik"
+    ]
+  },
+  {
+    "uid": "iqe",
+    "name_en": "Institute for Quantum Electronics",
+    "name_local": "Institut für Quantenelektronik",
+    "kind": "institute",
+    "parent": "d-phys",
+    "aliases": [
+      "Institute for Quantum Electronics and Quantum Center"
+    ],
+    "context_aliases": [
+      "Institute for Quantum Electronics",
+      "Institute of Quantum Electronics"
+    ]
+  },
+  {
+    "uid": "lfkp",
+    "name_en": "Laboratory for Solid State Physics",
+    "name_local": "Laboratorium für Festkörperphysik",
+    "kind": "lab",
+    "parent": "d-phys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Solid State Physics"
+    ]
+  },
+  {
+    "uid": "lip",
+    "name_en": "Laboratory of Ion Beam Physics",
+    "name_local": "Labor für Ionenstrahlphysik",
+    "kind": "lab",
+    "parent": "d-phys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Ion Beam Physics"
+    ]
+  },
+  {
+    "uid": "quantum-center",
+    "name_en": "ETH Zurich Quantum Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [
+      "ETH Zurich Quantum Center"
+    ],
+    "context_aliases": [
+      "Quantum Center"
+    ]
+  },
+  {
+    "uid": "qc-hub",
+    "name_en": "ETH Zurich - PSI Quantum Computing Hub",
+    "name_local": "",
+    "kind": "center",
+    "parent": "quantum-center",
+    "aliases": [
+      "ETH Zürich—PSI Quantum Computing Hub",
+      "ETH Zurich - PSI Quantum Computing Hub"
+    ],
+    "context_aliases": [
+      "Quantum Computing Hub"
+    ]
+  },
+  {
+    "uid": "iac",
+    "name_en": "Institute for Atmospheric and Climate Science",
+    "name_local": "Institut für Atmosphäre und Klima",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Atmospheric and Climate Science",
+      "Institute for Atmospheric and Climate Sciences"
+    ]
+  },
+  {
+    "uid": "ias",
+    "name_en": "Institute of Agricultural Sciences",
+    "name_local": "Institut für Agrarwissenschaften",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Agricultural Sciences"
+    ]
+  },
+  {
+    "uid": "molecular-plant-breeding",
+    "name_en": "Molecular Plant Breeding",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ias",
+    "aliases": [],
+    "context_aliases": [
+      "Molecular Plant Breeding"
+    ]
+  },
+  {
+    "uid": "grassland-sciences",
+    "name_en": "Grassland Sciences Group",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ias",
+    "aliases": [],
+    "context_aliases": [
+      "Grassland Sciences Group"
+    ]
+  },
+  {
+    "uid": "animal-nutrition",
+    "name_en": "Animal Nutrition",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ias",
+    "aliases": [],
+    "context_aliases": [
+      "Animal Nutrition"
+    ]
+  },
+  {
+    "uid": "animal-genomics",
+    "name_en": "Animal Genomics",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ias",
+    "aliases": [],
+    "context_aliases": [
+      "Animal Genomics"
+    ]
+  },
+  {
+    "uid": "ite",
+    "name_en": "Institute of Terrestrial Ecosystems",
+    "name_local": "Institut für Terrestrische Ökosysteme",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Terrestrial Ecosystems",
+      "Institute for Terrestrial Ecosystems"
+    ]
+  },
+  {
+    "uid": "ibp",
+    "name_en": "Institute of Biogeochemistry and Pollutant Dynamics",
+    "name_local": "Institut für Biogeochemie und Schadstoffdynamik",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biogeochemistry and Pollutant Dynamics"
+    ]
+  },
+  {
+    "uid": "ied",
+    "name_en": "Institute for Environmental Decisions",
+    "name_local": "Institut für Umweltentscheidungen",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Environmental Decisions"
+    ]
+  },
+  {
+    "uid": "iib",
+    "name_en": "Institute of Integrative Biology",
+    "name_local": "Institut für Integrative Biologie",
+    "kind": "institute",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Integrative Biology"
+    ]
+  },
+  {
+    "uid": "tdlab",
+    "name_en": "Transdisciplinarity Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-usys",
+    "aliases": [],
+    "context_aliases": [
+      "Transdisciplinarity Lab"
+    ]
+  },
+  {
+    "uid": "psc",
+    "name_en": "Zurich-Basel Plant Science Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [],
+    "context_aliases": [
+      "Zürich-Basel Plant Science Center",
+      "Zurich-Basel Plant Science Center"
+    ]
+  },
+  {
+    "uid": "cis",
+    "name_en": "Center for Comparative and International Studies",
+    "name_local": "",
+    "kind": "center",
+    "parent": "d-gess",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Comparative and International Studies",
+      "Center for Comparative and International Studies (CIS)"
+    ]
+  },
+  {
+    "uid": "law-economics",
+    "name_en": "Center for Law & Economics",
+    "name_local": "",
+    "kind": "center",
+    "parent": "d-gess",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Law & Economics",
+      "Center for Law and Economics"
+    ]
+  },
+  {
+    "uid": "social-networks-lab",
+    "name_en": "Social Networks Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "d-gess",
+    "aliases": [],
+    "context_aliases": [
+      "Social Networks Lab"
+    ]
+  },
+  {
+    "uid": "sdsc",
+    "name_en": "Swiss Data Science Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [],
+    "context_aliases": [
+      "Swiss Data Science Center"
+    ]
+  },
+  {
+    "uid": "sec",
+    "name_en": "Singapore-ETH Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [],
+    "context_aliases": [
+      "Singapore-ETH Centre",
+      "Singapore-ETH Center"
+    ]
+  },
+  {
+    "uid": "fht",
+    "name_en": "Future Health Technologies Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "sec",
+    "aliases": [],
+    "context_aliases": [
+      "Future Health Technologies Programme",
+      "Future Health Technologies"
+    ]
+  },
+  {
+    "uid": "fgcz",
+    "name_en": "Functional Genomics Center Zurich",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [],
+    "context_aliases": [
+      "Functional Genomics Center Zurich"
+    ]
+  },
+  {
+    "uid": "znz",
+    "name_en": "Neuroscience Center Zurich",
+    "name_local": "Zentrum für Neurowissenschaften Zürich",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [],
+    "context_aliases": [
+      "Neuroscience Center Zurich",
+      "Neuroscience Center Zurich (ZNZ)",
+      "Zurich Neuroscience Center"
+    ]
+  },
+  {
+    "uid": "scopem",
+    "name_en": "Scientific Center for Optical and Electron Microscopy",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [
+      "Scientific Center for Optical and Electron Microscopy",
+      "ScopeM"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "c2sm",
+    "name_en": "Center for Climate Systems Modeling",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [
+      "Center for Climate Systems Modeling"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cscs",
+    "name_en": "Swiss National Supercomputing Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ethz",
+    "aliases": [
+      "Swiss National Supercomputing Centre",
+      "Swiss National Supercomputing Center"
+    ],
+    "context_aliases": [
+      "CSCS"
+    ]
+  },
+  {
+    "uid": "eth-its",
+    "name_en": "ETH Institute for Theoretical Studies",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "ethz",
+    "aliases": [
+      "ETH Institute for Theoretical Studies"
+    ],
+    "context_aliases": []
+  }
+]

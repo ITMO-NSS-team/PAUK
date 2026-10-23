@@ -1,0 +1,251 @@
+[
+  {
+    "uid": "huberlin",
+    "name_en": "Humboldt-Universität zu Berlin",
+    "name_local": "Humboldt-Universität zu Berlin",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01hcx6992",
+    "type": "university"
+  },
+  {
+    "uid": "mnf",
+    "name_en": "Faculty of Mathematics and Natural Sciences",
+    "name_local": "Faculty of Mathematics and Natural Sciences",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics and Natural Sciences",
+      "Mathematisch-Naturwissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "lsf",
+    "name_en": "Faculty of Life Sciences",
+    "name_local": "Faculty of Life Sciences",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Life Sciences",
+      "Lebenswissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "phil",
+    "name_en": "Faculty of Humanities and Social Sciences",
+    "name_local": "Faculty of Humanities and Social Sciences",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities and Social Sciences"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculty of Law",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law",
+      "Juristische Fakultät"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "School of Business and Economics",
+    "name_local": "School of Business and Economics",
+    "kind": "school",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "School of Business and Economics",
+      "Wirtschaftswissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "lang",
+    "name_en": "Faculty of Language Literature and Humanities",
+    "name_local": "Faculty of Language Literature and Humanities",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Language",
+      "Sprach- und Literaturwissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "theo",
+    "name_en": "Faculty of Theology",
+    "name_local": "Faculty of Theology",
+    "kind": "faculty",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Theology",
+      "Theologische Fakultät"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "mnf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Institut für Physik",
+      "Institute of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "mnf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Institut für Chemie"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "mnf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Institut für Mathematik"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "mnf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Institut für Informatik"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geography",
+    "name_local": "Department of Geography",
+    "kind": "department",
+    "parent": "mnf",
+    "aliases": [],
+    "context_aliases": [
+      "Geography Department",
+      "Department of Geography",
+      "Geographisches Institut"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "lsf",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology",
+      "Institut für Psychologie"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "lsf",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biology",
+      "Department of Biology",
+      "Institut für Biologie"
+    ]
+  },
+  {
+    "uid": "thaer",
+    "name_en": "Albrecht Daniel Thaer Institute of Agricultural and Horticultural Sciences",
+    "name_local": "Albrecht Daniel Thaer Institute of Agricultural and Horticultural Sciences",
+    "kind": "department",
+    "parent": "lsf",
+    "aliases": [],
+    "context_aliases": [
+      "Albrecht Daniel Thaer"
+    ]
+  },
+  {
+    "uid": "iri",
+    "name_en": "IRI THESys",
+    "name_local": "IRI THESys",
+    "kind": "institute",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "IRI THESys",
+      "Integrative Research Institute on Transformations of Human-Environment Systems"
+    ]
+  },
+  {
+    "uid": "adlershof",
+    "name_en": "IRIS Adlershof",
+    "name_local": "IRIS Adlershof",
+    "kind": "institute",
+    "parent": "mnf",
+    "aliases": [
+      "IRIS Adlershof"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bccn",
+    "name_en": "Bernstein Center for Computational Neuroscience Berlin",
+    "name_local": "Bernstein Center for Computational Neuroscience Berlin",
+    "kind": "center",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Bernstein Center for Computational Neuroscience Berlin",
+      "Bernstein Center for Computational Neuroscience"
+    ]
+  },
+  {
+    "uid": "scioi",
+    "name_en": "Cluster of Excellence Science of Intelligence",
+    "name_local": "Cluster of Excellence Science of Intelligence",
+    "kind": "center",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Cluster of Excellence Science of Intelligence",
+      "Science of Intelligence"
+    ]
+  },
+  {
+    "uid": "smart",
+    "name_en": "Cluster of Excellence Matters of Activity",
+    "name_local": "Cluster of Excellence Matters of Activity",
+    "kind": "center",
+    "parent": "huberlin",
+    "aliases": [],
+    "context_aliases": [
+      "Cluster of Excellence Matters of Activity",
+      "Matters of Activity"
+    ]
+  }
+]

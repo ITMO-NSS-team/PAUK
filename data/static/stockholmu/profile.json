@@ -1,0 +1,31 @@
+{
+  "key": "stockholmu",
+  "short_name": "SU",
+  "short_name_local": "Stockholms universitet",
+  "name_en": "Stockholm University",
+  "name_local": "Stockholms universitet",
+  "ror_id": "05f0yaq80",
+  "language": "Swedish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "af",
+    "von",
+    "de"
+  ],
+  "email_domains": [
+    "su.se"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:StockholmUniv)(?![^\\W\\d_])",
+  "long_name": "University[\\s‐-]+of[\\s‐-]+Stockholm|Stockholms[\\s‐-]+universitet|Stockholm[\\s‐-]+University|Tukholman[\\s‐-]+yliopisto|Stockholm[\\s‐-]+Univ",
+  "marker_replacement": "StockholmUniv",
+  "place_words": "albanova|aleja|alfvéns|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|hannes|katu|kista|laan|north|piazza|platz|plaza|plein|po|rd|road|room|rue|se|solna|south|st|stockholm|str|straat|strasse|straße|street|sverige|sweden|tie|ul|vej|via|viale|väg|vägen|weg|west",
+  "other_organisations": "KTH|Royal Institute of Technology|Karolinska|Uppsala University|Nordita|Science for Life Laboratory|SciLifeLab|ArchLab|National\\ Bioinformatics\\ Infrastructure\\ Sweden|National\\ Microscopy\\ Infrastructure|Swedish\\ Biodiversity\\ Data\\ Infrastructure|Swedish\\ National\\ Data\\ Service",
+  "identity": "University[\\s‐-]+of[\\s‐-]+Stockholm|Stockholms[\\s‐-]+universitet|Stockholm[\\s‐-]+University|Tukholman[\\s‐-]+yliopisto|Stockholm[\\s‐-]+Univ",
+  "city": "Stockholm",
+  "staff_catalog": null,
+  "mongo_db": "pauk_stockholmu",
+  "site_url": "https://www.su.se",
+  "unit_words": "department|centre|center|institute",
+  "external_authors": false
+}

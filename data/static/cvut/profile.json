@@ -1,0 +1,27 @@
+{
+  "key": "cvut",
+  "short_name": "CTU",
+  "short_name_local": "ČVUT",
+  "name_en": "Czech Technical University in Prague",
+  "name_local": "České vysoké učení technické v Praze",
+  "ror_id": "03kqpb082",
+  "language": "Czech",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "cvut.cz"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:CzechTechUniv|ČVUT|CVUT|CTU\\ in\\ Prague)(?![^\\W\\d_])",
+  "long_name": "Czech[\\s‐-]+Technical[\\s‐-]+University[\\s‐-]+in[\\s‐-]+Prague|České[\\s‐-]+vysoké[\\s‐-]+učení[\\s‐-]+technické[\\s‐-]+v[\\s‐-]+Praze|Ceske[\\s‐-]+vysoke[\\s‐-]+uceni[\\s‐-]+technicke[\\s‐-]+v[\\s‐-]+Praze|Czech[\\s‐-]+Technical[\\s‐-]+University|Czech[\\s‐-]+Tech[\\s‐-]+Univ",
+  "marker_replacement": "CzechTechUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|brehova|building|bustehrad|buštěhrad|břehová|calle|campus|czech|czechia|dejvice|east|floor|gatan|husova|karlovo|katu|kladno|konviktská|laan|north|nám|náměstí|piazza|platz|plaza|plein|po|prague|praha|rd|republic|republika|road|room|rue|south|st|str|straat|strasse|straße|street|technicka|technická|thakurova|thákurova|tie|trojanova|ul|vej|via|viale|vägen|weg|west|česká",
+  "other_organisations": "Charles University|Czech Academy of Sciences|Institute of Physics of the Czech Academy of Sciences|ELI Beamlines|Extreme Light Infrastructure",
+  "identity": "(?<![^\\W\\d_])ČVUT(?![^\\W\\d_])|(?<![^\\W\\d_])CVUT(?![^\\W\\d_])|(?<![^\\W\\d_])CTU\\ in\\ Prague(?![^\\W\\d_])|Czech[\\s‐-]+Technical[\\s‐-]+University[\\s‐-]+in[\\s‐-]+Prague|České[\\s‐-]+vysoké[\\s‐-]+učení[\\s‐-]+technické[\\s‐-]+v[\\s‐-]+Praze|Ceske[\\s‐-]+vysoke[\\s‐-]+uceni[\\s‐-]+technicke[\\s‐-]+v[\\s‐-]+Praze|Czech[\\s‐-]+Technical[\\s‐-]+University|Czech[\\s‐-]+Tech[\\s‐-]+Univ",
+  "city": "Prague",
+  "staff_catalog": null,
+  "mongo_db": "pauk_cvut",
+  "site_url": "https://www.cvut.cz",
+  "unit_words": "faculty|institute|centre|center",
+  "external_authors": false
+}

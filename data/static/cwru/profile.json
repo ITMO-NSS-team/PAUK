@@ -1,0 +1,37 @@
+{
+  "key": "cwru",
+  "short_name": "CWRU",
+  "short_name_local": "CWRU",
+  "name_en": "Case Western Reserve University",
+  "name_local": "Case Western Reserve University",
+  "ror_id": "051fd9666",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "case.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:CaseWesternReserveUniv|CWRU)(?![^\\W\\d_])",
+  "long_name": "Case[\\s‐-]+Western[\\s‐-]+Reserve[\\s‐-]+University|Case[\\s‐-]+Western[\\s‐-]+Reserve[\\s‐-]+Univ|Case[\\s‐-]+Western[\\s‐-]+Reserve|Case[\\s‐-]+Western[\\s‐-]+Univ",
+  "marker_replacement": "CaseWesternReserveUniv",
+  "place_words": "aleja|allee|america|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|cleveland|east|euclid|floor|gatan|katu|laan|north|oh|ohio|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|states|str|straat|strasse|straße|street|tie|ul|united|us|usa|vej|via|viale|vägen|weg|west",
+  "other_organisations": "University Hospitals|Cleveland Clinic|MetroHealth|Louis Stokes|Seidman Cancer Center|Harrington Heart|VA Medical Center|Cleveland\\ Clinic|Cleveland\\ Clinic\\ Lerner\\ College\\ of\\ Medicine|Cleveland\\ Institute\\ of\\ Music|Louis\\ Stokes\\ Cleveland\\ VA\\ Medical\\ Center|MetroHealth|Rainbow\\ Babies\\ \\&\\ Children's\\ Hospital|St\\.\\ Vincent\\ Charity\\ Hospital|University\\ Hospitals\\ Cleveland\\ Medical\\ Center|University\\ Hospitals\\ Seidman\\ Cancer\\ Center|University\\ Hospitals\\ of\\ Cleveland",
+  "identity": "(?<![^\\W\\d_])CWRU(?![^\\W\\d_])|Case[\\s‐-]+Western[\\s‐-]+Reserve[\\s‐-]+University|Case[\\s‐-]+Western[\\s‐-]+Reserve[\\s‐-]+Univ|Case[\\s‐-]+Western[\\s‐-]+Reserve|Case[\\s‐-]+Western[\\s‐-]+Univ",
+  "city": "Cleveland",
+  "staff_catalog": null,
+  "mongo_db": "pauk_cwru",
+  "site_url": "https://case.edu",
+  "unit_words": "school|department|division|institute|center|centre|college",
+  "external_authors": false
+}

@@ -1,0 +1,1250 @@
+[
+  {
+    "uid": "columbia",
+    "name_en": "Columbia University in the City of New York",
+    "name_local": "Columbia University in the City of New York",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00hj8s172",
+    "type": "university"
+  },
+  {
+    "uid": "columbia-college",
+    "name_en": "Columbia College",
+    "name_local": "Columbia College",
+    "kind": "college",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Columbia College"
+    ]
+  },
+  {
+    "uid": "barnard-neuro",
+    "name_en": "Department of Neuroscience and Behavior",
+    "name_local": "Department of Neuroscience and Behavior",
+    "kind": "department",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuroscience and Behavior",
+      "Department of Neuroscience & Behavior"
+    ]
+  },
+  {
+    "uid": "barnard-biology",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "barnard-physastro",
+    "name_en": "Department of Physics and Astronomy",
+    "name_local": "Department of Physics and Astronomy",
+    "kind": "department",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics and Astronomy",
+      "Department of Physics & Astronomy"
+    ]
+  },
+  {
+    "uid": "arts-sciences",
+    "name_en": "Faculty of Arts and Sciences",
+    "name_local": "Faculty of Arts and Sciences",
+    "kind": "faculty",
+    "parent": "columbia",
+    "aliases": [
+      "Columbia Arts and Sciences"
+    ],
+    "context_aliases": [
+      "Faculty of Arts and Sciences",
+      "Arts and Sciences"
+    ]
+  },
+  {
+    "uid": "gsas",
+    "name_en": "Graduate School of Arts and Sciences",
+    "name_local": "Graduate School of Arts and Sciences",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Arts and Sciences",
+      "GSAS"
+    ]
+  },
+  {
+    "uid": "general-studies",
+    "name_en": "School of General Studies",
+    "name_local": "School of General Studies",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of General Studies"
+    ]
+  },
+  {
+    "uid": "seas",
+    "name_en": "Fu Foundation School of Engineering and Applied Science",
+    "name_local": "Fu Foundation School of Engineering and Applied Science",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [
+      "Fu Foundation School of Engineering and Applied Science",
+      "Columbia Engineering"
+    ],
+    "context_aliases": [
+      "School of Engineering and Applied Science",
+      "School of Engineering",
+      "SEAS"
+    ]
+  },
+  {
+    "uid": "vps",
+    "name_en": "Vagelos College of Physicians and Surgeons",
+    "name_local": "Vagelos College of Physicians and Surgeons",
+    "kind": "college",
+    "parent": "columbia",
+    "aliases": [
+      "Vagelos College of Physicians & Surgeons",
+      "Columbia University College of Physicians and Surgeons"
+    ],
+    "context_aliases": [
+      "College of Physicians and Surgeons",
+      "College of Physicians & Surgeons",
+      "School of Medicine",
+      "Medical School",
+      "Vagelos College of Physicians and Surgeons",
+      "Columbia College of Physicians and Surgeons",
+      "Columbia Medical School"
+    ]
+  },
+  {
+    "uid": "dental",
+    "name_en": "College of Dental Medicine",
+    "name_local": "College of Dental Medicine",
+    "kind": "college",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "College of Dental Medicine"
+    ]
+  },
+  {
+    "uid": "nursing",
+    "name_en": "School of Nursing",
+    "name_local": "School of Nursing",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [
+      "Columbia University School of Nursing"
+    ],
+    "context_aliases": [
+      "School of Nursing",
+      "Columbia School of Nursing"
+    ]
+  },
+  {
+    "uid": "mailman",
+    "name_en": "Mailman School of Public Health",
+    "name_local": "Mailman School of Public Health",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health",
+      "Mailman School of Public Health",
+      "Columbia Mailman School of Public Health"
+    ]
+  },
+  {
+    "uid": "business",
+    "name_en": "Columbia Business School",
+    "name_local": "Columbia Business School",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Business",
+      "Business School",
+      "Columbia Business School"
+    ]
+  },
+  {
+    "uid": "citi",
+    "name_en": "Columbia Institute for Tele-Information",
+    "name_local": "Columbia Institute for Tele-Information",
+    "kind": "center",
+    "parent": "business",
+    "aliases": [
+      "Columbia Institute for Tele-Information",
+      "Columbia Institute of Tele-Information"
+    ],
+    "context_aliases": [
+      "CITI"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Columbia Law School",
+    "name_local": "Columbia Law School",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Law School",
+      "School of Law",
+      "Columbia Law School"
+    ]
+  },
+  {
+    "uid": "social-work",
+    "name_en": "School of Social Work",
+    "name_local": "School of Social Work",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of Social Work",
+      "Columbia School of Social Work"
+    ]
+  },
+  {
+    "uid": "journalism",
+    "name_en": "Graduate School of Journalism",
+    "name_local": "Graduate School of Journalism",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [
+      "Columbia Journalism School"
+    ],
+    "context_aliases": [
+      "Graduate School of Journalism",
+      "School of Journalism"
+    ]
+  },
+  {
+    "uid": "sipa",
+    "name_en": "School of International and Public Affairs",
+    "name_local": "School of International and Public Affairs",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of International and Public Affairs",
+      "SIPA"
+    ]
+  },
+  {
+    "uid": "gsapp",
+    "name_en": "Graduate School of Architecture Planning and Preservation",
+    "name_local": "Graduate School of Architecture Planning and Preservation",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Architecture Planning and Preservation",
+      "GSAPP"
+    ]
+  },
+  {
+    "uid": "arts",
+    "name_en": "School of the Arts",
+    "name_local": "School of the Arts",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of the Arts"
+    ]
+  },
+  {
+    "uid": "sps",
+    "name_en": "School of Professional Studies",
+    "name_local": "School of Professional Studies",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "School of Professional Studies"
+    ]
+  },
+  {
+    "uid": "climate-school",
+    "name_en": "Columbia Climate School",
+    "name_local": "Columbia Climate School",
+    "kind": "school",
+    "parent": "columbia",
+    "aliases": [
+      "Columbia Earth Institute"
+    ],
+    "context_aliases": [
+      "Climate School",
+      "Earth Institute",
+      "Columbia Climate School"
+    ]
+  },
+  {
+    "uid": "ccsr",
+    "name_en": "Center for Climate Systems Research",
+    "name_local": "Center for Climate Systems Research",
+    "kind": "center",
+    "parent": "climate-school",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Climate Systems Research"
+    ]
+  },
+  {
+    "uid": "csud",
+    "name_en": "Center for Sustainable Urban Development",
+    "name_local": "Center for Sustainable Urban Development",
+    "kind": "center",
+    "parent": "climate-school",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Sustainable Urban Development",
+      "Centre for Sustainable Urban Development"
+    ]
+  },
+  {
+    "uid": "teachers-college",
+    "name_en": "Teachers College",
+    "name_local": "Teachers College",
+    "kind": "college",
+    "parent": "columbia",
+    "aliases": [
+      "Teachers College Columbia University"
+    ],
+    "context_aliases": [
+      "Teachers College"
+    ]
+  },
+  {
+    "uid": "ldeo",
+    "name_en": "Lamont-Doherty Earth Observatory",
+    "name_local": "Lamont-Doherty Earth Observatory",
+    "kind": "institute",
+    "parent": "climate-school",
+    "aliases": [],
+    "context_aliases": [
+      "Lamont-Doherty Earth Observatory",
+      "Lamont‐Doherty Earth Observatory",
+      "Lamont Doherty Earth Observatory",
+      "LDEO"
+    ]
+  },
+  {
+    "uid": "dsi",
+    "name_en": "Data Science Institute",
+    "name_local": "Data Science Institute",
+    "kind": "institute",
+    "parent": "columbia",
+    "aliases": [],
+    "context_aliases": [
+      "Data Science Institute"
+    ]
+  },
+  {
+    "uid": "zuckerman",
+    "name_en": "Mortimer B. Zuckerman Mind Brain Behavior Institute",
+    "name_local": "Mortimer B. Zuckerman Mind Brain Behavior Institute",
+    "kind": "institute",
+    "parent": "columbia",
+    "aliases": [
+      "Zuckerman Mind Brain Behavior Institute",
+      "Mortimer B. Zuckerman Mind",
+      "Zuckerman Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hiccc",
+    "name_en": "Herbert Irving Comprehensive Cancer Center",
+    "name_local": "Herbert Irving Comprehensive Cancer Center",
+    "kind": "center",
+    "parent": "columbia",
+    "aliases": [
+      "Herbert Irving Comprehensive Cancer Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sergievsky",
+    "name_en": "Gertrude H. Sergievsky Center",
+    "name_local": "Gertrude H. Sergievsky Center",
+    "kind": "center",
+    "parent": "vps",
+    "aliases": [
+      "Gertrude H. Sergievsky Center",
+      "G H Sergievsky Center",
+      "Sergievsky Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "taub",
+    "name_en": "Taub Institute for Research on Alzheimer's Disease and the Aging Brain",
+    "name_local": "Taub Institute for Research on Alzheimer's Disease and the Aging Brain",
+    "kind": "institute",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Taub Institute for Research on Alzheimer's Disease and the Aging Brain",
+      "Taub Institute for Research on Alzheimer’s Disease and the Aging Brain",
+      "Taub Institute"
+    ]
+  },
+  {
+    "uid": "ccti",
+    "name_en": "Columbia Center for Translational Immunology",
+    "name_local": "Columbia Center for Translational Immunology",
+    "kind": "center",
+    "parent": "vps",
+    "aliases": [
+      "Columbia Center for Translational Immunology"
+    ],
+    "context_aliases": [
+      "Center for Translational Immunology"
+    ]
+  },
+  {
+    "uid": "ctcn",
+    "name_en": "Center for Translational and Computational Neuroimmunology",
+    "name_local": "Center for Translational and Computational Neuroimmunology",
+    "kind": "center",
+    "parent": "neurology",
+    "aliases": [
+      "Center for Translational and Computational Neuroimmunology",
+      "Center for Translational & Computational Neuroimmunology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "adarc",
+    "name_en": "Aaron Diamond AIDS Research Center",
+    "name_local": "Aaron Diamond AIDS Research Center",
+    "kind": "center",
+    "parent": "vps",
+    "aliases": [
+      "Aaron Diamond AIDS Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "iicd",
+    "name_en": "Irving Institute for Cancer Dynamics",
+    "name_local": "Irving Institute for Cancer Dynamics",
+    "kind": "institute",
+    "parent": "columbia",
+    "aliases": [
+      "Irving Institute for Cancer Dynamics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "crr",
+    "name_en": "Center for Radiological Research",
+    "name_local": "Center for Radiological Research",
+    "kind": "center",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Radiological Research"
+    ]
+  },
+  {
+    "uid": "stat-genetics",
+    "name_en": "Center for Statistical Genetics",
+    "name_local": "Center for Statistical Genetics",
+    "kind": "center",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Statistical Genetics"
+    ]
+  },
+  {
+    "uid": "ihn",
+    "name_en": "Institute of Human Nutrition",
+    "name_local": "Institute of Human Nutrition",
+    "kind": "institute",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Human Nutrition"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "med-cardiology",
+    "name_en": "Division of Cardiology",
+    "name_local": "Division of Cardiology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Cardiology"
+    ]
+  },
+  {
+    "uid": "med-nephrology",
+    "name_en": "Division of Nephrology",
+    "name_local": "Division of Nephrology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Nephrology"
+    ]
+  },
+  {
+    "uid": "med-id",
+    "name_en": "Division of Infectious Diseases",
+    "name_local": "Division of Infectious Diseases",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Infectious Diseases"
+    ]
+  },
+  {
+    "uid": "med-hemonc",
+    "name_en": "Division of Hematology and Oncology",
+    "name_local": "Division of Hematology and Oncology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Hematology and Oncology",
+      "Division of Hematology/Oncology"
+    ]
+  },
+  {
+    "uid": "med-gi",
+    "name_en": "Division of Digestive and Liver Diseases",
+    "name_local": "Division of Digestive and Liver Diseases",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Digestive and Liver Diseases"
+    ]
+  },
+  {
+    "uid": "med-endo",
+    "name_en": "Division of Endocrinology",
+    "name_local": "Division of Endocrinology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Endocrinology"
+    ]
+  },
+  {
+    "uid": "med-geriatrics",
+    "name_en": "Division of Geriatric Medicine and Aging",
+    "name_local": "Division of Geriatric Medicine and Aging",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Geriatric Medicine and Aging"
+    ]
+  },
+  {
+    "uid": "med-pulm",
+    "name_en": "Division of Pulmonary Allergy and Critical Care Medicine",
+    "name_local": "Division of Pulmonary Allergy and Critical Care Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Pulmonary Allergy and Critical Care Medicine",
+      "Department of Pulmonary and Critical Care",
+      "Division of Pulmonary and Critical Care"
+    ]
+  },
+  {
+    "uid": "med-behavioral",
+    "name_en": "Division of Behavioral Medicine",
+    "name_local": "Division of Behavioral Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Behavioral Medicine"
+    ]
+  },
+  {
+    "uid": "cbch",
+    "name_en": "Center for Behavioral Cardiovascular Health",
+    "name_local": "Center for Behavioral Cardiovascular Health",
+    "kind": "center",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Behavioral Cardiovascular Health"
+    ]
+  },
+  {
+    "uid": "neurology",
+    "name_en": "Department of Neurology",
+    "name_local": "Department of Neurology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurology"
+    ]
+  },
+  {
+    "uid": "psychiatry",
+    "name_en": "Department of Psychiatry",
+    "name_local": "Department of Psychiatry",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry"
+    ]
+  },
+  {
+    "uid": "pediatrics",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Department of Obstetrics and Gynecology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology",
+      "Departments of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "obgyn-mfm",
+    "name_en": "Division of Maternal-Fetal Medicine",
+    "name_local": "Division of Maternal-Fetal Medicine",
+    "kind": "department",
+    "parent": "obgyn",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Maternal-Fetal Medicine",
+      "Division of Maternal Fetal Medicine"
+    ]
+  },
+  {
+    "uid": "surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "surgery-ctvs",
+    "name_en": "Division of Cardiac Thoracic and Vascular Surgery",
+    "name_local": "Division of Cardiac Thoracic and Vascular Surgery",
+    "kind": "department",
+    "parent": "surgery",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Cardiac Thoracic and Vascular Surgery",
+      "Division of Cardiothoracic and Vascular Surgery",
+      "Division of Cardiac"
+    ]
+  },
+  {
+    "uid": "orthopedics",
+    "name_en": "Department of Orthopedic Surgery",
+    "name_local": "Department of Orthopedic Surgery",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [
+      "Columbia University Department of Orthopedic Surgery"
+    ],
+    "context_aliases": [
+      "Department of Orthopedic Surgery",
+      "Department of Orthopaedic Surgery"
+    ]
+  },
+  {
+    "uid": "radiology",
+    "name_en": "Department of Radiology",
+    "name_local": "Department of Radiology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology"
+    ]
+  },
+  {
+    "uid": "pathology",
+    "name_en": "Department of Pathology and Cell Biology",
+    "name_local": "Department of Pathology and Cell Biology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology and Cell Biology",
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "dbmi",
+    "name_en": "Department of Biomedical Informatics",
+    "name_local": "Department of Biomedical Informatics",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Informatics"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "Department of Biochemistry and Molecular Biophysics",
+    "name_local": "Department of Biochemistry and Molecular Biophysics",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Molecular Biophysics"
+    ]
+  },
+  {
+    "uid": "sysbio",
+    "name_en": "Department of Systems Biology",
+    "name_local": "Department of Systems Biology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Systems Biology"
+    ]
+  },
+  {
+    "uid": "neuroscience",
+    "name_en": "Department of Neuroscience",
+    "name_local": "Department of Neuroscience",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuroscience"
+    ]
+  },
+  {
+    "uid": "neurosurgery",
+    "name_en": "Department of Neurological Surgery",
+    "name_local": "Department of Neurological Surgery",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurological Surgery"
+    ]
+  },
+  {
+    "uid": "ophthalmology",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Department of Ophthalmology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "microbiology",
+    "name_en": "Department of Microbiology and Immunology",
+    "name_local": "Department of Microbiology and Immunology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology and Immunology"
+    ]
+  },
+  {
+    "uid": "pharmacology",
+    "name_en": "Department of Molecular Pharmacology and Therapeutics",
+    "name_local": "Department of Molecular Pharmacology and Therapeutics",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Pharmacology and Therapeutics"
+    ]
+  },
+  {
+    "uid": "anesthesiology",
+    "name_en": "Department of Anesthesiology",
+    "name_local": "Department of Anesthesiology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anesthesiology"
+    ]
+  },
+  {
+    "uid": "emergency",
+    "name_en": "Department of Emergency Medicine",
+    "name_local": "Department of Emergency Medicine",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Emergency Medicine"
+    ]
+  },
+  {
+    "uid": "radonc",
+    "name_en": "Department of Radiation Oncology",
+    "name_local": "Department of Radiation Oncology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiation Oncology"
+    ]
+  },
+  {
+    "uid": "dermatology",
+    "name_en": "Department of Dermatology",
+    "name_local": "Department of Dermatology",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Dermatology"
+    ]
+  },
+  {
+    "uid": "genetics",
+    "name_en": "Department of Genetics and Development",
+    "name_local": "Department of Genetics and Development",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Genetics and Development"
+    ]
+  },
+  {
+    "uid": "physiology",
+    "name_en": "Department of Physiology and Cellular Biophysics",
+    "name_local": "Department of Physiology and Cellular Biophysics",
+    "kind": "department",
+    "parent": "vps",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physiology and Cellular Biophysics"
+    ]
+  },
+  {
+    "uid": "epidemiology",
+    "name_en": "Department of Epidemiology",
+    "name_local": "Department of Epidemiology",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Epidemiology"
+    ]
+  },
+  {
+    "uid": "ehs",
+    "name_en": "Department of Environmental Health Sciences",
+    "name_local": "Department of Environmental Health Sciences",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Health Sciences"
+    ]
+  },
+  {
+    "uid": "biostatistics",
+    "name_en": "Department of Biostatistics",
+    "name_local": "Department of Biostatistics",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biostatistics"
+    ]
+  },
+  {
+    "uid": "sociomedical",
+    "name_en": "Department of Sociomedical Sciences",
+    "name_local": "Department of Sociomedical Sciences",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociomedical Sciences"
+    ]
+  },
+  {
+    "uid": "hpm",
+    "name_en": "Department of Health Policy and Management",
+    "name_local": "Department of Health Policy and Management",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Policy and Management"
+    ]
+  },
+  {
+    "uid": "popfam",
+    "name_en": "Heilbrunn Department of Population and Family Health",
+    "name_local": "Heilbrunn Department of Population and Family Health",
+    "kind": "department",
+    "parent": "mailman",
+    "aliases": [
+      "Heilbrunn Department of Population and Family Health"
+    ],
+    "context_aliases": [
+      "Department of Population and Family Health"
+    ]
+  },
+  {
+    "uid": "icap",
+    "name_en": "ICAP at Columbia University",
+    "name_local": "ICAP at Columbia University",
+    "kind": "center",
+    "parent": "mailman",
+    "aliases": [
+      "ICAP at Columbia University",
+      "ICAP Global Health",
+      "International Center for AIDS Care and Treatment Programs"
+    ],
+    "context_aliases": [
+      "ICAP"
+    ]
+  },
+  {
+    "uid": "cii",
+    "name_en": "Center for Infection and Immunity",
+    "name_local": "Center for Infection and Immunity",
+    "kind": "center",
+    "parent": "mailman",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Infection and Immunity"
+    ]
+  },
+  {
+    "uid": "gcche",
+    "name_en": "Global Consortium on Climate and Health Education",
+    "name_local": "Global Consortium on Climate and Health Education",
+    "kind": "program",
+    "parent": "mailman",
+    "aliases": [
+      "Global Consortium on Climate and Health Education"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "apam",
+    "name_en": "Department of Applied Physics and Applied Mathematics",
+    "name_local": "Department of Applied Physics and Applied Mathematics",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics and Applied Mathematics",
+      "Dept. of Applied Phys. and Applied Math",
+      "Applied Physics & Applied Math",
+      "Applied Physics and Applied Math"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "meche",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering",
+      "Dept. of Electrical Engineering",
+      "Electrical Engineering Department"
+    ]
+  },
+  {
+    "uid": "eee",
+    "name_en": "Department of Earth and Environmental Engineering",
+    "name_local": "Department of Earth and Environmental Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "civil",
+    "name_en": "Department of Civil Engineering and Engineering Mechanics",
+    "name_local": "Department of Civil Engineering and Engineering Mechanics",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering and Engineering Mechanics"
+    ]
+  },
+  {
+    "uid": "ieor",
+    "name_en": "Department of Industrial Engineering and Operations Research",
+    "name_local": "Department of Industrial Engineering and Operations Research",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial Engineering and Operations Research",
+      "IEOR"
+    ]
+  },
+  {
+    "uid": "lenfest",
+    "name_en": "Lenfest Center for Sustainable Energy",
+    "name_local": "Lenfest Center for Sustainable Energy",
+    "kind": "center",
+    "parent": "seas",
+    "aliases": [
+      "Lenfest Center for Sustainable Energy"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "biology",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "Department of Biological Sciences",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences",
+      "Dept. of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "psychology",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "statistics",
+    "name_en": "Department of Statistics",
+    "name_local": "Department of Statistics",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics"
+    ]
+  },
+  {
+    "uid": "e3b",
+    "name_en": "Department of Ecology Evolution and Environmental Biology",
+    "name_local": "Department of Ecology Evolution and Environmental Biology",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ecology Evolution and Environmental Biology",
+      "Department of Ecology",
+      "E3B"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "astronomy",
+    "name_en": "Department of Astronomy",
+    "name_local": "Department of Astronomy",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Astronomy"
+    ]
+  },
+  {
+    "uid": "cal",
+    "name_en": "Columbia Astrophysics Laboratory",
+    "name_local": "Columbia Astrophysics Laboratory",
+    "kind": "lab",
+    "parent": "arts-sciences",
+    "aliases": [
+      "Columbia Astrophysics Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dees",
+    "name_en": "Department of Earth and Environmental Sciences",
+    "name_local": "Department of Earth and Environmental Sciences",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "Department of Economics",
+    "name_local": "Department of Economics",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics"
+    ]
+  },
+  {
+    "uid": "sociology",
+    "name_en": "Department of Sociology",
+    "name_local": "Department of Sociology",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociology"
+    ]
+  },
+  {
+    "uid": "polisci",
+    "name_en": "Department of Political Science",
+    "name_local": "Department of Political Science",
+    "kind": "department",
+    "parent": "arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Political Science"
+    ]
+  }
+]

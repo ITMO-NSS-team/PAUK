@@ -14,6 +14,9 @@ class Authorship(BaseModel):
     # records ("openalex" / "orcid").
     affiliation_source: str | None = None
     is_corresponding: bool = False
+    # Whether this authorship carries the university's ROR. None on rows
+    # normalized before it was recorded; membership then stays as it was.
+    is_member: bool | None = None
 
 
 class Contribution(BaseModel):

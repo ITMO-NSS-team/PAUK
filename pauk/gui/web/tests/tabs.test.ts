@@ -100,7 +100,7 @@ describe("authorsTab", () => {
     const sample = await loadSampleGraphData();
     const [first, ...rest] = [...sample.authors].sort((a, b) => b.pubs_count - a.pubs_count);
     if (!first) throw new Error("the fixture must contain at least one author");
-    const data = { ...sample, authors: [{ ...first, is_itmo: false }, ...rest] };
+    const data = { ...sample, authors: [{ ...first, is_member: false }, ...rest] };
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 

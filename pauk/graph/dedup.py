@@ -198,13 +198,13 @@ def dedup_graph_persons(
         Person(
             id=row["id"],
             openalex_id=row.get("openalex_id") or row["id"],
-            is_itmo=bool(row.get("is_itmo")),
+            is_member=bool(row.get("is_member")),
             name_raw=row.get("name_raw"),
             name_variants=list(row.get("name_variants") or []),
             other_names=list(row.get("other_names") or []),
-            surname_ru=row.get("surname_ru"),
+            surname_local=row.get("surname_local"),
             surname_en=row.get("surname_en"),
-            first_name_ru=row.get("first_name_ru"),
+            first_name_local=row.get("first_name_local"),
             first_name_en=row.get("first_name_en"),
             orcid=row.get("orcid"),
             email=row.get("email"),
@@ -254,7 +254,7 @@ def dedup_graph_persons(
         # records. Serializing their defaults would erase fields never read.
         # The fold below merges the complete stored properties transactionally.
         canonical_nodes.append((canonical.id, {
-            "is_itmo": canonical.is_itmo,
+            "is_member": canonical.is_member,
             "name_variants": canonical.name_variants,
             "merged_ids": canonical.merged_ids,
         }))
@@ -443,7 +443,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
         if catalog is None:
             logger.info(
-                "graph dedup: no staff catalog at %s, merging on names and profiles alone", catalog_path(config)
+                "graph dedup: no staff catalog at %s, merging on names and profiles alone",
+                catalog_path(config) or "(none for this university)",
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)

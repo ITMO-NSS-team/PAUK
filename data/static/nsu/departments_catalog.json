@@ -1,0 +1,283 @@
+[
+  {
+    "uid": "nsu",
+    "name_en": "Novosibirsk State University",
+    "name_local": "Новосибирский национальный исследовательский государственный университет",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04t2ss102",
+    "type": "university"
+  },
+  {
+    "uid": "ff",
+    "name_en": "Physics Department",
+    "name_local": "Физический факультет",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Physics Department",
+      "Department of Physics",
+      "Faculty of Physics",
+      "Physical Department",
+      "Физический факультет"
+    ]
+  },
+  {
+    "uid": "ff-theor",
+    "name_en": "Department of Theoretical Physics",
+    "name_local": "Кафедра теоретической физики",
+    "kind": "department",
+    "parent": "ff",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Theoretical Physics",
+      "Кафедра теоретической физики"
+    ]
+  },
+  {
+    "uid": "ff-applied",
+    "name_en": "Department of Applied Physics",
+    "name_local": "Кафедра прикладной физики",
+    "kind": "department",
+    "parent": "ff",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics",
+      "Кафедра прикладной физики"
+    ]
+  },
+  {
+    "uid": "ff-laser",
+    "name_en": "Laser Physics Department",
+    "name_local": "Кафедра лазерной физики",
+    "kind": "department",
+    "parent": "ff",
+    "aliases": [],
+    "context_aliases": [
+      "Laser Physics Department",
+      "Department of Laser Physics",
+      "Кафедра лазерной физики"
+    ]
+  },
+  {
+    "uid": "mmf",
+    "name_en": "Mechanics and Mathematics Department",
+    "name_local": "Механико-математический факультет",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Mechanics and Mathematics Department",
+      "Faculty of Mechanics and Mathematics",
+      "Department of Mathematics and Mechanics",
+      "Mechanical-Mathematical Faculty",
+      "Department of Mathematics",
+      "Механико-математический факультет"
+    ]
+  },
+  {
+    "uid": "fit",
+    "name_en": "Faculty of Information Technologies",
+    "name_local": "Факультет информационных технологий",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Information Technologies",
+      "Department of Information Technologies",
+      "Факультет информационных технологий"
+    ]
+  },
+  {
+    "uid": "fit-gi",
+    "name_en": "Department of General Informatics",
+    "name_local": "Кафедра общей информатики",
+    "kind": "department",
+    "parent": "fit",
+    "aliases": [],
+    "context_aliases": [
+      "Department of General Informatics",
+      "Кафедра общей информатики"
+    ]
+  },
+  {
+    "uid": "fen",
+    "name_en": "Faculty of Natural Sciences",
+    "name_local": "Факультет естественных наук",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Natural Sciences",
+      "Department of Natural Sciences",
+      "Department of Natural Science",
+      "Natural Science Faculty",
+      "Факультет естественных наук"
+    ]
+  },
+  {
+    "uid": "fen-analchem",
+    "name_en": "Department of Analytical Chemistry",
+    "name_local": "Кафедра аналитической химии",
+    "kind": "department",
+    "parent": "fen",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Analytical Chemistry",
+      "Кафедра аналитической химии"
+    ]
+  },
+  {
+    "uid": "fen-genbio",
+    "name_en": "Department of General Biology and Ecology",
+    "name_local": "Кафедра общей биологии и экологии",
+    "kind": "department",
+    "parent": "fen",
+    "aliases": [],
+    "context_aliases": [
+      "Department of General Biology and Ecology",
+      "Кафедра общей биологии и экологии"
+    ]
+  },
+  {
+    "uid": "ggf",
+    "name_en": "Geology and Geophysics Department",
+    "name_local": "Геолого-геофизический факультет",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Geology and Geophysics Department",
+      "Faculty of Geology and Geophysics",
+      "Department of Geology and Geophysics",
+      "Геолого-геофизический факультет"
+    ]
+  },
+  {
+    "uid": "ef",
+    "name_en": "Economics Department",
+    "name_local": "Экономический факультет",
+    "kind": "faculty",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Economics Department",
+      "Faculty of Economics",
+      "Department of Economics",
+      "Экономический факультет"
+    ]
+  },
+  {
+    "uid": "gi",
+    "name_en": "Institute for the Humanities",
+    "name_local": "Гуманитарный институт",
+    "kind": "institute",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for the Humanities",
+      "Humanities Institute",
+      "Гуманитарный институт"
+    ]
+  },
+  {
+    "uid": "ifp",
+    "name_en": "Institute of Philosophy and Law",
+    "name_local": "Институт философии и права",
+    "kind": "institute",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Philosophy and Law",
+      "Институт философии и права"
+    ]
+  },
+  {
+    "uid": "immt",
+    "name_en": "Institute of Medicine and Medical Technologies",
+    "name_local": "Институт медицины и медицинских технологий",
+    "kind": "institute",
+    "parent": "nsu",
+    "aliases": [
+      "Zelman Faculty for the Medicine and Psychology",
+      "Zelman Institute for Medicine and Psychology"
+    ],
+    "context_aliases": [
+      "Institute of Medicine and Medical Technologies",
+      "Institute of Medicine and Medical Technology",
+      "Institute for the Medicine and Medical Technology",
+      "Institute of Medicine and Medicine Technology",
+      "Institute of Medicine and Medicine Technologies",
+      "Institute of Medicine and Psychology",
+      "Faculty of Medicine and Psychology",
+      "Faculty of Medicine",
+      "Институт медицины и медицинских технологий"
+    ]
+  },
+  {
+    "uid": "iir",
+    "name_en": "Institute of Intelligent Robotics",
+    "name_local": "Институт интеллектуальной робототехники",
+    "kind": "institute",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Intelligent Robotics",
+      "Институт интеллектуальной робототехники"
+    ]
+  },
+  {
+    "uid": "sunc",
+    "name_en": "Specialized Educational Scientific Center",
+    "name_local": "Специализированный учебно-научный центр",
+    "kind": "center",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Specialized Educational Scientific Center",
+      "Specialized Educational and Scientific Center",
+      "Специализированный учебно-научный центр"
+    ]
+  },
+  {
+    "uid": "airc",
+    "name_en": "Artificial Intelligence Research Center",
+    "name_local": "Исследовательский центр в сфере искусственного интеллекта",
+    "kind": "center",
+    "parent": "nsu",
+    "aliases": [
+      "The Artificial Intelligence Research Center of Novosibirsk State University"
+    ],
+    "context_aliases": [
+      "Artificial Intelligence Research Center",
+      "The Artificial Intelligence Research Center",
+      "Research Center in the Field of Artificial Intelligence",
+      "Исследовательский центр в сфере искусственного интеллекта"
+    ]
+  },
+  {
+    "uid": "pish",
+    "name_en": "Advanced Engineering School",
+    "name_local": "Передовая инженерная школа",
+    "kind": "school",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Engineering School",
+      "Передовая инженерная школа"
+    ]
+  },
+  {
+    "uid": "lab-nonlinphot",
+    "name_en": "Laboratory of Nonlinear Photonics",
+    "name_local": "Лаборатория нелинейной фотоники",
+    "kind": "lab",
+    "parent": "nsu",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Nonlinear Photonics",
+      "Лаборатория нелинейной фотоники"
+    ]
+  }
+]

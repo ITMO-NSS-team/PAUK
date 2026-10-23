@@ -4,17 +4,28 @@
 # session serving it with scripts/serve_static.py (http.server plus
 # precompressed .gz files).
 # Requires the ssh key access to REMOTE already set up and the lab VPN on.
+#
+# PAUK_INSTITUTION picks the university (pauk/institution.py). ITMO keeps the
+# historical folder, session and port; another university gets its own, so
+# deploying it never replaces the ITMO map.
 
 set -euo pipefail
 
 REMOTE_HOST="einsteinium.nsslab"
 REMOTE="asteb@${REMOTE_HOST}"
-REMOTE_DIR="pauk-gui"
-SCREEN_NAME="pauk"
-PORT="${PORT:-8501}"
+INSTITUTION="${PAUK_INSTITUTION:-itmo}"
+if [[ "$INSTITUTION" == "itmo" ]]; then
+    REMOTE_DIR="pauk-gui"
+    SCREEN_NAME="pauk"
+    PORT="${PORT:-8501}"
+else
+    REMOTE_DIR="pauk-gui-$INSTITUTION"
+    SCREEN_NAME="pauk-$INSTITUTION"
+    PORT="${PORT:-8502}"
+fi
 
 root="$(git rev-parse --show-toplevel)"
-data_dir="$root/data/gui/private"
+data_dir="$root/data/gui/$INSTITUTION/private"
 
 if [[ -n "$(git status --porcelain)" ]]; then
     echo "There are uncommitted changes - they will end up in the build."
@@ -29,8 +40,8 @@ for file in graph-data.json authors-detail.json repos-detail.json pubs-detail.js
     fi
 done
 
-echo "==> build pauk/gui/web"
-(cd "$root/pauk/gui/web" && npm run build)
+echo "==> build pauk/gui/web for $INSTITUTION"
+(cd "$root/pauk/gui/web" && VITE_INSTITUTION="$INSTITUTION" npm run build)
 
 # serve_static.py sends these instead of the originals to browsers that
 # accept gzip - the JSON shrinks about five times. PDFs and images are

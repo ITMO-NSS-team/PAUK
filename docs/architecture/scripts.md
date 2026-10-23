@@ -78,12 +78,16 @@ to the checkout.
 | `repair_implements.py` | Removes historical `IMPLEMENTS` claims if every link to the repository is classified and none has `is_relevant=true`; leaves `pending`/`failed` alone. Dry run by default, `--apply` writes | Mongo |
 | `plan_author_names_repair.py` | Finds `author_names=completed` rows with empty required name parts and builds a manifest plus per-group id files (unique across groups) for a targeted `--force` rerun; does not change Mongo | only `data/reports/` |
 | `prune_stranger_profiles.py` | Deletes GitHub profiles harvested only from repositories nobody implements. Dry run by default, `--apply` writes | Mongo |
+| `migrate_local_names.py` | Renames the fields of a graph built before university profiles (`name_ru`, `*_ru` name parts, `is_itmo` to `*_local`, `is_member`) in prepared rows, revision and pre-merge snapshots, manual decisions and Neo4j; a value already under the new name wins. Dry run by default, `--apply` writes ([institutions.md](institutions.md)) | Mongo, Neo4j |
 
 ## Catalogs and quality measurement
 
 | Script | What it does | Writes |
 |---|---|---|
-| `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories | draft in `data/static/` |
+| `run_institutions.py` | Builds one graph per university from a list of profile keys, one after another: starts the university's own Neo4j instance, `pauk run` for the period, `social_graph`, `publish graph`, `dedup graph`, stops the instance; resumes from the failed step ([institutions.md](institutions.md)) | Mongo, Neo4j (one instance per university) |
+| `watch_institutions.py` | Live page on `127.0.0.1:8765` for a `run_institutions.py` run: the current university, step and stage with row counts and time spent, retry waits, silent-log and busy-CPU warnings, the log tail, and per-university step times with a rough time left. Reads `state.json`, the per-key logs, `ps`, and the `cli_progress` record that `pauk run` / `pauk enrich` keep in each university's database (`pauk/pipeline/progress_record.py`) | Mongo (read) |
+| `draft_institution.py` | Drafts a university's `profile.json` and department catalogue from ROR and a year of OpenAlex affiliations with an LLM, validates the draft with the matcher on the same works and revises once; writes a report for review ([institutions.md](institutions.md)) | `data/static/<key>/`, `data/reports/institutions/` |
+| `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories. ITMO only: the UFJF catalogue was put together by hand ([institutions.md](institutions.md)) | draft in `data/static/itmo/` |
 | `export_link_labels.py` | Exports links (or whole papers) to CSV for manual labelling; the only tooling in the repository for measuring precision and recall of link extraction | no |
 | `mass_launch_osa_tool.py` | Batch launch of the external `osa_tool` over a list of repositories | external tool |
 

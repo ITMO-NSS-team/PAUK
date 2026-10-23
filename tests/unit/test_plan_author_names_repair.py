@@ -10,8 +10,8 @@ from scripts.plan_author_names_repair import (
 class RequiredNameFieldIssuesTest(unittest.TestCase):
     def test_complete_person_has_no_issues(self):
         person = {
-            "surname_ru": "Никитин-Соколов",
-            "first_name_ru": "Павел",
+            "surname_local": "Никитин-Соколов",
+            "first_name_local": "Павел",
             "surname_en": "García-Márquez",
             "first_name_en": "D'Angelo",
         }
@@ -19,28 +19,28 @@ class RequiredNameFieldIssuesTest(unittest.TestCase):
 
     def test_missing_blank_and_non_string_fields_are_reported(self):
         person = {
-            "surname_ru": None,
-            "first_name_ru": "   ",
+            "surname_local": None,
+            "first_name_local": "   ",
             "surname_en": 42,
         }
         self.assertEqual(
             list(required_name_field_issues(person)),
-            ["surname_ru", "first_name_ru", "surname_en", "first_name_en"],
+            ["surname_local", "first_name_local", "surname_en", "first_name_en"],
         )
 
     def test_wrong_alphabet_and_punctuation_only_fields_are_reported(self):
         person = {
-            "surname_ru": "Zhukov",
-            "first_name_ru": "---",
+            "surname_local": "Zhukov",
+            "first_name_local": "---",
             "surname_en": "Жуков",
             "first_name_en": "Pavel",
         }
 
         issues = required_name_field_issues(person)
 
-        self.assertEqual(set(issues), {"surname_ru", "first_name_ru", "surname_en"})
-        self.assertIn("Cyrillic", issues["surname_ru"])
-        self.assertIn("at least one letter", issues["first_name_ru"])
+        self.assertEqual(set(issues), {"surname_local", "first_name_local", "surname_en"})
+        self.assertIn("Cyrillic", issues["surname_local"])
+        self.assertIn("at least one letter", issues["first_name_local"])
         self.assertIn("Latin", issues["surname_en"])
 
 

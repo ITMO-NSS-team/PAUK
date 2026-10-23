@@ -15,7 +15,7 @@ from tests.unit.test_admin_nodes import FakePanelGraph
 def entry(**over):
     row = {"timestamp": "2026-08-22T10:00:00", "actor": "user:roman", "source": "admin-ui",
            "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "A1",
-           "change_kind": "updated", "diff": {"name_ru": ["Иван", "Пётр"]}}
+           "change_kind": "updated", "diff": {"name_local": ["Иван", "Пётр"]}}
     row.update(over)
     return row
 
@@ -26,7 +26,7 @@ class FeedTest(unittest.TestCase):
         self.db[feed.COLLECTION].insert_many([
             entry(timestamp="2026-08-22T10:00:00"),
             entry(timestamp="2026-08-22T11:00:00", actor="pipeline", source="publish",
-                  diff={"name_ru": ["Пётр", "Иван"]}),
+                  diff={"name_local": ["Пётр", "Иван"]}),
             entry(timestamp="2026-08-22T09:00:00", entity_id="A2", change_kind="created"),
             entry(timestamp="2026-08-21T09:00:00", entity_type="Repository", entity_id="R1",
                   actor="user:guest", change_kind="deleted", diff={}),
@@ -80,7 +80,7 @@ class AuditPageTest(unittest.TestCase):
         create_user(self.db, "guest", "hunter2", role="viewer")
         self.db[feed.COLLECTION].insert_many([entry(), entry(actor="pipeline", source="publish")])
         self.graph = FakePanelGraph()
-        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_ru": "Пётр"}
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_local": "Пётр"}
 
         app = build(Settings(), self.db)
         from pauk.admin import deps
@@ -98,7 +98,7 @@ class AuditPageTest(unittest.TestCase):
         body = self.client.get("/audit").text
         self.assertIn("user:roman", body)
         self.assertIn("pipeline", body)
-        self.assertIn("name_ru", body)
+        self.assertIn("name_local", body)
         self.assertIn("Пётр", body)
 
     def test_a_viewer_can_read_the_feed(self):
@@ -296,7 +296,7 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        self.graph.add("Person", "A1", name_local="Иван Петров")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
@@ -315,7 +315,7 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
         page = self.client.get("/nodes/Person/A1").text
         action = re.search(r'action="([^"]*restore[^"]*)"', page).group(1)
         self.client.post(action, data={"csrf": self.csrf})
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иван Петров")
 
     def test_an_empty_feed_is_not_shown_as_an_empty_table(self):
         page = self.client.get("/nodes/Person/A1")
@@ -381,7 +381,7 @@ class ChangeLookTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иванов Иван Петрович")
+        self.graph.add("Person", "A1", name_local="Иванов Иван Петрович")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
@@ -398,27 +398,27 @@ class ChangeLookTest(unittest.TestCase):
         return re.findall(r'<div class="change">(.*?)</div>', page, re.S)
 
     def test_an_edit_shows_both_halves(self):
-        self.record("updated", {"name_ru": ["Иванов И.", "Иванов Иван Петрович"]})
+        self.record("updated", {"name_local": ["Иванов И.", "Иванов Иван Петрович"]})
         (block,) = self.blocks()
         self.assertIn('<span class="was">Иванов И.</span>', block)
         self.assertIn('<span class="now">Иванов Иван Петрович</span>', block)
 
     def test_a_creation_shows_only_what_appeared(self):
         # Nothing was replaced, so a struck-out dash would be noise.
-        self.record("created", {"name_ru": [None, "Петров Пётр"]})
+        self.record("created", {"name_local": [None, "Петров Пётр"]})
         (block,) = self.blocks()
         self.assertNotIn('class="was"', block)
         self.assertIn('<span class="now">Петров Пётр</span>', block)
 
     def test_a_deletion_shows_only_what_went(self):
-        self.record("deleted", {"name_ru": ["Сидоров", None]})
+        self.record("deleted", {"name_local": ["Сидоров", None]})
         (block,) = self.blocks()
         self.assertIn('<span class="was">Сидоров</span>', block)
         self.assertNotIn('class="now"', block)
 
     def test_each_kind_carries_its_own_class(self):
         for kind, entity in (("created", "A2"), ("updated", "A3"), ("deleted", "A4")):
-            self.record(kind, {"name_ru": ["a", "b"]}, entity_id=entity)
+            self.record(kind, {"name_local": ["a", "b"]}, entity_id=entity)
         page = self.client.get("/audit").text
         for kind in ("created", "updated", "deleted"):
             with self.subTest(kind=kind):
@@ -427,12 +427,12 @@ class ChangeLookTest(unittest.TestCase):
     def test_the_word_stays_beside_the_colour(self):
         # Colour alone would leave a printout or a colour-blind reader with
         # nothing to go on.
-        self.record("deleted", {"name_ru": ["Сидоров", None]})
+        self.record("deleted", {"name_local": ["Сидоров", None]})
         page = self.client.get("/audit").text
         self.assertIn('<span class="kind kind-deleted">удалено</span>', page)
 
     def test_the_node_page_uses_the_same_markup(self):
-        self.record("updated", {"name_ru": ["Иванов И.", "Иванов Иван Петрович"]})
+        self.record("updated", {"name_local": ["Иванов И.", "Иванов Иван Петрович"]})
         (block,) = self.blocks("/nodes/Person/A1")
         self.assertIn('<span class="was">', block)
 

@@ -1,0 +1,236 @@
+[
+  {
+    "uid": "kth",
+    "name_en": "KTH Royal Institute of Technology",
+    "name_local": "Kungliga Tekniska högskolan",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/026vcq606",
+    "type": "university"
+  },
+  {
+    "uid": "che",
+    "name_en": "School of Engineering Sciences in Chemistry Biotechnology and Health",
+    "name_local": "School of Engineering Sciences in Chemistry Biotechnology and Health",
+    "kind": "school",
+    "parent": "kth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering Sciences in Chemistry",
+      "Biotechnology and Health"
+    ]
+  },
+  {
+    "uid": "eecs",
+    "name_en": "School of Electrical Engineering and Computer Science",
+    "name_local": "School of Electrical Engineering and Computer Science",
+    "kind": "school",
+    "parent": "kth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Electrical Engineering and Computer Science"
+    ]
+  },
+  {
+    "uid": "sci",
+    "name_en": "School of Engineering Sciences",
+    "name_local": "School of Engineering Sciences",
+    "kind": "school",
+    "parent": "kth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering Sciences"
+    ]
+  },
+  {
+    "uid": "abe",
+    "name_en": "School of Architecture and the Built Environment",
+    "name_local": "School of Architecture and the Built Environment",
+    "kind": "school",
+    "parent": "kth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Architecture and the Built Environment"
+    ]
+  },
+  {
+    "uid": "itm",
+    "name_en": "School of Industrial Engineering and Management",
+    "name_local": "School of Industrial Engineering and Management",
+    "kind": "school",
+    "parent": "kth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Industrial Engineering and Management"
+    ]
+  },
+  {
+    "uid": "ap",
+    "name_en": "Department of Applied Physics",
+    "name_local": "Department of Applied Physics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Engineering Mechanics",
+    "name_local": "Department of Engineering Mechanics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering Mechanics",
+      "FLOW"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "che",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "prot",
+    "name_en": "Department of Protein Science",
+    "name_local": "Department of Protein Science",
+    "kind": "department",
+    "parent": "che",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Protein Science"
+    ]
+  },
+  {
+    "uid": "gene",
+    "name_en": "Department of Gene Technology",
+    "name_local": "Department of Gene Technology",
+    "kind": "department",
+    "parent": "che",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Gene Technology"
+    ]
+  },
+  {
+    "uid": "fpt",
+    "name_en": "Department of Fibre and Polymer Technology",
+    "name_local": "Department of Fibre and Polymer Technology",
+    "kind": "department",
+    "parent": "che",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Fibre and Polymer Technology",
+      "Department of Fiber and Polymer Technology"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "che",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "itm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "energy",
+    "name_en": "Department of Energy Technology",
+    "name_local": "Department of Energy Technology",
+    "kind": "department",
+    "parent": "itm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy Technology"
+    ]
+  },
+  {
+    "uid": "prod",
+    "name_en": "Department of Production Engineering",
+    "name_local": "Department of Production Engineering",
+    "kind": "department",
+    "parent": "itm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Production Engineering"
+    ]
+  },
+  {
+    "uid": "dcs",
+    "name_en": "Division of Decision and Control Systems",
+    "name_local": "Division of Decision and Control Systems",
+    "kind": "division",
+    "parent": "eecs",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Decision and Control Systems",
+      "Department of Decision and Control Systems"
+    ]
+  },
+  {
+    "uid": "civil",
+    "name_en": "Department of Civil and Architectural Engineering",
+    "name_local": "Department of Civil and Architectural Engineering",
+    "kind": "department",
+    "parent": "abe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Architectural Engineering"
+    ]
+  },
+  {
+    "uid": "sd",
+    "name_en": "Department of Sustainable Development Environmental Science and Engineering",
+    "name_local": "Department of Sustainable Development Environmental Science and Engineering",
+    "kind": "department",
+    "parent": "abe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sustainable Development",
+      "Environmental Science and Engineering"
+    ]
+  }
+]

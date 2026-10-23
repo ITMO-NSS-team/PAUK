@@ -1,0 +1,37 @@
+{
+  "key": "durham",
+  "short_name": "Durham",
+  "short_name_local": "Durham",
+  "name_en": "Durham University",
+  "name_local": "Durham University",
+  "ror_id": "01v29qb04",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "durham.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:DurhamUniv)(?![^\\W\\d_])",
+  "long_name": "University[\\s‐-]+of[\\s‐-]+Durham|Durham[\\s‐-]+University|Durham[\\s‐-]+Univ\\.",
+  "marker_replacement": "DurhamUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|britain|building|calle|campus|dh|durham|east|elvet|england|floor|gatan|gb|great|hill|joy|katu|kingdom|laan|laboratories|labs|lane|lower|mill|mount|mountjoy|north|old|piazza|platz|plaza|plein|po|rd|road|room|rue|science|scotland|site|south|st|stockton|str|straat|strasse|straße|street|tie|uk|ul|united|vej|via|viale|vägen|wales|weg|west",
+  "other_organisations": "(?<![^\\W\\d_])Duke(?![^\\W\\d_])|North Carolina|University of New Hampshire|Darlington Memorial|James Cook University Hospital|Darlington\\ Memorial\\ Hospital|James\\ Cook\\ University\\ Hospital|University\\ Hospital\\ of\\ North\\ Durham",
+  "identity": "University[\\s‐-]+of[\\s‐-]+Durham|Durham[\\s‐-]+University|Durham[\\s‐-]+Univ\\.",
+  "city": "Durham",
+  "staff_catalog": null,
+  "mongo_db": "pauk_durham",
+  "site_url": "https://www.durham.ac.uk",
+  "unit_words": "department|school|institute|centre|center",
+  "external_authors": false
+}

@@ -1,0 +1,26 @@
+{
+  "key": "fudan",
+  "short_name": "Fudan",
+  "short_name_local": "复旦",
+  "name_en": "Fudan University",
+  "name_local": "复旦大学",
+  "ror_id": "013q1eq08",
+  "language": "Chinese",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "fudan.edu.cn"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:fudan|复旦|復旦)(?![^\\W\\d_])",
+  "long_name": "fudan\\s+university|复旦大学|復旦大學|university\\s+of\\s+fudan",
+  "marker_replacement": "Fudan",
+  "place_words": "shanghai|china|prc|pr|p|r|people|peoples|people's|people’s|republic|of|yangpu|xuhui|minhang|pudong|jiangwan|zhangjiang|fenglin|handan|songhu|dongan|jinhu|road|rd|no|district|xiamen|fujian|guangzhou|zhuhai|yiwu|taizhou",
+  "other_organisations": "zhongshan\\s+hospital|huashan\\s+hospital|huadong\\s+hospital|shanghai\\s+cancer\\s+center|cancer\\s+hospital|eye\\s*(?:&|and)\\s*ent|obstetrics\\s*(?:&|and)\\s*gynecology\\s+hospital|children'?s\\s+hospital|pudong\\s+(?:hospital|medical\\s+center)|minhang\\s+hospital|jinshan\\s+hospital|xuhui\\s+central\\s+hospital|zhongshan-xuhui|shanghai\\s+public\\s+health\\s+clinical\\s+center|shanghai\\s+stomatological|shanghai\\s+fifth\\s+people|shanghai\\s+proton\\s+and\\s+heavy\\s+ion|chinese\\s+academy\\s+of\\s+(?:medical\\s+)?sciences|shanghai\\s+jiao\\s+tong|tongji|shanghai\\s+artificial\\s+intelligence\\s+laboratory|shanghai\\s+innovation\\s+institute|hefei\\s+national\\s+laboratory|wusong\\s+laboratory|national\\s+health\\s+commission|(?<![^\\W\\d_])nhc(?![^\\W\\d_])|(?<![^\\W\\d_])cams(?![^\\W\\d_])|ministry\\s+of\\s+(?:education|health)",
+  "identity": "(?<![^\\W\\d_])fudan(?![^\\W\\d_])|fudan\\s+university|复旦大学",
+  "city": "shanghai|上海",
+  "staff_catalog": null,
+  "mongo_db": "pauk_fudan",
+  "site_url": "https://www.fudan.edu.cn",
+  "unit_words": "college"
+}

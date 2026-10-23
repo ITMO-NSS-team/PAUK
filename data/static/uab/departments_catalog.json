@@ -1,0 +1,272 @@
+[
+  {
+    "uid": "uab",
+    "name_en": "Universitat Autònoma de Barcelona",
+    "name_local": "Universitat Autònoma de Barcelona",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/052g8jq94",
+    "type": "university"
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Facultat de Medicina"
+    ]
+  },
+  {
+    "uid": "fbio",
+    "name_en": "Faculty of Biosciences",
+    "name_local": "Faculty of Biosciences",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biosciences",
+      "Facultat de Biociències"
+    ]
+  },
+  {
+    "uid": "fvet",
+    "name_en": "Faculty of Veterinary Medicine",
+    "name_local": "Faculty of Veterinary Medicine",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Facultat de Veterinària",
+      "Faculty of Veterinary Medicine"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science",
+      "Facultat de Ciències"
+    ]
+  },
+  {
+    "uid": "fpsy",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Faculty of Psychology",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology",
+      "Facultat de Psicologia"
+    ]
+  },
+  {
+    "uid": "fecon",
+    "name_en": "Faculty of Economics and Business Studies",
+    "name_local": "Faculty of Economics and Business Studies",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics and Business Studies"
+    ]
+  },
+  {
+    "uid": "fet",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering",
+      "Escola d'Enginyeria"
+    ]
+  },
+  {
+    "uid": "fphil",
+    "name_en": "Faculty of Arts and Humanities",
+    "name_local": "Faculty of Arts and Humanities",
+    "kind": "faculty",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts and Humanities",
+      "Facultat de Filosofia i Lletres"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine",
+      "Departament de Medicina",
+      "Medicine Department"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery",
+      "Departament de Cirurgia"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics Obstetrics and Gynecology and Preventive Medicine",
+    "name_local": "Department of Pediatrics Obstetrics and Gynecology and Preventive Medicine",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "psych",
+    "name_en": "Department of Psychiatry and Forensic Medicine",
+    "name_local": "Department of Psychiatry and Forensic Medicine",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Forensic Medicine"
+    ]
+  },
+  {
+    "uid": "cellbio",
+    "name_en": "Department of Cell Biology Physiology and Immunology",
+    "name_local": "Department of Cell Biology Physiology and Immunology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cell Biology",
+      "Physiology and Immunology"
+    ]
+  },
+  {
+    "uid": "genmic",
+    "name_en": "Department of Genetics and Microbiology",
+    "name_local": "Department of Genetics and Microbiology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Genetics and Microbiology"
+    ]
+  },
+  {
+    "uid": "bbm",
+    "name_en": "Department of Biochemistry and Molecular Biology",
+    "name_local": "Department of Biochemistry and Molecular Biology",
+    "kind": "department",
+    "parent": "fbio",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Molecular Biology"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Departament de Química",
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Departament de Física",
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Departament de Matemàtiques"
+    ]
+  },
+  {
+    "uid": "cbee",
+    "name_en": "Department of Chemical Biological and Environmental Engineering",
+    "name_local": "Department of Chemical Biological and Environmental Engineering",
+    "kind": "department",
+    "parent": "fet",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical",
+      "Biological and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "inc",
+    "name_en": "Institut de Neurociències",
+    "name_local": "Institut de Neurociències",
+    "kind": "institute",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Institut de Neurociències",
+      "Institute of Neurosciences"
+    ]
+  },
+  {
+    "uid": "icta",
+    "name_en": "Institute of Environmental Science and Technology",
+    "name_local": "Institute of Environmental Science and Technology",
+    "kind": "institute",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Environmental Science and Technology",
+      "ICTA-UAB",
+      "ICTA"
+    ]
+  },
+  {
+    "uid": "ibb",
+    "name_en": "Institute of Biotechnology and Biomedicine",
+    "name_local": "Institute of Biotechnology and Biomedicine",
+    "kind": "institute",
+    "parent": "uab",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biotechnology and Biomedicine",
+      "IBB"
+    ]
+  }
+]

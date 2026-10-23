@@ -18,7 +18,7 @@ Two levels share the logic but differ in where rows come from:
 | Command | part of `pauk enrich` / `pauk run` | `pauk dedup graph`, separate |
 | Sees | one group | the whole Neo4j graph, all published groups |
 | Row source | MongoDB (prepared, own group) | Cypher queries on the graph |
-| Writes to | MongoDB + journal in `data/audit/<group>/` | Neo4j + journal in `data/cache/` |
+| Writes to | MongoDB + journal in `data/audit/<institution>/<group>/` | Neo4j + journal in `data/cache/<institution>/` |
 | Why separate | catches duplicates within one collection run | catches duplicates whose records came from **different** runs and never met in one group |
 
 The merge rules (`plan_person_merges`, the ranking of publications and
@@ -27,6 +27,13 @@ repositories) are shared: `graph/dedup.py` imports them from
 
 ## Persons
 
+Where the university's profile leaves external coauthors out of the graph
+(`Institution.external_authors`), a candidate pair needs a member on one side
+(`DedupStage._person_scope`). External rows stay in Mongo, so a shared
+coauthor still counts as evidence, but two external records are never
+published and resolving them would spend model calls on consortium papers'
+coauthors. A member and an external record of one person are still paired.
+
 The rule-based planner (`plan_person_merges`, the fallback when the resolver
 below is disabled) uses four sources of evidence for a match:
 
@@ -34,13 +41,13 @@ below is disabled) uses four sources of evidence for a match:
    are explicit evidence to the contrary: the pair is never merged and does not
    even enter the journal (there is nothing to report).
 2. **Name variant**: one person's display name is among the other's
-   `name_variants`, both are ITMO, and they share at least one coauthor.
-3. **Identical full name plus corroboration**: both are ITMO, the name has
+   `name_variants`, both are members, and they share at least one coauthor.
+3. **Identical full name plus corroboration**: both are members, the name has
    several tokens, it is not given as initials, and at least one of these
    holds: a shared coauthor, a shared department, a shared research field
    (`Publication.fields`).
-4. **Staff record**: both are ITMO and their names resolve to the same row of
-   the official ITMO staff catalog. One row is one employee, so this bridges
+4. **Staff record**: both are members and their names resolve to the same row of
+   the official member staff catalog. One row is one employee, so this bridges
    spellings the other rules cannot.
 
 **A name is evidence, not proof.** Transliteration collapses distinct Russian
@@ -50,7 +57,7 @@ found a real case: "I. V. Smirnov", a reviewer on medical anthropology, merged
 with "I. V. Smirnov" the chemist. An explicitly different identity field
 (ORCID, email, GitHub login, Google Scholar id, staff record) keeps a pair
 apart for good, even if everything else matches. Pairs with weak evidence (a
-variant without a shared coauthor, a namesake outside ITMO, a single-token
+variant without a shared coauthor, a namesake outside the university, a single-token
 name, an identical name with no corroboration) are never merged automatically.
 They go into the journal with a reason and stay separate until someone confirms
 them by hand.
@@ -124,6 +131,13 @@ not an additional merge threshold. Missing/invalid responses go to review.
 Cache keys include the model, prompt and evidence, but not the transient pair
 number. Retries are reserved for failed or invalid responses.
 
+`PAUK_PERSON_RESOLUTION_MAX_PAIRS` (default 20000) caps one model batch: above
+it the model is not asked at all, every pair in the batch goes to review and
+stays unmerged, and the log says so with a warning. East Asian names share a
+surname and an initial so widely (Kim J., Lee S.) that POSTECH reached 239k
+pairs, about 12 hours and $60 of mostly "review" answers, where a Western
+university of the same size has 1-8k.
+
 Held pairs are stored in `review_pairs` with their input route and model verdict
 for the admin panel. Automatically separated pairs retire obsolete unanswered
 questions. Existing operator decisions remain authoritative.
@@ -176,8 +190,8 @@ under which a repository was ever cited accumulates in `cited_urls`.
 
 ## The journal: nothing is lost, nothing is trusted blindly
 
-`dedup_candidates.jsonl` (in `data/audit/<group>/`) and
-`dedup_candidates_graph.jsonl` (in `data/cache/`) record every decision. Applied
+`dedup_candidates.jsonl` (in `data/audit/<institution>/<group>/`) and
+`dedup_candidates_graph.jsonl` (in `data/cache/<institution>/`) record every decision. Applied
 merges have status `merged` and the rule that justified them (for audit and a
 possible rollback through `merged_ids`); deferred pairs and groups have status
 `held` and their reasons. No heuristic stays invisible.

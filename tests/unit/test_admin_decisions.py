@@ -41,8 +41,8 @@ def source_wrote(db, label, node_id, field, before, after, after_hours=1,
 class InForceTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
-                        actor="user:roman", note="по письму", auto_value={"name_ru": "Иван"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр"},
+                        actor="user:roman", note="по письму", auto_value={"name_local": "Иван"})
         record_override(self.db, "Publication", "W1", "delete", actor="user:roman", note="дубль")
         record_relationship_override(self.db, "Person", "AUTHORED", "Publication", "A1", "W1",
                                      actor="user:guest", note="матчер ошибся")
@@ -61,7 +61,7 @@ class InForceTest(unittest.TestCase):
 
     def test_an_edited_field_shows_what_it_replaced(self):
         (row,) = [r for r in decisions.in_force(self.db) if r["title"] == "Person A1"]
-        self.assertEqual(row["pairs"], [("name_ru", "Иван", "Пётр")])
+        self.assertEqual(row["pairs"], [("name_local", "Иван", "Пётр")])
 
     def test_a_withdrawn_decision_leaves_the_list(self):
         from pauk.graph.overrides import deactivate_override
@@ -74,13 +74,13 @@ class ConflictTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
-                        actor="user:roman", auto_value={"name_ru": "Иван"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр"},
+                        actor="user:roman", auto_value={"name_local": "Иван"})
 
     def test_a_source_that_changed_its_mind_is_a_conflict(self):
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "И. П. Петров")
+        source_wrote(self.db, "Person", "A1", "name_local", "Иван", "И. П. Петров")
         (row,) = decisions.conflicts(self.db)
-        self.assertEqual(row["field"], "name_ru")
+        self.assertEqual(row["field"], "name_local")
         self.assertEqual(row["ours"], "Пётр")
         self.assertEqual(row["was"], "Иван")
         self.assertEqual(row["now"], "И. П. Петров")
@@ -88,13 +88,13 @@ class ConflictTest(unittest.TestCase):
     def test_a_source_repeating_itself_is_not_a_conflict(self):
         # The pipeline rewriting the same value it had before says nothing
         # new; only a different value means it changed its mind.
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Иван")
+        source_wrote(self.db, "Person", "A1", "name_local", "Иван", "Иван")
         self.assertEqual(decisions.conflicts(self.db), [])
 
     def test_the_panel_own_writes_are_not_the_source(self):
         # Reapplying the override writes the field on every publish. Taking
         # that as the source would make every decision look disputed.
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Пётр",
+        source_wrote(self.db, "Person", "A1", "name_local", "Иван", "Пётр",
                      actor="user:roman", source="admin-ui")
         self.assertEqual(decisions.conflicts(self.db), [])
 
@@ -102,13 +102,13 @@ class ConflictTest(unittest.TestCase):
         # Deliberately a value that differs from auto_value: otherwise the
         # row would be dropped for repeating itself and the test would pass
         # whether or not the time filter works at all.
-        source_wrote(self.db, "Person", "A1", "name_ru", "Ivan", "Ivan Petrov",
+        source_wrote(self.db, "Person", "A1", "name_local", "Ivan", "Ivan Petrov",
                      after_hours=-24)
         self.assertEqual(decisions.conflicts(self.db), [])
 
     def test_the_latest_word_of_the_source_is_the_one_that_counts(self):
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "И. Петров", after_hours=1)
-        source_wrote(self.db, "Person", "A1", "name_ru", "И. Петров", "И. П. Петров",
+        source_wrote(self.db, "Person", "A1", "name_local", "Иван", "И. Петров", after_hours=1)
+        source_wrote(self.db, "Person", "A1", "name_local", "И. Петров", "И. П. Петров",
                      after_hours=2)
         (row,) = decisions.conflicts(self.db)
         self.assertEqual(row["now"], "И. П. Петров")
@@ -128,11 +128,11 @@ class DecisionsPageTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         create_user(self.db, "guest", "hunter2", role="viewer")
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
-                        actor="user:roman", note="по письму", auto_value={"name_ru": "Иван"})
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "И. П. Петров")
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр"},
+                        actor="user:roman", note="по письму", auto_value={"name_local": "Иван"})
+        source_wrote(self.db, "Person", "A1", "name_local", "Иван", "И. П. Петров")
         self.graph = FakePanelGraph()
-        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_ru": "Пётр"}
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_local": "Пётр"}
 
         app = build(Settings(), self.db)
         from pauk.admin import deps
@@ -157,7 +157,7 @@ class DecisionsPageTest(unittest.TestCase):
         self.sign_in()
         body = self.client.get("/overrides", params={"tab": "conflicts"}).text
         self.assertIn("И. П. Петров", body)
-        self.assertIn("name_ru", body)
+        self.assertIn("name_local", body)
 
     def test_the_tab_carries_the_number_of_conflicts(self):
         self.sign_in()
@@ -233,7 +233,7 @@ class UndoRestoresTest(unittest.TestCase):
         self.db[feed.COLLECTION].insert_one({
             "timestamp": "2026-08-22T10:00:00", "actor": "user:roman", "source": "admin-ui",
             "entity_type": "Department", "entity_id": "D1", "change_kind": "deleted",
-            "diff": {"id": ["D1", None], "name_ru": ["Кафедра", None]}})
+            "diff": {"id": ["D1", None], "name_local": ["Кафедра", None]}})
         record_relationship_override(self.db, "Person", "AUTHORED", "Publication",
                                      "A1", "W1", actor="user:roman")
 
@@ -251,7 +251,7 @@ class UndoRestoresTest(unittest.TestCase):
             "csrf": self.csrf, "kind": "node", "op": "delete",
             "label": "Department", "target_id": "D1"})
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.graph.nodes[("Department", "D1")]["name_ru"], "Кафедра")
+        self.assertEqual(self.graph.nodes[("Department", "D1")]["name_local"], "Кафедра")
 
     def test_undoing_an_unlinked_relationship_links_it_again(self):
         response = self.client.post("/overrides/undo", data={
@@ -269,13 +269,13 @@ class UndoRestoresTest(unittest.TestCase):
         self.assertIn("undone=node", response.headers["location"])
 
     def test_undoing_a_field_edit_puts_the_source_value_back(self):
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
-                        actor="user:roman", auto_value={"name_ru": "Иван"})
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр"},
+                        actor="user:roman", auto_value={"name_local": "Иван"})
         response = self.client.post("/overrides/undo", data={
             "csrf": self.csrf, "kind": "node", "op": "set",
             "label": "Person", "target_id": "A1"})
         self.assertIn("undone=field", response.headers["location"])
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иван")
 
     def test_a_deletion_the_feed_cannot_describe_says_so_instead(self):
         record_override(self.db, "Person", "A9", "delete", actor="user:roman")
@@ -293,7 +293,7 @@ class SnapshotTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Department", "D1", name_ru="Кафедра", kind="chair")
+        self.graph.add("Department", "D1", name_local="Кафедра", kind="chair")
 
         app = build(Settings(), self.db)
         from pauk.admin import deps
@@ -308,7 +308,7 @@ class SnapshotTest(unittest.TestCase):
     def test_deleting_stores_the_fields_on_the_decision(self):
         self.delete_it()
         (row,) = active_overrides(self.db)
-        self.assertEqual(row["snapshot"]["name_ru"], "Кафедра")
+        self.assertEqual(row["snapshot"]["name_local"], "Кафедра")
         self.assertEqual(row["snapshot"]["kind"], "chair")
 
     def test_restoring_works_with_an_empty_feed(self):
@@ -317,15 +317,15 @@ class SnapshotTest(unittest.TestCase):
         # finding a per-field entry there.
         self.delete_it()
         self.db[feed.COLLECTION].delete_many({})
-        self.assertEqual(decisions.deleted_fields(self.db, "Department", "D1")["name_ru"],
+        self.assertEqual(decisions.deleted_fields(self.db, "Department", "D1")["name_local"],
                          "Кафедра")
 
     def test_the_feed_still_answers_for_records_deleted_before_snapshots(self):
-        source_wrote(self.db, "Person", "A9", "name_ru", "Иван", None)
+        source_wrote(self.db, "Person", "A9", "name_local", "Иван", None)
         self.db[feed.COLLECTION].update_one(
             {"entity_id": "A9"}, {"$set": {"change_kind": "deleted"}})
         self.assertEqual(decisions.deleted_fields(self.db, "Person", "A9"),
-                         {"name_ru": "Иван"})
+                         {"name_local": "Иван"})
 
     def test_reserved_fields_are_not_kept_in_the_snapshot(self):
         # updated_at belongs to the graph, not to the record's content.
@@ -340,20 +340,20 @@ class SourceValueTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван")
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
-                        actor="user:roman", auto_value={"name_ru": "Иван"})
+        self.graph.add("Person", "A1", name_local="Иван")
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр"},
+                        actor="user:roman", auto_value={"name_local": "Иван"})
 
     def test_applying_stores_what_the_pipeline_had(self):
         from pauk.graph.overrides import apply_overrides
-        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"   # the source's word
+        self.graph.nodes[("Person", "A1")]["name_local"] = "И. П. Петров"   # the source's word
         apply_overrides(self.graph, self.db)
         (row,) = active_overrides(self.db)
-        self.assertEqual(row["source_value"]["name_ru"], "И. П. Петров")
+        self.assertEqual(row["source_value"]["name_local"], "И. П. Петров")
 
     def test_the_conflict_is_seen_without_reading_the_feed(self):
         from pauk.graph.overrides import apply_overrides
-        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"
+        self.graph.nodes[("Person", "A1")]["name_local"] = "И. П. Петров"
         apply_overrides(self.graph, self.db)
         self.db[feed.COLLECTION].delete_many({})
         (conflict,) = decisions.conflicts(self.db)
@@ -362,7 +362,7 @@ class SourceValueTest(unittest.TestCase):
 
     def test_a_source_that_agrees_is_not_a_conflict(self):
         from pauk.graph.overrides import apply_overrides
-        self.graph.nodes[("Person", "A1")]["name_ru"] = "Иван"    # unchanged
+        self.graph.nodes[("Person", "A1")]["name_local"] = "Иван"    # unchanged
         apply_overrides(self.graph, self.db)
         self.assertEqual(decisions.conflicts(self.db), [])
 
@@ -407,11 +407,11 @@ class PagingTest(unittest.TestCase):
         # They are computed rather than stored, so paging happens after the
         # comparisons - but the page still has to be bounded.
         for n in range(decisions.PAGE + 5):
-            record_override(self.db, "Person", f"B{n:03}", "set", {"name_ru": "Пётр"},
-                            actor="user:roman", auto_value={"name_ru": "Иван"})
+            record_override(self.db, "Person", f"B{n:03}", "set", {"name_local": "Пётр"},
+                            actor="user:roman", auto_value={"name_local": "Иван"})
             self.db["graph_overrides"].update_one(
                 {"_id": f"node:Person:B{n:03}"},
-                {"$set": {"source_value": {"name_ru": "И. П. Петров"}}})
+                {"$set": {"source_value": {"name_local": "И. П. Петров"}}})
         self.assertEqual(len(decisions.conflicts(self.db)), decisions.PAGE)
         self.assertEqual(decisions.count_conflicts(self.db), decisions.PAGE + 5)
 
@@ -423,9 +423,9 @@ class UndoRestoresFieldTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Пётр Иванов")
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр Иванов"},
-                        actor="user:roman", auto_value={"name_ru": "Иван Петров"})
+        self.graph.add("Person", "A1", name_local="Пётр Иванов")
+        record_override(self.db, "Person", "A1", "set", {"name_local": "Пётр Иванов"},
+                        actor="user:roman", auto_value={"name_local": "Иван Петров"})
 
         app = build(Settings(), self.db)
         from pauk.admin import deps
@@ -445,7 +445,7 @@ class UndoRestoresFieldTest(unittest.TestCase):
         # value would sit in the graph until a run happened to touch that
         # field - and for a record the pipeline no longer covers, forever.
         self.undo()
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иван Петров")
 
     def test_the_page_says_the_field_came_back(self):
         self.assertIn("undone=field", self.undo().headers["location"])
@@ -454,16 +454,16 @@ class UndoRestoresFieldTest(unittest.TestCase):
         # source_value is written when a publish is covered up, so it is
         # fresher than auto_value from the original edit.
         self.db["graph_overrides"].update_one(
-            {"_id": "node:Person:A1"}, {"$set": {"source_value": {"name_ru": "И. П. Петров"}}})
+            {"_id": "node:Person:A1"}, {"$set": {"source_value": {"name_local": "И. П. Петров"}}})
         self.undo()
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "И. П. Петров")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "И. П. Петров")
 
     def test_a_decision_without_a_recorded_source_leaves_the_field_alone(self):
         self.db["graph_overrides"].update_one(
             {"_id": "node:Person:A1"}, {"$unset": {"auto_value": "", "source_value": ""}})
         response = self.undo()
         self.assertIn("undone=1", response.headers["location"])
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Пётр Иванов")
 
 
 class PartiallyRewrittenTest(unittest.TestCase):
@@ -477,11 +477,11 @@ class PartiallyRewrittenTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_en="SRC-A", name_ru="SRC-B")
-        self.graph.nodes[("Person", "A1")].update({"name_en": "MAN-A", "name_ru": "MAN-B"})
+        self.graph.add("Person", "A1", name_en="SRC-A", name_local="SRC-B")
+        self.graph.nodes[("Person", "A1")].update({"name_en": "MAN-A", "name_local": "MAN-B"})
         record_override(self.db, "Person", "A1", "set",
-                        {"name_en": "MAN-A", "name_ru": "MAN-B"}, actor="user:roman",
-                        auto_value={"name_en": "SRC-A", "name_ru": "SRC-B"})
+                        {"name_en": "MAN-A", "name_local": "MAN-B"}, actor="user:roman",
+                        auto_value={"name_en": "SRC-A", "name_local": "SRC-B"})
         # the publish rewrote only one field
         self.graph.nodes[("Person", "A1")]["name_en"] = "SRC-A2"
         from pauk.graph.overrides import apply_overrides
@@ -502,7 +502,7 @@ class PartiallyRewrittenTest(unittest.TestCase):
         # auto_value, so a field wrongly recorded there would be "restored"
         # to the very value the undo was meant to remove.
         back = decisions.source_of_truth(self.db, "Person", "A1")
-        self.assertEqual(back["name_ru"], "SRC-B")
+        self.assertEqual(back["name_local"], "SRC-B")
         self.assertEqual(back["name_en"], "SRC-A2")
 
 
@@ -517,14 +517,14 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иванов И.", name_en="I. Ivanov")
+        self.graph.add("Person", "A1", name_local="Иванов И.", name_en="I. Ivanov")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
         self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
         self.client.post("/nodes/Person/A1", data={
-            "csrf": self.csrf, "name_ru": "Иванов Иван Петрович", "name_en": "I. Ivanov",
+            "csrf": self.csrf, "name_local": "Иванов Иван Петрович", "name_en": "I. Ivanov",
             "seen_at": self.graph.nodes[("Person", "A1")]["updated_at"]})
         self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
 
@@ -538,7 +538,7 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
     def publish(self):
         load_prepared_rows(
             self.graph,
-            {"persons.jsonl": [{"id": "A1", "is_itmo": True, "name_ru": "Иванов И."}]},
+            {"persons.jsonl": [{"id": "A1", "is_member": True, "name_local": "Иванов И."}]},
             tombstoned_relationships(self.db), tombstoned_ids(self.db, "LinkCandidate"))
         apply_overrides(self.graph, self.db)
 
@@ -553,12 +553,12 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
     def test_the_edit_outlives_the_next_publish_after_undo(self):
         self.take_it_back("undo")
         self.publish()
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов Иван Петрович")
 
     def test_the_edit_outlives_the_next_publish_after_restore(self):
         self.take_it_back("restore")
         self.publish()
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов Иван Петрович")
 
     def test_the_decision_still_reads_as_an_edit(self):
         self.take_it_back("undo")

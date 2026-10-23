@@ -1,0 +1,36 @@
+{
+  "key": "tudarmstadt",
+  "short_name": "TU Darmstadt",
+  "short_name_local": "TU Darmstadt",
+  "name_en": "Technische Universität Darmstadt",
+  "name_local": "Technische Universität Darmstadt",
+  "ror_id": "05n911h24",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "tu-darmstadt.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TUDarmstadtUniv|TU\\ Darmstadt)(?![^\\W\\d_])",
+  "long_name": "Darmstadt[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Darmstadt|Technische[\\s‐-]+Universität[\\s‐-]+Darmstadt|Technische[\\s‐-]+Universitat[\\s‐-]+Darmstadt|Technical[\\s‐-]+University[\\s‐-]+Darmstadt",
+  "marker_replacement": "TUDarmstadtUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|berndt|bldg|boulevard|box|braun|building|calle|campus|darmstadt|deutschland|east|floor|franziska|gatan|germany|grünberg|hesse|hessen|hochschulstrasse|karolinenplatz|katu|laan|magdalenenstrasse|north|otto|piazza|platz|plaza|plein|po|rd|road|room|rue|schnittspahnstrasse|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "GSI Helmholtzzentrum|(?<![^\\W\\d_])GSI(?![^\\W\\d_])|Helmholtz|Fraunhofer|(?<![^\\W\\d_])HFHF(?![^\\W\\d_])|Universit(?:ä|ae)ts- und Landesbibliothek|Goethe University|Hochschule Darmstadt|Responsible\\ Electronics\\ in\\ the\\ Climate\\ Change\\ Era|TU9|Verein\\ für\\ Nationales\\ Hochleistungsrechnen\\ –\\ NHR\\-Verein\\ e\\.V\\.",
+  "identity": "(?<![^\\W\\d_])TU\\ Darmstadt(?![^\\W\\d_])|Darmstadt[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Darmstadt|Technische[\\s‐-]+Universität[\\s‐-]+Darmstadt|Technische[\\s‐-]+Universitat[\\s‐-]+Darmstadt|Technical[\\s‐-]+University[\\s‐-]+Darmstadt",
+  "city": "Darmstadt",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tudarmstadt",
+  "site_url": "https://www.tu-darmstadt.de",
+  "unit_words": "department|fachbereich|institute|institut|centre|center|lab|laboratory",
+  "external_authors": false
+}

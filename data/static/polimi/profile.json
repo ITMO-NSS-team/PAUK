@@ -1,0 +1,36 @@
+{
+  "key": "polimi",
+  "short_name": "PoliMi",
+  "short_name_local": "PoliMi",
+  "name_en": "Politecnico di Milano",
+  "name_local": "Politecnico di Milano",
+  "ror_id": "01nffqt88",
+  "language": "Italian",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "di",
+    "de",
+    "del",
+    "della",
+    "da",
+    "dal",
+    "lo",
+    "la"
+  ],
+  "email_domains": [
+    "polimi.it"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:PolitecnicoMilano|PoliMi)(?![^\\W\\d_])",
+  "long_name": "Polytechnic[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Milan|École[\\s‐-]+Polytechnique[\\s‐-]+de[\\s‐-]+Milan|Politecnico[\\s‐-]+di[\\s‐-]+Milano|Polytechnic[\\s‐-]+of[\\s‐-]+Milan|Politecnico[\\s‐-]+Milano",
+  "marker_replacement": "PolitecnicoMilano",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|bonardi|boulevard|box|building|calle|campus|como|cremona|east|floor|gatan|italia|italy|katu|laan|lambruschini|lecco|leonardo|masa|milan|milano|north|piacenza|piazza|platz|plaza|plein|po|ponzio|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vinci|vägen|weg|west",
+  "other_organisations": "INFN|Istituto Nazionale di Fisica Nucleare|(?<![^\\W\\d_])CNR(?![^\\W\\d_])|Università degli Studi di Milano|University of Milan|Bocconi|Humanitas|IRCCS|Istituto\\ Nazionale\\ di\\ Fisica\\ Nucleare,\\ Sezione\\ di\\ Milano",
+  "identity": "(?<![^\\W\\d_])PoliMi(?![^\\W\\d_])|Polytechnic[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Milan|École[\\s‐-]+Polytechnique[\\s‐-]+de[\\s‐-]+Milan|Politecnico[\\s‐-]+di[\\s‐-]+Milano|Polytechnic[\\s‐-]+of[\\s‐-]+Milan|Politecnico[\\s‐-]+Milano",
+  "city": "Milan",
+  "staff_catalog": null,
+  "mongo_db": "pauk_polimi",
+  "site_url": "https://www.polimi.it",
+  "unit_words": "department|dipartimento|school|scuola",
+  "external_authors": false
+}

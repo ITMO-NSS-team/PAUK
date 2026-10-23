@@ -451,9 +451,9 @@ export function mountPanel(
       tab === 1 ? t("tab.authors", lang) : tab === 2 ? t("tab.repos", lang) : t("tab.pubs", lang);
 
     if (tab === 1) {
-      // All authors, ITMO and external, regardless of the map filter.
+      // All authors, members and external, regardless of the map filter.
       const authors: AuthorNode[] = data.authors;
-      const external = authors.filter((a) => a.is_itmo === false).length;
+      const external = authors.filter((a) => a.is_member === false).length;
       const avgPubs =
         authors.length > 0
           ? (authors.reduce((sum, a) => sum + a.pubs_count, 0) / authors.length).toFixed(1)
@@ -477,7 +477,7 @@ export function mountPanel(
         tabKind,
         untitled([
           [t("field.authorsCount", lang), String(authors.length)],
-          [t("overview.itmoAuthors", lang), String(authors.length - external)],
+          [t("overview.memberAuthors", lang), String(authors.length - external)],
           [t("overview.externalAuthors", lang), String(external)],
           [t("field.deptsCount", lang), String(data.departments.length)],
           [t("overview.avgPubsPerAuthor", lang), avgPubs],
@@ -632,10 +632,10 @@ export function mountPanel(
         // record means the file has not arrived yet.
         const authorDetail = authorDetails.get(node.key);
         if (authorDetail) {
-          const fullName = localize(authorDetail.name_ru, authorDetail.name_en, lang);
+          const fullName = localize(authorDetail.name_local, authorDetail.name_en, lang);
           if (fullName) {
             title = fullName;
-            const otherName = localize(authorDetail.name_en, authorDetail.name_ru, lang);
+            const otherName = localize(authorDetail.name_en, authorDetail.name_local, lang);
             if (otherName && otherName !== fullName) subtitle = otherName;
           }
           if (authorDetail.openalex_id)

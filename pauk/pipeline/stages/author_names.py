@@ -1,10 +1,16 @@
-"""Russian and English name parts for authors.
+"""Local-language and English name parts for authors.
 
 OpenAlex serves a single romanized display name ("Nikolay O. Nikitin",
 sometimes Cyrillic or mixed) as name_raw. This stage splits it, and every
 known spelling variant, into surname/first name/second name (patronymic) in
-Russian and English, and composes name_ru and name_en (one flat "surname first
+the university's language (`*_local`: Russian for ITMO, Portuguese for UFJF)
+and English, and composes name_local and name_en (one flat "surname first
 name second name" string per language, matching gui/nodes.py's author_label()).
+
+What follows describes the Russian profile. A Latin-script profile without
+patronymics (UFJF) asks a simpler prompt, keeps second_name empty, has no
+transliteration to repair, falls back to name_raw rather than to_cyrillic,
+and runs without a staff catalog when the university has none.
 
 1. Catalog match, for identity and the academic degree only. A CSV of
    official ITMO staff records (columns: name_ru, surname, name, patronymic,
@@ -15,7 +21,7 @@ name second name" string per language, matching gui/nodes.py's author_label()).
    inherits someone else's official record.
 
 2. LLM name split. Each person needing a fresh attempt is sent to an LLM
-   (self.config.llm_model) with name_raw, name_variants and every catalog row
+   (PAUK_LLM_MODEL) with name_raw, name_variants and every catalog row
    sharing a folded surname token, a broader net than the strict match so the
    model can disambiguate namesakes. The reply is checked for types and the
    candidate index, then three deterministic guards run before the four
@@ -23,9 +29,9 @@ name second name" string per language, matching gui/nodes.py's author_label()).
    patronymic invented from a bare initial; _guard_misclassified_second_name
    folds a second_name that does not look like a patronymic back into
    first_name (e.g. Spanish "Pedro Luis González"); _guard_broken_transliteration
-   fixes or drops a *_ru field that is not in Cyrillic. An incomplete reply gets
+   fixes or drops a *_local field that is not in Cyrillic. An incomplete reply gets
    one corrective retry. A failed call or an invalid second reply falls back to
-   reverse transliteration (to_cyrillic) for name_ru only, is marked FAILED and
+   reverse transliteration (to_cyrillic) for name_local only, is marked FAILED and
    is retried on the next run without overwriting an earlier complete split.
    This runs for external persons too; the graph carries their split.
 
@@ -34,9 +40,10 @@ person records resolving to the same row are one researcher. The dedup stage
 folds on that (see staff_id and rule 4 in dedup.py), which is why the matching
 is reachable before naming runs.
 
-The catalog contains personal data and is never committed; the stage refuses to
-run when the file is missing. Default location: data/static/russian_names.csv,
-overridable via PAUK_RUSSIAN_NAMES_FILE.
+The catalog contains personal data and is never committed; for a university
+that has one, the stage refuses to run when the file is missing. Default
+location: data/static/<institution>/russian_names.csv, overridable via
+PAUK_STAFF_CATALOG_FILE.
 """
 
 from __future__ import annotations
@@ -52,6 +59,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pauk.institution import Institution
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
@@ -61,12 +69,13 @@ from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
-CATALOG_FILENAME = "russian_names.csv"
 
-
-def catalog_path(config) -> Path:
-    """Where the staff catalog lives for this configuration."""
-    return Path(config.russian_names_file or config.static_dir / CATALOG_FILENAME)
+def catalog_path(config) -> Path | None:
+    """Where the staff catalog lives for this configuration; None when the university has none."""
+    if config.staff_catalog_file:
+        return Path(config.staff_catalog_file)
+    filename = config.institution.staff_catalog
+    return config.static_dir / filename if filename else None
 
 
 
@@ -415,25 +424,28 @@ class RussianNamesCatalog:
         return list(merged.values())
 
     @classmethod
-    def load(cls, path: Path) -> RussianNamesCatalog:
+    def load(cls, path: Path | None) -> RussianNamesCatalog:
+        """The catalog at path; an empty one when the university has none (path None)."""
+        if path is None:
+            return cls([])
         if not path.exists():
             raise FileNotFoundError(
-                f"russian names catalog not found: {path}; the file is kept out of "
+                f"staff catalog not found: {path}; the file is kept out of "
                 "the repository (personal data); place it there or point "
-                "PAUK_RUSSIAN_NAMES_FILE at it"
+                "PAUK_STAFF_CATALOG_FILE at it"
             )
         with path.open(encoding="utf-8-sig", newline="") as fh:
             rows = [row for row in csv.DictReader(fh) if (row.get("surname") or "").strip()]
         return cls(rows)
 
     @classmethod
-    def load_if_present(cls, path: Path) -> RussianNamesCatalog | None:
+    def load_if_present(cls, path: Path | None) -> RussianNamesCatalog | None:
         """The catalog when it is on disk, None when it is not.
 
         Naming requires the catalog and calls load(); dedup treats it as one
         signal among several and must work without the file.
         """
-        return cls.load(path) if path.exists() else None
+        return cls.load(path) if path is not None and path.exists() else None
 
     @staticmethod
     def _initials(name: str, folded: str) -> set[str]:
@@ -550,9 +562,9 @@ class RussianNamesCatalog:
 
 
 
-NAME_SPLIT_PROMPT = """You are extracting an author's name for an ITMO research publication,
-split into surname / first name / second name (patronymic), separately in Russian and
-in English.
+NAME_SPLIT_PROMPT = """You are extracting an author's name for an {university} research publication,
+split into surname / first name / second name (patronymic), separately in Russian (the *_local
+fields) and in English (the *_en fields).
 
 Raw name as given by the data source (OpenAlex) - may be Latin script, Cyrillic, or mixed:
   {name_raw}
@@ -560,7 +572,7 @@ Raw name as given by the data source (OpenAlex) - may be Latin script, Cyrillic,
 Other known spellings of the same person (sometimes one of these spells the name out more fully):
   {variants}
 
-Candidate records from the official ITMO staff directory sharing the same surname
+Candidate records from the official {university} staff directory sharing the same surname
 (a candidate may be a namesake - not necessarily the same person):
 {candidates}
 
@@ -590,10 +602,10 @@ STRICT rules - follow exactly, do not deviate:
      with G. Knowing that "G." commonly stands for some real patronymic is not the same as
      this specific input telling you which one - if you find yourself supplying a value the
      input itself does not spell out, stop and use null (or the bare initial) instead.
-4. surname_ru and first_name_ru (and second_name_ru when a patronymic is known) must ALWAYS
+4. surname_local and first_name_local (and second_name_local when a patronymic is known) must ALWAYS
    be filled, in Cyrillic, for every person - Russian, foreign, anyone. This is a practical
    Russian transcription of whatever name you extracted in rule 3, not a judgement about the
-   person's nationality: "Salvy Russo" still gets a surname_ru/first_name_ru (a natural
+   person's nationality: "Salvy Russo" still gets a surname_local/first_name_local (a natural
    Russian transcription, e.g. "Руссо"/"Сальви"). Use the conventional Russian transcription
    a Russian text would actually use, not a mechanical letter-by-letter mapping.
 5. second_name (the patronymic) means specifically that: a name derived from the father's
@@ -602,10 +614,10 @@ STRICT rules - follow exactly, do not deviate:
    patronymic at all but do have more than one given name - Spanish "Pedro Luis González"
    (two given names, one surname, no patronymic), Portuguese, many Western double given names.
    When a name has multiple given-name-position words and none of them is recognizably a
-   patronymic, put all of them in first_name/first_name_ru as one space-separated string and
-   leave second_name_ru/second_name_en null - do not force a plausible-looking word into the
+   patronymic, put all of them in first_name/first_name_local as one space-separated string and
+   leave second_name_local/second_name_en null - do not force a plausible-looking word into the
    patronymic slot just because of its position.
-6. second_name_ru/second_name_en does not exist for everyone even among names that do use
+6. second_name_local/second_name_en does not exist for everyone even among names that do use
    patronymics. Leave both null rather than inventing one - this is the one pair of fields
    allowed to legitimately stay empty, and rule 3's ban on invention applies to it most of
    all. Before writing a non-null second_name, check yourself: is this exact value spelled
@@ -618,7 +630,47 @@ STRICT rules - follow exactly, do not deviate:
 
 Reply with STRICT valid JSON only, no markdown, no text outside the JSON:
 {{"matched_candidate": null,
-  "surname_ru": null, "first_name_ru": null, "second_name_ru": null,
+  "surname_local": null, "first_name_local": null, "second_name_local": null,
+  "surname_en": null, "first_name_en": null, "second_name_en": null,
+  "reason": "one short sentence"}}
+"""
+
+# For a Latin-script university whose naming tradition has no patronymic
+# (UFJF): nothing to transcribe, so the task is the split and the spelling.
+LATIN_NAME_SPLIT_PROMPT = """You are extracting an author's name for a {university} research publication,
+split into surname and first name, separately in {language} (the *_local fields) and in
+English (the *_en fields).
+
+Raw name as given by the data source (OpenAlex):
+  {name_raw}
+
+Other known spellings of the same person (sometimes one of these spells the name out more fully):
+  {variants}
+
+STRICT rules - follow exactly, do not deviate:
+1. Extraction only, never invention:
+   - If a name part is spelled out in full somewhere in the input, extract it in full.
+   - If a name part appears ONLY as a bare initial (e.g. "J." in "J. Silva"), keep the initial,
+     WITHOUT a period. Do not expand it from anything you may know about a real person.
+2. Split the way Brazilian citation (ABNT) enters the name: surname is the LAST family name,
+   joined with a generational suffix when there is one; everything before it, given names,
+   earlier family names and particles alike, is first_name, as written.
+   "Felipe de Paula Alves Benedicto" -> surname "Benedicto", first_name "Felipe de Paula Alves";
+   "José Carlos da Silva" -> "Silva" / "José Carlos da"; "João Souza Filho" -> "Souza Filho" /
+   "João"; "Ana dos Reis Júnior" -> "Reis Júnior" / "Ana dos"; "J. A. Silva" -> "Silva" / "J A".
+   A hyphenated surname stays whole ("Maria Silva-Costa" -> "Silva-Costa").
+3. The *_local fields are the name as it is written in {language}: keep diacritics (ã, ç, é, ô)
+   whenever any of the input spellings has them, and do not add diacritics that no input
+   spelling shows.
+4. The *_en fields are the name as the person signs English-language papers: usually the same
+   words as *_local; diacritics may stay. Never translate a name.
+5. second_name_local and second_name_en are ALWAYS null: this naming tradition has no
+   patronymic.
+6. surname_local, first_name_local, surname_en and first_name_en must ALWAYS be filled, in
+   Latin script.
+
+Reply with STRICT valid JSON only, no markdown, no text outside the JSON:
+{{"surname_local": null, "first_name_local": null, "second_name_local": null,
   "surname_en": null, "first_name_en": null, "second_name_en": null,
   "reason": "one short sentence"}}
 """
@@ -650,7 +702,7 @@ def _name_split_candidates(catalog: RussianNamesCatalog, person: Person) -> list
     return candidates
 
 
-def _build_name_split_prompt(person: Person, candidates: list[dict]) -> str:
+def _build_name_split_prompt(person: Person, candidates: list[dict], institution: Institution) -> str:
     candidates_text = (
         "\n".join(
             f"{i}. surname={c.get('surname')!r} name={c.get('name')!r} "
@@ -662,7 +714,16 @@ def _build_name_split_prompt(person: Person, candidates: list[dict]) -> str:
     # Same _unmix_alphabets pass as matching, so the model is not handed a
     # stray Cyrillic homoglyph inside a Latin name ("I. А. Zelinskaya").
     variants = ", ".join(_unmix_alphabets(v) for v in person.name_variants) or "(none)"
+    if institution.local_script == "latin":
+        # No staff catalog to offer: matched_candidate stays null.
+        return LATIN_NAME_SPLIT_PROMPT.format(
+            university=institution.short_name,
+            language=institution.language,
+            name_raw=_unmix_alphabets(person.name_raw or ""),
+            variants=variants,
+        )
     return NAME_SPLIT_PROMPT.format(
+        university=institution.short_name,
         name_raw=_unmix_alphabets(person.name_raw or ""),
         variants=variants,
         candidates=candidates_text,
@@ -726,7 +787,7 @@ def _guard_invented_second_name(person: Person, parsed: dict, candidates: list[d
         if name
         for token in name.replace(",", " ").split()
     ]
-    for field in ("second_name_ru", "second_name_en"):
+    for field in ("second_name_local", "second_name_en"):
         value = parsed.get(field)
         if not value or _is_bare_initial(value) or _plausibly_in_source(value, haystack_tokens):
             continue
@@ -739,16 +800,16 @@ def _guard_invented_second_name(person: Person, parsed: dict, candidates: list[d
 
 
 def _guard_broken_transliteration(parsed: dict) -> dict:
-    """Fix or null a *_ru field that isn't actually in Cyrillic, in place.
+    """Fix or null a *_local field that isn't actually in Cyrillic, in place.
 
-    Two failures show up as a Latin letter in a *_ru field:
+    Two failures show up as a Latin letter in a Cyrillic *_local field:
     - A bare initial ("I", "A") is allowed by rule 3 when only an initial is
       known; it is converted with to_cyrillic, not discarded.
     - An unusual Latin character (e.g. Polish "ł") defeats the model mid-word
       ("Małgorzata" comes back as "Маłgorzata"). Rule 4 requires full Cyrillic,
       and a partly Latin field is worse than an empty one.
     """
-    for field in ("surname_ru", "first_name_ru", "second_name_ru"):
+    for field in ("surname_local", "first_name_local", "second_name_local"):
         value = parsed.get(field)
         if not value or not any(char.isalpha() and not _is_cyrillic(char) for char in value):
             continue
@@ -772,22 +833,25 @@ _PATRONYMIC_LIKE_EN = re.compile(
 )
 
 
-def _guard_misclassified_second_name(parsed: dict) -> dict:
+def _guard_misclassified_second_name(parsed: dict, has_patronymic: bool = True) -> dict:
     """Fold a second_name back into first_name, in place, if it does not look like a patronymic.
 
     _guard_invented_second_name misses this case because the word is in the
     source, just extracted into the wrong field. A directory match is trusted
     (it can return an unusual but real patronymic); otherwise a non-initial
-    value without a patronymic-shaped ending is moved to first_name.
+    value without a patronymic-shaped ending is moved to first_name. Where
+    the naming tradition has no patronymic, every value is moved, initials too.
     """
     if parsed.get("matched_candidate") is not None:
         return parsed
     for second_field, first_field, pattern in (
-        ("second_name_ru", "first_name_ru", _PATRONYMIC_LIKE_RU),
+        ("second_name_local", "first_name_local", _PATRONYMIC_LIKE_RU),
         ("second_name_en", "first_name_en", _PATRONYMIC_LIKE_EN),
     ):
         value = parsed.get(second_field)
-        if not value or _is_bare_initial(value) or pattern.search(value):
+        if not value:
+            continue
+        if has_patronymic and (_is_bare_initial(value) or pattern.search(value)):
             continue
         parsed[first_field] = f"{parsed.get(first_field) or ''} {value}".strip()
         parsed[second_field] = None
@@ -798,8 +862,27 @@ def _guard_misclassified_second_name(parsed: dict) -> dict:
     return parsed
 
 
-REQUIRED_NAME_FIELDS = ("surname_ru", "first_name_ru", "surname_en", "first_name_en")
-_NAME_FIELDS = (*REQUIRED_NAME_FIELDS, "second_name_ru", "second_name_en")
+def _guard_surname_particle(parsed: dict, particles: tuple[str, ...]) -> dict:
+    """Move a leading particle from the surname to the end of the first name, in place.
+
+    The prompt asks for the citation form ("Oliveira" / "Luiz Fernando Cappa
+    de"), yet on real UFJF names one reply in twenty still began the surname
+    with the particle ("de Oliveira"), so the same family name was written two
+    ways across the graph.
+    """
+    for surname_field, first_field in (("surname_local", "first_name_local"), ("surname_en", "first_name_en")):
+        surname = parsed.get(surname_field)
+        if not surname:
+            continue
+        head, _, rest = surname.partition(" ")
+        if rest and head.casefold() in particles:
+            parsed[surname_field] = rest
+            parsed[first_field] = f"{parsed.get(first_field) or ''} {head}".strip()
+    return parsed
+
+
+REQUIRED_NAME_FIELDS = ("surname_local", "first_name_local", "surname_en", "first_name_en")
+_NAME_FIELDS = (*REQUIRED_NAME_FIELDS, "second_name_local", "second_name_en")
 _SEMANTIC_ATTEMPTS = 2
 
 
@@ -808,7 +891,7 @@ def _normalize_name_split_response(parsed: dict, candidate_count: int) -> dict:
 
     Required-field completeness is checked after the deterministic guards:
     the second-name classifier can legitimately move a value into first_name,
-    while the transliteration guard can invalidate a required Russian field.
+    while the transliteration guard can invalidate a required Cyrillic field.
     """
     if not isinstance(parsed, dict):
         raise ValueError(f"name split response must be an object, got {type(parsed).__name__}")
@@ -842,8 +925,11 @@ def _is_latin_letter(char: str) -> bool:
     return char.isalpha() and "LATIN" in unicodedata.name(char, "")
 
 
-def required_name_field_issues(values: Mapping[str, object]) -> dict[str, str]:
-    """Return every violation of the completed author-name contract."""
+def required_name_field_issues(values: Mapping[str, object], local_script: str = "cyrillic") -> dict[str, str]:
+    """Return every violation of the completed author-name contract.
+
+    local_script is the alphabet of the *_local fields (Institution.local_script).
+    """
     issues = {}
     for field in REQUIRED_NAME_FIELDS:
         value = values.get(field)
@@ -854,31 +940,44 @@ def required_name_field_issues(values: Mapping[str, object]) -> dict[str, str]:
         if not letters:
             issues[field] = "must contain at least one letter"
             continue
-        belongs_to_alphabet = _is_cyrillic if field.endswith("_ru") else _is_latin_letter
+        cyrillic = field.endswith("_local") and local_script == "cyrillic"
+        belongs_to_alphabet = _is_cyrillic if cyrillic else _is_latin_letter
         if any(not belongs_to_alphabet(char) for char in letters):
-            alphabet = "Cyrillic" if field.endswith("_ru") else "Latin"
+            alphabet = "Cyrillic" if cyrillic else "Latin"
             issues[field] = f"must contain only {alphabet} letters"
     return issues
 
 
-def _validate_required_name_fields(parsed: dict) -> None:
+def _validate_required_name_fields(parsed: dict, local_script: str) -> None:
     """Enforce the invariant represented by a completed author_names state."""
-    issues = required_name_field_issues(parsed)
+    issues = required_name_field_issues(parsed, local_script)
     if issues:
         details = "; ".join(f"{field}: {reason}" for field, reason in issues.items())
         raise ValueError(f"invalid required name fields: {details}")
 
 
 def _validate_name_split_response(
-    person: Person, parsed: dict, candidates: list[dict]
+    person: Person, parsed: dict, candidates: list[dict], institution: Institution
 ) -> tuple[dict, bool]:
+    if institution.local_script == "latin":
+        # The Latin prompt offers no candidates and asks for no
+        # matched_candidate; models still fill it (true, the person's own
+        # name), and rejecting that cost a retry on 40% of real UFJF names.
+        # The Russian prompt keeps the check: there a claimed match vouches
+        # for the copied name parts.
+        parsed = {**parsed, "matched_candidate": None} if isinstance(parsed, dict) else parsed
     normalized = _normalize_name_split_response(parsed, len(candidates))
-    before_second_names = (normalized.get("second_name_ru"), normalized.get("second_name_en"))
-    normalized = _guard_invented_second_name(person, normalized, candidates)
-    normalized = _guard_misclassified_second_name(normalized)
-    normalized = _guard_broken_transliteration(normalized)
-    _validate_required_name_fields(normalized)
-    corrected = (normalized.get("second_name_ru"), normalized.get("second_name_en")) != before_second_names
+    before_second_names = (normalized.get("second_name_local"), normalized.get("second_name_en"))
+    if institution.has_patronymic:
+        normalized = _guard_invented_second_name(person, normalized, candidates)
+    # Without patronymics a second name is a given name in the wrong slot, so it
+    # is moved before anything could drop it as invented.
+    normalized = _guard_misclassified_second_name(normalized, institution.has_patronymic)
+    normalized = _guard_surname_particle(normalized, institution.surname_particles)
+    if institution.local_script == "cyrillic":
+        normalized = _guard_broken_transliteration(normalized)
+    _validate_required_name_fields(normalized, institution.local_script)
+    corrected = (normalized.get("second_name_local"), normalized.get("second_name_en")) != before_second_names
     return normalized, corrected
 
 
@@ -892,7 +991,7 @@ def _semantic_retry_prompt(prompt: str, error: str) -> str:
 
 class AuthorNamesStage(EnrichmentStage):
     name = "author_names"
-    progress_label = "Authors: splitting names into RU/EN parts (LLM)"
+    progress_label = "Authors: splitting names into local/EN parts (LLM)"
 
     def _request_name_split(
         self,
@@ -913,7 +1012,7 @@ class AuthorNamesStage(EnrichmentStage):
             else:
                 try:
                     validated, corrected = _validate_name_split_response(
-                        person, raw_parsed, candidates
+                        person, raw_parsed, candidates, self.config.institution
                     )
                 except ValueError as exc:
                     last_error = str(exc)
@@ -946,10 +1045,12 @@ class AuthorNamesStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
         people = list(self.prepared.read_models("persons", Person))
+        external = self.config.institution.external_authors
         candidates = [
             person
             for person in people
             if self.selected("persons", person.id)
+            and (external or person.is_member)
             and self.needs_attempt(person.processing.get(self.name))
         ]
         if not candidates:
@@ -977,12 +1078,13 @@ class AuthorNamesStage(EnrichmentStage):
 
         def ask(person: Person) -> tuple[Person, dict | None, bool, str | None]:
             person_candidates = _name_split_candidates(catalog, person)
-            prompt = _build_name_split_prompt(person, person_candidates)
+            prompt = _build_name_split_prompt(person, person_candidates, self.config.institution)
             parsed, second_name_corrected, llm_error = self._request_name_split(
                 client_for_thread(), llm_log, person, person_candidates, prompt
             )
             return person, parsed, second_name_corrected, llm_error
 
+        cyrillic = self.config.institution.local_script == "cyrillic"
         changed = matched = dropped = failed = 0
         asked = []
         for person in candidates:
@@ -1029,7 +1131,8 @@ class AuthorNamesStage(EnrichmentStage):
             if parsed is None:
                 # Word order is not reliable enough to store, so the parts stay
                 # as an earlier run left them. Retried next run (FAILED).
-                person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
+                fallback = to_cyrillic(person.name_raw) if cyrillic else person.name_raw
+                person.name_local = person.name_local or fallback
                 person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(
                     state, ProcessingStatus.FAILED, 0, error=llm_error or "llm request failed"
@@ -1042,15 +1145,15 @@ class AuthorNamesStage(EnrichmentStage):
             if second_name_corrected:
                 dropped += 1
 
-            person.surname_ru = parsed.get("surname_ru") or None
-            person.first_name_ru = parsed.get("first_name_ru") or None
-            person.second_name_ru = parsed.get("second_name_ru") or None
+            person.surname_local = parsed.get("surname_local") or None
+            person.first_name_local = parsed.get("first_name_local") or None
+            person.second_name_local = parsed.get("second_name_local") or None
             person.surname_en = parsed.get("surname_en") or None
             person.first_name_en = parsed.get("first_name_en") or None
             person.second_name_en = parsed.get("second_name_en") or None
-            person.name_ru = " ".join(
+            person.name_local = " ".join(
                 part
-                for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
+                for part in (person.surname_local, person.first_name_local, person.second_name_local)
                 if part
             )
             person.name_en = " ".join(

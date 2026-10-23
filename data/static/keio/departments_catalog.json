@@ -1,0 +1,308 @@
+[
+  {
+    "uid": "keio",
+    "name_en": "Keio University",
+    "name_local": "慶應義塾大学",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02kn6nx58",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "Keio University School of Medicine",
+    "name_local": "Keio University School of Medicine",
+    "kind": "school",
+    "parent": "keio",
+    "aliases": [
+      "Keio University School of Medicine"
+    ],
+    "context_aliases": [
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "st",
+    "name_en": "Faculty of Science and Technology",
+    "name_local": "Faculty of Science and Technology",
+    "kind": "faculty",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science and Technology",
+      "Graduate School of Science and Technology"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Faculty of Pharmacy",
+    "name_local": "Faculty of Pharmacy",
+    "kind": "faculty",
+    "parent": "keio",
+    "aliases": [
+      "Keio University Faculty of Pharmacy"
+    ],
+    "context_aliases": [
+      "Faculty of Pharmacy"
+    ]
+  },
+  {
+    "uid": "sfcmg",
+    "name_en": "Graduate School of Media and Governance",
+    "name_local": "Graduate School of Media and Governance",
+    "kind": "school",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Media and Governance"
+    ]
+  },
+  {
+    "uid": "kmd",
+    "name_en": "Graduate School of Media Design",
+    "name_local": "Graduate School of Media Design",
+    "kind": "school",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Media Design"
+    ]
+  },
+  {
+    "uid": "sdm",
+    "name_en": "Graduate School of System Design and Management",
+    "name_local": "Graduate School of System Design and Management",
+    "kind": "school",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of System Design and Management"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Faculty of Economics",
+    "name_local": "Faculty of Economics",
+    "kind": "faculty",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics"
+    ]
+  },
+  {
+    "uid": "iab",
+    "name_en": "Institute for Advanced Biosciences",
+    "name_local": "Institute for Advanced Biosciences",
+    "kind": "institute",
+    "parent": "keio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Advanced Biosciences"
+    ]
+  },
+  {
+    "uid": "im",
+    "name_en": "Department of Internal Medicine",
+    "name_local": "Department of Internal Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Internal Medicine",
+      "Department of Medicine",
+      "Division of Gastroenterology and Hepatology",
+      "Division of Pulmonary Medicine",
+      "Division of Rheumatology",
+      "Department of Cardiology"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "ortho",
+    "name_en": "Department of Orthopaedic Surgery",
+    "name_local": "Department of Orthopaedic Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedic Surgery",
+      "Department of Orthopedic Surgery"
+    ]
+  },
+  {
+    "uid": "neuropsy",
+    "name_en": "Department of Neuropsychiatry",
+    "name_local": "Department of Neuropsychiatry",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuropsychiatry"
+    ]
+  },
+  {
+    "uid": "ophth",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Department of Ophthalmology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Department of Obstetrics and Gynecology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "nsurg",
+    "name_en": "Department of Neurosurgery",
+    "name_local": "Department of Neurosurgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosurgery"
+    ]
+  },
+  {
+    "uid": "neuro",
+    "name_en": "Department of Neurology",
+    "name_local": "Department of Neurology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurology"
+    ]
+  },
+  {
+    "uid": "radio",
+    "name_en": "Department of Radiology",
+    "name_local": "Department of Radiology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology"
+    ]
+  },
+  {
+    "uid": "pmph",
+    "name_en": "Department of Preventive Medicine and Public Health",
+    "name_local": "Department of Preventive Medicine and Public Health",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Preventive Medicine and Public Health"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "sd",
+    "name_en": "Department of System Design Engineering",
+    "name_local": "Department of System Design Engineering",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of System Design Engineering"
+    ]
+  },
+  {
+    "uid": "achem",
+    "name_en": "Department of Applied Chemistry",
+    "name_local": "Department of Applied Chemistry",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Chemistry"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "eee",
+    "name_en": "Department of Electronics and Electrical Engineering",
+    "name_local": "Department of Electronics and Electrical Engineering",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronics and Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "app",
+    "name_en": "Department of Applied Physics and Physico-Informatics",
+    "name_local": "Department of Applied Physics and Physico-Informatics",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics and Physico-Informatics"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "st",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  }
+]

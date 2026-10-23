@@ -1,0 +1,238 @@
+[
+  {
+    "uid": "warwick",
+    "name_en": "University of Warwick",
+    "name_local": "University of Warwick",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01a77tt86",
+    "type": "university"
+  },
+  {
+    "uid": "wms",
+    "name_en": "Warwick Medical School",
+    "name_local": "Warwick Medical School",
+    "kind": "school",
+    "parent": "warwick",
+    "aliases": [
+      "University of Warwick Medical School"
+    ],
+    "context_aliases": [
+      "Warwick Medical School"
+    ]
+  },
+  {
+    "uid": "wbs",
+    "name_en": "Warwick Business School",
+    "name_local": "Warwick Business School",
+    "kind": "school",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Warwick Business School"
+    ]
+  },
+  {
+    "uid": "wmg",
+    "name_en": "WMG",
+    "name_local": "WMG",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [
+      "WMG"
+    ],
+    "context_aliases": [
+      "Warwick Manufacturing Group"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "stats",
+    "name_en": "Department of Statistics",
+    "name_local": "Department of Statistics",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics"
+    ]
+  },
+  {
+    "uid": "maths",
+    "name_en": "Mathematics Institute",
+    "name_local": "Mathematics Institute",
+    "kind": "institute",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Mathematics Institute",
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics",
+    "name_local": "Department of Economics",
+    "kind": "department",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "sls",
+    "name_en": "School of Life Sciences",
+    "name_local": "School of Life Sciences",
+    "kind": "school",
+    "parent": "warwick",
+    "aliases": [],
+    "context_aliases": [
+      "School of Life Sciences"
+    ]
+  },
+  {
+    "uid": "wctu",
+    "name_en": "Warwick Clinical Trials Unit",
+    "name_local": "Warwick Clinical Trials Unit",
+    "kind": "unit",
+    "parent": "wms",
+    "aliases": [],
+    "context_aliases": [
+      "Warwick Clinical Trials Unit"
+    ]
+  },
+  {
+    "uid": "wah",
+    "name_en": "Warwick Applied Health",
+    "name_local": "Warwick Applied Health",
+    "kind": "division",
+    "parent": "wms",
+    "aliases": [],
+    "context_aliases": [
+      "Warwick Applied Health"
+    ]
+  },
+  {
+    "uid": "dbs",
+    "name_en": "Division of Biomedical Sciences",
+    "name_local": "Division of Biomedical Sciences",
+    "kind": "division",
+    "parent": "wms",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "gh",
+    "name_en": "Warwick Centre for Global Health",
+    "name_local": "Warwick Centre for Global Health",
+    "kind": "center",
+    "parent": "wms",
+    "aliases": [],
+    "context_aliases": [
+      "Warwick Centre for Global Health"
+    ]
+  },
+  {
+    "uid": "icmm",
+    "name_en": "Institute for Cardio-Metabolic Medicine",
+    "name_local": "Institute for Cardio-Metabolic Medicine",
+    "kind": "institute",
+    "parent": "wms",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Cardio-Metabolic Medicine"
+    ]
+  },
+  {
+    "uid": "exo",
+    "name_en": "Centre for Exoplanets and Habitability",
+    "name_local": "Centre for Exoplanets and Habitability",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Exoplanets and Habitability"
+    ]
+  },
+  {
+    "uid": "cfsa",
+    "name_en": "Centre for Fusion Space and Astrophysics",
+    "name_local": "Centre for Fusion Space and Astrophysics",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Fusion",
+      "Space and Astrophysics"
+    ]
+  },
+  {
+    "uid": "csda",
+    "name_en": "Centre for Space Domain Awareness",
+    "name_local": "Centre for Space Domain Awareness",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Space Domain Awareness"
+    ]
+  }
+]

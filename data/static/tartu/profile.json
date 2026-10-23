@@ -1,0 +1,27 @@
+{
+  "key": "tartu",
+  "short_name": "Tartu",
+  "short_name_local": "Tartu Ülikool",
+  "name_en": "University of Tartu",
+  "name_local": "Tartu Ülikool",
+  "ror_id": "03z77qz90",
+  "language": "Estonian",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "ut.ee"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivTartu)(?![^\\W\\d_])",
+  "long_name": "Тартуский[\\s‐-]+университет|University[\\s‐-]+of[\\s‐-]+Tartu|Tartu[\\s‐-]+University|Tartu[\\s‐-]+Ülikool|Tartu[\\s‐-]+Ulikool|Univ[\\s‐-]+Tartu",
+  "marker_replacement": "UnivTartu",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|eesti|estonia|floor|gatan|katu|laan|liivi|mnt|mäealuse|narva|nooruse|north|näituse|observatooriumi|ostwaldi|piazza|platz|plaza|plein|po|puusepa|ravila|rd|riia|road|room|rue|south|st|str|straat|strasse|straße|street|tallinn|tartu|tie|toravere|tõravere|ul|vanemuise|vej|via|viale|vägen|weg|west|ülikooli",
+  "other_organisations": "Tartu University Hospital|Tallinn University|Celvia|Estonian University of Life Sciences|Tartu\\ University\\ Hospital",
+  "identity": "Тартуский[\\s‐-]+университет|University[\\s‐-]+of[\\s‐-]+Tartu|Tartu[\\s‐-]+University|Tartu[\\s‐-]+Ülikool|Tartu[\\s‐-]+Ulikool|Univ[\\s‐-]+Tartu",
+  "city": "Tartu",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tartu",
+  "site_url": "https://ut.ee",
+  "unit_words": "institute|faculty|school|department|centre|center",
+  "external_authors": false
+}

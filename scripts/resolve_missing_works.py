@@ -53,8 +53,6 @@ from import_curated_repos import (  # noqa: E402  - sibling script, path set abo
 
 logger = logging.getLogger("resolve_missing_works")
 
-ITMO_ROR = "04txgxn49"
-
 # The graph is collected from this date onward; anything earlier is absent by
 # construction, not by accident.
 COLLECTION_START_YEAR = 2020
@@ -78,10 +76,10 @@ def _note_evidence(note: str) -> tuple[set[str], int | None]:
     return {s.lower() for s in SURNAME.findall(head)}, int(years[0]) if years else None
 
 
-def _is_itmo(work: dict) -> bool:
+def _is_member(work: dict) -> bool:
     for authorship in work.get("authorships") or []:
         for institution in authorship.get("institutions") or []:
-            if ITMO_ROR in f"{institution.get('ror') or ''}{institution.get('id') or ''}":
+            if settings.institution.is_member_ror(institution.get("ror") or institution.get("id")):
                 return True
     return False
 
@@ -133,7 +131,7 @@ def _best_match(client: OpenAlexClient, row: dict) -> dict:
                 "ratio": round(ratio, 4),
                 "surname_hit": surname_hit,
                 "year_hit": year_hit,
-                "itmo_affiliation": _is_itmo(work),
+                "itmo_affiliation": _is_member(work),
             }
 
     if best is None:
@@ -180,7 +178,7 @@ def write_report(path: Path, resolved: list[dict], selected: list[dict], include
         "",
         "## Отобрано для сбора",
         "",
-        "| OpenAlex | Год | ИТМО | Заголовок | Совпадение |",
+        f"| OpenAlex | Год | {settings.institution.short_name_local} | Заголовок | Совпадение |",
         "|---|---|---|---|---|",
     ]
     for r in sorted(selected, key=lambda x: (x.get("year") or 0)):
@@ -205,12 +203,13 @@ def write_report(path: Path, resolved: list[dict], selected: list[dict], include
         lines += [f"## {titles[verdict]} — {len(group)}", ""]
         if verdict == "resolved":
             lines += ["Работа в OpenAlex есть, но она не проходит по правилу отбора — "
-                      "у неё нет аффилиации ИТМО (значит, пайплайн её никогда и не "
+                      f"у неё нет аффилиации {settings.institution.short_name_local} (значит, пайплайн её никогда и не "
                       "собирал бы) либо она вне окна по годам.", ""]
         if verdict == "no_candidate":
             lines += ["Как правило это диссертации, тезисы конгрессов и русскоязычные "
                       "сборники — OpenAlex их не индексирует.", ""]
-        lines += ["| Заголовок в CSV | Что предложил OpenAlex | Год | ИТМО | Совпадение |",
+        lines += [f"| Заголовок в CSV | Что предложил OpenAlex | Год | {settings.institution.short_name_local} "
+                  "| Совпадение |",
                   "|---|---|---|---|---|"]
         for r in sorted(group, key=lambda x: -(x.get("ratio") or 0)):
             lines.append(

@@ -1,0 +1,365 @@
+[
+  {
+    "uid": "tuebingen",
+    "name_en": "University of Tübingen",
+    "name_local": "Eberhard Karls Universität Tübingen",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03a1kwz48",
+    "type": "university"
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Medizinische Fakultät"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science",
+      "Mathematisch-Naturwissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "fecon",
+    "name_en": "Faculty of Economics and Social Sciences",
+    "name_local": "Faculty of Economics and Social Sciences",
+    "kind": "faculty",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics and Social Sciences"
+    ]
+  },
+  {
+    "uid": "fhum",
+    "name_en": "Faculty of Humanities",
+    "name_local": "Faculty of Humanities",
+    "kind": "faculty",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities"
+    ]
+  },
+  {
+    "uid": "flaw",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculty of Law",
+    "kind": "faculty",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geosciences",
+    "name_local": "Department of Geosciences",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geosciences",
+      "Department of Geoscience"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "iaat",
+    "name_en": "Institute for Astronomy and Astrophysics",
+    "name_local": "Institute for Astronomy and Astrophysics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [
+      "Institut für Astronomie und Astrophysik Tübingen"
+    ],
+    "context_aliases": [
+      "Institut für Astronomie und Astrophysik",
+      "Institute for Astronomy and Astrophysics"
+    ]
+  },
+  {
+    "uid": "pit",
+    "name_en": "Physikalisches Institut",
+    "name_local": "Physikalisches Institut",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Physikalisches Institut"
+    ]
+  },
+  {
+    "uid": "iptc",
+    "name_en": "Institute of Physical and Theoretical Chemistry",
+    "name_local": "Institute of Physical and Theoretical Chemistry",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Physical and Theoretical Chemistry"
+    ]
+  },
+  {
+    "uid": "zmbp",
+    "name_en": "Center for Plant Molecular Biology",
+    "name_local": "Center for Plant Molecular Biology",
+    "kind": "center",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Plant Molecular Biology",
+      "ZMBP"
+    ]
+  },
+  {
+    "uid": "ias",
+    "name_en": "Institute for Archaeological Sciences",
+    "name_local": "Institute for Archaeological Sciences",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Archaeological Sciences"
+    ]
+  },
+  {
+    "uid": "hih",
+    "name_en": "Hertie Institute for Clinical Brain Research",
+    "name_local": "Hertie Institute for Clinical Brain Research",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Hertie Institute for Clinical Brain Research"
+    ]
+  },
+  {
+    "uid": "cin",
+    "name_en": "Werner Reichardt Centre for Integrative Neuroscience",
+    "name_local": "Werner Reichardt Centre for Integrative Neuroscience",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Werner Reichardt Centre for Integrative Neuroscience"
+    ]
+  },
+  {
+    "uid": "immuno",
+    "name_en": "Institute of Immunology",
+    "name_local": "Institute of Immunology",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Immunology"
+    ]
+  },
+  {
+    "uid": "ophth",
+    "name_en": "Institute for Ophthalmic Research",
+    "name_local": "Institute for Ophthalmic Research",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Ophthalmic Research",
+      "Centre for Ophthalmology"
+    ]
+  },
+  {
+    "uid": "medgen",
+    "name_en": "Institute of Medical Genetics and Applied Genomics",
+    "name_local": "Institute of Medical Genetics and Applied Genomics",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Medical Genetics and Applied Genomics"
+    ]
+  },
+  {
+    "uid": "imit",
+    "name_en": "Interfaculty Institute of Microbiology and Infection Medicine",
+    "name_local": "Interfaculty Institute of Microbiology and Infection Medicine",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Interfaculty Institute of Microbiology and Infection Medicine"
+    ]
+  },
+  {
+    "uid": "tropmed",
+    "name_en": "Institute of Tropical Medicine",
+    "name_local": "Institute of Tropical Medicine",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Tropical Medicine",
+      "Institute for Tropical Medicine"
+    ]
+  },
+  {
+    "uid": "wsic",
+    "name_en": "Werner Siemens Imaging Center",
+    "name_local": "Werner Siemens Imaging Center",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Werner Siemens Imaging Center"
+    ]
+  },
+  {
+    "uid": "preclin",
+    "name_en": "Department of Preclinical Imaging and Radiopharmacy",
+    "name_local": "Department of Preclinical Imaging and Radiopharmacy",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Preclinical Imaging and Radiopharmacy"
+    ]
+  },
+  {
+    "uid": "psychiatry",
+    "name_en": "Department of Psychiatry and Psychotherapy",
+    "name_local": "Department of Psychiatry and Psychotherapy",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Psychotherapy"
+    ]
+  },
+  {
+    "uid": "m3",
+    "name_en": "M3 Research Center for Malignome Metabolome and Microbiome",
+    "name_local": "M3 Research Center for Malignome Metabolome and Microbiome",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Metabolome and Microbiome",
+      "M3 Research Center"
+    ]
+  },
+  {
+    "uid": "tuai",
+    "name_en": "Tübingen AI Center",
+    "name_local": "Tübingen AI Center",
+    "kind": "center",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Tübingen AI Center",
+      "Tuebingen AI Center"
+    ]
+  },
+  {
+    "uid": "hector",
+    "name_en": "Hector Research Institute of Education Sciences and Psychology",
+    "name_local": "Hector Research Institute of Education Sciences and Psychology",
+    "kind": "institute",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Hector Research Institute of Education Sciences and Psychology"
+    ]
+  },
+  {
+    "uid": "shep",
+    "name_en": "Senckenberg Centre for Human Evolution and Palaeoenvironment",
+    "name_local": "Senckenberg Centre for Human Evolution and Palaeoenvironment",
+    "kind": "center",
+    "parent": "tuebingen",
+    "aliases": [],
+    "context_aliases": [
+      "Senckenberg Centre for Human Evolution and Palaeoenvironment"
+    ]
+  },
+  {
+    "uid": "tucmh",
+    "name_en": "Tübingen Center for Mental Health",
+    "name_local": "Tübingen Center for Mental Health",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "TüCMH",
+      "Tübingen Center for Mental Health"
+    ]
+  },
+  {
+    "uid": "iap",
+    "name_en": "Institute of Applied Physics",
+    "name_local": "Institute of Applied Physics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Applied Physics"
+    ]
+  },
+  {
+    "uid": "pharmacy",
+    "name_en": "Institute of Pharmacy",
+    "name_local": "Institute of Pharmacy",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pharmacy",
+      "Pharmaceutical Institute"
+    ]
+  },
+  {
+    "uid": "mpbn",
+    "name_en": "Institute of Medical Psychology and Behavioral Neurobiology",
+    "name_local": "Institute of Medical Psychology and Behavioral Neurobiology",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Medical Psychology and Behavioral Neurobiology"
+    ]
+  }
+]

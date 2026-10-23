@@ -1,0 +1,322 @@
+[
+  {
+    "uid": "tartu",
+    "name_en": "University of Tartu",
+    "name_local": "Tartu Ülikool",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03z77qz90",
+    "type": "university"
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "tartu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science and Technology",
+    "name_local": "Faculty of Science and Technology",
+    "kind": "faculty",
+    "parent": "tartu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science and Technology"
+    ]
+  },
+  {
+    "uid": "fsoc",
+    "name_en": "Faculty of Social Sciences",
+    "name_local": "Faculty of Social Sciences",
+    "kind": "faculty",
+    "parent": "tartu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Social Sciences"
+    ]
+  },
+  {
+    "uid": "farts",
+    "name_en": "Faculty of Arts and Humanities",
+    "name_local": "Faculty of Arts and Humanities",
+    "kind": "faculty",
+    "parent": "tartu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts and Humanities"
+    ]
+  },
+  {
+    "uid": "ecol",
+    "name_en": "Institute of Ecology and Earth Sciences",
+    "name_local": "Institute of Ecology and Earth Sciences",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Ecology and Earth Sciences"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Institute of Computer Science",
+    "name_local": "Institute of Computer Science",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Computer Science"
+    ]
+  },
+  {
+    "uid": "genomics",
+    "name_en": "Institute of Genomics",
+    "name_local": "Institute of Genomics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [
+      "Estonian Genome Centre"
+    ],
+    "context_aliases": [
+      "Institute of Genomics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Institute of Chemistry",
+    "name_local": "Institute of Chemistry",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Chemistry"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Institute of Physics",
+    "name_local": "Institute of Physics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Physics"
+    ]
+  },
+  {
+    "uid": "tech",
+    "name_en": "Institute of Technology",
+    "name_local": "Institute of Technology",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Technology"
+    ]
+  },
+  {
+    "uid": "imcb",
+    "name_en": "Institute of Molecular and Cell Biology",
+    "name_local": "Institute of Molecular and Cell Biology",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular and Cell Biology"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Institute of Mathematics and Statistics",
+    "name_local": "Institute of Mathematics and Statistics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Mathematics and Statistics"
+    ]
+  },
+  {
+    "uid": "bioeng",
+    "name_en": "Institute of Bioengineering",
+    "name_local": "Institute of Bioengineering",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Bioengineering"
+    ]
+  },
+  {
+    "uid": "obs",
+    "name_en": "Tartu Observatory",
+    "name_local": "Tartu Observatory",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [
+      "Tartu Observatory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "geog",
+    "name_en": "Department of Geography",
+    "name_local": "Department of Geography",
+    "kind": "department",
+    "parent": "ecol",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "geology",
+    "name_en": "Department of Geology",
+    "name_local": "Department of Geology",
+    "kind": "department",
+    "parent": "ecol",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geology"
+    ]
+  },
+  {
+    "uid": "botany",
+    "name_en": "Department of Botany",
+    "name_local": "Department of Botany",
+    "kind": "department",
+    "parent": "ecol",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Botany"
+    ]
+  },
+  {
+    "uid": "zoology",
+    "name_en": "Department of Zoology",
+    "name_local": "Department of Zoology",
+    "kind": "department",
+    "parent": "ecol",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Zoology"
+    ]
+  },
+  {
+    "uid": "mmc",
+    "name_en": "Mycology and Microbiology Center",
+    "name_local": "Mycology and Microbiology Center",
+    "kind": "center",
+    "parent": "ecol",
+    "aliases": [],
+    "context_aliases": [
+      "Mycology and Microbiology Center"
+    ]
+  },
+  {
+    "uid": "clin",
+    "name_en": "Institute of Clinical Medicine",
+    "name_local": "Institute of Clinical Medicine",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Clinical Medicine"
+    ]
+  },
+  {
+    "uid": "biomed",
+    "name_en": "Institute of Biomedicine and Translational Medicine",
+    "name_local": "Institute of Biomedicine and Translational Medicine",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biomedicine and Translational Medicine"
+    ]
+  },
+  {
+    "uid": "famed",
+    "name_en": "Institute of Family Medicine and Public Health",
+    "name_local": "Institute of Family Medicine and Public Health",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Family Medicine and Public Health"
+    ]
+  },
+  {
+    "uid": "pharmacy",
+    "name_en": "Institute of Pharmacy",
+    "name_local": "Institute of Pharmacy",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pharmacy"
+    ]
+  },
+  {
+    "uid": "physio",
+    "name_en": "Department of Physiology",
+    "name_local": "Department of Physiology",
+    "kind": "department",
+    "parent": "biomed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physiology"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynaecology",
+    "name_local": "Department of Obstetrics and Gynaecology",
+    "kind": "department",
+    "parent": "clin",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynaecology",
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Institute of Psychology",
+    "name_local": "Institute of Psychology",
+    "kind": "institute",
+    "parent": "fsoc",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Psychology"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "Institute of Social Studies",
+    "name_local": "Institute of Social Studies",
+    "kind": "institute",
+    "parent": "fsoc",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Social Studies"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "School of Economics and Business Administration",
+    "name_local": "School of Economics and Business Administration",
+    "kind": "school",
+    "parent": "fsoc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Economics and Business Administration"
+    ]
+  }
+]

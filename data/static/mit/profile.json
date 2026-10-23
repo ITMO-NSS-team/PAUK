@@ -1,0 +1,38 @@
+{
+  "key": "mit",
+  "short_name": "MIT",
+  "short_name_local": "MIT",
+  "name_en": "Massachusetts Institute of Technology",
+  "name_local": "Massachusetts Institute of Technology",
+  "ror_id": "042nb2s44",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "der",
+    "den",
+    "da",
+    "di",
+    "del",
+    "della",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "mit.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?-i:MIT)(?![^\\W\\d_])(?!\\s*[-–]?\\s*(?:College|Polytechnic|World\\s*Peace|WPU|ADT|Art(?![^\\W\\d_])|Academy|Manipal|Pune|Aurangabad|Chennai|Anna\\s+Univ|Campus|Mysore|Moradabad|Meerut|Bangalore|Bengaluru|Ujjain|Muzaffarpur|Group\\s+of|School\\s+of\\s+(?:Distance|Telecom|Govern)))",
+  "long_name": "(?:Mas-?\\s*s?achus+et+s|Mass\\.)\\s+Inst(?:itute|\\.)?\\s+(?:of|for)\\s+Tech(?:nology|\\.)?|Instituto\\s+Tecnol[oó]gico\\s+de\\s+Massachusetts",
+  "marker_replacement": "MIT",
+  "place_words": "cambridge|massachusetts|mass|ma|usa|us|united|states|america|of|the|boston|lexington|westford|charlestown|somerville|avenue|ave|street|st|drive|dr|road|rd|way|vassar|ames|main|memorial|amherst|albany|millstone|fruit|cpzn|building|bldg|room|suite|\\d+",
+  "other_organisations": "Broad\\s+Institute|Harvard|Howard\\s+Hughes|HHMI|Whitehead\\s+Institute|Ragon\\s+Institute|Mass(?:achusetts)?\\s+General|Mass\\s+General\\s+Brigham|MGH|MGB|Brigham\\s+and\\s+Women|Dana[-\\s]Farber|Boston\\s+Children|Beth\\s+Israel|Martinos\\s+Center|Wyss\\s+Institute|Woods\\s+Hole|WHOI|National\\s+Bureau\\s+of\\s+Economic\\s+Research|NBER|IBM|Draper|Stanley\\s+Center|Smithsonian|Argonne|Novartis|Max\\s+Planck|CNRS|Caltech|California\\s+Institute\\s+of\\s+Technology|Stanford|Singapore[-–]MIT\\s+Alliance|SMART\\s+Centre|Scripps",
+  "identity": "(?<![^\\W\\d_])(?-i:MIT)(?![^\\W\\d_])|Massachusetts\\s+Institute\\s+of\\s+Technology",
+  "city": "Cambridge",
+  "staff_catalog": null,
+  "mongo_db": "pauk_mit",
+  "site_url": "https://www.mit.edu",
+  "unit_words": "college"
+}

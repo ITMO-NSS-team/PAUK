@@ -19,7 +19,7 @@ class PersonPreservationTest(unittest.TestCase):
     def test_republishing_only_survivor_keeps_all_merged_lists(self):
         client = RecordingNeo4jClient()
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_member=True, name_raw="Ivan Petrov", orcid="same-orcid",
             other_names=[f"Alias {i}"], emails=[f"p{i}@example.org"],
             affiliations=[Affiliation(name=f"University {i}", source="openalex")],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -44,8 +44,8 @@ class PersonPreservationTest(unittest.TestCase):
         self.assertEqual(client.nodes["Person"]["A1"]["emails"], ["old@example.org"])
 
     def test_prepared_merge_does_not_alias_mutable_objects(self):
-        base = Person(id="A1", is_itmo=True)
-        extra = Person(id="A2", is_itmo=True, authored=[Authorship(publication_id="W1", position=1)])
+        base = Person(id="A1", is_member=True)
+        extra = Person(id="A2", is_member=True, authored=[Authorship(publication_id="W1", position=1)])
         before = extra.model_dump()
         _merge_person(base, extra)
         base.authored[0].position = 99
@@ -59,7 +59,7 @@ class PersonPreservationTest(unittest.TestCase):
                     (
                         f"A{index}",
                         {
-                            "is_itmo": True,
+                            "is_member": True,
                             "name_raw": "Ivan Petrov",
                             "orcid": "0000-0001",
                             "emails": ["common@example.org", f"a{index}@example.org"],
@@ -116,8 +116,8 @@ class PersonPreservationTest(unittest.TestCase):
         survivor = client.nodes["Person"]["A1"]
         self.assertEqual(survivor["email"], "first@example.org")
         self.assertEqual(survivor["emails"], ["first@example.org", "second@example.org"])
-        base = Person(id="A1", is_itmo=True, email="first@example.org")
-        extra = Person(id="A2", is_itmo=True, email="second@example.org")
+        base = Person(id="A1", is_member=True, email="first@example.org")
+        extra = Person(id="A2", is_member=True, email="second@example.org")
         _merge_person(base, extra)
         self.assertEqual(base.emails, survivor["emails"])
 
@@ -125,7 +125,7 @@ class PersonPreservationTest(unittest.TestCase):
         base = Person(
             id="A1",
             openalex_id="A1",
-            is_itmo=False,
+            is_member=False,
             emails=["first@example.org"],
             other_names=["Alias 1"],
             affiliations=[Affiliation(name="First", source="openalex")],
@@ -136,7 +136,7 @@ class PersonPreservationTest(unittest.TestCase):
         extra = Person(
             id="A2",
             openalex_id="A2",
-            is_itmo=True,
+            is_member=True,
             emails=["first@example.org", "second@example.org"],
             other_names=["Alias 2"],
             affiliations=[Affiliation(name="Second", source="orcid")],
@@ -152,7 +152,7 @@ class PersonPreservationTest(unittest.TestCase):
         _merge_person(base, extra)
         self.assertEqual(base.model_dump(), before)
         self.assertEqual((base.id, base.openalex_id), ("A1", "A1"))
-        self.assertTrue(base.is_itmo)
+        self.assertTrue(base.is_member)
         self.assertEqual(base.emails, ["first@example.org", "second@example.org"])
         self.assertEqual(base.other_names, ["Alias 1", "Alias 2"])
         self.assertEqual([a.name for a in base.affiliations], ["First", "Second"])
@@ -198,7 +198,7 @@ class CorrespondingPreservationTest(unittest.TestCase):
                     "persons.jsonl": [
                         {
                             "id": "A1",
-                            "is_itmo": True,
+                            "is_member": True,
                             "authored": [{"publication_id": "W1", "is_corresponding": flag} for flag in flags],
                         }
                     ]

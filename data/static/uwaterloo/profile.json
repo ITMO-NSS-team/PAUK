@@ -1,0 +1,37 @@
+{
+  "key": "uwaterloo",
+  "short_name": "Waterloo",
+  "short_name_local": "Waterloo",
+  "name_en": "University of Waterloo",
+  "name_local": "University of Waterloo",
+  "ror_id": "01aff2v68",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "uwaterloo.ca"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UWaterlooUniv|UWaterloo)(?![^\\W\\d_])",
+  "long_name": "University[\\s‐-]+of[\\s‐-]+Waterloo|Université[\\s‐-]+de[\\s‐-]+waterloo|Université[\\s‐-]+de[\\s‐-]+Waterloo|Univ\\.[\\s‐-]+of[\\s‐-]+Waterloo|Univ[\\s‐-]+of[\\s‐-]+Waterloo",
+  "marker_replacement": "UWaterlooUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|canada|east|floor|gatan|katu|kitchener|l|laan|n|north|on|ontario|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|w|waterloo|weg|west",
+  "other_organisations": "Perimeter Institute|Vector Institute|University of Toronto|Wilfrid Laurier|Renison University College|Schlegel|Canadian\\ Association\\ for\\ Leisure\\ Studies|Grand\\ River\\ Hospital|Ontario\\ Advanced\\ Manufacturing\\ Consortium|St\\.\\ Jerome's\\ University",
+  "identity": "(?<![^\\W\\d_])UWaterloo(?![^\\W\\d_])|University[\\s‐-]+of[\\s‐-]+Waterloo|Université[\\s‐-]+de[\\s‐-]+waterloo|Université[\\s‐-]+de[\\s‐-]+Waterloo|Univ\\.[\\s‐-]+of[\\s‐-]+Waterloo|Univ[\\s‐-]+of[\\s‐-]+Waterloo",
+  "city": "Waterloo",
+  "staff_catalog": null,
+  "mongo_db": "pauk_uwaterloo",
+  "site_url": "https://uwaterloo.ca",
+  "unit_words": "faculty|school|institute|centre|center",
+  "external_authors": false
+}

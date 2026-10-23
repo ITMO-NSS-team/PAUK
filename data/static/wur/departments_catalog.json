@@ -1,0 +1,310 @@
+[
+  {
+    "uid": "wur",
+    "name_en": "Wageningen University & Research",
+    "name_local": "Wageningen University & Research",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04qw24q55",
+    "type": "university"
+  },
+  {
+    "uid": "wfsr",
+    "name_en": "Wageningen Food Safety Research",
+    "name_local": "Wageningen Food Safety Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "WFSR",
+      "Wageningen Food Safety Research"
+    ]
+  },
+  {
+    "uid": "wenr",
+    "name_en": "Wageningen Environmental Research",
+    "name_local": "Wageningen Environmental Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Environmental Research"
+    ]
+  },
+  {
+    "uid": "wlr",
+    "name_en": "Wageningen Livestock Research",
+    "name_local": "Wageningen Livestock Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Livestock Research"
+    ]
+  },
+  {
+    "uid": "wpr",
+    "name_en": "Wageningen Plant Research",
+    "name_local": "Wageningen Plant Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Plant Research"
+    ]
+  },
+  {
+    "uid": "wbvr",
+    "name_en": "Wageningen Bioveterinary Research",
+    "name_local": "Wageningen Bioveterinary Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Bioveterinary Research"
+    ]
+  },
+  {
+    "uid": "wfbr",
+    "name_en": "Wageningen Food & Biobased Research",
+    "name_local": "Wageningen Food & Biobased Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Food & Biobased Research",
+      "Wageningen Food and Biobased Research"
+    ]
+  },
+  {
+    "uid": "wmr",
+    "name_en": "Wageningen Marine Research",
+    "name_local": "Wageningen Marine Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Marine Research"
+    ]
+  },
+  {
+    "uid": "wecr",
+    "name_en": "Wageningen Economic Research",
+    "name_local": "Wageningen Economic Research",
+    "kind": "institute",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Wageningen Economic Research"
+    ]
+  },
+  {
+    "uid": "agro",
+    "name_en": "Department of Agrotechnology and Food Sciences",
+    "name_local": "Department of Agrotechnology and Food Sciences",
+    "kind": "department",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Agrotechnology and Food Sciences"
+    ]
+  },
+  {
+    "uid": "anim",
+    "name_en": "Department of Animal Sciences",
+    "name_local": "Department of Animal Sciences",
+    "kind": "department",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Animal Sciences"
+    ]
+  },
+  {
+    "uid": "envs",
+    "name_en": "Department of Environmental Sciences",
+    "name_local": "Department of Environmental Sciences",
+    "kind": "department",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "plant",
+    "name_en": "Department of Plant Sciences",
+    "name_local": "Department of Plant Sciences",
+    "kind": "department",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plant Sciences"
+    ]
+  },
+  {
+    "uid": "socs",
+    "name_en": "Department of Social Sciences",
+    "name_local": "Department of Social Sciences",
+    "kind": "department",
+    "parent": "wur",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Social Sciences"
+    ]
+  },
+  {
+    "uid": "hnh",
+    "name_en": "Division of Human Nutrition and Health",
+    "name_local": "Division of Human Nutrition and Health",
+    "kind": "division",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Human Nutrition and Health"
+    ]
+  },
+  {
+    "uid": "micro",
+    "name_en": "Laboratory of Microbiology",
+    "name_local": "Laboratory of Microbiology",
+    "kind": "lab",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Microbiology"
+    ]
+  },
+  {
+    "uid": "fpe",
+    "name_en": "Laboratory of Food Process Engineering",
+    "name_local": "Laboratory of Food Process Engineering",
+    "kind": "lab",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Food Process Engineering"
+    ]
+  },
+  {
+    "uid": "fchem",
+    "name_en": "Laboratory of Food Chemistry",
+    "name_local": "Laboratory of Food Chemistry",
+    "kind": "lab",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Food Chemistry"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "Laboratory of Biochemistry",
+    "name_local": "Laboratory of Biochemistry",
+    "kind": "lab",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Biochemistry"
+    ]
+  },
+  {
+    "uid": "ete",
+    "name_en": "Environmental Technology",
+    "name_local": "Environmental Technology",
+    "kind": "lab",
+    "parent": "agro",
+    "aliases": [],
+    "context_aliases": [
+      "Environmental Technology"
+    ]
+  },
+  {
+    "uid": "abg",
+    "name_en": "Animal Breeding and Genomics",
+    "name_local": "Animal Breeding and Genomics",
+    "kind": "lab",
+    "parent": "anim",
+    "aliases": [],
+    "context_aliases": [
+      "Animal Breeding and Genomics"
+    ]
+  },
+  {
+    "uid": "gen",
+    "name_en": "Laboratory of Genetics",
+    "name_local": "Laboratory of Genetics",
+    "kind": "lab",
+    "parent": "plant",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Genetics"
+    ]
+  },
+  {
+    "uid": "pb",
+    "name_en": "Plant Breeding",
+    "name_local": "Plant Breeding",
+    "kind": "lab",
+    "parent": "plant",
+    "aliases": [],
+    "context_aliases": [
+      "Plant Breeding"
+    ]
+  },
+  {
+    "uid": "hpp",
+    "name_en": "Horticulture and Product Physiology",
+    "name_local": "Horticulture and Product Physiology",
+    "kind": "lab",
+    "parent": "plant",
+    "aliases": [],
+    "context_aliases": [
+      "Horticulture and Product Physiology"
+    ]
+  },
+  {
+    "uid": "csa",
+    "name_en": "Centre for Crop Systems Analysis",
+    "name_local": "Centre for Crop Systems Analysis",
+    "kind": "center",
+    "parent": "plant",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Crop Systems Analysis"
+    ]
+  },
+  {
+    "uid": "bif",
+    "name_en": "Bioinformatics Group",
+    "name_local": "Bioinformatics Group",
+    "kind": "lab",
+    "parent": "plant",
+    "aliases": [],
+    "context_aliases": [
+      "Bioinformatics Group"
+    ]
+  },
+  {
+    "uid": "esg",
+    "name_en": "Earth Systems and Global Change Group",
+    "name_local": "Earth Systems and Global Change Group",
+    "kind": "lab",
+    "parent": "envs",
+    "aliases": [],
+    "context_aliases": [
+      "Earth Systems and Global Change Group"
+    ]
+  },
+  {
+    "uid": "slm",
+    "name_en": "Soil Physics and Land Management Group",
+    "name_local": "Soil Physics and Land Management Group",
+    "kind": "lab",
+    "parent": "envs",
+    "aliases": [],
+    "context_aliases": [
+      "Soil Physics and Land Management Group"
+    ]
+  }
+]

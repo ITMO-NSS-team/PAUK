@@ -1,0 +1,27 @@
+{
+  "key": "kaist",
+  "short_name": "KAIST",
+  "short_name_local": "카이스트",
+  "name_en": "Korea Advanced Institute of Science and Technology",
+  "name_local": "한국과학기술원",
+  "ror_id": "05apxxy63",
+  "language": "Korean",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "kaist.ac.kr",
+    "kaist.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:KAIST|카이스트)(?![^\\W\\d_])",
+  "long_name": "(?:Korean?\\s+Ad-?\\s*a?vanced\\s+(?:National\\s+)?Insti(?:tute|tue|tuted)\\s+(?:(?:of|for)\\s+Science\\s*(?:and|&)?\\s*(?:Tech[a-z]*(?:-\\s*[a-z]+)?)?|and\\s+Technology)|한국\\s*과학\\s*기술원)",
+  "marker_replacement": "KAIST",
+  "place_words": "daejeon|daejon|taejon|deajeon|dajeon|daejoen|daejeoncity|city|si|yuseong|yuseonggu|yuson|yuseung|gu|daehak|daehakro|deahak|ro|science|road|town|kusong|guseong|dong|hoegiro|hoegi|dongdaemun|seoul|republic|repub|lic|of|the|korea|ko|south|s|\\d+",
+  "other_organisations": "(?<![^\\W\\d_])(?:IBS|Institute\\s+for\\s+Basic\\s+Science|KIAS|Korea\\s+Institute\\s+for\\s+Advanced\\s+Study|KRIBB|ETRI|Electronics\\s+and\\s+Telecommunications\\s+Research\\s+Institute|KAERI|Korea\\s+Atomic\\s+Energy\\s+Research\\s+Institute|KRISS|KIST|KIER|KARI|UNIST|GIST|DGIST|POSTECH|UST|NAVER|Samsung|LG|SK\\s+hynix|Hyundai|National\\s+NanoFab\\s+Center|Agency\\s+for\\s+Defense\\s+Development|KOGAS|AITRICS|Inocras|DeepAuto|Tomocube|Sovargen|STEPI|Science\\s+and\\s+Technology\\s+Policy\\s+Institute|National\\s+Cancer\\s+Center|Max\\s+Planck|MPI-SP|Texas\\s+A&M\\s+Transportation\\s+Institute)(?![^\\W\\d_])",
+  "identity": "(?<![^\\W\\d_])KAIST(?![^\\W\\d_])|Korea\\s+Advanced\\s+Institute\\s+of\\s+Science\\s+(?:and|&)\\s+Technology|한국과학기술원",
+  "city": "Daejeon|Taejon|Daejon|대전",
+  "staff_catalog": null,
+  "mongo_db": "pauk_kaist",
+  "site_url": "https://www.kaist.ac.kr",
+  "unit_words": "college"
+}

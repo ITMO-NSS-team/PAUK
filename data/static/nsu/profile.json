@@ -1,0 +1,26 @@
+{
+  "key": "nsu",
+  "short_name": "NSU",
+  "short_name_local": "НГУ",
+  "name_en": "Novosibirsk State University",
+  "name_local": "Новосибирский национальный исследовательский государственный университет",
+  "ror_id": "04t2ss102",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "nsu.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])NSUNOVOSIBIRSK(?![^\\W\\d_])",
+  "long_name": "(?:National\\s+Research\\s+University\\s*[—–-]\\s*)?Novosi-?\\s*birsk\\s+(?:National\\s+Research\\s+)?State\\s+U(?:niv(?:ersity|\\.)?)?(?![^\\W\\d_])(?:\\s*\\(\\s*(?:NSU|National\\s+Research\\s+University)\\s*\\))?|Новосибирск\\w*\\s+(?:национальн\\w*\\s+исследовательск\\w*\\s+)?государственн\\w*\\s+университет\\w*",
+  "marker_replacement": "NSUNOVOSIBIRSK",
+  "place_words": "novosibirsk|novosi|birsk|novosibirskaya|oblast|region|russia|russian|federation|pirogova|pirogov|str|st|street|ul|ulitsa|akademika|akad|acad|ac|koptyuga|koptyug|lavrentiev|lavrentieva|lavrentyev|lavrentyeva|lavrenteva|lavrent|ev|av|ave|aven|avenue|prospekt|prosp|pr|institutskaya|3a|kutateladze|timakova|koltsovo|akademgorodok|россия|новосибирск|новосисбирск|ул|улица|пирогова|академгородок|пр|проспект",
+  "other_organisations": "Siberian\\s+Branch|Siberean\\s+Branch|Russian\\s+Academy\\s+of\\s+Sciences?|(?<![^\\W\\d_])SB\\s+RAS(?![^\\W\\d_])|СО\\s+РАН|Budker|Будкер\\w*|Cytology\\s+and\\s+Genetics|Cytology\\s+&\\s+Genetics|Kurchatov\\s+Genomic|Boreskov|Борескова|Nikolaev\\s+Institute|Kutateladze|Кутателадзе|Rzhanov|Ржанова|Semiconductor\\s+Physics|Sobolev\\s+Institute|Соболева|Trofimuk|Трофимука|Vorozhtsov|Ворожцова|Voevodsky|Lavrentyev\\s+Institute|Лаврентьева|Khristianovich|Христиановича|International\\s+Tomography\\s+Center|Automation\\s+and\\s+Electrometry|автоматики\\s+и\\s+электрометрии|Institute\\s+of\\s+Laser\\s+Physics|Chemical\\s+Biology\\s+and\\s+Fundamental\\s+Medicine|Solid\\s+State\\s+Chemistry\\s+and\\s+Mechanochemistry|Economics\\s+and\\s+Industrial\\s+Engineering|экономики\\s+и\\s+организации\\s+промышленного|Computational\\s+Mathematics\\s+and\\s+Mathematical\\s+Geophysics|Archaeology\\s+and\\s+Ethnography|Molecular\\s+Biology\\s+and\\s+Biophysics|Systematics\\s+and\\s+Ecology\\s+of\\s+Animals|Central\\s+Siberian\\s+Botanical|Сибирский\\s+ботанический|Federal\\s+Research\\s+Center|Федеральный\\s+исследовательский\\s+центр|Fundamental\\s+and\\s+Translational\\s+Medicine|Fundamental\\s+and\\s+Clinical\\s+Immunology|Federal\\s+Neurosurgical\\s+Center|Federal\\s+Center\\s+of\\s+Neurosurgery|Vector|Melentiev|Chinakal|SKIF|Sirius|Skolkovo|Skoltech|Ministry\\s+of\\s+Health|Novosibirsk\\s+State\\s+(?:Technical|Medical)|Irkutsk\\s+State|Altai\\s+State|Dubna\\s+State|Kazan\\s+Federal|Siberian\\s+Federal|Urgench|Moscow\\s+Institute\\s+of\\s+Physics|Siberian\\s+State\\s+University",
+  "identity": "(?<![^\\W\\d_])NSU(?![^\\W\\d_])\\W+Novosibirsk|Novosibirsk\\s+State\\s+University|Новосибирский\\s+государственный\\s+университет|nsu\\.ru",
+  "city": "Novosibirsk|Новосибирск",
+  "staff_catalog": null,
+  "mongo_db": "pauk_nsu",
+  "site_url": "https://www.nsu.ru",
+  "unit_words": "institute|school"
+}

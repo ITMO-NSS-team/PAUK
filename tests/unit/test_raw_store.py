@@ -39,8 +39,8 @@ class RawStoreTest(unittest.TestCase):
 
     def test_point_upsert_does_not_remove_other_group_rows(self):
         prepared = PreparedStore(self.db, "sample")
-        first = Person(id="A1", is_itmo=False)
-        second = Person(id="A2", is_itmo=False)
+        first = Person(id="A1", is_member=False)
+        second = Person(id="A2", is_member=False)
         prepared.write_models("persons", [first, second])
         first.name_raw = "Saved immediately"
         prepared.upsert_models("persons", [first])

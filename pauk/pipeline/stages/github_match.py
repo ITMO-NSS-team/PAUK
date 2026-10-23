@@ -1,4 +1,4 @@
-"""Identify the GitHub account behind an ITMO author.
+"""Identify the GitHub account behind a member author (one of the university's own).
 
 A repository cited by a paper is worked on by people, and one of them is
 often the paper's author, but the two records share no identifier. The
@@ -13,7 +13,8 @@ author, if any, each account belongs to. The decision weighs several signals:
     bridge     the account was found on a repository cited by a paper this
                author wrote. Not proof (a paper has many authors and a
                repository many contributors), but it narrows the field.
-    profile    ITMO named in the account's company, location or bio.
+    profile    the university or its city named in the account's company,
+               location or bio; an address at its domain.
     login      the author's surname inside the login itself.
     owner      the account owns the repository rather than contributing.
 
@@ -34,6 +35,7 @@ import unicodedata
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
+from pauk.institution import Institution
 from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.dedup import folded_ids
@@ -60,15 +62,15 @@ SIGNAL_WEIGHTS = {
     "email_exact": 1.0,
     "name_exact": 0.6,
     "name_fuzzy": 0.4,
-    "itmo_email": 0.3,
+    "member_email": 0.3,
     "login_surname": 0.3,
     "owner": 0.3,
-    "org_itmo": 0.3,
-    "itmo_profile": 0.2,
+    "member_org": 0.3,
+    "member_profile": 0.2,
 }
 
 # Signals that stand behind a name without identifying anyone by themselves.
-CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_itmo")
+CORROBORATING = ("member_profile", "member_email", "login_surname", "owner", "member_org")
 
 # Signals that tie an account to a person rather than to the university:
 # an address only they use, their surname in the login, their ownership of
@@ -77,24 +79,15 @@ CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_it
 # marking too.
 STRONG = ("email_exact", "login_surname", "owner")
 
-# ITMO in a profile, as a word: "RITMO, University of Oslo" is a Norwegian
-# centre whose name contains the same four letters. This is strong enough to
-# make an organization a social_graph seed.
-ITMO_IDENTITY_PATTERN = re.compile(r"\b(?:itmo|итмо)\b", re.I)
 
-# The city is only a weak person-matching signal. Require Petersburg too:
-# a bare "Sankt" accepts unrelated profile text.
-PETERSBURG_PATTERN = re.compile(
-    r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург",
-    re.I,
-)
+def mentions_institution(text: str, institution: Institution) -> bool:
+    """The university or its city in profile text.
 
-# github_match deliberately combines the strong and weak profile signals.
-ITMO_IN_TEXT = re.compile(
-    f"{ITMO_IDENTITY_PATTERN.pattern}|{PETERSBURG_PATTERN.pattern}", re.I,
-)
+    github_match deliberately combines the strong signal (the university
+    named) with the weak one (its city); social_graph takes only the first.
+    """
+    return bool(institution.identity_re.search(text) or institution.city_re.search(text))
 
-ITMO_EMAIL_DOMAIN = "@itmo.ru"
 
 def _norm_name(value: str | None) -> str:
     """A name reduced to lowercase latin words, for comparing spellings."""
@@ -163,16 +156,16 @@ def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, 
     if similarity >= NAME_FUZZY:
         evidence["name_pair"], evidence["name_similarity"] = pair, round(similarity, 2)
 
-    if account["itmo_text"]:
-        signals.append("itmo_profile")
-    if any(email.endswith(ITMO_EMAIL_DOMAIN) for email in account["emails"]):
-        signals.append("itmo_email")
+    if account["member_text"]:
+        signals.append("member_profile")
+    if account["member_email"]:
+        signals.append("member_email")
     if login_carries_surname(account["login"], author["surnames"]):
         signals.append("login_surname")
     if account["is_owner"]:
         signals.append("owner")
-    if account["org_itmo"]:
-        signals.append("org_itmo")
+    if account["member_org"]:
+        signals.append("member_org")
 
     score = min(1.0, sum(SIGNAL_WEIGHTS[signal] for signal in signals))
     return score, signals, evidence
@@ -182,7 +175,7 @@ def confidence(signals: list[str], in_bridge: bool) -> str:
     """How much the match rests on evidence about this person specifically.
 
     "probable" is not a doubt about the decision (those go to review) but a
-    note that the match stands on a name plus an ITMO-wide signal, not on
+    note that the match stands on a name plus a university-wide signal, not on
     anything only this person has.
     """
     return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
@@ -307,10 +300,10 @@ class GitHubMatchStage(EnrichmentStage):
         return questions
 
     def _authors(self, people: list[Person]) -> tuple[dict, dict, dict]:
-        """ITMO authors keyed by id, plus lookups by email and by full name."""
+        """Member authors keyed by id, plus lookups by email and by full name."""
         authors: dict[str, dict] = {}
         for person in people:
-            if not person.is_itmo:
+            if not person.is_member:
                 continue
             # OpenAlex spellings and the ones the author registered on
             # ORCID: an account may be signed with any of them.
@@ -345,7 +338,8 @@ class GitHubMatchStage(EnrichmentStage):
         """Harvested accounts, aggregated across every repository they appear on."""
         by_url = {repository.url: repository for repository in repositories}
         owners = {repository.owner_login for repository in repositories if repository.owner_login}
-        itmo_orgs = {owner.lower() for owner in owners if ITMO_IDENTITY_PATTERN.search(owner)}
+        institution = self.config.institution
+        member_orgs = {owner.lower() for owner in owners if institution.identity_re.search(owner)}
 
         accounts: dict[str, dict] = {}
         for profile in profiles:
@@ -366,9 +360,10 @@ class GitHubMatchStage(EnrichmentStage):
                 "url": profile.html_url or f"https://github.com/{profile.login}",
                 "names": {name for name in names if name},
                 "emails": {_norm_email(email) for email in profile.emails if _norm_email(email)},
-                "itmo_text": bool(ITMO_IN_TEXT.search(text)),
-                "org_itmo": any((by_url[url].owner_login or "").lower() in itmo_orgs
-                                for url in profile.repos if url in by_url),
+                "member_text": mentions_institution(text, institution),
+                "member_email": any(institution.is_institutional_email(email) for email in profile.emails),
+                "member_org": any((by_url[url].owner_login or "").lower() in member_orgs
+                                  for url in profile.repos if url in by_url),
                 "publication_ids": publication_ids,
                 "repos": set(profile.repos),
                 "is_owner": is_owner,
@@ -377,10 +372,10 @@ class GitHubMatchStage(EnrichmentStage):
 
     @staticmethod
     def _bridge(people: list[Person]) -> dict[str, set[str]]:
-        """publication id -> the ITMO authors who wrote it."""
+        """publication id -> the member authors who wrote it."""
         bridge: dict[str, set[str]] = {}
         for person in people:
-            if not person.is_itmo:
+            if not person.is_member:
                 continue
             for authorship in person.authored:
                 bridge.setdefault(authorship.publication_id, set()).add(person.id)
@@ -397,7 +392,7 @@ class GitHubMatchStage(EnrichmentStage):
         authors, email_index, name_index = self._authors(people)
         accounts = self._accounts(profiles, repositories)
         bridge = self._bridge(people)
-        logger.info("github_match: %d accounts against %d ITMO authors",
+        logger.info("github_match: %d accounts against %d member authors",
                     len(accounts), len(authors))
 
         by_id = {person.id: person for person in people}
@@ -440,7 +435,7 @@ class GitHubMatchStage(EnrichmentStage):
             # with is theirs. Only an author without one is filled: whatever
             # ORCID stated is what they published under.
             if not person.email:
-                person.email = pick_email(accounts[row["login"]]["emails"])
+                person.email = pick_email(accounts[row["login"]]["emails"], self.config.institution)
                 if person.email:
                     filled_emails += 1
             # The account's repositories are this person's work, and the

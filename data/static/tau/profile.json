@@ -1,0 +1,37 @@
+{
+  "key": "tau",
+  "short_name": "TAU",
+  "short_name_local": "TAU",
+  "name_en": "Tel Aviv University",
+  "name_local": "Tel Aviv University",
+  "ror_id": "04mhzgx49",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "tau.ac.il"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TelAvivUniv|TAU)(?![^\\W\\d_])",
+  "long_name": "Tel[\\s‐-]+Aviv[\\s‐-]+University|Tel[\\s‐-]+Aviv[\\s‐-]+University|جامعة[\\s‐-]+تل[\\s‐-]+أبيب|Tel[\\s‐-]+Aviv[\\s‐-]+Univ",
+  "marker_replacement": "TelAvivUniv",
+  "place_words": "aleja|allee|av|ave|avenue|aviv|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|israel|katu|laan|north|piazza|platz|plaza|plein|po|ramat|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tel|tie|ul|vej|via|viale|vägen|weg|west|yafo",
+  "other_organisations": "Sheba Medical Center|Sourasky|Tel Aviv Medical Center|Rabin Medical Center|Beilinson|Meir Medical Center|Shamir Medical Center|Schneider Children|Assaf Harofeh|Geha|Loewenstein|Wolfson Medical Center|Bar-Ilan|Weizmann|Assaf\\ Harofeh\\ Medical\\ Center|Geha\\ Mental\\ Health\\ Center|Lev\\ Hasharon\\ Hospital|Loewenstein\\ Hospital\\ Rehabilitation\\ Center|Mayanei\\ Hayeshua\\ Medical\\ Center|Meir\\ Medical\\ Center|Rabin\\ Medical\\ Center|Reuth\\ TLV\\ Rehabilitation\\ Hospital|Schneider\\ Children's\\ Medical\\ Center|Shalvata\\ Mental\\ Health\\ Center|Sheba\\ Medical\\ Center|Shmuel\\ Harofeh\\ Hospital|Tel\\ Aviv\\ Sourasky\\ Medical\\ Center|Wolfson\\ Medical\\ Center|Yehuda\\ Abarbanel\\ Mental\\ Health\\ Center",
+  "identity": "(?<![^\\W\\d_])TAU(?![^\\W\\d_])|Tel[\\s‐-]+Aviv[\\s‐-]+University|Tel[\\s‐-]+Aviv[\\s‐-]+University|جامعة[\\s‐-]+تل[\\s‐-]+أبيب|Tel[\\s‐-]+Aviv[\\s‐-]+Univ",
+  "city": "Tel\\ Aviv",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tau",
+  "site_url": "https://www.tau.ac.il",
+  "unit_words": "faculty|school|department|division|institute|center|centre",
+  "external_authors": false
+}

@@ -1,0 +1,301 @@
+[
+  {
+    "uid": "durham",
+    "name_en": "Durham University",
+    "name_local": "Durham University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01v29qb04",
+    "type": "university"
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "Department of Engineering",
+    "name_local": "Department of Engineering",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering"
+    ]
+  },
+  {
+    "uid": "earth",
+    "name_en": "Department of Earth Sciences",
+    "name_local": "Department of Earth Sciences",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "geog",
+    "name_en": "Department of Geography",
+    "name_local": "Department of Geography",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biosciences",
+    "name_local": "Department of Biosciences",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biosciences"
+    ]
+  },
+  {
+    "uid": "maths",
+    "name_en": "Department of Mathematical Sciences",
+    "name_local": "Department of Mathematical Sciences",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "arch",
+    "name_en": "Department of Archaeology",
+    "name_local": "Department of Archaeology",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Archaeology"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "Department of Sociology",
+    "name_local": "Department of Sociology",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociology"
+    ]
+  },
+  {
+    "uid": "anth",
+    "name_en": "Department of Anthropology",
+    "name_local": "Department of Anthropology",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anthropology"
+    ]
+  },
+  {
+    "uid": "phil",
+    "name_en": "Department of Philosophy",
+    "name_local": "Department of Philosophy",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Philosophy"
+    ]
+  },
+  {
+    "uid": "sport",
+    "name_en": "Department of Sport and Exercise Sciences",
+    "name_local": "Department of Sport and Exercise Sciences",
+    "kind": "department",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sport and Exercise Sciences"
+    ]
+  },
+  {
+    "uid": "fin",
+    "name_en": "Department of Finance",
+    "name_local": "Department of Finance",
+    "kind": "department",
+    "parent": "dubs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Finance"
+    ]
+  },
+  {
+    "uid": "dubs",
+    "name_en": "Durham University Business School",
+    "name_local": "Durham University Business School",
+    "kind": "school",
+    "parent": "durham",
+    "aliases": [
+      "Durham University Business School"
+    ],
+    "context_aliases": [
+      "Business School"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Durham Law School",
+    "name_local": "Durham Law School",
+    "kind": "school",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Durham Law School"
+    ]
+  },
+  {
+    "uid": "edu",
+    "name_en": "School of Education",
+    "name_local": "School of Education",
+    "kind": "school",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "School of Education"
+    ]
+  },
+  {
+    "uid": "sgia",
+    "name_en": "School of Government and International Affairs",
+    "name_local": "School of Government and International Affairs",
+    "kind": "school",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "School of Government and International Affairs"
+    ]
+  },
+  {
+    "uid": "icc",
+    "name_en": "Institute for Computational Cosmology",
+    "name_local": "Institute for Computational Cosmology",
+    "kind": "institute",
+    "parent": "phys",
+    "aliases": [
+      "Institute for Computational Cosmology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cea",
+    "name_en": "Centre for Extragalactic Astronomy",
+    "name_local": "Centre for Extragalactic Astronomy",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Extragalactic Astronomy"
+    ]
+  },
+  {
+    "uid": "ippp",
+    "name_en": "Institute for Particle Physics Phenomenology",
+    "name_local": "Institute for Particle Physics Phenomenology",
+    "kind": "institute",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Particle Physics Phenomenology"
+    ]
+  },
+  {
+    "uid": "cfai",
+    "name_en": "Centre for Advanced Instrumentation",
+    "name_local": "Centre for Advanced Instrumentation",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Advanced Instrumentation"
+    ]
+  },
+  {
+    "uid": "cmp",
+    "name_en": "Centre for Materials Physics",
+    "name_local": "Centre for Materials Physics",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Materials Physics"
+    ]
+  },
+  {
+    "uid": "ihrr",
+    "name_en": "Institute of Hazard Risk and Resilience",
+    "name_local": "Institute of Hazard Risk and Resilience",
+    "kind": "institute",
+    "parent": "durham",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Hazard",
+      "Risk and Resilience"
+    ]
+  },
+  {
+    "uid": "wolfson",
+    "name_en": "Wolfson Research Institute for Health and Wellbeing",
+    "name_local": "Wolfson Research Institute for Health and Wellbeing",
+    "kind": "institute",
+    "parent": "durham",
+    "aliases": [
+      "Wolfson Research Institute for Health and Wellbeing"
+    ],
+    "context_aliases": []
+  }
+]

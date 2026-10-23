@@ -1,0 +1,37 @@
+{
+  "key": "anu",
+  "short_name": "ANU",
+  "short_name_local": "ANU",
+  "name_en": "Australian National University",
+  "name_local": "Australian National University",
+  "ror_id": "019wvm592",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "anu.edu.au"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:AustralianNationalUniv|ANU)(?![^\\W\\d_])",
+  "long_name": "The[\\s‐-]+Australian[\\s‐-]+National[\\s‐-]+University|Australian[\\s‐-]+National[\\s‐-]+University|Australian[\\s‐-]+National[\\s‐-]+Univ|Australian[\\s‐-]+Natl[\\s‐-]+Univ",
+  "marker_replacement": "AustralianNationalUniv",
+  "place_words": "act|acton|aleja|allee|australia|australian|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|canberra|capital|east|floor|gatan|katu|laan|north|nsw|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|territory|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "University of Canberra|Canberra Hospital|CSIRO|Geoscience Australia|Calvary\\ Hospital|Canberra\\ Hospital|Consortium\\ for\\ Ocean\\-Sea\\ Ice\\ Modelling\\ in\\ Australia|Goulburn\\ Base\\ Hospital|Lionel\\ Murphy\\ Foundation|Stawell\\ Underground\\ Physics\\ Laboratory",
+  "identity": "(?<![^\\W\\d_])ANU(?![^\\W\\d_])|The[\\s‐-]+Australian[\\s‐-]+National[\\s‐-]+University|Australian[\\s‐-]+National[\\s‐-]+University|Australian[\\s‐-]+National[\\s‐-]+Univ|Australian[\\s‐-]+Natl[\\s‐-]+Univ",
+  "city": "Canberra",
+  "staff_catalog": null,
+  "mongo_db": "pauk_anu",
+  "site_url": "https://www.anu.edu.au",
+  "unit_words": "college|school|centre|center|institute",
+  "external_authors": false
+}

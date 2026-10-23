@@ -309,9 +309,9 @@ def load_prepared_rows(
         if skipped_failed:
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
-    # Persons share a single file but is_itmo picks which relationship
+    # Persons share a single file but is_member picks which relationship
     # whitelist applies (person_spec). The node itself always carries the
-    # single :Person label; is_itmo travels as a sticky property (see
+    # single :Person label; is_member travels as a sticky property (see
     # upsert_person_nodes_batch).
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
@@ -379,10 +379,10 @@ def load_prepared_rows(
         client.upsert_person_nodes_batch(chunk)
         written += len(chunk)
         _tick(report, "выкладка узлов", written, node_total)
-    itmo_count = sum(1 for _, props in person_nodes if props.get("is_itmo"))
+    member_count = sum(1 for _, props in person_nodes if props.get("is_member"))
     logger.info(
-        "nodes (:Person): loaded %d (itmo=%d, external=%d)",
-        len(person_nodes), itmo_count, len(person_nodes) - itmo_count,
+        "nodes (:Person): loaded %d (members=%d, external=%d)",
+        len(person_nodes), member_count, len(person_nodes) - member_count,
     )
 
     # A previous publish may have created LinkCandidates while GitHub was

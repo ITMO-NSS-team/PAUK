@@ -81,18 +81,19 @@ def dept_id(name_en: str) -> str:
 @pytest.fixture(scope="module")
 def bench(tmp_path_factory) -> SimpleNamespace:
     data_dir = tmp_path_factory.mktemp("bench-data")
-    (data_dir / "static").mkdir()
+    (data_dir / "static" / "itmo").mkdir(parents=True)
     universe = build_universe()
-    (data_dir / "static" / "departments_catalog.json").write_text(
+    (data_dir / "static" / "itmo" / "departments_catalog.json").write_text(
         json.dumps(universe["departments_catalog"], ensure_ascii=False), encoding="utf-8")
-    (data_dir / "static" / "russian_names.csv").write_text(
+    (data_dir / "static" / "itmo" / "russian_names.csv").write_text(
         "name_ru,surname,name,patronymic,degree\n"
         + "".join(f"{row}\n" for row in RUSSIAN_NAMES_CATALOG), encoding="utf-8")
 
     # This benchmark covers the legacy deterministic fixture. The enabled
     # resolver and its review routing have dedicated unit tests with model
     # verdicts, so the offline benchmark must not depend on an LLM API key.
-    config = Settings(data_dir=data_dir, person_resolution_enabled=False)
+    # Crossref is off by default; the bench keeps exercising it.
+    config = Settings(data_dir=data_dir, person_resolution_enabled=False, crossref_enabled=True)
     db = mongomock.MongoClient()["pauk_test"]
     raw = RawStore(db, GROUP)
     prepared = PreparedStore(db, GROUP)
@@ -188,8 +189,8 @@ def test_normalize_counts(bench):
 def test_flaky_affiliation_does_not_split_identity(bench):
     for i in range(1, 6):
         person = bench.persons[f"A50000000{i:02d}"]
-        assert person.is_itmo, f"A{i:02d} must be ITMO despite missing affiliations"
-    assert sum(p.is_itmo for p in bench.persons.values()) == 36
+        assert person.is_member, f"A{i:02d} must be ITMO despite missing affiliations"
+    assert sum(p.is_member for p in bench.persons.values()) == 36
 
 
 def test_duplicate_author_entry_kept_per_position(bench):
@@ -322,7 +323,7 @@ def test_orcid_split_author_is_merged(bench):
     assert "A5000000052" not in bench.persons
     canonical = bench.persons["A5000000051"]
     assert canonical.merged_ids == ["A5000000052"]
-    assert canonical.is_itmo, "ITMO flag must survive merging in the external half"
+    assert canonical.is_member, "ITMO flag must survive merging in the external half"
     assert {a.publication_id for a in canonical.authored} == {"W70000000101", "W70000000102"}
     assert "D. A. Kovalev" in canonical.name_variants
 
@@ -431,7 +432,7 @@ def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
     assert len(authors) == 2
     by_orcid = bench.persons[UNIDENTIFIED_BY_ORCID]
     assert by_orcid.orcid == UNIDENTIFIED_ORCID
-    assert by_orcid.openalex_id is None and by_orcid.is_itmo
+    assert by_orcid.openalex_id is None and by_orcid.is_member
     by_name = next(p for p in authors if p.name_raw == UNIDENTIFIED_BY_NAME)
     assert by_name.id.startswith("name_") and by_name.openalex_id is None
     assert {(p.id, UNIDENTIFIED_WORK) for p in authors} <= bench.graph.edge_pairs("AUTHORED")
@@ -499,8 +500,8 @@ def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
 
 def test_russian_name_from_staff_catalog(bench):
     oleg = bench.persons["A5000000006"]
-    assert oleg.name_ru == "Иванов Олег Петрович"
-    assert (oleg.first_name_ru, oleg.second_name_ru, oleg.surname_ru) == ("Олег", "Петрович", "Иванов")
+    assert oleg.name_local == "Иванов Олег Петрович"
+    assert (oleg.first_name_local, oleg.second_name_local, oleg.surname_local) == ("Олег", "Петрович", "Иванов")
     assert oleg.degree == "к.т.н."
 
 
@@ -510,11 +511,11 @@ def test_russian_name_transliteration_fallback(bench):
     # a copied official record - still filled per rule 4 ("must ALWAYS be
     # filled in Cyrillic, for every person"), unlike the second_name
     # (patronymic) fields, which the model is never allowed to invent.
-    assert (pavel.first_name_ru, pavel.surname_ru) == ("Павел", "Иванов")
-    # name_ru is always composed surname-first (see RussianNamesStage.run()),
+    assert (pavel.first_name_local, pavel.surname_local) == ("Павел", "Иванов")
+    # name_local is always composed surname-first (see RussianNamesStage.run()),
     # regardless of the word order the source name happened to use.
-    assert pavel.name_ru == "Иванов Павел"
-    assert pavel.second_name_ru is None
+    assert pavel.name_local == "Иванов Павел"
+    assert pavel.second_name_local is None
 
 
 
@@ -538,8 +539,8 @@ def test_graph_node_counts(bench):
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
-    itmo_count = sum(1 for props in graph.nodes["Person"].values() if props.get("is_itmo"))
-    assert itmo_count == 36 and len(graph.nodes["Person"]) - itmo_count == 24
+    member_count = sum(1 for props in graph.nodes["Person"].values() if props.get("is_member"))
+    assert member_count == 36 and len(graph.nodes["Person"]) - member_count == 24
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 

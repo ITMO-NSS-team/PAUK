@@ -1,0 +1,187 @@
+[
+  {
+    "uid": "polimi",
+    "name_en": "Politecnico di Milano",
+    "name_local": "Politecnico di Milano",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01nffqt88",
+    "type": "university"
+  },
+  {
+    "uid": "deib",
+    "name_en": "Department of Electronics Information and Bioengineering",
+    "name_local": "Department of Electronics Information and Bioengineering",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [
+      "Dipartimento di Elettronica Informazione e Bioingegneria"
+    ],
+    "context_aliases": [
+      "Department of Electronics",
+      "Information and Bioengineering",
+      "Dipartimento di Elettronica",
+      "Informazione e Bioingegneria",
+      "DEIB"
+    ]
+  },
+  {
+    "uid": "mecc",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "Dipartimento di Meccanica"
+    ]
+  },
+  {
+    "uid": "cmic",
+    "name_en": "Department of Chemistry Materials and Chemical Engineering Giulio Natta",
+    "name_local": "Department of Chemistry Materials and Chemical Engineering Giulio Natta",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Dipartimento di Chimica",
+      "Materials and Chemical Engineering “Giulio Natta”",
+      "Materiali e Ingegneria Chimica “Giulio Natta”",
+      "Giulio Natta"
+    ]
+  },
+  {
+    "uid": "energy",
+    "name_en": "Department of Energy",
+    "name_local": "Department of Energy",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy",
+      "Dipartimento di Energia",
+      "Energy Department"
+    ]
+  },
+  {
+    "uid": "dica",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Dipartimento di Ingegneria Civile e Ambientale"
+    ]
+  },
+  {
+    "uid": "dabc",
+    "name_en": "Department of Architecture Built Environment and Construction Engineering",
+    "name_local": "Department of Architecture Built Environment and Construction Engineering",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Built Environment and Construction Engineering",
+      "DABC",
+      "Department of Architecture Built Environment and Construction Engineering"
+    ]
+  },
+  {
+    "uid": "dastu",
+    "name_en": "Department of Architecture and Urban Studies",
+    "name_local": "Department of Architecture and Urban Studies",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture and Urban Studies",
+      "DAStU"
+    ]
+  },
+  {
+    "uid": "fis",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Dipartimento di Fisica"
+    ]
+  },
+  {
+    "uid": "dig",
+    "name_en": "Department of Management Economics and Industrial Engineering",
+    "name_local": "Department of Management Economics and Industrial Engineering",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Management",
+      "Economics and Industrial Engineering"
+    ]
+  },
+  {
+    "uid": "daer",
+    "name_en": "Department of Aerospace Science and Technology",
+    "name_local": "Department of Aerospace Science and Technology",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Aerospace Science and Technology",
+      "Dipartimento di Scienze e Tecnologie Aerospaziali"
+    ]
+  },
+  {
+    "uid": "design",
+    "name_en": "Department of Design",
+    "name_local": "Department of Design",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Design",
+      "Dipartimento di Design"
+    ]
+  },
+  {
+    "uid": "mate",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Dipartimento di Matematica"
+    ]
+  },
+  {
+    "uid": "mox",
+    "name_en": "MOX Laboratory for Modeling and Scientific Computing",
+    "name_local": "MOX Laboratory for Modeling and Scientific Computing",
+    "kind": "lab",
+    "parent": "mate",
+    "aliases": [],
+    "context_aliases": [
+      "MOX"
+    ]
+  },
+  {
+    "uid": "som",
+    "name_en": "School of Management",
+    "name_local": "School of Management",
+    "kind": "school",
+    "parent": "polimi",
+    "aliases": [],
+    "context_aliases": [
+      "School of Management"
+    ]
+  }
+]

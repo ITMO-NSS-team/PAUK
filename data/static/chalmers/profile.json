@@ -1,0 +1,31 @@
+{
+  "key": "chalmers",
+  "short_name": "Chalmers",
+  "short_name_local": "Chalmers",
+  "name_en": "Chalmers University of Technology",
+  "name_local": "Chalmers tekniska högskola",
+  "ror_id": "040wg7k59",
+  "language": "Swedish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "af",
+    "von",
+    "de"
+  ],
+  "email_domains": [
+    "chalmers.se"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:ChalmersUnivTech|Chalmers)(?![^\\W\\d_])",
+  "long_name": "Chalmersin[\\s‐-]+teknillinen[\\s‐-]+korkeakoulu|Chalmers[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Chalmers[\\s‐-]+Tekniska[\\s‐-]+Högskola|Chalmers[\\s‐-]+tekniska[\\s‐-]+högskola|Chalmers[\\s‐-]+Univ[\\s‐-]+Technol|Chalmers[\\s‐-]+University",
+  "marker_replacement": "ChalmersUnivTech",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|chalmersplatsen|east|floor|gatan|goteborg|gothenburg|göteborg|hörsalsvägen|katu|kemivägen|laan|north|onsala|piazza|platz|plaza|plein|po|rd|road|room|rue|se|south|st|str|straat|strasse|straße|street|sverige|sweden|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "University of Gothenburg|Göteborgs universitet|Sahlgrenska|Chalmers Industriteknik|RISE|Chalmers\\ Industriteknik|Chalmers\\ Ventures\\ \\(Sweden\\)|National\\ Bioinformatics\\ Infrastructure\\ Sweden|Swedish\\ National\\ Data\\ Service",
+  "identity": "(?<![^\\W\\d_])Chalmers(?![^\\W\\d_])|Chalmersin[\\s‐-]+teknillinen[\\s‐-]+korkeakoulu|Chalmers[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Chalmers[\\s‐-]+Tekniska[\\s‐-]+Högskola|Chalmers[\\s‐-]+tekniska[\\s‐-]+högskola|Chalmers[\\s‐-]+Univ[\\s‐-]+Technol|Chalmers[\\s‐-]+University",
+  "city": "Gothenburg",
+  "staff_catalog": null,
+  "mongo_db": "pauk_chalmers",
+  "site_url": "https://www.chalmers.se",
+  "unit_words": "department|division|centre|center|observatory",
+  "external_authors": false
+}

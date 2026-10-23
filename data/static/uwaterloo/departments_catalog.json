@@ -1,0 +1,444 @@
+[
+  {
+    "uid": "uwaterloo",
+    "name_en": "University of Waterloo",
+    "name_local": "University of Waterloo",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01aff2v68",
+    "type": "university"
+  },
+  {
+    "uid": "feng",
+    "name_en": "Faculty of Engineering",
+    "name_local": "Faculty of Engineering",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "fmath",
+    "name_en": "Faculty of Mathematics",
+    "name_local": "Faculty of Mathematics",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics"
+    ]
+  },
+  {
+    "uid": "fhealth",
+    "name_en": "Faculty of Health",
+    "name_local": "Faculty of Health",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Health"
+    ]
+  },
+  {
+    "uid": "fenv",
+    "name_en": "Faculty of Environment",
+    "name_local": "Faculty of Environment",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Environment"
+    ]
+  },
+  {
+    "uid": "farts",
+    "name_en": "Faculty of Arts",
+    "name_local": "Faculty of Arts",
+    "kind": "faculty",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts"
+    ]
+  },
+  {
+    "uid": "sphs",
+    "name_en": "School of Public Health Sciences",
+    "name_local": "School of Public Health Sciences",
+    "kind": "school",
+    "parent": "fhealth",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health Sciences"
+    ]
+  },
+  {
+    "uid": "kin",
+    "name_en": "Department of Kinesiology and Health Sciences",
+    "name_local": "Department of Kinesiology and Health Sciences",
+    "kind": "department",
+    "parent": "fhealth",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Kinesiology and Health Sciences",
+      "Department of Kinesiology & Health Sciences",
+      "Department of Kinesiology and Health Science"
+    ]
+  },
+  {
+    "uid": "mme",
+    "name_en": "Department of Mechanical and Mechatronics Engineering",
+    "name_local": "Department of Mechanical and Mechatronics Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical and Mechatronics Engineering",
+      "Department of Mechanical & Mechatronics Engineering",
+      "Mechanical and Mechatronics Engineering",
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "sde",
+    "name_en": "Department of Systems Design Engineering",
+    "name_local": "Department of Systems Design Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Systems Design Engineering",
+      "Systems Design Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Management Science and Engineering",
+    "name_local": "Department of Management Science and Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Management Science and Engineering",
+      "Department of Management Sciences"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics and Astronomy",
+    "name_local": "Department of Physics and Astronomy",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics and Astronomy",
+      "Department of Physics & Astronomy",
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "ees",
+    "name_en": "Department of Earth and Environmental Sciences",
+    "name_local": "Department of Earth and Environmental Sciences",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "School of Pharmacy",
+    "name_local": "School of Pharmacy",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Pharmacy"
+    ]
+  },
+  {
+    "uid": "optom",
+    "name_en": "School of Optometry and Vision Science",
+    "name_local": "School of Optometry and Vision Science",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Optometry and Vision Science"
+    ]
+  },
+  {
+    "uid": "amath",
+    "name_en": "Department of Applied Mathematics",
+    "name_local": "Department of Applied Mathematics",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Mathematics"
+    ]
+  },
+  {
+    "uid": "stat",
+    "name_en": "Department of Statistics and Actuarial Science",
+    "name_local": "Department of Statistics and Actuarial Science",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics and Actuarial Science"
+    ]
+  },
+  {
+    "uid": "co",
+    "name_en": "Department of Combinatorics and Optimization",
+    "name_local": "Department of Combinatorics and Optimization",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Combinatorics and Optimization"
+    ]
+  },
+  {
+    "uid": "pmath",
+    "name_en": "Department of Pure Mathematics",
+    "name_local": "Department of Pure Mathematics",
+    "kind": "department",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pure Mathematics"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "David R. Cheriton School of Computer Science",
+    "name_local": "David R. Cheriton School of Computer Science",
+    "kind": "school",
+    "parent": "fmath",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science",
+      "Cheriton School of Computer Science"
+    ]
+  },
+  {
+    "uid": "geog",
+    "name_en": "Department of Geography and Environmental Management",
+    "name_local": "Department of Geography and Environmental Management",
+    "kind": "department",
+    "parent": "fenv",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography and Environmental Management"
+    ]
+  },
+  {
+    "uid": "seed",
+    "name_en": "School of Environment Enterprise and Development",
+    "name_local": "School of Environment Enterprise and Development",
+    "kind": "school",
+    "parent": "fenv",
+    "aliases": [],
+    "context_aliases": [
+      "School of Environment",
+      "Enterprise and Development",
+      "SEED"
+    ]
+  },
+  {
+    "uid": "splan",
+    "name_en": "School of Planning",
+    "name_local": "School of Planning",
+    "kind": "school",
+    "parent": "fenv",
+    "aliases": [],
+    "context_aliases": [
+      "School of Planning"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "farts",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics",
+    "name_local": "Department of Economics",
+    "kind": "department",
+    "parent": "farts",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics"
+    ]
+  },
+  {
+    "uid": "stratford",
+    "name_en": "Stratford School of Interaction Design and Business",
+    "name_local": "Stratford School of Interaction Design and Business",
+    "kind": "school",
+    "parent": "farts",
+    "aliases": [
+      "Stratford School of Interaction Design and Business"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bsia",
+    "name_en": "Balsillie School of International Affairs",
+    "name_local": "Balsillie School of International Affairs",
+    "kind": "school",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Balsillie School of International Affairs"
+    ]
+  },
+  {
+    "uid": "win",
+    "name_en": "Waterloo Institute for Nanotechnology",
+    "name_local": "Waterloo Institute for Nanotechnology",
+    "kind": "institute",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "WIN",
+      "Waterloo Institute for Nanotechnology",
+      "Waterloo Institute of Nanotechnology"
+    ]
+  },
+  {
+    "uid": "iqc",
+    "name_en": "Institute for Quantum Computing",
+    "name_local": "Institute for Quantum Computing",
+    "kind": "institute",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Quantum Computing"
+    ]
+  },
+  {
+    "uid": "wca",
+    "name_en": "Waterloo Centre for Astrophysics",
+    "name_local": "Waterloo Centre for Astrophysics",
+    "kind": "center",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Waterloo Centre for Astrophysics"
+    ]
+  },
+  {
+    "uid": "camj",
+    "name_en": "Centre for Advanced Materials Joining",
+    "name_local": "Centre for Advanced Materials Joining",
+    "kind": "center",
+    "parent": "uwaterloo",
+    "aliases": [
+      "Centre for Advanced Materials Joining"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ipr",
+    "name_en": "Institute for Polymer Research",
+    "name_local": "Institute for Polymer Research",
+    "kind": "institute",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Polymer Research",
+      "Institute of Polymer Research"
+    ]
+  },
+  {
+    "uid": "water",
+    "name_en": "Water Institute",
+    "name_local": "Water Institute",
+    "kind": "institute",
+    "parent": "uwaterloo",
+    "aliases": [],
+    "context_aliases": [
+      "Water Institute"
+    ]
+  }
+]

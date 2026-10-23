@@ -1,0 +1,1204 @@
+[
+  {
+    "uid": "fudan",
+    "name_en": "Fudan University",
+    "name_local": "复旦大学",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/013q1eq08",
+    "type": "university"
+  },
+  {
+    "uid": "smc",
+    "name_en": "Shanghai Medical College",
+    "name_local": "上海医学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "Shanghai Medical College of Fudan University",
+      "Fudan University Shanghai Medical College"
+    ],
+    "context_aliases": [
+      "Shanghai Medical College"
+    ]
+  },
+  {
+    "uid": "sbms",
+    "name_en": "School of Basic Medical Sciences",
+    "name_local": "基础医学院",
+    "kind": "school",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Basic Medical Sciences",
+      "School of Basic Medical Science"
+    ]
+  },
+  {
+    "uid": "sbms-immunology",
+    "name_en": "Department of Immunology",
+    "name_local": "免疫学系",
+    "kind": "department",
+    "parent": "sbms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Immunology"
+    ]
+  },
+  {
+    "uid": "sbms-biochem",
+    "name_en": "Department of Biochemistry and Molecular Biology",
+    "name_local": "生物化学与分子生物学系",
+    "kind": "department",
+    "parent": "sbms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Molecular Biology"
+    ]
+  },
+  {
+    "uid": "sbms-physiology",
+    "name_en": "Department of Physiology and Pathophysiology",
+    "name_local": "生理与病理生理学系",
+    "kind": "department",
+    "parent": "sbms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physiology and Pathophysiology"
+    ]
+  },
+  {
+    "uid": "sbms-systems-bio",
+    "name_en": "Department of Systems Biology for Medicine",
+    "name_local": "系统生物医学系",
+    "kind": "department",
+    "parent": "sbms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Systems Biology for Medicine"
+    ]
+  },
+  {
+    "uid": "lab-mmv",
+    "name_en": "Key Laboratory of Medical Molecular Virology",
+    "name_local": "医学分子病毒学重点实验室",
+    "kind": "lab",
+    "parent": "sbms",
+    "aliases": [
+      "Key Laboratory of Medical Molecular Virology (MOE/NHC/CAMS)",
+      "Key Laboratory of Medical Molecular Virology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "center-pathogen",
+    "name_en": "Shanghai Frontiers Science Center of Pathogenic Microorganisms and Infection",
+    "name_local": "上海市病原微生物与感染前沿科学研究基地",
+    "kind": "center",
+    "parent": "sbms",
+    "aliases": [
+      "Shanghai Frontiers Science Center of Pathogenic Microorganisms and Infection"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "oncology",
+    "name_en": "Department of Oncology, Shanghai Medical College",
+    "name_local": "上海医学院肿瘤学系",
+    "kind": "department",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Oncology"
+    ]
+  },
+  {
+    "uid": "sph",
+    "name_en": "School of Public Health",
+    "name_local": "公共卫生学院",
+    "kind": "school",
+    "parent": "smc",
+    "aliases": [
+      "Fudan University School of Public Health",
+      "School of Public Health Fudan University",
+      "School of Public Health of Fudan University"
+    ],
+    "context_aliases": [
+      "School of Public Health"
+    ]
+  },
+  {
+    "uid": "sph-epi",
+    "name_en": "Department of Epidemiology",
+    "name_local": "流行病学教研室",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Epidemiology"
+    ]
+  },
+  {
+    "uid": "sph-biostat",
+    "name_en": "Department of Biostatistics",
+    "name_local": "生物统计学教研室",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biostatistics"
+    ]
+  },
+  {
+    "uid": "sph-nutrition",
+    "name_en": "Department of Nutrition and Food Hygiene",
+    "name_local": "营养与食品卫生教研室",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nutrition and Food Hygiene"
+    ]
+  },
+  {
+    "uid": "lab-public-health-safety",
+    "name_en": "Key Laboratory of Public Health Safety of Ministry of Education",
+    "name_local": "公共卫生安全教育部重点实验室",
+    "kind": "lab",
+    "parent": "sph",
+    "aliases": [
+      "Key Laboratory of Public Health Safety of Ministry of Education"
+    ],
+    "context_aliases": [
+      "Key Laboratory of Public Health Safety"
+    ]
+  },
+  {
+    "uid": "lab-hta",
+    "name_en": "NHC Key Laboratory of Health Technology Assessment",
+    "name_local": "国家卫生健康委员会卫生技术评估重点实验室",
+    "kind": "lab",
+    "parent": "sph",
+    "aliases": [
+      "NHC Key Laboratory of Health Technology Assessment"
+    ],
+    "context_aliases": [
+      "Key Laboratory of Health Technology Assessment"
+    ]
+  },
+  {
+    "uid": "pharmacy",
+    "name_en": "School of Pharmacy",
+    "name_local": "药学院",
+    "kind": "school",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Pharmacy",
+      "School of Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "pharmacy-pharmaceutics",
+    "name_en": "Department of Pharmaceutics",
+    "name_local": "药剂学系",
+    "kind": "department",
+    "parent": "pharmacy",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmaceutics"
+    ]
+  },
+  {
+    "uid": "pharmacy-natural-medicine",
+    "name_en": "Department of Natural Medicine",
+    "name_local": "天然药物学系",
+    "kind": "department",
+    "parent": "pharmacy",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Natural Medicine"
+    ]
+  },
+  {
+    "uid": "pharmacy-pharmacology",
+    "name_en": "Department of Pharmacology",
+    "name_local": "药理学系",
+    "kind": "department",
+    "parent": "pharmacy",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology"
+    ]
+  },
+  {
+    "uid": "lab-smart-drug-delivery",
+    "name_en": "Key Laboratory of Smart Drug Delivery",
+    "name_local": "智能化递药教育部重点实验室",
+    "kind": "lab",
+    "parent": "pharmacy",
+    "aliases": [
+      "Key Laboratory of Smart Drug Delivery"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nursing",
+    "name_en": "School of Nursing",
+    "name_local": "护理学院",
+    "kind": "school",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nursing"
+    ]
+  },
+  {
+    "uid": "ibs",
+    "name_en": "Institutes of Biomedical Sciences",
+    "name_local": "生物医学研究院",
+    "kind": "institute",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "Institutes of Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "lab-medical-epigenetics",
+    "name_en": "Shanghai Key Laboratory of Medical Epigenetics",
+    "name_local": "上海市医学表观遗传学重点实验室",
+    "kind": "lab",
+    "parent": "ibs",
+    "aliases": [
+      "Shanghai Key Laboratory of Medical Epigenetics",
+      "International Co-laboratory of Medical Epigenetics and Metabolism"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-carcinogenesis",
+    "name_en": "Key Laboratory of Carcinogenesis and Cancer Invasion (Ministry of Education)",
+    "name_local": "癌变与侵袭原理教育部重点实验室",
+    "kind": "lab",
+    "parent": "fudan",
+    "aliases": [
+      "Key Laboratory of Carcinogenesis and Cancer Invasion (Fudan University)"
+    ],
+    "context_aliases": [
+      "Key Laboratory of Carcinogenesis and Cancer Invasion",
+      "Key Laboratory of Carcinogenesis and Cancer Invasion of Ministry of Education"
+    ]
+  },
+  {
+    "uid": "ibr",
+    "name_en": "Institutes of Brain Science",
+    "name_local": "脑科学研究院",
+    "kind": "institute",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "Institutes of Brain Science"
+    ]
+  },
+  {
+    "uid": "sklmn",
+    "name_en": "State Key Laboratory of Brain Function and Disorders",
+    "name_local": "脑功能与脑疾病全国重点实验室",
+    "kind": "lab",
+    "parent": "ibr",
+    "aliases": [
+      "State Key Laboratory of Brain Function and Disorders",
+      "State Key Laboratory of Medical Neurobiology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "moe-brain",
+    "name_en": "MOE Frontiers Center for Brain Science",
+    "name_local": "脑科学前沿科学中心",
+    "kind": "center",
+    "parent": "ibr",
+    "aliases": [
+      "MOE Frontiers Center for Brain Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "itbr",
+    "name_en": "Institute for Translational Brain Research",
+    "name_local": "脑转化研究院",
+    "kind": "institute",
+    "parent": "smc",
+    "aliases": [
+      "Institute for Translational Brain Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "imib",
+    "name_en": "Institute of Metabolism and Integrative Biology",
+    "name_local": "代谢与整合生物学研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Institute of Metabolism and Integrative Biology",
+      "Institute of Metabolism & Integrative Biology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-metabolic-remodeling",
+    "name_en": "Shanghai Key Laboratory of Metabolic Remodeling and Health",
+    "name_local": "上海市代谢重塑与健康重点实验室",
+    "kind": "lab",
+    "parent": "imib",
+    "aliases": [
+      "Shanghai Key Laboratory of Metabolic Remodeling and Health"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-gene-editing-rare",
+    "name_en": "Shanghai Key Laboratory of Gene Editing and Cell Therapy for Rare Diseases",
+    "name_local": "上海市罕见病基因编辑和细胞治疗重点实验室",
+    "kind": "lab",
+    "parent": "fudan",
+    "aliases": [
+      "Shanghai Key Laboratory of Gene Editing and Cell Therapy for Rare Diseases"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nutrition",
+    "name_en": "Institute of Nutrition",
+    "name_local": "营养研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Nutrition"
+    ]
+  },
+  {
+    "uid": "integrative-medicine",
+    "name_en": "Institutes of Integrative Medicine",
+    "name_local": "中西医结合研究院",
+    "kind": "institute",
+    "parent": "smc",
+    "aliases": [],
+    "context_aliases": [
+      "Institutes of Integrative Medicine"
+    ]
+  },
+  {
+    "uid": "siidb",
+    "name_en": "Shanghai Institute of Infectious Disease and Biosecurity",
+    "name_local": "上海市重大传染病和生物安全研究院",
+    "kind": "institute",
+    "parent": "smc",
+    "aliases": [
+      "Shanghai Institute of Infectious Disease and Biosecurity"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hpi",
+    "name_en": "Human Phenome Institute",
+    "name_local": "人类表型组研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Human Phenome Institute"
+    ]
+  },
+  {
+    "uid": "hpi-pharmacophenomics",
+    "name_en": "Pharmacophenomics Laboratory",
+    "name_local": "药物表型组学实验室",
+    "kind": "lab",
+    "parent": "hpi",
+    "aliases": [
+      "Pharmacophenomics Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "life-sciences",
+    "name_en": "School of Life Sciences",
+    "name_local": "生命科学学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Life Sciences",
+      "School of Life Science"
+    ]
+  },
+  {
+    "uid": "sklgdcp",
+    "name_en": "State Key Laboratory of Genetics and Development of Complex Phenotypes",
+    "name_local": "遗传与发育复杂表型全国重点实验室",
+    "kind": "lab",
+    "parent": "life-sciences",
+    "aliases": [
+      "State Key Laboratory of Genetics and Development of Complex Phenotypes"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sklge",
+    "name_en": "State Key Laboratory of Genetic Engineering",
+    "name_local": "遗传工程国家重点实验室",
+    "kind": "lab",
+    "parent": "life-sciences",
+    "aliases": [
+      "State Key Laboratory of Genetic Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-biodiversity",
+    "name_en": "Ministry of Education Key Laboratory for Biodiversity Science and Ecological Engineering",
+    "name_local": "生物多样性与生态工程教育部重点实验室",
+    "kind": "lab",
+    "parent": "life-sciences",
+    "aliases": [
+      "Key Laboratory for Biodiversity Science and Ecological Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-anthropology",
+    "name_en": "Ministry of Education Key Laboratory of Contemporary Anthropology",
+    "name_local": "现代人类学教育部重点实验室",
+    "kind": "lab",
+    "parent": "life-sciences",
+    "aliases": [
+      "Key Laboratory of Contemporary Anthropology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "center-evolutionary-bio",
+    "name_en": "Center for Evolutionary Biology",
+    "name_local": "进化生物学研究中心",
+    "kind": "center",
+    "parent": "life-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Evolutionary Biology"
+    ]
+  },
+  {
+    "uid": "erc-industrial-microorganisms",
+    "name_en": "Shanghai Engineering Research Center of Industrial Microorganisms",
+    "name_local": "上海工业微生物工程技术研究中心",
+    "kind": "center",
+    "parent": "life-sciences",
+    "aliases": [
+      "Shanghai Engineering Research Center of Industrial Microorganisms"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "erc-gene-technology",
+    "name_en": "MOE Engineering Research Center of Gene Technology",
+    "name_local": "基因工程教育部工程研究中心",
+    "kind": "center",
+    "parent": "life-sciences",
+    "aliases": [
+      "MOE Engineering Research Center of Gene Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "wetland-station",
+    "name_en": "National Observations and Research Station for Wetland Ecosystems of the Yangtze Estuary",
+    "name_local": "上海长江河口湿地生态系统国家野外科学观测研究站",
+    "kind": "center",
+    "parent": "life-sciences",
+    "aliases": [
+      "National Observations and Research Station for Wetland Ecosystems of the Yangtze Estuary"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "化学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "lab-molecular-catalysis",
+    "name_en": "Shanghai Key Laboratory of Molecular Catalysis and Innovative Materials",
+    "name_local": "上海市分子催化和功能材料重点实验室",
+    "kind": "lab",
+    "parent": "chemistry",
+    "aliases": [
+      "Shanghai Key Laboratory of Molecular Catalysis and Innovative Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-advanced-materials",
+    "name_en": "Laboratory of Advanced Materials",
+    "name_local": "先进材料实验室",
+    "kind": "lab",
+    "parent": "chemistry",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Advanced Materials"
+    ]
+  },
+  {
+    "uid": "aqueous-battery",
+    "name_en": "Aqueous Battery Center",
+    "name_local": "水系电池研究中心",
+    "kind": "center",
+    "parent": "chemistry",
+    "aliases": [],
+    "context_aliases": [
+      "Aqueous Battery Center"
+    ]
+  },
+  {
+    "uid": "macromolecular",
+    "name_en": "Department of Macromolecular Science",
+    "name_local": "高分子科学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Macromolecular Science"
+    ]
+  },
+  {
+    "uid": "sklmep",
+    "name_en": "State Key Laboratory of Molecular Engineering of Polymers",
+    "name_local": "聚合物分子工程国家重点实验室",
+    "kind": "lab",
+    "parent": "macromolecular",
+    "aliases": [
+      "State Key Laboratory of Macromolecular Engineering"
+    ],
+    "context_aliases": [
+      "State Key Laboratory of Molecular Engineering of Polymers"
+    ]
+  },
+  {
+    "uid": "fiber-materials",
+    "name_en": "Institute of Fiber Materials and Devices",
+    "name_local": "纤维材料与器件研究院",
+    "kind": "institute",
+    "parent": "macromolecular",
+    "aliases": [
+      "Institute of Fiber Materials and Devices"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "materials",
+    "name_en": "Department of Materials Science",
+    "name_local": "材料科学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science"
+    ]
+  },
+  {
+    "uid": "sklpm",
+    "name_en": "State Key Laboratory of Porous Materials for Separation and Conversion",
+    "name_local": "多孔材料分离转化全国重点实验室",
+    "kind": "lab",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Porous Materials for Separation and Conversion"
+    ]
+  },
+  {
+    "uid": "sklpv",
+    "name_en": "State Key Laboratory of Photovoltaic Science and Technology",
+    "name_local": "光伏科学与技术全国重点实验室",
+    "kind": "lab",
+    "parent": "fudan",
+    "aliases": [
+      "State Key Laboratory of Photovoltaic Science and Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "smfe",
+    "name_en": "College of Smart Materials and Future Energy",
+    "name_local": "智能材料与未来能源创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "College of Smart Materials and Future Energy"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "物理学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "sklsp",
+    "name_en": "State Key Laboratory of Surface Physics",
+    "name_local": "应用表面物理国家重点实验室",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Surface Physics"
+    ]
+  },
+  {
+    "uid": "nanoelectronic-quantum",
+    "name_en": "Institute for Nanoelectronic Devices and Quantum Computing",
+    "name_local": "微纳电子器件与量子计算机研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Institute for Nanoelectronic Devices and Quantum Computing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "modern-physics",
+    "name_en": "Institute of Modern Physics",
+    "name_local": "现代物理研究所",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Modern Physics"
+    ]
+  },
+  {
+    "uid": "lab-nuclear-ion",
+    "name_en": "Key Laboratory of Nuclear Physics and Ion-beam Application (MOE)",
+    "name_local": "核物理与离子束应用教育部重点实验室",
+    "kind": "lab",
+    "parent": "modern-physics",
+    "aliases": [
+      "Key Laboratory of Nuclear Physics and Ion-beam Application"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "theoretical-nuclear",
+    "name_en": "Shanghai Research Center for Theoretical Nuclear Physics",
+    "name_local": "上海理论核物理研究中心",
+    "kind": "center",
+    "parent": "modern-physics",
+    "aliases": [
+      "Shanghai Research Center for Theoretical Nuclear Physics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "optical-science",
+    "name_en": "Department of Optical Science and Engineering",
+    "name_local": "光科学与工程系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Optical Science and Engineering"
+    ]
+  },
+  {
+    "uid": "erc-ultra-precision-optics",
+    "name_en": "Shanghai Engineering Research Center of Ultra-Precision Optical Manufacturing",
+    "name_local": "上海超精密光学制造工程技术研究中心",
+    "kind": "center",
+    "parent": "optical-science",
+    "aliases": [
+      "Shanghai Engineering Research Center of Ultra-Precision Optical Manufacturing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "math",
+    "name_en": "School of Mathematical Sciences",
+    "name_local": "数学科学学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "data-science",
+    "name_en": "School of Data Science",
+    "name_local": "大数据学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Data Science"
+    ]
+  },
+  {
+    "uid": "lab-data-science",
+    "name_en": "Shanghai Key Laboratory of Data Science",
+    "name_local": "上海市数据科学重点实验室",
+    "kind": "lab",
+    "parent": "fudan",
+    "aliases": [
+      "Shanghai Key Laboratory of Data Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cs",
+    "name_en": "College of Computer Science and Artificial Intelligence",
+    "name_local": "计算与智能创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "College of Computer Science and Artificial Intelligence"
+    ],
+    "context_aliases": [
+      "School of Computer Science"
+    ]
+  },
+  {
+    "uid": "lab-iip",
+    "name_en": "Shanghai Key Laboratory of Intelligent Information Processing",
+    "name_local": "上海市智能信息处理重点实验室",
+    "kind": "lab",
+    "parent": "cs",
+    "aliases": [
+      "Shanghai Key Laboratory of Intelligent Information Processing",
+      "Shanghai Key Lab of Intelligent Information Processing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fudan-nlp",
+    "name_en": "Fudan NLP Group",
+    "name_local": "复旦大学自然语言处理实验室",
+    "kind": "lab",
+    "parent": "cs",
+    "aliases": [
+      "Fudan NLP Group",
+      "FudanNLP"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trustworthy-embodied-ai",
+    "name_en": "Institute of Trustworthy Embodied AI",
+    "name_local": "可信具身智能研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Institute of Trustworthy Embodied AI"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "iscbi",
+    "name_en": "Institute of Science and Technology for Brain-Inspired Intelligence",
+    "name_local": "类脑智能科学与技术研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Science and Technology for Brain-Inspired Intelligence"
+    ]
+  },
+  {
+    "uid": "intelligent-complex-systems",
+    "name_en": "Research Institute of Intelligent Complex Systems",
+    "name_local": "智能复杂体系研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Research Institute of Intelligent Complex Systems"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "info-sci",
+    "name_en": "School of Information Science and Technology",
+    "name_local": "信息科学与工程学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Information Science and Technology"
+    ]
+  },
+  {
+    "uid": "lab-emw",
+    "name_en": "Key Laboratory for Information Science of Electromagnetic Waves (MoE)",
+    "name_local": "电磁波信息科学教育部重点实验室",
+    "kind": "lab",
+    "parent": "info-sci",
+    "aliases": [
+      "Key Laboratory for Information Science of Electromagnetic Waves",
+      "Key Laboratory of EMW Information"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fit",
+    "name_en": "College of Future Information Technology",
+    "name_local": "未来信息创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "College of Future Information Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "optoelectronics",
+    "name_en": "Institute of Optoelectronics",
+    "name_local": "光电研究院",
+    "kind": "institute",
+    "parent": "fit",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Optoelectronics"
+    ]
+  },
+  {
+    "uid": "base-optoelectronics-perception",
+    "name_en": "Shanghai Frontiers Science Research Base of Intelligent Optoelectronics and Perception",
+    "name_local": "上海市智能光电与感知前沿科学研究基地",
+    "kind": "center",
+    "parent": "optoelectronics",
+    "aliases": [
+      "Shanghai Frontiers Science Research Base of Intelligent Optoelectronics and Perception"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "icme",
+    "name_en": "College of Integrated Circuits and Micro-Nano Electronics",
+    "name_local": "集成电路与微纳电子创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "College of Integrated Circuits and Micro-Nano Electronics",
+      "College of Integrated Circuits & Micro-Nano Electronics",
+      "College of Integrated Circuits and Micro‐Nano Electronics"
+    ],
+    "context_aliases": [
+      "School of Microelectronics"
+    ]
+  },
+  {
+    "uid": "sklics",
+    "name_en": "State Key Laboratory of Integrated Chips and Systems",
+    "name_local": "集成芯片与系统全国重点实验室",
+    "kind": "lab",
+    "parent": "icme",
+    "aliases": [
+      "State Key Laboratory of Integrated Chips and Systems",
+      "State Key Laboratory of ASIC and System"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fics",
+    "name_en": "Frontier Institute of Chip and System",
+    "name_local": "芯片与系统前沿技术研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Frontier Institute of Chip and System"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "iram",
+    "name_en": "College of Intelligent Robotics and Advanced Manufacturing",
+    "name_local": "智能机器人与先进制造创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [
+      "College of Intelligent Robotics and Advanced Manufacturing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bme",
+    "name_en": "College of Biomedical Engineering",
+    "name_local": "生物医学工程与技术创新学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "College of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "env",
+    "name_en": "Department of Environmental Science and Engineering",
+    "name_local": "环境科学与工程系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Science and Engineering",
+      "Department of Environmental Science & Engineering"
+    ]
+  },
+  {
+    "uid": "lab-lap3",
+    "name_en": "Shanghai Key Laboratory of Atmospheric Particle Pollution and Prevention",
+    "name_local": "上海市大气颗粒物污染防治重点实验室",
+    "kind": "lab",
+    "parent": "env",
+    "aliases": [
+      "Shanghai Key Laboratory of Atmospheric Particle Pollution and Prevention",
+      "LAP3"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "aos",
+    "name_en": "Department of Atmospheric and Oceanic Sciences",
+    "name_local": "大气与海洋科学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Atmospheric and Oceanic Sciences"
+    ]
+  },
+  {
+    "uid": "ias",
+    "name_en": "Institute of Atmospheric Sciences",
+    "name_local": "大气科学研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Atmospheric Sciences"
+    ]
+  },
+  {
+    "uid": "aero",
+    "name_en": "Department of Aeronautics and Astronautics",
+    "name_local": "航空航天系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Aeronautics and Astronautics"
+    ]
+  },
+  {
+    "uid": "chinese",
+    "name_en": "Department of Chinese Language and Literature",
+    "name_local": "中国语言文学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chinese Language and Literature"
+    ]
+  },
+  {
+    "uid": "foreign-lang",
+    "name_en": "College of Foreign Languages and Literature",
+    "name_local": "外国语言文学学院",
+    "kind": "college",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "College of Foreign Languages and Literature",
+      "School of Foreign Languages and Literature"
+    ]
+  },
+  {
+    "uid": "journalism",
+    "name_en": "School of Journalism",
+    "name_local": "新闻学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Journalism"
+    ]
+  },
+  {
+    "uid": "history",
+    "name_en": "Department of History",
+    "name_local": "历史学系",
+    "kind": "department",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Department of History"
+    ]
+  },
+  {
+    "uid": "historical-geography",
+    "name_en": "Institute of Chinese Historical Geography",
+    "name_local": "中国历史地理研究所",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Institute of Chinese Historical Geography"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "School of Philosophy",
+    "name_local": "哲学学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Philosophy"
+    ]
+  },
+  {
+    "uid": "sirpa",
+    "name_en": "School of International Relations and Public Affairs",
+    "name_local": "国际关系与公共事务学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of International Relations and Public Affairs"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Law School",
+    "name_local": "法学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Law School",
+      "School of Law"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "School of Economics",
+    "name_local": "经济学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Economics"
+    ]
+  },
+  {
+    "uid": "management",
+    "name_en": "School of Management",
+    "name_local": "管理学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Management"
+    ]
+  },
+  {
+    "uid": "social-dev",
+    "name_en": "School of Social Development and Public Policy",
+    "name_local": "社会发展与公共政策学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Social Development and Public Policy"
+    ]
+  },
+  {
+    "uid": "marxism",
+    "name_en": "School of Marxism",
+    "name_local": "马克思主义学院",
+    "kind": "school",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "School of Marxism"
+    ]
+  },
+  {
+    "uid": "zfiic",
+    "name_en": "Zhangjiang Fudan International Innovation Center",
+    "name_local": "张江复旦国际创新中心",
+    "kind": "center",
+    "parent": "fudan",
+    "aliases": [
+      "Zhangjiang Fudan International Innovation Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "yiwu-institute",
+    "name_en": "Yiwu Research Institute of Fudan University",
+    "name_local": "复旦大学义乌研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Yiwu Research Institute of Fudan University"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "zhuhai-institute",
+    "name_en": "Zhuhai Fudan Innovation Research Institute",
+    "name_local": "珠海复旦创新研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Zhuhai Fudan Innovation Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "taizhou-institute",
+    "name_en": "Fudan University Taizhou Institute of Health Sciences",
+    "name_local": "复旦大学泰州健康科学研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [
+      "Fudan University Taizhou Institute of Health Sciences",
+      "Taizhou Institute of Health Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "gba-precision-medicine",
+    "name_en": "Greater Bay Area Institute of Precision Medicine",
+    "name_local": "粤港澳大湾区精准医学研究院",
+    "kind": "institute",
+    "parent": "fudan",
+    "aliases": [],
+    "context_aliases": [
+      "Greater Bay Area Institute of Precision Medicine"
+    ]
+  }
+]

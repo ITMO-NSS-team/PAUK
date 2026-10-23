@@ -1,0 +1,462 @@
+[
+  {
+    "uid": "mcmaster",
+    "name_en": "McMaster University",
+    "name_local": "McMaster University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02fa3aq29",
+    "type": "university"
+  },
+  {
+    "uid": "fhs",
+    "name_en": "Faculty of Health Sciences",
+    "name_local": "Faculty of Health Sciences",
+    "kind": "faculty",
+    "parent": "mcmaster",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Health Sciences"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "mcmaster",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "feng",
+    "name_en": "Faculty of Engineering",
+    "name_local": "Faculty of Engineering",
+    "kind": "faculty",
+    "parent": "mcmaster",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "fsoc",
+    "name_en": "Faculty of Social Sciences",
+    "name_local": "Faculty of Social Sciences",
+    "kind": "faculty",
+    "parent": "mcmaster",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Social Sciences"
+    ]
+  },
+  {
+    "uid": "fhum",
+    "name_en": "Faculty of Humanities",
+    "name_local": "Faculty of Humanities",
+    "kind": "faculty",
+    "parent": "mcmaster",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities"
+    ]
+  },
+  {
+    "uid": "degroote",
+    "name_en": "DeGroote School of Business",
+    "name_local": "DeGroote School of Business",
+    "kind": "school",
+    "parent": "mcmaster",
+    "aliases": [
+      "DeGroote School of Business"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "med",
+    "name_en": "Michael G. DeGroote School of Medicine",
+    "name_local": "Michael G. DeGroote School of Medicine",
+    "kind": "school",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Michael G. DeGroote School of Medicine"
+    ]
+  },
+  {
+    "uid": "dmed",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "herm",
+    "name_en": "Department of Health Research Methods Evidence and Impact",
+    "name_local": "Department of Health Research Methods Evidence and Impact",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Research Methods",
+      "Health Research Methods",
+      "Evidence and Impact",
+      "HEI"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "bbs",
+    "name_en": "Department of Biochemistry and Biomedical Sciences",
+    "name_local": "Department of Biochemistry and Biomedical Sciences",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "psych",
+    "name_en": "Department of Psychiatry and Behavioural Neurosciences",
+    "name_local": "Department of Psychiatry and Behavioural Neurosciences",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Behavioural Neurosciences",
+      "Department of Psychiatry & Behavioural Neurosciences",
+      "Department of Psychiatry and Behavioral Neurosciences"
+    ]
+  },
+  {
+    "uid": "path",
+    "name_en": "Department of Pathology and Molecular Medicine",
+    "name_local": "Department of Pathology and Molecular Medicine",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology and Molecular Medicine"
+    ]
+  },
+  {
+    "uid": "fam",
+    "name_en": "Department of Family Medicine",
+    "name_local": "Department of Family Medicine",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Family Medicine"
+    ]
+  },
+  {
+    "uid": "onc",
+    "name_en": "Department of Oncology",
+    "name_local": "Department of Oncology",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Oncology"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Department of Obstetrics and Gynecology",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "anes",
+    "name_en": "Department of Anesthesia",
+    "name_local": "Department of Anesthesia",
+    "kind": "department",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anesthesia"
+    ]
+  },
+  {
+    "uid": "rehab",
+    "name_en": "School of Rehabilitation Science",
+    "name_local": "School of Rehabilitation Science",
+    "kind": "school",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Rehabilitation Science",
+      "School of Rehabilitation Sciences"
+    ]
+  },
+  {
+    "uid": "nursing",
+    "name_en": "School of Nursing",
+    "name_local": "School of Nursing",
+    "kind": "school",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nursing"
+    ]
+  },
+  {
+    "uid": "farncombe",
+    "name_en": "Farncombe Family Digestive Health Research Institute",
+    "name_local": "Farncombe Family Digestive Health Research Institute",
+    "kind": "institute",
+    "parent": "fhs",
+    "aliases": [
+      "Farncombe Family Digestive Health Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "canchild",
+    "name_en": "CanChild Centre for Childhood-Onset Disability Research",
+    "name_local": "CanChild Centre for Childhood-Onset Disability Research",
+    "kind": "center",
+    "parent": "fhs",
+    "aliases": [
+      "CanChild"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "offord",
+    "name_en": "Offord Centre for Child Studies",
+    "name_local": "Offord Centre for Child Studies",
+    "kind": "center",
+    "parent": "fhs",
+    "aliases": [
+      "Offord Centre for Child Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "braley",
+    "name_en": "David Braley Centre for Antibiotic Discovery",
+    "name_local": "David Braley Centre for Antibiotic Discovery",
+    "kind": "center",
+    "parent": "fhs",
+    "aliases": [
+      "David Braley Centre for Antibiotic Discovery"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "borris",
+    "name_en": "Peter Boris Centre for Addictions Research",
+    "name_local": "Peter Boris Centre for Addictions Research",
+    "kind": "center",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Peter Boris Centre for Addictions Research"
+    ]
+  },
+  {
+    "uid": "cmod",
+    "name_en": "Centre for Metabolism Obesity and Diabetes Research",
+    "name_local": "Centre for Metabolism Obesity and Diabetes Research",
+    "kind": "center",
+    "parent": "fhs",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Metabolism",
+      "Obesity and Diabetes Research"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry and Chemical Biology",
+    "name_local": "Department of Chemistry and Chemical Biology",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Chemical Biology"
+    ]
+  },
+  {
+    "uid": "kin",
+    "name_en": "Department of Kinesiology",
+    "name_local": "Department of Kinesiology",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Kinesiology"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology Neuroscience and Behaviour",
+    "name_local": "Department of Psychology Neuroscience and Behaviour",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology",
+      "Neuroscience and Behaviour",
+      "Neuroscience & Behaviour"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics and Statistics",
+    "name_local": "Department of Mathematics and Statistics",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics and Statistics"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics and Astronomy",
+    "name_local": "Department of Physics and Astronomy",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics and Astronomy"
+    ]
+  },
+  {
+    "uid": "see",
+    "name_en": "School of Earth Environment and Society",
+    "name_local": "School of Earth Environment and Society",
+    "kind": "school",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "School of Earth",
+      "Environment & Society"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "civ",
+    "name_en": "Department of Civil Engineering",
+    "name_local": "Department of Civil Engineering",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering"
+    ]
+  },
+  {
+    "uid": "cas",
+    "name_en": "Department of Computing and Software",
+    "name_local": "Department of Computing and Software",
+    "kind": "department",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computing and Software"
+    ]
+  },
+  {
+    "uid": "sbme",
+    "name_en": "School of Biomedical Engineering",
+    "name_local": "School of Biomedical Engineering",
+    "kind": "school",
+    "parent": "feng",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biomedical Engineering"
+    ]
+  }
+]

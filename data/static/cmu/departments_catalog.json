@@ -1,0 +1,759 @@
+[
+  {
+    "uid": "cmu",
+    "name_en": "Carnegie Mellon University",
+    "name_local": "Carnegie Mellon University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05x2bcf33",
+    "type": "university"
+  },
+  {
+    "uid": "coe",
+    "name_en": "College of Engineering",
+    "name_local": "College of Engineering",
+    "kind": "college",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "College of Engineering"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering",
+      "Departments of Biomedical Engineering",
+      "Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering",
+      "Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Department of Civil & Environmental Engineering",
+      "Dept. of Civil and Environmental Engineering",
+      "Civil and Environmental Engineering",
+      "Civil & Environmental Engineering",
+      "Civil and Environmental Engineering Department"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering",
+      "Electrical and Computer Engineering",
+      "Electrical and Computer Engineering Department",
+      "Department of ECE"
+    ]
+  },
+  {
+    "uid": "epp",
+    "name_en": "Department of Engineering and Public Policy",
+    "name_local": "Department of Engineering and Public Policy",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering and Public Policy",
+      "Engineering and Public Policy"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "Department of Materials Science & Engineering",
+      "Department of Material Science and Engineering",
+      "Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "meche",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "Department of Mechanical Enginnering",
+      "Department of Mechanical",
+      "Dept. of Mechanical Engineering",
+      "Mechanical Engineering Department",
+      "Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ini",
+    "name_en": "Information Networking Institute",
+    "name_local": "Information Networking Institute",
+    "kind": "institute",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Information Networking Institute"
+    ]
+  },
+  {
+    "uid": "iii",
+    "name_en": "Integrated Innovation Institute",
+    "name_local": "Integrated Innovation Institute",
+    "kind": "institute",
+    "parent": "coe",
+    "aliases": [
+      "Integrated Innovation Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dssc",
+    "name_en": "Data Storage Systems Center",
+    "name_local": "Data Storage Systems Center",
+    "kind": "center",
+    "parent": "ece",
+    "aliases": [],
+    "context_aliases": [
+      "Data Storage Systems Center"
+    ]
+  },
+  {
+    "uid": "ncal",
+    "name_en": "NeuroAI Computer Architecture Lab",
+    "name_local": "NeuroAI Computer Architecture Lab",
+    "kind": "lab",
+    "parent": "ece",
+    "aliases": [
+      "NeuroAI Computer Architecture Lab"
+    ],
+    "context_aliases": [
+      "NCAL"
+    ]
+  },
+  {
+    "uid": "cisr",
+    "name_en": "Center for Iron and Steelmaking Research",
+    "name_local": "Center for Iron and Steelmaking Research",
+    "kind": "center",
+    "parent": "mse",
+    "aliases": [
+      "Center for Iron and Steelmaking Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "capd",
+    "name_en": "Center for Advanced Process Decision-making",
+    "name_local": "Center for Advanced Process Decision-making",
+    "kind": "center",
+    "parent": "cheme",
+    "aliases": [
+      "Center for Advanced Process Decision-making"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "softmachines",
+    "name_en": "Soft Machines Lab",
+    "name_local": "Soft Machines Lab",
+    "kind": "lab",
+    "parent": "meche",
+    "aliases": [],
+    "context_aliases": [
+      "Soft Machines Lab"
+    ]
+  },
+  {
+    "uid": "neuromechatronics",
+    "name_en": "NeuroMechatronics Lab",
+    "name_local": "NeuroMechatronics Lab",
+    "kind": "lab",
+    "parent": "meche",
+    "aliases": [],
+    "context_aliases": [
+      "NeuroMechatronics Lab"
+    ]
+  },
+  {
+    "uid": "scs",
+    "name_en": "School of Computer Science",
+    "name_local": "School of Computer Science",
+    "kind": "school",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science",
+      "School of Computer Science (SCS)"
+    ]
+  },
+  {
+    "uid": "csd",
+    "name_en": "Computer Science Department",
+    "name_local": "Computer Science Department",
+    "kind": "department",
+    "parent": "scs",
+    "aliases": [],
+    "context_aliases": [
+      "Computer Science Department",
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "ri",
+    "name_en": "Robotics Institute",
+    "name_local": "Robotics Institute",
+    "kind": "institute",
+    "parent": "scs",
+    "aliases": [],
+    "context_aliases": [
+      "Robotics Institute",
+      "The Robotics Institute"
+    ]
+  },
+  {
+    "uid": "lti",
+    "name_en": "Language Technologies Institute",
+    "name_local": "Language Technologies Institute",
+    "kind": "institute",
+    "parent": "scs",
+    "aliases": [
+      "Language Technologies Institute"
+    ],
+    "context_aliases": [
+      "LTI"
+    ]
+  },
+  {
+    "uid": "hcii",
+    "name_en": "Human-Computer Interaction Institute",
+    "name_local": "Human-Computer Interaction Institute",
+    "kind": "institute",
+    "parent": "scs",
+    "aliases": [],
+    "context_aliases": [
+      "HCII",
+      "Human-Computer Interaction Institute",
+      "Human‐Computer Interaction Institute",
+      "Human–Computer Interaction Institute",
+      "Human Computer Interaction Institute"
+    ]
+  },
+  {
+    "uid": "mld",
+    "name_en": "Machine Learning Department",
+    "name_local": "Machine Learning Department",
+    "kind": "department",
+    "parent": "scs",
+    "aliases": [],
+    "context_aliases": [
+      "Machine Learning Department",
+      "Department of Machine Learning",
+      "Departments of Machine Learning and Statistics"
+    ]
+  },
+  {
+    "uid": "cbd",
+    "name_en": "Ray and Stephanie Lane Computational Biology Department",
+    "name_local": "Ray and Stephanie Lane Computational Biology Department",
+    "kind": "department",
+    "parent": "scs",
+    "aliases": [
+      "Ray and Stephanie Lane Computational Biology Department",
+      "Ray & Stephanie Lane Computational Biology Department",
+      "Ray and Stephanie Lane Department of Computational Biology"
+    ],
+    "context_aliases": [
+      "Computational Biology Department",
+      "Department of Computational Biology"
+    ]
+  },
+  {
+    "uid": "s3d",
+    "name_en": "Software and Societal Systems Department",
+    "name_local": "Software and Societal Systems Department",
+    "kind": "department",
+    "parent": "scs",
+    "aliases": [
+      "Software and Societal Systems Department",
+      "Software Societal Systems Department"
+    ],
+    "context_aliases": [
+      "Institute for Software Research"
+    ]
+  },
+  {
+    "uid": "synergy",
+    "name_en": "Synergy Labs",
+    "name_local": "Synergy Labs",
+    "kind": "lab",
+    "parent": "s3d",
+    "aliases": [],
+    "context_aliases": [
+      "Synergy Labs",
+      "Synergy Lab"
+    ]
+  },
+  {
+    "uid": "casos",
+    "name_en": "Center for Computational Analysis of Social and Organizational Systems",
+    "name_local": "Center for Computational Analysis of Social and Organizational Systems",
+    "kind": "center",
+    "parent": "s3d",
+    "aliases": [
+      "Center for Computational Analysis of Social and Organizational Systems"
+    ],
+    "context_aliases": [
+      "CASOS Center",
+      "CASOS"
+    ]
+  },
+  {
+    "uid": "auton",
+    "name_en": "Auton Lab",
+    "name_local": "Auton Lab",
+    "kind": "lab",
+    "parent": "ri",
+    "aliases": [
+      "Auton Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "focal",
+    "name_en": "Foundations of Cooperative AI Lab",
+    "name_local": "Foundations of Cooperative AI Lab",
+    "kind": "lab",
+    "parent": "csd",
+    "aliases": [
+      "Foundations of Cooperative AI Lab"
+    ],
+    "context_aliases": [
+      "FOCAL"
+    ]
+  },
+  {
+    "uid": "compbio-phd",
+    "name_en": "Joint CMU-Pitt PhD Program in Computational Biology",
+    "name_local": "Joint CMU-Pitt PhD Program in Computational Biology",
+    "kind": "program",
+    "parent": "cbd",
+    "aliases": [],
+    "context_aliases": [
+      "Joint CMU-Pitt PhD Program in Computational Biology",
+      "Joint CMU-Pitt PhD program in Computational Biology"
+    ]
+  },
+  {
+    "uid": "mcs",
+    "name_en": "Mellon College of Science",
+    "name_local": "Mellon College of Science",
+    "kind": "college",
+    "parent": "cmu",
+    "aliases": [
+      "Mellon College of Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "mcs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "biophysics",
+    "name_en": "Biological Physics Group",
+    "name_local": "Biological Physics Group",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "Biological Physics Group"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "mcs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Chemistry Department"
+    ]
+  },
+  {
+    "uid": "biosci",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "Department of Biological Sciences",
+    "kind": "department",
+    "parent": "mcs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences",
+      "Biological Sciences",
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematical Sciences",
+    "name_local": "Department of Mathematical Sciences",
+    "kind": "department",
+    "parent": "mcs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematical Sciences",
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "cna",
+    "name_en": "Center for Nonlinear Analysis",
+    "name_local": "Center for Nonlinear Analysis",
+    "kind": "center",
+    "parent": "math",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Nonlinear Analysis"
+    ]
+  },
+  {
+    "uid": "mcwilliams",
+    "name_en": "McWilliams Center for Cosmology and Astrophysics",
+    "name_local": "McWilliams Center for Cosmology and Astrophysics",
+    "kind": "center",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "McWilliams Center for Cosmology and Astrophysics",
+      "McWilliams Center for Cosmology"
+    ]
+  },
+  {
+    "uid": "dietrich",
+    "name_en": "Dietrich College of Humanities and Social Sciences",
+    "name_local": "Dietrich College of Humanities and Social Sciences",
+    "kind": "college",
+    "parent": "cmu",
+    "aliases": [
+      "Dietrich College of Humanities and Social Sciences",
+      "Dietrich College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "psychology",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "stat",
+    "name_en": "Department of Statistics and Data Science",
+    "name_local": "Department of Statistics and Data Science",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics and Data Science",
+      "Department of Statistics & Data Science"
+    ]
+  },
+  {
+    "uid": "sds",
+    "name_en": "Department of Social and Decision Sciences",
+    "name_local": "Department of Social and Decision Sciences",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Social and Decision Sciences",
+      "Department of Social & Decision Sciences"
+    ]
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "Department of Philosophy",
+    "name_local": "Department of Philosophy",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Philosophy",
+      "Department of Philos- ophy"
+    ]
+  },
+  {
+    "uid": "english",
+    "name_en": "Department of English",
+    "name_local": "Department of English",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Department of English"
+    ]
+  },
+  {
+    "uid": "mcal",
+    "name_en": "Department of Modern Languages",
+    "name_local": "Department of Modern Languages",
+    "kind": "department",
+    "parent": "dietrich",
+    "aliases": [],
+    "context_aliases": [
+      "Cultures & Applied Linguistics",
+      "Cultures and Applied Linguistics",
+      "Department of Modern Languages"
+    ]
+  },
+  {
+    "uid": "cfa",
+    "name_en": "College of Fine Arts",
+    "name_local": "College of Fine Arts",
+    "kind": "college",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "College of Fine Arts"
+    ]
+  },
+  {
+    "uid": "architecture",
+    "name_en": "School of Architecture",
+    "name_local": "School of Architecture",
+    "kind": "school",
+    "parent": "cfa",
+    "aliases": [],
+    "context_aliases": [
+      "School of Architecture"
+    ]
+  },
+  {
+    "uid": "design",
+    "name_en": "School of Design",
+    "name_local": "School of Design",
+    "kind": "school",
+    "parent": "cfa",
+    "aliases": [],
+    "context_aliases": [
+      "School of Design"
+    ]
+  },
+  {
+    "uid": "tepper",
+    "name_en": "Tepper School of Business",
+    "name_local": "Tepper School of Business",
+    "kind": "school",
+    "parent": "cmu",
+    "aliases": [
+      "David A. Tepper School of Business"
+    ],
+    "context_aliases": [
+      "Tepper School of Business"
+    ]
+  },
+  {
+    "uid": "heinz",
+    "name_en": "Heinz College of Information Systems and Public Policy",
+    "name_local": "Heinz College of Information Systems and Public Policy",
+    "kind": "college",
+    "parent": "cmu",
+    "aliases": [
+      "Heinz College of Information Systems and Public Policy",
+      "Heinz College",
+      "H. John Heinz III School of Public Policy and Management",
+      "H. John Heinz III College"
+    ],
+    "context_aliases": [
+      "School of Information Systems and Management",
+      "Heinz School"
+    ]
+  },
+  {
+    "uid": "ni",
+    "name_en": "Neuroscience Institute",
+    "name_local": "Neuroscience Institute",
+    "kind": "institute",
+    "parent": "cmu",
+    "aliases": [
+      "Carnegie Mellon Neuroscience Institute"
+    ],
+    "context_aliases": [
+      "Neuroscience Institute"
+    ]
+  },
+  {
+    "uid": "cnbc",
+    "name_en": "Center for the Neural Basis of Cognition",
+    "name_local": "Center for the Neural Basis of Cognition",
+    "kind": "center",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "Center for the Neural Basis of Cognition",
+      "Center for Neural Basis of Cognition"
+    ]
+  },
+  {
+    "uid": "caps",
+    "name_en": "Center for Atmospheric Particle Studies",
+    "name_local": "Center for Atmospheric Particle Studies",
+    "kind": "center",
+    "parent": "cmu",
+    "aliases": [
+      "Center for Atmospheric Particle Studies",
+      "Center for Atmospheric Particulate Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "scott",
+    "name_en": "Wilton E. Scott Institute for Energy Innovation",
+    "name_local": "Wilton E. Scott Institute for Energy Innovation",
+    "kind": "institute",
+    "parent": "cmu",
+    "aliases": [
+      "Wilton E. Scott Institute for Energy Innovation",
+      "Scott Institute for Energy Innovation"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sei",
+    "name_en": "Software Engineering Institute",
+    "name_local": "Software Engineering Institute",
+    "kind": "institute",
+    "parent": "cmu",
+    "aliases": [
+      "Software Engineering Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sei-ai",
+    "name_en": "SEI AI Division",
+    "name_local": "SEI AI Division",
+    "kind": "department",
+    "parent": "sei",
+    "aliases": [],
+    "context_aliases": [
+      "AI Division"
+    ]
+  },
+  {
+    "uid": "psc",
+    "name_en": "Pittsburgh Supercomputing Center",
+    "name_local": "Pittsburgh Supercomputing Center",
+    "kind": "center",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "Pittsburgh Supercomputing Center"
+    ]
+  },
+  {
+    "uid": "etc",
+    "name_en": "Entertainment Technology Center",
+    "name_local": "Entertainment Technology Center",
+    "kind": "center",
+    "parent": "cmu",
+    "aliases": [],
+    "context_aliases": [
+      "Entertainment Technology Center"
+    ]
+  },
+  {
+    "uid": "cmu-africa",
+    "name_en": "Carnegie Mellon University Africa",
+    "name_local": "Carnegie Mellon University Africa",
+    "kind": "campus",
+    "parent": "cmu",
+    "aliases": [
+      "Carnegie Mellon University Africa",
+      "CMU-Africa"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cmu-qatar",
+    "name_en": "Carnegie Mellon University in Qatar",
+    "name_local": "Carnegie Mellon University in Qatar",
+    "kind": "campus",
+    "parent": "cmu",
+    "aliases": [
+      "Carnegie Mellon University in Qatar",
+      "Carnegie Mellon University Qatar",
+      "CMU-Q"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cmu-portugal",
+    "name_en": "Carnegie Mellon Portugal",
+    "name_local": "Carnegie Mellon Portugal",
+    "kind": "program",
+    "parent": "cmu",
+    "aliases": [
+      "Carnegie Mellon Portugal",
+      "CMU Portugal"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cmu-australia",
+    "name_en": "Carnegie Mellon University Australia",
+    "name_local": "Carnegie Mellon University Australia",
+    "kind": "campus",
+    "parent": "cmu",
+    "aliases": [
+      "Carnegie Mellon University Australia"
+    ],
+    "context_aliases": []
+  }
+]

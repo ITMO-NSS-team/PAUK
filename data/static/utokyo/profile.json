@@ -1,0 +1,26 @@
+{
+  "key": "utokyo",
+  "short_name": "UTokyo",
+  "short_name_local": "東大",
+  "name_en": "The University of Tokyo",
+  "name_local": "東京大学",
+  "ror_id": "057zh3y96",
+  "language": "Japanese",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "u-tokyo.ac.jp"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UTokyo|U-Tokyo|Todai)(?![^\\W\\d_])",
+  "long_name": "(?:the\\s+)?(?<!science\\s)univ(?:ersity|\\.)?\\s+of\\s+tokyo|tokyo\\s+university(?!\\s+of)|t[oō]ky[oō]\\s+daigaku|東京大学|とうきょうだいがく|トウキョウダイガク",
+  "marker_replacement": "UTokyo",
+  "place_words": "japan|jpn|japon|tokyo|bunkyo|ku|city|shi|cho|mura|hongo|yayoi|komaba|meguro|kashiwa|kashiwanoha|chiba|minato|shirokanedai|mitaka|osawa|hida|kamioka|higashi|mozumi|gifu|kanagawa|miura|ibaraki|tokai|bldg|building|日本|東京都|東京|文京区|本郷|柏市|目黒区|駒場",
+  "other_organisations": "RIKEN|AIST|National Institute of Advanced Industrial Science and Technology|NIMS|National Institute for Materials Science|JAXA|ISAS|NAOJ|National Astronomical Observatory|KEK|JAMSTEC|JAEA|QST|Japan Science and Technology Agency|JST|Japan Society for the Promotion of Science|JSPS|NIES|National Institute for Environmental Studies|National Institute of Informatics|SOKENDAI|National Institutes of Natural Sciences|National Cancer Center|National Center of Neurology and Psychiatry|National Center for Child Health and Development|Japan Institute for Health Security|Japan Synchrotron Radiation Research Institute|Health and Global Policy Institute|JCHO|Institute of Science Tokyo|Tokyo Institute of Technology|Shinshu|Instituto de Astrof[ií]sica de Canarias|IAC|GIST|Quemix|NTT",
+  "identity": "(?<![^\\W\\d_])(?:UTokyo|Todai)(?![^\\W\\d_])|University of Tokyo|東京大学",
+  "city": "Tokyo|東京",
+  "staff_catalog": null,
+  "mongo_db": "pauk_utokyo",
+  "site_url": "https://www.u-tokyo.ac.jp/",
+  "unit_words": "Tokyo College|University Museum"
+}

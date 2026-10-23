@@ -1,0 +1,37 @@
+{
+  "key": "rice",
+  "short_name": "Rice",
+  "short_name_local": "Rice",
+  "name_en": "Rice University",
+  "name_local": "Rice University",
+  "ror_id": "008zs3103",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "rice.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:RiceUnivHouston)(?![^\\W\\d_])",
+  "long_name": "William[\\s‐-]+Marsh[\\s‐-]+Rice[\\s‐-]+University|Universidad[\\s‐-]+Rice|Rice[\\s‐-]+University|Rice[\\s‐-]+Univ",
+  "marker_replacement": "RiceUnivHouston",
+  "place_words": "aleja|allee|america|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|houston|katu|laan|main|north|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|states|str|straat|strasse|straße|street|texas|tie|tx|ul|united|us|usa|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Baylor College of Medicine|MD Anderson|University of Texas|Texas Children|Houston Methodist|University of Houston|Moorea\\ Coral\\ Reef\\ Long\\ Term\\ Ecological\\ Research|Sevilleta\\ Long\\ Term\\ Ecological\\ Research",
+  "identity": "William[\\s‐-]+Marsh[\\s‐-]+Rice[\\s‐-]+University|Universidad[\\s‐-]+Rice|Rice[\\s‐-]+University|Rice[\\s‐-]+Univ",
+  "city": "Houston",
+  "staff_catalog": null,
+  "mongo_db": "pauk_rice",
+  "site_url": "https://www.rice.edu",
+  "unit_words": "department|institute|center|centre|school|initiative|program",
+  "external_authors": false
+}

@@ -1,0 +1,436 @@
+[
+  {
+    "uid": "anu",
+    "name_en": "Australian National University",
+    "name_local": "Australian National University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/019wvm592",
+    "type": "university"
+  },
+  {
+    "uid": "cass",
+    "name_en": "ANU College of Arts and Social Sciences",
+    "name_local": "ANU College of Arts and Social Sciences",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Arts and Social Sciences"
+    ],
+    "context_aliases": [
+      "College of Arts and Social Sciences"
+    ]
+  },
+  {
+    "uid": "cap",
+    "name_en": "ANU College of Asia and the Pacific",
+    "name_local": "ANU College of Asia and the Pacific",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Asia and the Pacific"
+    ],
+    "context_aliases": [
+      "College of Asia and the Pacific"
+    ]
+  },
+  {
+    "uid": "cbe",
+    "name_en": "ANU College of Business and Economics",
+    "name_local": "ANU College of Business and Economics",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Business and Economics"
+    ],
+    "context_aliases": [
+      "College of Business and Economics"
+    ]
+  },
+  {
+    "uid": "cecc",
+    "name_en": "ANU College of Engineering Computing and Cybernetics",
+    "name_local": "ANU College of Engineering Computing and Cybernetics",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Engineering Computing and Cybernetics"
+    ],
+    "context_aliases": [
+      "College of Engineering Computing and Cybernetics",
+      "College of Engineering and Computer Science"
+    ]
+  },
+  {
+    "uid": "chm",
+    "name_en": "ANU College of Health and Medicine",
+    "name_local": "ANU College of Health and Medicine",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Health and Medicine"
+    ],
+    "context_aliases": [
+      "College of Health and Medicine"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "ANU College of Law",
+    "name_local": "ANU College of Law",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Law"
+    ],
+    "context_aliases": [
+      "College of Law"
+    ]
+  },
+  {
+    "uid": "cos",
+    "name_en": "ANU College of Science",
+    "name_local": "ANU College of Science",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Science"
+    ],
+    "context_aliases": [
+      "College of Science",
+      "College of Science and Medicine"
+    ]
+  },
+  {
+    "uid": "css",
+    "name_en": "ANU College of Systems and Society",
+    "name_local": "ANU College of Systems and Society",
+    "kind": "college",
+    "parent": "anu",
+    "aliases": [
+      "ANU College of Systems and Society"
+    ],
+    "context_aliases": [
+      "College of Systems and Society"
+    ]
+  },
+  {
+    "uid": "rsb",
+    "name_en": "Research School of Biology",
+    "name_local": "Research School of Biology",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Biology"
+    ]
+  },
+  {
+    "uid": "rsphys",
+    "name_en": "Research School of Physics",
+    "name_local": "Research School of Physics",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Physics",
+      "Research School of Physics and Engineering"
+    ]
+  },
+  {
+    "uid": "rsaa",
+    "name_en": "Research School of Astronomy and Astrophysics",
+    "name_local": "Research School of Astronomy and Astrophysics",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [
+      "Mount Stromlo Observatory"
+    ],
+    "context_aliases": [
+      "Research School of Astronomy and Astrophysics",
+      "Research School of Astronomy & Astrophysics"
+    ]
+  },
+  {
+    "uid": "rsc",
+    "name_en": "Research School of Chemistry",
+    "name_local": "Research School of Chemistry",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Chemistry"
+    ]
+  },
+  {
+    "uid": "rses",
+    "name_en": "Research School of Earth Sciences",
+    "name_local": "Research School of Earth Sciences",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Earth Sciences"
+    ]
+  },
+  {
+    "uid": "msi",
+    "name_en": "Mathematical Sciences Institute",
+    "name_local": "Mathematical Sciences Institute",
+    "kind": "institute",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Mathematical Sciences Institute"
+    ]
+  },
+  {
+    "uid": "fenner",
+    "name_en": "Fenner School of Environment and Society",
+    "name_local": "Fenner School of Environment and Society",
+    "kind": "school",
+    "parent": "css",
+    "aliases": [
+      "Fenner School of Environment and Society",
+      "Fenner School of Environment & Society"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nuclear",
+    "name_en": "Department of Nuclear Physics and Accelerator Applications",
+    "name_local": "Department of Nuclear Physics and Accelerator Applications",
+    "kind": "department",
+    "parent": "rsphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Physics and Accelerator Applications",
+      "Department of Nuclear Physics"
+    ]
+  },
+  {
+    "uid": "quantum",
+    "name_en": "Department of Quantum Science and Technology",
+    "name_local": "Department of Quantum Science and Technology",
+    "kind": "department",
+    "parent": "rsphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Quantum Science and Technology"
+    ]
+  },
+  {
+    "uid": "matphys",
+    "name_en": "Department of Materials Physics",
+    "name_local": "Department of Materials Physics",
+    "kind": "department",
+    "parent": "rsphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Physics"
+    ]
+  },
+  {
+    "uid": "eme",
+    "name_en": "Department of Electronic Materials Engineering",
+    "name_local": "Department of Electronic Materials Engineering",
+    "kind": "department",
+    "parent": "rsphys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronic Materials Engineering"
+    ]
+  },
+  {
+    "uid": "ecoevo",
+    "name_en": "Division of Ecology and Evolution",
+    "name_local": "Division of Ecology and Evolution",
+    "kind": "department",
+    "parent": "rsb",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Ecology and Evolution"
+    ]
+  },
+  {
+    "uid": "jcsmr",
+    "name_en": "John Curtin School of Medical Research",
+    "name_local": "John Curtin School of Medical Research",
+    "kind": "school",
+    "parent": "chm",
+    "aliases": [
+      "John Curtin School of Medical Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "som",
+    "name_en": "School of Medicine and Psychology",
+    "name_local": "School of Medicine and Psychology",
+    "kind": "school",
+    "parent": "chm",
+    "aliases": [],
+    "context_aliases": [
+      "School of Medicine and Psychology",
+      "ANU Medical School"
+    ]
+  },
+  {
+    "uid": "nceph",
+    "name_en": "National Centre for Epidemiology and Population Health",
+    "name_local": "National Centre for Epidemiology and Population Health",
+    "kind": "center",
+    "parent": "chm",
+    "aliases": [],
+    "context_aliases": [
+      "National Centre for Epidemiology and Population Health"
+    ]
+  },
+  {
+    "uid": "sph",
+    "name_en": "School of Public Health",
+    "name_local": "School of Public Health",
+    "kind": "school",
+    "parent": "chm",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "cecc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "comp",
+    "name_en": "School of Computing",
+    "name_local": "School of Computing",
+    "kind": "school",
+    "parent": "cecc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computing",
+      "Research School of Computer Science"
+    ]
+  },
+  {
+    "uid": "crawford",
+    "name_en": "Crawford School of Public Policy",
+    "name_local": "Crawford School of Public Policy",
+    "kind": "school",
+    "parent": "cap",
+    "aliases": [
+      "Crawford School of Public Policy"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "devpol",
+    "name_en": "Development Policy Centre",
+    "name_local": "Development Policy Centre",
+    "kind": "center",
+    "parent": "crawford",
+    "aliases": [],
+    "context_aliases": [
+      "Development Policy Centre"
+    ]
+  },
+  {
+    "uid": "culture",
+    "name_en": "School of Culture History and Language",
+    "name_local": "School of Culture History and Language",
+    "kind": "school",
+    "parent": "cap",
+    "aliases": [],
+    "context_aliases": [
+      "School of Culture History and Language",
+      "School of Culture"
+    ]
+  },
+  {
+    "uid": "rsfas",
+    "name_en": "Research School of Finance Actuarial Studies and Statistics",
+    "name_local": "Research School of Finance Actuarial Studies and Statistics",
+    "kind": "school",
+    "parent": "cbe",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Finance Actuarial Studies and Statistics",
+      "Research School of Finance"
+    ]
+  },
+  {
+    "uid": "rse",
+    "name_en": "Research School of Economics",
+    "name_local": "Research School of Economics",
+    "kind": "school",
+    "parent": "cbe",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Economics"
+    ]
+  },
+  {
+    "uid": "rsm",
+    "name_en": "Research School of Management",
+    "name_local": "Research School of Management",
+    "kind": "school",
+    "parent": "cbe",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Management"
+    ]
+  },
+  {
+    "uid": "rssps",
+    "name_en": "Research School of Social Sciences",
+    "name_local": "Research School of Social Sciences",
+    "kind": "school",
+    "parent": "cass",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Social Sciences"
+    ]
+  },
+  {
+    "uid": "rsha",
+    "name_en": "Research School of Humanities and the Arts",
+    "name_local": "Research School of Humanities and the Arts",
+    "kind": "school",
+    "parent": "cass",
+    "aliases": [],
+    "context_aliases": [
+      "Research School of Humanities and the Arts"
+    ]
+  },
+  {
+    "uid": "regnet",
+    "name_en": "School of Regulation and Global Governance",
+    "name_local": "School of Regulation and Global Governance",
+    "kind": "school",
+    "parent": "cap",
+    "aliases": [],
+    "context_aliases": [
+      "School of Regulation and Global Governance",
+      "RegNet"
+    ]
+  },
+  {
+    "uid": "coral",
+    "name_en": "Coral Bell School of Asia Pacific Affairs",
+    "name_local": "Coral Bell School of Asia Pacific Affairs",
+    "kind": "school",
+    "parent": "cap",
+    "aliases": [
+      "Coral Bell School of Asia Pacific Affairs"
+    ],
+    "context_aliases": []
+  }
+]

@@ -50,11 +50,13 @@ the relation-like models.
   author's own OpenAlex/ORCID records instead of what the work says.
 - **`Person`**: id is the bare OpenAlex author ID (one person, one node; there
   is no `itmo_*`/`external_*` split).
-  - `is_itmo` is a boolean, not a label. At least one ITMO affiliation
-    anywhere makes the person ITMO for good: the property is "sticky" (see
+  - `is_member` is a boolean, not a label. At least one affiliation with the
+    university (`PAUK_INSTITUTION`) anywhere makes the person a member for good: the property is "sticky" (see
     `graph/client.py::upsert_person_nodes_batch`).
-  - Russian name parts (`first_name_ru`, `second_name_ru`, `surname_ru`) and
-    `name_ru`/`name_en` are filled by the `author_names` stage.
+  - Name parts in the university's language (`first_name_local`,
+    `second_name_local`, `surname_local`: Russian for ITMO, Portuguese for UFJF;
+    they were `*_ru` before profiles, see `scripts/migrate_local_names.py`) and
+    `name_local`/`name_en` are filled by the `author_names` stage.
   - `email` is the one address shown on the card; `emails` are all known
     addresses, which `github_match` uses to recognize an account (an account
     is identified by the address it commits with, not the one chosen for
@@ -64,28 +66,28 @@ the relation-like models.
 - The block under the `# Stubs` comment (`scopus_id`, `researcher_id`,
   `h_index`, `wikipedia` and others) holds fields no pipeline stage fills.
   The exceptions are `other_names`, `homepage`, `linkedin`, `gitlab_username`
-  and `name_ru`/`name_en`, filled by `persons` from ORCID
+  and `name_local`/`name_en`, filled by `persons` from ORCID
   ([pipeline/persons.md](pipeline/persons.md)) and by `author_names`. The
   stubs are kept on purpose so the model, connector and visualization
   already know the data shape when a real source appears.
 
 ## `department.py`
 
-- **`Department`**: `id`, `name_en`, `name_ru`, `name_variants` (spellings
+- **`Department`**: `id`, `name_en`, `name_local`, `name_variants` (spellings
   that `departments.py` uses to match a department in affiliation text),
   `context_aliases` (generic names that match only inside an affiliation
-  segment carrying an ITMO marker), `parent_id` or `organization_id` (at most
+  segment carrying the university's marker), `parent_id` or `organization_id` (at most
   one is set: a sub-unit points to its parent department, a top-level unit to
   its organization), and `kind` (`megafaculty`, `school`, `faculty`,
   `institute`, `center`, `department`, `lab`, `unit`; used for styling). The
-  source is `data/static/departments_catalog.json`
+  source is `data/static/<institution>/departments_catalog.json`
   (`pauk/storage/static.py::StaticStore`); the id is the human-readable `uid`
   of the catalog entry.
 
 ## `organization.py`
 
 - **`Organization`**: a top-level organization (university, institute,
-  company) at the root of the hierarchy: `id`, `name_en`, `name_ru`,
+  company) at the root of the hierarchy: `id`, `name_en`, `name_local`,
   `ror_id`, `country`, `type`. Departments attach to it through
   `Department-[:PART_OF]->Organization`.
 

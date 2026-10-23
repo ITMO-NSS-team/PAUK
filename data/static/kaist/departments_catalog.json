@@ -1,0 +1,944 @@
+[
+  {
+    "uid": "kaist",
+    "name_en": "Korea Advanced Institute of Science and Technology",
+    "name_local": "한국과학기술원",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05apxxy63",
+    "type": "university"
+  },
+  {
+    "uid": "cns",
+    "name_en": "College of Natural Sciences",
+    "name_local": "자연과학대학",
+    "kind": "college",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST College of Natural Sciences"
+    ],
+    "context_aliases": [
+      "College of Natural Sciences",
+      "자연과학대학"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "물리학과",
+    "kind": "department",
+    "parent": "cns",
+    "aliases": [
+      "KAIST Department of Physics",
+      "KAIST Physics"
+    ],
+    "context_aliases": [
+      "Department of Physics",
+      "Dept. of Physics",
+      "Physics Department",
+      "물리학과"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematical Sciences",
+    "name_local": "수리과학과",
+    "kind": "department",
+    "parent": "cns",
+    "aliases": [
+      "KAIST Department of Mathematical Sciences"
+    ],
+    "context_aliases": [
+      "Department of Mathematical Sciences",
+      "Dept. of Mathematical Sciences",
+      "Mathematical Sciences",
+      "수리과학과"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "화학과",
+    "kind": "department",
+    "parent": "cns",
+    "aliases": [
+      "KAIST Department of Chemistry",
+      "KAIST Chemistry"
+    ],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Dept. of Chemistry",
+      "Chemistry Department",
+      "화학과"
+    ]
+  },
+  {
+    "uid": "gsqst",
+    "name_en": "Graduate School of Quantum Science and Technology",
+    "name_local": "양자대학원",
+    "kind": "school",
+    "parent": "cns",
+    "aliases": [
+      "KAIST Graduate School of Quantum Science and Technology"
+    ],
+    "context_aliases": [
+      "Graduate School of Quantum Science and Technology"
+    ]
+  },
+  {
+    "uid": "clsb",
+    "name_en": "College of Life Science and Bioengineering",
+    "name_local": "생명과학기술대학",
+    "kind": "college",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST College of Life Science and Bioengineering"
+    ],
+    "context_aliases": [
+      "College of Life Science and Bioengineering",
+      "생명과학기술대학"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "생명과학과",
+    "kind": "department",
+    "parent": "clsb",
+    "aliases": [
+      "KAIST Department of Biological Sciences"
+    ],
+    "context_aliases": [
+      "Department of Biological Sciences",
+      "Department of Biological Science",
+      "Dept. of Biological Sciences",
+      "Biological Sciences",
+      "생명과학과"
+    ]
+  },
+  {
+    "uid": "bioe",
+    "name_en": "Department of Bio and Brain Engineering",
+    "name_local": "바이오및뇌공학과",
+    "kind": "department",
+    "parent": "clsb",
+    "aliases": [
+      "Department of Bio and Brain Engineering",
+      "KAIST Bio and Brain Engineering"
+    ],
+    "context_aliases": [
+      "Bio and Brain Engineering",
+      "바이오및뇌공학과"
+    ]
+  },
+  {
+    "uid": "bcs",
+    "name_en": "Department of Brain and Cognitive Sciences",
+    "name_local": "뇌인지과학과",
+    "kind": "department",
+    "parent": "clsb",
+    "aliases": [
+      "KAIST Department of Brain and Cognitive Sciences"
+    ],
+    "context_aliases": [
+      "Department of Brain and Cognitive Sciences",
+      "Department of Brain & Cognitive Sciences",
+      "뇌인지과학과"
+    ]
+  },
+  {
+    "uid": "gsmse",
+    "name_en": "Graduate School of Medical Science and Engineering",
+    "name_local": "의과학대학원",
+    "kind": "school",
+    "parent": "clsb",
+    "aliases": [
+      "KAIST GSMSE"
+    ],
+    "context_aliases": [
+      "GSMSE",
+      "의과학대학원",
+      "Graduate School of Medical Science and Engineering"
+    ]
+  },
+  {
+    "uid": "liver-lab",
+    "name_en": "Laboratory of Liver Research",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "gsmse",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Liver Research"
+    ]
+  },
+  {
+    "uid": "gseb",
+    "name_en": "Graduate School of Engineering Biology",
+    "name_local": "공학생물학대학원",
+    "kind": "school",
+    "parent": "clsb",
+    "aliases": [
+      "KAIST Graduate School of Engineering Biology"
+    ],
+    "context_aliases": [
+      "Graduate School of Engineering Biology"
+    ]
+  },
+  {
+    "uid": "gsscrb",
+    "name_en": "Graduate School of Stem Cell and Regenerative Biology",
+    "name_local": "줄기세포및재생생물학대학원",
+    "kind": "school",
+    "parent": "clsb",
+    "aliases": [
+      "Graduate School of Stem Cell and Regenerative Biology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "coe",
+    "name_en": "College of Engineering",
+    "name_local": "공과대학",
+    "kind": "college",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST College of Engineering"
+    ],
+    "context_aliases": [
+      "College of Engineering",
+      "공과대학"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "기계공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Mechanical Engineering",
+      "KAIST ME"
+    ],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "Dept. of Mechanical Engineering",
+      "School of Mechanical Engineering",
+      "Mechanical Engineering",
+      "기계공학과"
+    ]
+  },
+  {
+    "uid": "msc-lab",
+    "name_en": "Mechatronics, Systems and Control Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "me",
+    "aliases": [],
+    "context_aliases": [
+      "Systems and Control Lab (MSC Lab)",
+      "and Control (MSC) Laboratory",
+      "MSC Lab"
+    ]
+  },
+  {
+    "uid": "vi-lab",
+    "name_en": "Visual Intelligence Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "me",
+    "aliases": [],
+    "context_aliases": [
+      "Visual Intelligence Lab"
+    ]
+  },
+  {
+    "uid": "hubo",
+    "name_en": "Humanoid Robot Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "me",
+    "aliases": [],
+    "context_aliases": [
+      "Humanoid Robot Research Center"
+    ]
+  },
+  {
+    "uid": "ae",
+    "name_en": "Department of Aerospace Engineering",
+    "name_local": "항공우주공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Aerospace Engineering"
+    ],
+    "context_aliases": [
+      "Department of Aerospace Engineering",
+      "Aerospace Engineering",
+      "항공우주공학과"
+    ]
+  },
+  {
+    "uid": "ai-aerospace",
+    "name_en": "AI-Transformed Aerospace Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ae",
+    "aliases": [],
+    "context_aliases": [
+      "AI-Transformed Aerospace Research Center"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "School of Electrical Engineering",
+    "name_local": "전기및전자공학부",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "KAIST School of Electrical Engineering",
+      "School of Electrical Engineering KAIST",
+      "KAIST EE"
+    ],
+    "context_aliases": [
+      "School of Electrical Engineering",
+      "School of Electrial Engineering",
+      "School of Electrical Engineering (EE)",
+      "School of Electrical Engineering(EE)",
+      "School of Electrical Eng",
+      "School of EE",
+      "Department of Electrical Engineering",
+      "Electrical Engineering",
+      "전기및전자공학부"
+    ]
+  },
+  {
+    "uid": "ieri",
+    "name_en": "Information and Electronics Research Institute",
+    "name_local": "정보전자연구소",
+    "kind": "institute",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "Information and Electronics Research Institute"
+    ]
+  },
+  {
+    "uid": "ivl",
+    "name_en": "Integrated Vision and Language Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "Integrated Vision and Language Lab",
+      "Integrated Vision Language Laboratory"
+    ]
+  },
+  {
+    "uid": "hsnl",
+    "name_en": "High Speed Nanoelectronics Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "High Speed Nanoelectronics Lab"
+    ]
+  },
+  {
+    "uid": "emc-lab",
+    "name_en": "EMC Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "EMC Lab"
+    ]
+  },
+  {
+    "uid": "usrg",
+    "name_en": "Unmanned Systems Research Group",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "Unmanned Systems Research Group",
+      "USRG"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "School of Computing",
+    "name_local": "전산학부",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "KAIST School of Computing",
+      "School of Computing at the Korea Advanced Institute of Science and Technology"
+    ],
+    "context_aliases": [
+      "School of Computing",
+      "Department of Computer Science",
+      "전산학부"
+    ]
+  },
+  {
+    "uid": "ce",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "건설및환경공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Civil and Environmental Engineering"
+    ],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Department of Civil & Environmental Engineering",
+      "Civil and Environmental Engineering",
+      "건설및환경공학과"
+    ]
+  },
+  {
+    "uid": "urban-design-lab",
+    "name_en": "KAIST Urban Design Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ce",
+    "aliases": [
+      "KAIST Urban Design Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "id",
+    "name_en": "Department of Industrial Design",
+    "name_local": "산업디자인학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Industrial Design"
+    ],
+    "context_aliases": [
+      "Department of Industrial Design",
+      "Industrial Design",
+      "산업디자인학과"
+    ]
+  },
+  {
+    "uid": "ise",
+    "name_en": "Department of Industrial and Systems Engineering",
+    "name_local": "산업및시스템공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Industrial and Systems Engineering"
+    ],
+    "context_aliases": [
+      "Department of Industrial and Systems Engineering",
+      "Department of Industrial & Systems Engineering",
+      "산업및시스템공학과"
+    ]
+  },
+  {
+    "uid": "cbe",
+    "name_en": "Department of Chemical and Biomolecular Engineering",
+    "name_local": "생명화학공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Chemical and Biomolecular Engineering",
+      "KAIST Department of Chemical and Biomolecular Engineering"
+    ],
+    "context_aliases": [
+      "Department of Chemical and Biomolecular Engineering",
+      "Department of Chemical & Biomolecular Engineering",
+      "Chemical and Biomolecular Engineering",
+      "Department of Chemical Engineering",
+      "생명화학공학과"
+    ]
+  },
+  {
+    "uid": "mbel",
+    "name_en": "Metabolic and Biomolecular Engineering National Research Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cbe",
+    "aliases": [
+      "Metabolic and Biomolecular Engineering National Research Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bperc",
+    "name_en": "BioProcess Engineering Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "cbe",
+    "aliases": [],
+    "context_aliases": [
+      "BioProcess Engineering Research Center"
+    ]
+  },
+  {
+    "uid": "smesh",
+    "name_en": "Systems Metabolic Engineering and Systems Healthcare Cross-Generation Collaborative Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cbe",
+    "aliases": [
+      "Systems Metabolic Engineering and Systems Healthcare Cross-Generation Collaborative Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "신소재공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Department of Materials Science and Engineering"
+    ],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "Dept. of Materials Science and Engineering",
+      "Materials Science and Engineering",
+      "신소재공학과"
+    ]
+  },
+  {
+    "uid": "wmc",
+    "name_en": "Wearable Platform Materials Technology Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "mse",
+    "aliases": [
+      "Wearable Platform Materials Technology Center"
+    ],
+    "context_aliases": [
+      "WMC"
+    ]
+  },
+  {
+    "uid": "nqe",
+    "name_en": "Department of Nuclear and Quantum Engineering",
+    "name_local": "원자력및양자공학과",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "Department of Nuclear and Quantum Engineering",
+      "Department of Nuclear & Quantum Engineering"
+    ],
+    "context_aliases": [
+      "원자력및양자공학과"
+    ]
+  },
+  {
+    "uid": "gsst",
+    "name_en": "Graduate School of Semiconductor Technology",
+    "name_local": "반도체공학대학원",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Graduate School of Semiconductor Technology"
+    ],
+    "context_aliases": [
+      "Graduate School of Semiconductor Technology"
+    ]
+  },
+  {
+    "uid": "mobility",
+    "name_en": "Cho Chun Shik Graduate School of Mobility",
+    "name_local": "조천식모빌리티대학원",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "Cho Chun Shik Graduate School of Mobility",
+      "CCS Graduate School of Mobility"
+    ],
+    "context_aliases": [
+      "Graduate School of Mobility"
+    ]
+  },
+  {
+    "uid": "robotics",
+    "name_en": "Robotics Program",
+    "name_local": "로봇공학학제전공",
+    "kind": "program",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Robotics Program"
+    ],
+    "context_aliases": [
+      "Robotics Program"
+    ]
+  },
+  {
+    "uid": "gsds",
+    "name_en": "Graduate School of Data Science",
+    "name_local": "데이터사이언스대학원",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "KAIST Graduate School of Data Science"
+    ],
+    "context_aliases": [
+      "Graduate School of Data Science"
+    ]
+  },
+  {
+    "uid": "gsgs",
+    "name_en": "Graduate School of Green Growth and Sustainability",
+    "name_local": "녹색성장지속가능대학원",
+    "kind": "school",
+    "parent": "coe",
+    "aliases": [
+      "Graduate School of Green Growth & Sustainability"
+    ],
+    "context_aliases": [
+      "Graduate School of Green Growth and Sustainability"
+    ]
+  },
+  {
+    "uid": "kaist-ai",
+    "name_en": "Kim Jaechul Graduate School of AI",
+    "name_local": "김재철AI대학원",
+    "kind": "school",
+    "parent": "kaist",
+    "aliases": [
+      "Kim Jaechul Graduate School of AI",
+      "Jaechul Graduate School of AI",
+      "KAIST AI",
+      "KAIST Graduate School of AI"
+    ],
+    "context_aliases": [
+      "Graduate School of AI",
+      "김재철AI대학원"
+    ]
+  },
+  {
+    "uid": "clacs",
+    "name_en": "College of Liberal Arts and Convergence Science",
+    "name_local": "인문사회융합과학대학",
+    "kind": "college",
+    "parent": "kaist",
+    "aliases": [
+      "College of Liberal Arts and Convergence Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dhcss",
+    "name_en": "School of Digital Humanities and Computational Social Sciences",
+    "name_local": "디지털인문사회과학부",
+    "kind": "school",
+    "parent": "clacs",
+    "aliases": [
+      "School of Digital Humanities and Computational Social Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "gsct",
+    "name_en": "Graduate School of Culture Technology",
+    "name_local": "문화기술대학원",
+    "kind": "school",
+    "parent": "clacs",
+    "aliases": [
+      "KAIST GSCT",
+      "KAIST Graduate School of Culture Technology"
+    ],
+    "context_aliases": [
+      "Graduate School of Culture Technology",
+      "GSCT",
+      "문화기술대학원"
+    ]
+  },
+  {
+    "uid": "cti",
+    "name_en": "Culture Technology Research Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "gsct",
+    "aliases": [],
+    "context_aliases": [
+      "Culture Technology Research Institute",
+      "Culture Technology Institute"
+    ]
+  },
+  {
+    "uid": "uvr-lab",
+    "name_en": "UVR Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "gsct",
+    "aliases": [
+      "KAIST UVR Lab"
+    ],
+    "context_aliases": [
+      "UVR Lab"
+    ]
+  },
+  {
+    "uid": "gsfs",
+    "name_en": "Moon Soul Graduate School of Future Strategy",
+    "name_local": "문술미래전략대학원",
+    "kind": "school",
+    "parent": "clacs",
+    "aliases": [
+      "Moon Soul Graduate School of Future Strategy"
+    ],
+    "context_aliases": [
+      "Graduate School of Future Strategy"
+    ]
+  },
+  {
+    "uid": "stp",
+    "name_en": "Graduate School of Science and Technology Policy",
+    "name_local": "과학기술정책대학원",
+    "kind": "school",
+    "parent": "clacs",
+    "aliases": [
+      "KAIST Graduate School of Science and Technology Policy"
+    ],
+    "context_aliases": [
+      "Graduate School of Science and Technology Policy"
+    ]
+  },
+  {
+    "uid": "sts",
+    "name_en": "School of Transdisciplinary Studies",
+    "name_local": "융합인재학부",
+    "kind": "school",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST School of Transdisciplinary Studies"
+    ],
+    "context_aliases": [
+      "School of Transdisciplinary Studies"
+    ]
+  },
+  {
+    "uid": "business",
+    "name_en": "College of Business",
+    "name_local": "경영대학",
+    "kind": "college",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST College of Business"
+    ],
+    "context_aliases": [
+      "College of Business",
+      "경영대학"
+    ]
+  },
+  {
+    "uid": "btm",
+    "name_en": "School of Business and Technology Management",
+    "name_local": "기술경영학부",
+    "kind": "school",
+    "parent": "business",
+    "aliases": [
+      "KAIST School of Business and Technology Management"
+    ],
+    "context_aliases": [
+      "School of Business and Technology Management",
+      "The School of Business and Technology Management",
+      "Graduate School of Business & Technology Management",
+      "Graduate School of Business and Technology Management"
+    ]
+  },
+  {
+    "uid": "kihst",
+    "name_en": "KAIST Institute for Health Science and Technology",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Institute for Health Science and Technology",
+      "KIHST"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "kib",
+    "name_en": "KAIST Institute for the BioCentury",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Institute for the BioCentury",
+      "KAIST Institute for the BioInnovation",
+      "KI for the BioInnovation",
+      "KI for the Bioinnovation"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "kicee",
+    "name_en": "KAIST Institute for Climate-Environment-Energy",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Institute for Climate-Environment-Energy",
+      "KICEE"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "kara",
+    "name_en": "KAIST Analysis Center for Research Advancement",
+    "name_local": "",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Analysis Center for Research Advancement"
+    ],
+    "context_aliases": [
+      "Analysis Center for Research Advancement"
+    ]
+  },
+  {
+    "uid": "stem-cell-center",
+    "name_en": "KAIST Stem Cell Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Stem Cell Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "smart-city",
+    "name_en": "KAIST Smart City Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Smart City Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "prism-ai",
+    "name_en": "KAIST InnoCORE PRISM-AI Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST InnoCORE PRISM-AI Center",
+      "InnoCORE PRISM-AI Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ai-cred",
+    "name_en": "InnoCORE AI-CRED Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "kaist",
+    "aliases": [
+      "InnoCORE AI-CRED Institute",
+      "InnoCORE AI‐CRED Institute",
+      "KAIST InnoCORE AI-CRED Institute",
+      "InnoCORE AI Co-Research & Education for Innovative Drug"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cyber-security",
+    "name_en": "KAIST Cyber Security Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Cyber Security Research Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "satrec",
+    "name_en": "Satellite Technology Research Center",
+    "name_local": "인공위성연구소",
+    "kind": "center",
+    "parent": "kaist",
+    "aliases": [
+      "SaTReC"
+    ],
+    "context_aliases": [
+      "Satellite Technology Research Center"
+    ]
+  },
+  {
+    "uid": "auto-id",
+    "name_en": "Auto-ID Labs Korea",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "kaist",
+    "aliases": [
+      "Auto-ID Labs Korea"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rai-lab",
+    "name_en": "Robotics and Artificial Intelligence Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "kaist",
+    "aliases": [],
+    "context_aliases": [
+      "Robotics and Artificial Intelligence Lab"
+    ]
+  },
+  {
+    "uid": "pemit-lab",
+    "name_en": "Protein-Engineering & Mechano-ImmunoTherapy Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "kaist",
+    "aliases": [],
+    "context_aliases": [
+      "Protein-Engineering & Mechano-ImmunoTherapy Lab"
+    ]
+  },
+  {
+    "uid": "hcit-lab",
+    "name_en": "Human-Centered Interactive Technologies Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "kaist",
+    "aliases": [],
+    "context_aliases": [
+      "Human-Centered Interactive Technologies Lab"
+    ]
+  },
+  {
+    "uid": "cold-lab",
+    "name_en": "KAIST CoLD Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST CoLD lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "seoul-campus",
+    "name_en": "KAIST Seoul Campus",
+    "name_local": "",
+    "kind": "campus",
+    "parent": "kaist",
+    "aliases": [
+      "KAIST Seoul Campus",
+      "KAIST Seoul"
+    ],
+    "context_aliases": []
+  }
+]

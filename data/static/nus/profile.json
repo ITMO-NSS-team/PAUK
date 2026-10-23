@@ -1,0 +1,26 @@
+{
+  "key": "nus",
+  "short_name": "NUS",
+  "short_name_local": "NUS",
+  "name_en": "National University of Singapore",
+  "name_local": "National University of Singapore",
+  "ror_id": "01tgyzw49",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "nus.edu.sg"
+  ],
+  "marker": "(?<![^\\W\\d_])(?<!Duke[-–‐ ])NUS(?![^\\W\\d_])",
+  "long_name": "(?:National\\s+Univ(?:ersity|\\.)?\\s+(?:of\\s+)?Singa-?\\s*pore|Universiti\\s+Kebangsaan\\s+Singapura|King\\s+Edward\\s+VII\\s+College\\s+of\\s+Medicine|新加坡国立大学|சிங்கப்பூர்\\s*தேசியப்\\s*பல்கலைக்கழகம்)",
+  "marker_replacement": "NUS",
+  "place_words": "singapore|singapura|republic|kent|ridge|lower|crescent|drive|dr|road|link|engineering|science|medical|computing|arts|architecture|business|conservatory|college|research|queenstown|outram|cluny|campus|city|level|block|tower|building|md6|boulevard",
+  "other_organisations": "(?:A\\s*\\*\\s*STAR|A∗STAR|Agency\\s+for\\s+Science|Technology\\s+and\\s+Research|NUHS|National\\s+University\\s+Health\\s+System|National\\s+University\\s+Hospital|National\\s+University\\s+Heart\\s+Cent(?:re|er)|National\\s+University\\s+Cancer\\s+Institute|SingHealth|Singapore\\s+Health\\s+Services|Nanyang\\s+Technological|(?<![^\\W\\d_])NTU(?![^\\W\\d_])|Lee\\s+Kong\\s+Chian\\s+School\\s+of\\s+Medicine|Singapore\\s+General\\s+Hospital|Tan\\s+Tock\\s+Seng|Singapore\\s+Eye\\s+Research\\s+Institute|Singapore\\s+National\\s+Eye\\s+Centre|National\\s+Cancer\\s+Centre|National\\s+Heart\\s+Centre|National\\s+Neuroscience\\s+Institute|KK\\s+Women|Khoo\\s+Teck\\s+Puat\\s+Hospital|Changi\\s+General|Alexandra\\s+Hospital|Temasek\\s+Life\\s+Sciences|Genome\\s+Institute\\s+of\\s+Singapore|Institute\\s+of\\s+Molecular\\s+and\\s+Cell\\s+Biology|IMCB|IMRE|Institute\\s+of\\s+Materials\\s+Research|Bioinformatics\\s+Institute|Institute\\s+for\\s+Human\\s+Development\\s+and\\s+Potential|Singapore-MIT\\s+Alliance|SMART|Singapore\\s+University\\s+of\\s+Technology|SUTD|Singapore\\s+Institute\\s+of\\s+Technology|National\\s+Parks\\s+Board|Ministry\\s+of\\s+Education|Tianjin\\s+University|Zhejiang\\s+Lab|Centre\\s+for\\s+Economic\\s+Policy\\s+Research)",
+  "identity": "(?:(?<![^\\W\\d_])NUS(?![^\\W\\d_])|National\\s+University\\s+of\\s+Singapore)",
+  "city": "Singapore",
+  "staff_catalog": null,
+  "mongo_db": "pauk_nus",
+  "site_url": "https://www.nus.edu.sg",
+  "unit_words": "college|school"
+}

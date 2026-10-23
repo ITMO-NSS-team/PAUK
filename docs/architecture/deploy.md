@@ -43,18 +43,26 @@ the state with `docker ps -a | grep mongo`, and the exact mount with
 ```bash
 ./scripts/deploy.sh
 PORT=8503 ./scripts/deploy.sh   # if 8501 is taken
+PAUK_INSTITUTION=ufjf ./scripts/deploy.sh
 ```
+
+`PAUK_INSTITUTION` picks the university ([institutions.md](institutions.md)).
+ITMO keeps the historical `~/pauk-gui`, screen session `pauk` and port 8501;
+any other university gets `~/pauk-gui-<institution>`, session
+`pauk-<institution>` and port 8502 by default, so deploying it never replaces
+the ITMO map.
 
 Nothing is built on the server and no `git pull` happens there. The site is
 static and is built locally from the current branch:
 
 1. If there are uncommitted changes, the script warns and asks to confirm
    (`y/N`): they will end up in the build.
-2. It checks that `data/gui/private/` holds all four JSON files
+2. It checks that `data/gui/<institution>/private/` holds all four JSON files
    (`graph-data`, `authors-detail`, `repos-detail`, `pubs-detail`). It does
    not generate them; run `pauk gui build` first.
-3. `npm run build` in `pauk/gui/web/`. Vite copies the data from
-   `data/gui/private/` into `dist/`, so the **private** variant, with
+3. `npm run build` in `pauk/gui/web/` with `VITE_INSTITUTION` set to the
+   university, which names it in the interface. Vite copies the data from
+   `data/gui/<institution>/private/` into `dist/`, so the **private** variant, with
    personal author fields, is what reaches the server. Access to the server
    is only through the lab VPN.
 4. `ping` to the host, as an explicit VPN check instead of an obscure SSH

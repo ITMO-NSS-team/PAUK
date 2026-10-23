@@ -285,10 +285,10 @@ describe("mountHiddenAuthorReveal", () => {
   // A1, A2: ITMO co-authors of P1; A3: alone on P2, no repos (isolated); E1: external.
   const data = {
     authors: [
-      { key: "A1", is_itmo: true, pubs_count: 1 },
-      { key: "A2", is_itmo: true, pubs_count: 1 },
-      { key: "A3", is_itmo: true, pubs_count: 1 },
-      { key: "E1", is_itmo: false, pubs_count: 1 },
+      { key: "A1", is_member: true, pubs_count: 1 },
+      { key: "A2", is_member: true, pubs_count: 1 },
+      { key: "A3", is_member: true, pubs_count: 1 },
+      { key: "E1", is_member: false, pubs_count: 1 },
     ],
     all_edges: [
       { s: "A1", t: "P1" },
@@ -331,8 +331,8 @@ describe("mountHiddenAuthorReveal", () => {
   it("selecting an external coauthor of an author without links enables only the external filter, which gives the author a link", () => {
     const soloWithExternal = {
       authors: [
-        { key: "A1", is_itmo: true, pubs_count: 1 },
-        { key: "E1", is_itmo: false, pubs_count: 1 },
+        { key: "A1", is_member: true, pubs_count: 1 },
+        { key: "E1", is_member: false, pubs_count: 1 },
       ],
       all_edges: [
         { s: "A1", t: "P1" },

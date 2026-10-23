@@ -1,0 +1,35 @@
+{
+  "key": "upf",
+  "short_name": "UPF",
+  "short_name_local": "UPF",
+  "name_en": "Universitat Pompeu Fabra",
+  "name_local": "Universitat Pompeu Fabra",
+  "ror_id": "04n0g0b29",
+  "language": "Catalan",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "del",
+    "la",
+    "las",
+    "los",
+    "y",
+    "i"
+  ],
+  "email_domains": [
+    "upf.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivPompeuFabra)(?![^\\W\\d_])",
+  "long_name": "Universitat[\\s‐-]+Pompeu[\\s‐-]+Fabra,[\\s‐-]+Barcelona|Universidad[\\s‐-]+Pompeu[\\s‐-]+Fabra|Universitat[\\s‐-]+Pompeu[\\s‐-]+Fabra|Pompeu[\\s‐-]+Fabra[\\s‐-]+University|University[\\s‐-]+Pompeu[\\s‐-]+Fabra|Univ[\\s‐-]+Pompeu[\\s‐-]+Fabra",
+  "marker_replacement": "UnivPompeuFabra",
+  "place_words": "aiguader|aleja|allee|av|ave|avenue|barcelona|bd|bldg|boulevard|box|building|calle|campus|catalonia|catalunya|east|espana|españa|fargas|floor|gatan|katu|laan|mataro|mataró|north|piazza|platz|plaza|plein|po|ramon|rd|road|room|rue|south|spain|st|str|straat|strasse|straße|street|tie|trias|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Hospital del Mar|(?<![^\\W\\d_])IMIM(?![^\\W\\d_])|ISGlobal|Barcelona Institute for Global Health|Centre for Genomic Regulation|(?<![^\\W\\d_])CRG(?![^\\W\\d_])|Barcelona Institute of Science and Technology|(?<![^\\W\\d_])CIBER|Instituto de Salud Carlos III|(?<![^\\W\\d_])ICREA(?![^\\W\\d_])|Barcelona School of Economics|(?<![^\\W\\d_])CSIC(?![^\\W\\d_])|Hospital de la Santa Creu|Barcelona\\ Biomedical\\ Research\\ Park|Barcelona\\ Institute\\ for\\ Global\\ Health|Barcelona\\ School\\ of\\ Economics|Centre\\ de\\ Recerca\\ en\\ Economia\\ Internacional|Centre\\ for\\ Genomic\\ Regulation|Hospital\\ del\\ Mar\\ Research\\ Institute|Institut\\ Barcelona\\ d'Estudis\\ Internacionals",
+  "identity": "Universitat[\\s‐-]+Pompeu[\\s‐-]+Fabra,[\\s‐-]+Barcelona|Universidad[\\s‐-]+Pompeu[\\s‐-]+Fabra|Universitat[\\s‐-]+Pompeu[\\s‐-]+Fabra|Pompeu[\\s‐-]+Fabra[\\s‐-]+University|University[\\s‐-]+Pompeu[\\s‐-]+Fabra|Univ[\\s‐-]+Pompeu[\\s‐-]+Fabra",
+  "city": "Barcelona",
+  "staff_catalog": null,
+  "mongo_db": "pauk_upf",
+  "site_url": "https://www.upf.edu",
+  "unit_words": "department|departament|faculty|facultat|institute|institut|centre|center|group|school",
+  "external_authors": false
+}

@@ -2,10 +2,12 @@
 
 PAUK collects publications from OpenAlex, enriches them with data from external sources (Crossref, ORCID, GitHub), finds code links in them, and loads the result into Neo4j.
 
+The university is a profile: `PAUK_INSTITUTION=itmo` (default) or `PAUK_INSTITUTION=ufjf` (Universidade Federal de Juiz de Fora). Each one has its own MongoDB database, Neo4j instance, static data and output folders; see `docs/architecture/institutions.md`.
+
 ## Data
 
 ```text
-data/static/                 # versioned reference data, including departments_catalog.json
+data/static/<institution>/   # versioned reference data, including departments_catalog.json
 MongoDB: raw                 # full immutable API responses, per group
 MongoDB: publications/persons/departments/organizations/repositories/github_profiles/repo_links
                              # prepared entities for Neo4j, global (not per group)
@@ -61,17 +63,18 @@ from MongoDB into Neo4j with `MERGE`. `id` is unique for every node type;
 `GitHubProfile` also has a unique `login`.
 
 A person's `id` is the bare OpenAlex author ID (one person, one node).
-`is_itmo` is set to `true` if at least one work has an ITMO affiliation, and
+`is_member` is set to `true` if at least one work has an affiliation with the
+university (`PAUK_INSTITUTION`, see `docs/architecture/institutions.md`), and
 data from other groups never lowers it back to `false`. Repositories whose
 `repositories` stage ended with status `failed` (for example, a 404) are not
 loaded until a successful retry; their links remain `LinkCandidate` nodes.
 
 | Node | Neo4j label | Main properties |
 |---|---|---|
-| Department | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
+| Department | `Department` | `id`, `name_en`, `name_local`, `name_variants` |
 | Organization | `Organization` | `id`, `name_en` |
-| ITMO employee | `Person {is_itmo: true}` | `id`, `openalex_id`, `orcid`, full name, contacts, profiles |
-| External author | `Person {is_itmo: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
+| Member of the university | `Person {is_member: true}` | `id`, `openalex_id`, `orcid`, full name, contacts, profiles |
+| External author | `Person {is_member: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
 | Publication | `Publication` | `id`, `title`, `doi`, date, journal, code, funding, OpenAlex/PDF URLs, abstract |
 | Repository | `Repository` | `id`, `name`, `url`, description, stars, license, dates |
 | GitHub profile | `GitHubProfile` | `id`, `login`, `name`, URL, description, location, type |
@@ -80,10 +83,10 @@ loaded until a successful retry; their links remain `LinkCandidate` nodes.
 Relationships:
 
 ```text
-(:Person {is_itmo: true})  -[:BELONGS_TO]->  (:Department)
-(:Person {is_itmo: true})  -[:AUTHORED]->    (:Publication)
-(:Person {is_itmo: false}) -[:AUTHORED]->    (:Publication)
-(:Person {is_itmo: true})  -[:CONTRIBUTED_TO]-> (:Repository)
+(:Person {is_member: true})  -[:BELONGS_TO]->  (:Department)
+(:Person {is_member: true})  -[:AUTHORED]->    (:Publication)
+(:Person {is_member: false}) -[:AUTHORED]->    (:Publication)
+(:Person {is_member: true})  -[:CONTRIBUTED_TO]-> (:Repository)
 
 (:Department)  -[:PART_OF]->       (:Department | :Organization)
 
@@ -117,16 +120,16 @@ pauk gui build
 cd pauk/gui/web && npm install && npm run dev
 ```
 
-- `pauk cache export` writes a graph snapshot to `data/cache/graph_snapshot_<date>.json`.
+- `pauk cache export` writes a graph snapshot to `data/cache/<institution>/graph_snapshot_<date>.json`.
   `--output` sets another path; `--only persons,publications,repos,departments,organizations`
   re-reads just those groups and takes the rest from the newest snapshot.
 - `pauk cache inspect [path_to_snapshot] [--table T] [--sample N]` prints table
   sizes and field stats; with `--table` and `--sample` it prints N sample rows.
 - `pauk gui build` reads the newest snapshot (`--cache` picks another) and writes
-  the site data into `data/gui/public` and `data/gui/private` (`--out-dir` changes
+  the site data into `data/gui/<institution>/public` and `data/gui/<institution>/private` (`--out-dir` changes
   the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
   which holds personal fields, is written only to `private/`.
-- The Vite dev server serves `data/gui/private`.
+- The Vite dev server serves `data/gui/<institution>/private`.
 
 Details: [`docs/architecture/gui.md`](docs/architecture/gui.md) and
 [`docs/architecture/cache.md`](docs/architecture/cache.md).

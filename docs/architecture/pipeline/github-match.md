@@ -1,6 +1,6 @@
 # `github_match` stage
 
-**What this covers:** how a collected GitHub account is linked to an ITMO
+**What this covers:** how a collected GitHub account is linked to a member
 author.
 
 **Files involved:** `pauk/pipeline/stages/github_match.py`.
@@ -8,7 +8,7 @@ author.
 Reads the `github_profiles` collection (accounts collected by `repositories`,
 `repo_people` and `social_graph`), `persons` and `repositories`. Writes
 `Person.github`, `Person.email` and `Person.contributed_to`, plus a decision
-journal `github_matches.jsonl` in `data/audit/<group>/`.
+journal `github_matches.jsonl` in `data/audit/<institution>/<group>/`.
 
 ## What gets compared
 
@@ -17,7 +17,7 @@ no signal at all. Only three groups are considered, each an existing
 relationship:
 
 - **bridge**: the account was found on a repository cited by a publication that
-  has ITMO authors;
+  has member authors;
 - **email**: the account's address equals the author's address;
 - **name**: the full name (not a single word) equals the author's name.
 
@@ -33,29 +33,35 @@ and such a match means nothing.
 | `email_exact` | 1.0 | account and author share an address |
 | `name_exact` | 0.6 | same set of name words |
 | `name_fuzzy` | 0.4 | similar name, threshold `NAME_FUZZY = 0.86` |
-| `itmo_email` | 0.3 | account address on `@itmo.ru` |
+| `member_email` | 0.3 | account address at the university's domain (or a subdomain) |
 | `login_surname` | 0.3 | author's surname inside the login |
 | `owner` | 0.3 | the repository belongs to the account |
-| `org_itmo` | 0.3 | the repository is under an ITMO organization |
-| `itmo_profile` | 0.2 | ITMO or Saint Petersburg in the profile |
+| `member_org` | 0.3 | the repository is under one of the university's organizations |
+| `member_profile` | 0.2 | the university or its city in the profile |
 
-`itmo_profile` uses the regex `ITMO_IN_TEXT` over `company`, `location` and the
-description: `itmo` as a separate word (the word boundary matters, otherwise
-the Norwegian RITMO becomes ours), and the city in every spelling labs use:
-`Saint Petersburg`, `St. Petersburg`, `St-Petersburg`, `Sankt Petersburg`, and
-the Cyrillic `Санкт-Петербург` (St. Petersburg) with a hyphen or a space.
+Before profiles these were `itmo_email`, `org_itmo` and `itmo_profile`; the
+review page still labels a queue entry stored under the old names.
 
-The patterns are separate: `ITMO_IDENTITY_PATTERN` is an explicit mention of
-ITMO, `PETERSBURG_PATTERN` a weak geographic signal. `github_match` combines
-them for `itmo_profile`. `social_graph` treats only the first as confirming an
+`member_profile` is `mentions_institution()` over `company`, `location` and the
+description: the profile's `identity` pattern or its `city` pattern
+(`pauk/institution.py`). For ITMO that is `itmo` as a separate word (the word
+boundary matters, otherwise the Norwegian RITMO becomes ours), and the city in
+every spelling labs use: `Saint Petersburg`, `St. Petersburg`,
+`St-Petersburg`, `Sankt Petersburg`, and the Cyrillic `Санкт-Петербург`
+(St. Petersburg) with a hyphen or a space. For UFJF it is `ufjf` as a word or
+the university's full name, and the city Juiz de Fora.
+
+The patterns are separate: `identity` is an explicit mention of the
+university, `city` a weak geographic signal. `github_match` combines them for
+`member_profile`. `social_graph` treats only the first as confirming an
 organization, because a city does not establish membership.
 
-`org_itmo` means the repository belongs to an organization with ITMO in its
-login itself (`ITMO-NCCR`, `ITMO-PTDC-Team`): only `ITMO_IDENTITY_PATTERN` is
+`member_org` means the repository belongs to an organization with the
+university in its login itself (`ITMO-NCCR`, `ufjf-dcc`): only `identity` is
 used, without the geographic signal. `social_graph` has a broader rule that
-also counts the catalog and an explicit ITMO mention in the organization's
-profile. A confirmed ITMO contributor only yields the diagnostic status
-`possible`, since an ITMO employee may commit to someone else's lab.
+also counts the catalog and an explicit mention in the organization's
+profile. A confirmed member contributor only yields the diagnostic status
+`possible`, since an employee may commit to someone else's lab.
 
 Word order in a name means nothing: `Petrov Ivan` and `Ivan Petrov` are the same
 name. All known spellings on both sides are compared: how the author published
@@ -72,7 +78,7 @@ name. All known spellings on both sides are compared: how the author published
 - a similar name is `matched` only with a bridge together with corroboration,
   and `rejected` without a bridge;
 - everything else is `rejected`. Corroborating signals identify nobody on their
-  own: "works at ITMO and owns a repository" fits thousands of people.
+  own: "works at the university and owns a repository" fits thousands of people.
 
 A `review` pair is not written to `Person`; it stays in the journal with its
 full set of signals, which is what a person looks at.

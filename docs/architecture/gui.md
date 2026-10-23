@@ -15,10 +15,10 @@ Of the `pauk/gui` chain, only `pauk/cache/export.py` touches Neo4j;
 ## `builder.py`: snapshot to layout to JSON
 
 ```bash
-pauk gui build [--cache data/cache/graph_snapshot_<dd-mm-yyyy>.json] [--out-dir ...] [--seed 42]
+pauk gui build [--cache data/cache/<institution>/graph_snapshot_<dd-mm-yyyy>.json] [--out-dir ...] [--seed 42]
 ```
 
-By default it takes the newest snapshot from `data/cache/` and writes to
+By default it takes the newest snapshot from `data/cache/<institution>/` and writes to
 `data/gui/` (`pauk.settings.Settings.gui_dir`), into two subfolders. Every
 file is written atomically through `AtomicWriter` (`pauk.storage`).
 
@@ -29,37 +29,37 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
   fields that the site loads lazily after the map.
 
 Privacy is decided by folder, not by content. `authors-detail.json`
-(personal fields) is written only to `data/gui/private/`; the other three
+(personal fields) is written only to `data/gui/<institution>/private/`; the other three
 files go to both `public/` and `private/`, because Vite serves static files
 from a single folder (`vite.config.ts::publicDir`, which points at
-`data/gui/private/`). The build runs in stages, one module each:
+`data/gui/<institution>/private/`). The build runs in stages, one module each:
 `authorship.py` (who wrote what), `departments.py`, `layout.py`, `nodes.py`,
 `edges.py`.
 
-**External authors.** The export takes every `Person` (with `is_itmo`) and
-every `AUTHORED`. A publication reaches the map if it has at least one ITMO
+**External authors.** The export takes every `Person` (with `is_member`) and
+every `AUTHORED`. A publication reaches the map if it has at least one member
 author, along with all its authors. External coauthors follow the same
-department rule and get the same statistics, with `is_itmo: false` on the
+department rule and get the same statistics, with `is_member: false` on the
 node; the site uses it to hide them behind the "Show external authors"
-filter (off by default). Only ITMO authors go into ForceAtlas2: there are
+filter (off by default). Only member authors go into ForceAtlas2: there are
 roughly three times as many external ones, and laying them out together
 smeared the department clusters. An external author is placed at the
-centroid of their ITMO coauthors (weighted by shared papers) with some
+centroid of their member coauthors (weighted by shared papers) with some
 jitter (`layout.py::place_external_authors`), so the filter does not move the
-ITMO map. Publication layout and department-to-department links also use ITMO
-authors only. An external author with no ITMO publication is left out of the
+members' map. Publication layout and department-to-department links also use member
+authors only. An external author with no member publication is left out of the
 graph. For a collaboration paper with more than `hyperauthor_pub_size`
-authors (`config.py`), coauthor edges are built only from ITMO authors
+authors (`config.py`), coauthor edges are built only from member authors
 rather than every pair, which would otherwise produce millions of pairs. A
-snapshot without `is_itmo` is read as "everyone is ITMO".
+snapshot without `is_member` is read as "everyone is a member".
 
 **Department assignment (`departments.py`):**
-- a publication gets the majority vote of its authors (only ITMO authors
+- a publication gets the majority vote of its authors (only member authors
   vote, since only they have `BELONGS_TO`); the full list is in `depts` and
   one primary department in `dept` for colour;
 - an author gets the department of their most recent publication;
 - a repository gets the majority of the departments of the publications it
-  implements, else `DEVELOPED_BY`, else the majority of its ITMO
+  implements, else `DEVELOPED_BY`, else the majority of its member
   contributors' departments.
 
 Ties are broken by id, deliberately not by global popularity: otherwise big
@@ -112,8 +112,8 @@ positions come from `seed` and the algorithm has no other randomness.
 
 **Repository edges (`config.py::RepoEdges`).** A single shared publication
 left most repositories with no edges, so there are four signals, each with a
-weight: a shared publication (3), a shared ITMO contributor (2), a shared
-ITMO coauthor of their publications (1), a shared GitHub owner (1). A group
+weight: a shared publication (3), a shared member contributor (2), a shared
+member coauthor of their publications (1), a shared GitHub owner (1). A group
 of `k` repositories gives each pair `weight / (k - 1)`
 (`co_membership_weights`); groups larger than `group_cap` are dropped, and
 each repository keeps its `top_k` strongest edges. The signals that linked a
@@ -127,14 +127,17 @@ by exactly one function (`COORD_MIN`/`COORD_MAX`, `STRANDED_JITTER`/
 ## `pauk/gui/web/`: the site
 
 TypeScript + Vite; the map uses Sigma.js (graphology).
-`vite.config.ts::publicDir` points at `data/gui/private/`, so the data is
-picked up both by `npm run dev` and by the build.
+`vite.config.ts::publicDir` points at `data/gui/<institution>/private/`, so the data is
+picked up both by `npm run dev` and by the build. The university comes from
+`VITE_INSTITUTION` (`itmo` when unset); `src/core/i18n.ts` names it in the
+interface ("Карта соавторства и открытого кода {org}"), from its own copy of
+the profiles' short names, which a test keeps in step with `pauk/institution.py`.
 
 ```bash
 cd pauk/gui/web
 npm install
 npm run dev        # local
-npm run build      # dist/: static files together with the data
+VITE_INSTITUTION=ufjf npm run build   # dist/: static files together with the data
 npm test && npm run typecheck && npm run lint
 ```
 
@@ -149,8 +152,8 @@ search across all kinds. There is no database health tab on the site: the
 graph checks (`pauk/admin/checks.py`, run and statistics in
 `pauk/admin/graph_stats.py`) are shown by the "Здоровье БД" (database
 health) page of the admin panel (`pauk/admin/health.py`); see
-[../admin-panel.md](../admin-panel.md). In those queries an ITMO employee is
-`p.is_itmo`, not a label; `tests/unit/test_checks.py` checks every label and
+[../admin-panel.md](../admin-panel.md). In those queries a member is
+`p.is_member`, not a label; `tests/unit/test_checks.py` checks every label and
 relationship type in the queries against the schema.
 
 Deployment to the lab server is described in [deploy.md](deploy.md).

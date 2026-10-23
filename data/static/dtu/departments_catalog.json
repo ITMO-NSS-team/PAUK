@@ -1,0 +1,230 @@
+[
+  {
+    "uid": "dtu",
+    "name_en": "Technical University of Denmark",
+    "name_local": "Danmarks Tekniske Universitet",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04qtj9h94",
+    "type": "university"
+  },
+  {
+    "uid": "healthtech",
+    "name_en": "Department of Health Technology",
+    "name_local": "Department of Health Technology",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Technology",
+      "Department for Health Technology",
+      "DTU Health Tech"
+    ]
+  },
+  {
+    "uid": "bioeng",
+    "name_en": "Department of Biotechnology and Biomedicine",
+    "name_local": "Department of Biotechnology and Biomedicine",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [
+      "DTU Bioengineering"
+    ],
+    "context_aliases": [
+      "Department of Biotechnology and Biomedicine"
+    ]
+  },
+  {
+    "uid": "construct",
+    "name_en": "Department of Civil and Mechanical Engineering",
+    "name_local": "Department of Civil and Mechanical Engineering",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Mechanical Engineering",
+      "DTU Construct"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "DTU Physics"
+    ]
+  },
+  {
+    "uid": "energy",
+    "name_en": "Department of Energy Conversion and Storage",
+    "name_local": "Department of Energy Conversion and Storage",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy Conversion and Storage",
+      "DTU Energy"
+    ]
+  },
+  {
+    "uid": "wind",
+    "name_en": "Department of Wind and Energy Systems",
+    "name_local": "Department of Wind and Energy Systems",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Wind and Energy Systems",
+      "DTU Wind and Energy Systems",
+      "DTU Wind"
+    ]
+  },
+  {
+    "uid": "kt",
+    "name_en": "Department of Chemical and Biochemical Engineering",
+    "name_local": "Department of Chemical and Biochemical Engineering",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biochemical Engineering",
+      "DTU Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "compute",
+    "name_en": "Department of Applied Mathematics and Computer Science",
+    "name_local": "Department of Applied Mathematics and Computer Science",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Mathematics and Computer Science",
+      "DTU Compute"
+    ]
+  },
+  {
+    "uid": "food",
+    "name_en": "National Food Institute",
+    "name_local": "National Food Institute",
+    "kind": "institute",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "National Food Institute",
+      "DTU Food"
+    ]
+  },
+  {
+    "uid": "electro",
+    "name_en": "Department of Electrical and Photonics Engineering",
+    "name_local": "Department of Electrical and Photonics Engineering",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Photonics Engineering",
+      "DTU Electro"
+    ]
+  },
+  {
+    "uid": "sustain",
+    "name_en": "Department of Environmental and Resource Engineering",
+    "name_local": "Department of Environmental and Resource Engineering",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental and Resource Engineering",
+      "DTU Sustain"
+    ]
+  },
+  {
+    "uid": "space",
+    "name_en": "National Space Institute",
+    "name_local": "National Space Institute",
+    "kind": "institute",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "National Space Institute",
+      "DTU Space",
+      "DTU-Space"
+    ]
+  },
+  {
+    "uid": "management",
+    "name_en": "Department of Technology Management and Economics",
+    "name_local": "Department of Technology Management and Economics",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Technology",
+      "Management and Economics",
+      "DTU Management"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "DTU Chemistry"
+    ]
+  },
+  {
+    "uid": "aqua",
+    "name_en": "National Institute of Aquatic Resources",
+    "name_local": "National Institute of Aquatic Resources",
+    "kind": "institute",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "National Institute of Aquatic Resources",
+      "DTU Aqua"
+    ]
+  },
+  {
+    "uid": "bioinfo",
+    "name_en": "Section for Bioinformatics",
+    "name_local": "Section for Bioinformatics",
+    "kind": "department",
+    "parent": "healthtech",
+    "aliases": [],
+    "context_aliases": [
+      "Section for Bioinformatics"
+    ]
+  },
+  {
+    "uid": "cere",
+    "name_en": "Center for Energy Resources Engineering",
+    "name_local": "Center for Energy Resources Engineering",
+    "kind": "center",
+    "parent": "kt",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Energy Resources Engineering",
+      "CERE"
+    ]
+  },
+  {
+    "uid": "nanolab",
+    "name_en": "DTU Nanolab",
+    "name_local": "DTU Nanolab",
+    "kind": "lab",
+    "parent": "dtu",
+    "aliases": [],
+    "context_aliases": [
+      "DTU Nanolab"
+    ]
+  }
+]

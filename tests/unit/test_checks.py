@@ -88,19 +88,19 @@ class NamesExistTest(unittest.TestCase):
                          {"Person", "AUTHORED", "Publication"})
 
     def test_a_property_name_is_not_mistaken_for_a_label(self):
-        # `{id: eid}` and `p.name_ru` are not names of anything in the
+        # `{id: eid}` and `p.name_local` are not names of anything in the
         # schema, and a guard that read them as labels would fail on every
         # honest query.
-        self.assertEqual(names_in("MATCH (e:Person {id: eid}) WHERE e.name_ru IS NULL RETURN e"),
+        self.assertEqual(names_in("MATCH (e:Person {id: eid}) WHERE e.name_local IS NULL RETURN e"),
                          {"Person"})
 
 
 class PrecedenceTest(unittest.TestCase):
     """`AND` binds tighter than `OR`, which breaks scoped checks.
 
-    Every check about staff is scoped with `p.is_itmo AND ...`. Where the
+    Every check about staff is scoped with `p.is_member AND ...`. Where the
     condition it scopes contains an `OR`, the scope applies to the first
-    half alone - `(is_itmo AND missing) OR empty` counts external authors
+    half alone - `(is_member AND missing) OR empty` counts external authors
     too - and the check goes on looking right while answering a different
     question.
     """
@@ -109,9 +109,9 @@ class PrecedenceTest(unittest.TestCase):
         for check in CHECKS:
             for part, cypher in (("count", check.count), ("of", check.of),
                                  ("examples", check.examples)):
-                if not cypher or "is_itmo AND" not in cypher:
+                if not cypher or "is_member AND" not in cypher:
                     continue
-                scoped = cypher.split("is_itmo AND", 1)[1]
+                scoped = cypher.split("is_member AND", 1)[1]
                 # Only the condition the scope introduces matters; an OR in
                 # a later clause of the query is its own business.
                 condition = scoped.split("RETURN")[0].split("OPTIONAL MATCH")[0]

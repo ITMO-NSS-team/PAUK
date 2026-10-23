@@ -1,0 +1,1268 @@
+[
+  {
+    "uid": "ufjf",
+    "name_en": "Federal University of Juiz de Fora",
+    "name_local": "Universidade Federal de Juiz de Fora",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04yqw9c44",
+    "country": "Brazil",
+    "type": "university"
+  },
+  {
+    "uid": "ice",
+    "name_en": "Institute of Exact Sciences",
+    "name_local": "Instituto de Ciências Exatas",
+    "kind": "institute",
+    "parent": "ufjf",
+    "aliases": [
+      "ICE/UFJF",
+      "ICE-UFJF",
+      "UFJF-ICE"
+    ],
+    "context_aliases": [
+      "Instituto de Ciências Exatas",
+      "Institute of Exact Sciences",
+      "ICE",
+      "Instituto de Ciencias Exatas",
+      "Institute of Exact Science"
+    ]
+  },
+  {
+    "uid": "icb",
+    "name_en": "Institute of Biological Sciences",
+    "name_local": "Instituto de Ciências Biológicas",
+    "kind": "institute",
+    "parent": "ufjf",
+    "aliases": [
+      "ICB/UFJF",
+      "ICB-UFJF",
+      "UFJF-ICB"
+    ],
+    "context_aliases": [
+      "Instituto de Ciências Biológicas",
+      "Institute of Biological Sciences",
+      "ICB",
+      "Instituto de Ciencias Biologicas",
+      "Institute of Biological Science",
+      "Biological Sciences Institute",
+      "Institute of Biology",
+      "Instituto de Biologia",
+      "Programa de Pós-Graduação em Ciências Biológicas",
+      "Post-graduate Program in Biological Science",
+      "Postgraduate Program in Biological Sciences",
+      "Graduate Program in Biological Sciences",
+      "Programa de Pós-Graduação em Ecologia",
+      "Postgraduate Program in Ecology",
+      "Graduate Program in Ecology",
+      "Postgraduate Program in Biodiversity and Nature Conservation",
+      "Programa de Pós-Graduação em Biodiversidade e Conservação da Natureza"
+    ]
+  },
+  {
+    "uid": "ich",
+    "name_en": "Institute of Human Sciences",
+    "name_local": "Instituto de Ciências Humanas",
+    "kind": "institute",
+    "parent": "ufjf",
+    "aliases": [
+      "ICH/UFJF",
+      "ICH-UFJF"
+    ],
+    "context_aliases": [
+      "Instituto de Ciências Humanas",
+      "Institute of Human Sciences",
+      "ICH",
+      "Instituto de Ciencias Humanas",
+      "Institute of Humanities"
+    ]
+  },
+  {
+    "uid": "iad",
+    "name_en": "Institute of Arts and Design",
+    "name_local": "Instituto de Artes e Design",
+    "kind": "institute",
+    "parent": "ufjf",
+    "aliases": [
+      "IAD/UFJF",
+      "IAD-UFJF"
+    ],
+    "context_aliases": [
+      "Instituto de Artes e Design",
+      "Institute of Arts and Design",
+      "IAD"
+    ]
+  },
+  {
+    "uid": "facc",
+    "name_en": "Faculty of Administration and Accounting Sciences",
+    "name_local": "Faculdade de Administração e Ciências Contábeis",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FACC/UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Administração e Ciências Contábeis",
+      "Faculty of Administration and Accounting Sciences",
+      "FACC",
+      "School of Business and Accounting"
+    ]
+  },
+  {
+    "uid": "fau",
+    "name_en": "Faculty of Architecture and Urbanism",
+    "name_local": "Faculdade de Arquitetura e Urbanismo",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FAU/UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Arquitetura e Urbanismo",
+      "Faculty of Architecture and Urbanism",
+      "School of Architecture and Urbanism",
+      "Department of Architecture and Urbanism",
+      "Programa de Pós-Graduação em Ambiente Construído",
+      "PROAC",
+      "Graduate Program in Built Environment",
+      "Postgraduate Program in Constructed Environment",
+      "Master's Program in the Built Environment",
+      "Postgraduate Program in Built Environment"
+    ]
+  },
+  {
+    "uid": "facom",
+    "name_en": "Faculty of Communication",
+    "name_local": "Faculdade de Comunicação",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FACOM/UFJF",
+      "FACOM-UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Comunicação",
+      "Faculty of Communication",
+      "Faculdade de Comunicação Social",
+      "FACOM",
+      "School of Communication",
+      "Faculty of Social Communication",
+      "Programa de Pós-Graduação em Comunicação",
+      "PPGCOM",
+      "Graduate Program in Communication"
+    ]
+  },
+  {
+    "uid": "direito",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculdade de Direito",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Direito",
+      "Faculty of Law",
+      "School of Law",
+      "Law School"
+    ]
+  },
+  {
+    "uid": "economia",
+    "name_en": "Faculty of Economics",
+    "name_local": "Faculdade de Economia",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FE/UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Economia",
+      "Faculty of Economics",
+      "Faculty of Economic Sciences",
+      "School of Economics",
+      "Programa de Pós-Graduação em Economia",
+      "Graduate Program in Economics"
+    ]
+  },
+  {
+    "uid": "faced",
+    "name_en": "Faculty of Education",
+    "name_local": "Faculdade de Educação",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FACED/UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Educação",
+      "Faculty of Education",
+      "FACED",
+      "School of Education",
+      "Programa de Pós-Graduação em Educação",
+      "Graduate Program in Education",
+      "Postgraduate Program in Education"
+    ]
+  },
+  {
+    "uid": "faefid",
+    "name_en": "Faculty of Physical Education and Sports",
+    "name_local": "Faculdade de Educação Física e Desportos",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "aliases": [
+      "FAEFID",
+      "FAEFID/UFJF"
+    ],
+    "context_aliases": [
+      "Faculdade de Educação Física e Desportos",
+      "Faculty of Physical Education and Sports",
+      "Faculdade de Educação Física",
+      "Faculty of Physical Education",
+      "School of Physical Education",
+      "School of Physical Education and Sports",
+      "School of Physical Education and Sport",
+      "Faculty of Physical Education and Sport",
+      "Department of Physical Education",
+      "Physical Education Department",
+      "Departamento de Educação Física",
+      "Department of Physical Education and Sports",
+      "Faculty of Sport Science",
+      "Programa de Pós-Graduação em Educação Física",
+      "Postgraduate Program in Physical Education",
+      "Graduate Program in Physical Education"
+    ]
+  },
+  {
+    "uid": "enfermagem",
+    "name_en": "Faculty of Nursing",
+    "name_local": "Faculdade de Enfermagem",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Enfermagem",
+      "Faculty of Nursing",
+      "School of Nursing",
+      "Nursing School",
+      "Programa de Pós-Graduação em Enfermagem",
+      "Graduate Program in Nursing",
+      "Postgraduate Program in Nursing"
+    ]
+  },
+  {
+    "uid": "engenharia",
+    "name_en": "Faculty of Engineering",
+    "name_local": "Faculdade de Engenharia",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Engenharia",
+      "Faculty of Engineering",
+      "School of Engineering",
+      "Engineering School",
+      "Department of Engineering",
+      "Engineering Department",
+      "Engineering Faculty",
+      "Programa de Pós-Graduação em Engenharia Civil",
+      "Postgraduate Program in Civil Engineering",
+      "Graduate Program in Civil Engineering"
+    ]
+  },
+  {
+    "uid": "farmacia",
+    "name_en": "Faculty of Pharmacy",
+    "name_local": "Faculdade de Farmácia",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Farmácia",
+      "Faculty of Pharmacy",
+      "School of Pharmacy",
+      "College of Pharmacy",
+      "Programa de Pós-Graduação em Ciências Farmacêuticas",
+      "Graduate Program in Pharmaceutical Sciences",
+      "Postgraduate Program in Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "fisioterapia",
+    "name_en": "Faculty of Physiotherapy",
+    "name_local": "Faculdade de Fisioterapia",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Fisioterapia",
+      "Faculty of Physiotherapy",
+      "Faculty of Physical Therapy",
+      "School of Physical Therapy",
+      "School of Physiotherapy",
+      "Department of Physical Therapy",
+      "Department of Physiotherapy",
+      "Physical Therapy Department",
+      "Departamento de Fisioterapia",
+      "Programa de Pós-Graduação em Ciências da Reabilitação e Desempenho Físico-Funcional",
+      "Postgraduate Program in Rehabilitation Sciences and Physical Functional Performance",
+      "Graduate Program in Rehabilitation Sciences and Physical-Functional Performance",
+      "Graduate Program in Rehabilitation Sciences and Physical and Functional Performance",
+      "Postgraduate Research Program on Rehabilitation Sciences"
+    ]
+  },
+  {
+    "uid": "letras",
+    "name_en": "Faculty of Letters",
+    "name_local": "Faculdade de Letras",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Letras",
+      "Faculty of Letters",
+      "FALE",
+      "Faculty of Languages",
+      "Programa de Pós-Graduação em Letras",
+      "Programa de Pós-Graduação em Linguística",
+      "Graduate Program in Linguistics"
+    ]
+  },
+  {
+    "uid": "medicina",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculdade de Medicina",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Medicina",
+      "Faculty of Medicine",
+      "School of Medicine",
+      "Medical School",
+      "Medicine School",
+      "Faculty of Medical Sciences",
+      "Department of Medicine",
+      "Medicine Department",
+      "Programa de Pós-Graduação em Saúde",
+      "Post Graduate Program in Health",
+      "Postgraduate Program in Health",
+      "Graduate Program in Health",
+      "Postgraduate Program in Health Sciences"
+    ]
+  },
+  {
+    "uid": "odontologia",
+    "name_en": "Faculty of Dentistry",
+    "name_local": "Faculdade de Odontologia",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Odontologia",
+      "Faculty of Dentistry",
+      "School of Dentistry",
+      "Dental School",
+      "Department of Dentistry",
+      "Departamento de Odontologia",
+      "Programa de Pós-Graduação em Odontologia",
+      "Postgraduate Program in Dentistry",
+      "Graduate Program in Dentistry"
+    ]
+  },
+  {
+    "uid": "servico-social",
+    "name_en": "Faculty of Social Work",
+    "name_local": "Faculdade de Serviço Social",
+    "kind": "faculty",
+    "parent": "ufjf",
+    "context_aliases": [
+      "Faculdade de Serviço Social",
+      "Faculty of Social Work",
+      "School of Social Work",
+      "Programa de Pós-Graduação em Serviço Social"
+    ]
+  },
+  {
+    "uid": "joao-xxiii",
+    "name_en": "João XXIII Application School",
+    "name_local": "Colégio de Aplicação João XXIII",
+    "kind": "school",
+    "parent": "ufjf",
+    "aliases": [
+      "Colégio de Aplicação João XXIII",
+      "Colegio de Aplicacao Joao XXIII",
+      "Colégio João XXIII"
+    ]
+  },
+  {
+    "uid": "campus-gv",
+    "name_en": "Governador Valadares Campus",
+    "name_local": "Campus Avançado Governador Valadares",
+    "kind": "campus",
+    "parent": "ufjf",
+    "aliases": [
+      "UFJF-GV",
+      "UFJF GV",
+      "UFJF/GV",
+      "Campus Avançado Governador Valadares",
+      "Campus Avançado de Governador Valadares",
+      "campus avançado Governador Valadares"
+    ],
+    "context_aliases": [
+      "Campus Avançado Governador Valadares",
+      "Governador Valadares Campus",
+      "Campus Governador Valadares",
+      "Campus GV",
+      "Campus de Governador Valadares",
+      "Campus Governador Valdares",
+      "Governador Valadares"
+    ]
+  },
+  {
+    "uid": "icv",
+    "name_en": "Institute of Life Sciences",
+    "name_local": "Instituto de Ciências da Vida",
+    "kind": "institute",
+    "parent": "campus-gv",
+    "aliases": [
+      "ICV/UFJF",
+      "ICV-UFJF"
+    ],
+    "context_aliases": [
+      "Instituto de Ciências da Vida",
+      "Institute of Life Sciences",
+      "ICV",
+      "Instituto de Ciencias da Vida",
+      "Instituto Ciências da Vida",
+      "Life Sciences Institute",
+      "Programa de Pós-Graduação em Ciências Aplicadas à Saúde",
+      "PPgCAS",
+      "Applied Health Sciences Post-Graduate Program",
+      "Graduate Program in Applied Health Sciences"
+    ]
+  },
+  {
+    "uid": "icsa",
+    "name_en": "Institute of Applied Social Sciences",
+    "name_local": "Instituto de Ciências Sociais Aplicadas",
+    "kind": "institute",
+    "parent": "campus-gv",
+    "aliases": [
+      "ICSA/UFJF",
+      "ICSA-UFJF"
+    ],
+    "context_aliases": [
+      "Instituto de Ciências Sociais Aplicadas",
+      "Institute of Applied Social Sciences",
+      "ICSA",
+      "Instituto de Ciencias Sociais Aplicadas"
+    ]
+  },
+  {
+    "uid": "ice-dcc",
+    "name_en": "Department of Computer Science",
+    "name_local": "Departamento de Ciência da Computação",
+    "kind": "department",
+    "parent": "ice",
+    "context_aliases": [
+      "Departamento de Ciência da Computação",
+      "Department of Computer Science",
+      "Computer Science Department",
+      "Departamento de Ciencia da Computacao",
+      "DCC",
+      "Departamento de Ciência da Computac ¸ão",
+      "Graduate Program in Computer Science",
+      "Programa de Pós-Graduação em Ciência da Computação",
+      "Computer Science Postgraduate Program",
+      "Postgraduate Program in Computer Science"
+    ]
+  },
+  {
+    "uid": "ice-est",
+    "name_en": "Department of Statistics",
+    "name_local": "Departamento de Estatística",
+    "kind": "department",
+    "parent": "ice",
+    "context_aliases": [
+      "Departamento de Estatística",
+      "Department of Statistics",
+      "Departamento de Estatistica",
+      "Statistics Department"
+    ]
+  },
+  {
+    "uid": "ice-fis",
+    "name_en": "Department of Physics",
+    "name_local": "Departamento de Física",
+    "kind": "department",
+    "parent": "ice",
+    "context_aliases": [
+      "Departamento de Física",
+      "Department of Physics",
+      "Physics Department",
+      "Departamento de Fisica",
+      "Depto. de Física",
+      "Programa de Pós-Graduação em Física",
+      "Graduate Program in Physics"
+    ]
+  },
+  {
+    "uid": "ice-mat",
+    "name_en": "Department of Mathematics",
+    "name_local": "Departamento de Matemática",
+    "kind": "department",
+    "parent": "ice",
+    "context_aliases": [
+      "Departamento de Matemática",
+      "Department of Mathematics",
+      "Mathematics Department",
+      "Departamento de Matematica",
+      "Depto. de Matemática"
+    ]
+  },
+  {
+    "uid": "ice-qui",
+    "name_en": "Department of Chemistry",
+    "name_local": "Departamento de Química",
+    "kind": "department",
+    "parent": "ice",
+    "context_aliases": [
+      "Departamento de Química",
+      "Department of Chemistry",
+      "Chemistry Department",
+      "Departamento de Quimica",
+      "Departamento Química",
+      "Programa de Pós-Graduação em Química",
+      "Graduate Program in Chemistry"
+    ]
+  },
+  {
+    "uid": "icb-ana",
+    "name_en": "Department of Anatomy",
+    "name_local": "Departamento de Anatomia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Anatomia",
+      "Department of Anatomy",
+      "Anatomy Department"
+    ]
+  },
+  {
+    "uid": "icb-bio",
+    "name_en": "Department of Biology",
+    "name_local": "Departamento de Biologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Biologia",
+      "Department of Biology",
+      "Biology Department"
+    ]
+  },
+  {
+    "uid": "icb-bot",
+    "name_en": "Department of Botany",
+    "name_local": "Departamento de Botânica",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Botânica",
+      "Department of Botany",
+      "Departamento de Botanica",
+      "Botany Department"
+    ]
+  },
+  {
+    "uid": "icb-bqi",
+    "name_en": "Department of Biochemistry",
+    "name_local": "Departamento de Bioquímica",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Bioquímica",
+      "Department of Biochemistry",
+      "Departamento de Bioquimica",
+      "Biochemistry Department"
+    ]
+  },
+  {
+    "uid": "icb-pmi",
+    "name_en": "Department of Parasitology, Microbiology and Immunology",
+    "name_local": "Departamento de Parasitologia, Microbiologia e Imunologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Parasitologia",
+      "Department of Parasitology",
+      "Parasitology Department",
+      "Department of Parasitology Microbiology and Immunology",
+      "Departamento de Parasitologia Microbiologia e Imunologia",
+      "Microbiology and Immunology",
+      "Microbiologia e Imunologia"
+    ]
+  },
+  {
+    "uid": "icb-far",
+    "name_en": "Department of Pharmacology",
+    "name_local": "Departamento de Farmacologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Farmacologia",
+      "Department of Pharmacology",
+      "Pharmacology Department"
+    ]
+  },
+  {
+    "uid": "icb-bfi",
+    "name_en": "Department of Biophysics and Physiology",
+    "name_local": "Departamento de Biofísica e Fisiologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Biofísica e Fisiologia",
+      "Department of Biophysics and Physiology",
+      "Department of Physiology",
+      "Departamento de Fisiologia",
+      "Physiology Department"
+    ]
+  },
+  {
+    "uid": "icb-mor",
+    "name_en": "Department of Morphology",
+    "name_local": "Departamento de Morfologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Morfologia",
+      "Department of Morphology",
+      "Morphology Department"
+    ]
+  },
+  {
+    "uid": "icb-nut",
+    "name_en": "Department of Nutrition",
+    "name_local": "Departamento de Nutrição",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Nutrição",
+      "Department of Nutrition",
+      "Departamento de Nutricao",
+      "Nutrition Department"
+    ]
+  },
+  {
+    "uid": "icb-zoo",
+    "name_en": "Department of Zoology",
+    "name_local": "Departamento de Zoologia",
+    "kind": "department",
+    "parent": "icb",
+    "context_aliases": [
+      "Departamento de Zoologia",
+      "Department of Zoology",
+      "Zoology Department"
+    ]
+  },
+  {
+    "uid": "ich-cre",
+    "name_en": "Department of Science of Religion",
+    "name_local": "Departamento de Ciência da Religião",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Ciência da Religião",
+      "Department of Science of Religion",
+      "Department of Religious Studies",
+      "Department of Religion Studies"
+    ]
+  },
+  {
+    "uid": "ich-cso",
+    "name_en": "Department of Social Sciences",
+    "name_local": "Departamento de Ciências Sociais",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Ciências Sociais",
+      "Department of Social Sciences",
+      "Social Sciences Department"
+    ]
+  },
+  {
+    "uid": "ich-fil",
+    "name_en": "Department of Philosophy",
+    "name_local": "Departamento de Filosofia",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Filosofia",
+      "Department of Philosophy",
+      "Philosophy Department"
+    ]
+  },
+  {
+    "uid": "ich-geo",
+    "name_en": "Department of Geosciences",
+    "name_local": "Departamento de Geociências",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Geociências",
+      "Department of Geosciences",
+      "Departamento de Geociencias",
+      "Department of Geography",
+      "Departamento de Geografia"
+    ]
+  },
+  {
+    "uid": "ich-his",
+    "name_en": "Department of History",
+    "name_local": "Departamento de História",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de História",
+      "Department of History",
+      "Departamento de Historia"
+    ]
+  },
+  {
+    "uid": "ich-psi",
+    "name_en": "Department of Psychology",
+    "name_local": "Departamento de Psicologia",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Psicologia",
+      "Department of Psychology",
+      "Psychology Department",
+      "Programa de Pós-Graduação em Psicologia",
+      "Graduate Program in Psychology"
+    ]
+  },
+  {
+    "uid": "ich-tur",
+    "name_en": "Department of Tourism",
+    "name_local": "Departamento de Turismo",
+    "kind": "department",
+    "parent": "ich",
+    "context_aliases": [
+      "Departamento de Turismo",
+      "Department of Tourism"
+    ]
+  },
+  {
+    "uid": "iad-art",
+    "name_en": "Department of Arts",
+    "name_local": "Departamento de Artes",
+    "kind": "department",
+    "parent": "iad",
+    "context_aliases": [
+      "Departamento de Artes",
+      "Department of Arts"
+    ]
+  },
+  {
+    "uid": "iad-mus",
+    "name_en": "Department of Music",
+    "name_local": "Departamento de Música",
+    "kind": "department",
+    "parent": "iad",
+    "context_aliases": [
+      "Departamento de Música",
+      "Department of Music",
+      "Departamento de Musica"
+    ]
+  },
+  {
+    "uid": "facc-cad",
+    "name_en": "Department of Administrative Sciences",
+    "name_local": "Departamento de Ciências Administrativas",
+    "kind": "department",
+    "parent": "facc",
+    "context_aliases": [
+      "Departamento de Ciências Administrativas",
+      "Department of Administrative Sciences"
+    ]
+  },
+  {
+    "uid": "facc-fin",
+    "name_en": "Department of Finance and Controllership",
+    "name_local": "Departamento de Finanças e Controladoria",
+    "kind": "department",
+    "parent": "facc",
+    "context_aliases": [
+      "Departamento de Finanças e Controladoria",
+      "Department of Finance and Controllership"
+    ]
+  },
+  {
+    "uid": "fau-pht",
+    "name_en": "Department of Design, History and Theory of Architecture and Urbanism",
+    "name_local": "Departamento de Projeto, História e Teoria da Arquitetura e do Urbanismo",
+    "kind": "department",
+    "parent": "fau"
+  },
+  {
+    "uid": "fau-prt",
+    "name_en": "Department of Design, Representation and Technology of Architecture and Urbanism",
+    "name_local": "Departamento de Projeto, Representação e Tecnologia da Arquitetura e do Urbanismo",
+    "kind": "department",
+    "parent": "fau"
+  },
+  {
+    "uid": "economia-eco",
+    "name_en": "Department of Economics",
+    "name_local": "Departamento de Economia",
+    "kind": "department",
+    "parent": "economia",
+    "context_aliases": [
+      "Departamento de Economia",
+      "Department of Economics",
+      "Economics Department"
+    ]
+  },
+  {
+    "uid": "enf-eap",
+    "name_en": "Department of Applied Nursing",
+    "name_local": "Departamento de Enfermagem Aplicada",
+    "kind": "department",
+    "parent": "enfermagem",
+    "context_aliases": [
+      "Departamento de Enfermagem Aplicada",
+      "Department of Applied Nursing"
+    ]
+  },
+  {
+    "uid": "enf-eba",
+    "name_en": "Department of Basic Nursing",
+    "name_local": "Departamento de Enfermagem Básica",
+    "kind": "department",
+    "parent": "enfermagem",
+    "context_aliases": [
+      "Departamento de Enfermagem Básica",
+      "Department of Basic Nursing",
+      "Departamento de Enfermagem Basica"
+    ]
+  },
+  {
+    "uid": "enf-emp",
+    "name_en": "Department of Maternal-Child Nursing and Public Health",
+    "name_local": "Departamento de Enfermagem Materno-Infantil e Saúde Pública",
+    "kind": "department",
+    "parent": "enfermagem",
+    "context_aliases": [
+      "Departamento de Enfermagem Materno-Infantil e Saúde Pública",
+      "Department of Maternal-Child Nursing and Public Health"
+    ]
+  },
+  {
+    "uid": "eng-ene",
+    "name_en": "Department of Electrical Energy",
+    "name_local": "Departamento de Energia Elétrica",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Energia Elétrica",
+      "Department of Electrical Energy",
+      "Department of Electric Energy",
+      "Electrical Energy Department",
+      "Electric Energy Department",
+      "Departamento de Energia Eletrica",
+      "Dept. of Electrical Energy",
+      "Electrical Energy Dept",
+      "Department of Energy",
+      "Energy Department",
+      "Departamento de Energia"
+    ]
+  },
+  {
+    "uid": "eng-cel",
+    "name_en": "Department of Electrical Circuits",
+    "name_local": "Departamento de Circuitos Elétricos",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Circuitos Elétricos",
+      "Department of Electrical Circuits",
+      "Department of Circuits",
+      "Electrical Circuits Department",
+      "Electrical Circuit Department",
+      "Departamento de Circuitos Eletricos",
+      "Dept. of Electrical Circuits"
+    ]
+  },
+  {
+    "uid": "eng-epm",
+    "name_en": "Department of Industrial and Mechanical Engineering",
+    "name_local": "Departamento de Engenharia de Produção e Mecânica",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Engenharia de Produção e Mecânica",
+      "Department of Industrial and Mechanical Engineering",
+      "Industrial and Mechanical Engineering Department",
+      "Department of Production and Mechanical Engineering",
+      "Department of Mechanical Engineering",
+      "Departamento de Engenharia Mecânica",
+      "Mechanical Eng. Dept"
+    ]
+  },
+  {
+    "uid": "eng-cci",
+    "name_en": "Department of Civil Construction",
+    "name_local": "Departamento de Construção Civil",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Construção Civil",
+      "Department of Civil Construction",
+      "Departamento de Construcao Civil",
+      "Department of Civil Engineering",
+      "Departamento de Engenharia Civil"
+    ]
+  },
+  {
+    "uid": "eng-est",
+    "name_en": "Department of Structures",
+    "name_local": "Departamento de Estruturas",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Estruturas",
+      "Department of Structures",
+      "Structures Department",
+      "Department of Structural Engineering",
+      "Structural Engineering Department"
+    ]
+  },
+  {
+    "uid": "eng-esa",
+    "name_en": "Department of Sanitary and Environmental Engineering",
+    "name_local": "Departamento de Engenharia Sanitária e Ambiental",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Engenharia Sanitária e Ambiental",
+      "Department of Sanitary and Environmental Engineering",
+      "Department of Environmental and Sanitary Engineering",
+      "Departamento de Engenharia Ambiental e Sanitária",
+      "Departamento de Engenharia Sanitaria e Ambiental",
+      "Department of Sanitation and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "eng-trn",
+    "name_en": "Department of Transportation and Geotechnics",
+    "name_local": "Departamento de Transportes e Geotecnia",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Transportes e Geotecnia",
+      "Department of Transportation and Geotechnics",
+      "Department of Transport and Geotechnics",
+      "Departamento de Geotecnia e Transportes",
+      "Departamento de Transportes e Geotécnica"
+    ]
+  },
+  {
+    "uid": "eng-mac",
+    "name_en": "Department of Applied and Computational Mechanics",
+    "name_local": "Departamento de Mecânica Aplicada e Computacional",
+    "kind": "department",
+    "parent": "engenharia",
+    "context_aliases": [
+      "Departamento de Mecânica Aplicada e Computacional",
+      "Department of Applied and Computational Mechanics",
+      "Department of Computational and Applied Mechanics",
+      "Computational and Applied Mechanics Department",
+      "Departamento de Mecanica Aplicada e Computacional"
+    ]
+  },
+  {
+    "uid": "eng-ppee",
+    "name_en": "Graduate Program in Electrical Engineering",
+    "name_local": "Programa de Pós-Graduação em Engenharia Elétrica",
+    "kind": "program",
+    "parent": "engenharia",
+    "aliases": [
+      "PPEE/UFJF",
+      "PPEE-UFJF"
+    ],
+    "context_aliases": [
+      "Programa de Pós-Graduação em Engenharia Elétrica",
+      "Graduate Program in Electrical Engineering",
+      "PPEE",
+      "Department of Electrical Engineering",
+      "Electrical Engineering Department",
+      "Departamento de Engenharia Elétrica",
+      "Departamento de Engenharia Eletrica",
+      "Dept. of Electrical Engineering",
+      "Programa de Pos-Graduacao em Engenharia Eletrica",
+      "Postgraduate Program in Electrical Engineering",
+      "Electrical Engineering Program"
+    ]
+  },
+  {
+    "uid": "pgmc",
+    "name_en": "Graduate Program in Computational Modeling",
+    "name_local": "Programa de Pós-Graduação em Modelagem Computacional",
+    "kind": "program",
+    "parent": "ufjf",
+    "aliases": [
+      "PGMC/UFJF",
+      "PGMC-UFJF"
+    ],
+    "context_aliases": [
+      "Programa de Pós-Graduação em Modelagem Computacional",
+      "Graduate Program in Computational Modeling",
+      "PGMC",
+      "Computational Modeling Program",
+      "Computational Modeling Graduate Program",
+      "Graduate Program on Computational Modeling",
+      "Postgraduate Program in Computational Modeling",
+      "Programa de Pos-Graduacao em Modelagem Computacional",
+      "Graduate Program in Computational Modelling"
+    ]
+  },
+  {
+    "uid": "far-cfa",
+    "name_en": "Department of Pharmaceutical Sciences",
+    "name_local": "Departamento de Ciências Farmacêuticas",
+    "kind": "department",
+    "parent": "farmacia",
+    "context_aliases": [
+      "Departamento de Ciências Farmacêuticas",
+      "Department of Pharmaceutical Sciences",
+      "Pharmaceutical Sciences Department",
+      "Department of Pharmaceutical Science",
+      "Departamento de Ciencias Farmaceuticas"
+    ]
+  },
+  {
+    "uid": "fis-iam",
+    "name_en": "Department of Physiotherapy of the Elderly, Adult and Maternal-Child Health",
+    "name_local": "Departamento de Fisioterapia do Idoso, do Adulto e Materno-Infantil",
+    "kind": "department",
+    "parent": "fisioterapia"
+  },
+  {
+    "uid": "fis-fmr",
+    "name_en": "Department of Physiotherapy Fundamentals, Methods and Resources",
+    "name_local": "Departamento de Fundamentos, Métodos e Recursos em Fisioterapia",
+    "kind": "department",
+    "parent": "fisioterapia"
+  },
+  {
+    "uid": "faefid-des",
+    "name_en": "Department of Sports",
+    "name_local": "Departamento de Desportos",
+    "kind": "department",
+    "parent": "faefid",
+    "context_aliases": [
+      "Departamento de Desportos",
+      "Department of Sports"
+    ]
+  },
+  {
+    "uid": "faefid-fun",
+    "name_en": "Department of Physical Education Fundamentals",
+    "name_local": "Departamento de Fundamentos da Educação Física",
+    "kind": "department",
+    "parent": "faefid",
+    "context_aliases": [
+      "Departamento de Fundamentos da Educação Física",
+      "Department of Physical Education Fundamentals"
+    ]
+  },
+  {
+    "uid": "faefid-gin",
+    "name_en": "Department of Gymnastics and Body Art",
+    "name_local": "Departamento de Ginástica e Arte Corporal",
+    "kind": "department",
+    "parent": "faefid",
+    "context_aliases": [
+      "Departamento de Ginástica e Arte Corporal",
+      "Department of Gymnastics and Body Art"
+    ]
+  },
+  {
+    "uid": "letras-let",
+    "name_en": "Department of Letters",
+    "name_local": "Departamento de Letras",
+    "kind": "department",
+    "parent": "letras",
+    "context_aliases": [
+      "Departamento de Letras",
+      "Department of Letters",
+      "DLET"
+    ]
+  },
+  {
+    "uid": "letras-lem",
+    "name_en": "Department of Modern Foreign Languages",
+    "name_local": "Departamento de Letras Estrangeiras Modernas",
+    "kind": "department",
+    "parent": "letras",
+    "context_aliases": [
+      "Departamento de Letras Estrangeiras Modernas",
+      "Department of Modern Foreign Languages",
+      "DLEM"
+    ]
+  },
+  {
+    "uid": "med-cir",
+    "name_en": "Department of Surgery",
+    "name_local": "Departamento de Cirurgia",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Cirurgia",
+      "Department of Surgery",
+      "Surgery Department"
+    ]
+  },
+  {
+    "uid": "med-cli",
+    "name_en": "Department of Internal Medicine",
+    "name_local": "Departamento de Clínica Médica",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Clínica Médica",
+      "Department of Internal Medicine",
+      "Departamento de Clinica Medica",
+      "Department of Clinical Medicine",
+      "Internal Medicine Department"
+    ]
+  },
+  {
+    "uid": "med-pat",
+    "name_en": "Department of Pathology",
+    "name_local": "Departamento de Patologia",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Patologia",
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "med-sco",
+    "name_en": "Department of Public Health",
+    "name_local": "Departamento de Saúde Coletiva",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Saúde Coletiva",
+      "Department of Public Health",
+      "Departamento de Saude Coletiva",
+      "Department of Collective Health",
+      "Public Health Department",
+      "Programa de Pós-Graduação em Saúde Coletiva",
+      "Graduate Program in Public Health",
+      "Postgraduate Program in Collective Health"
+    ]
+  },
+  {
+    "uid": "med-mai",
+    "name_en": "Department of Maternal and Child Health",
+    "name_local": "Departamento Materno Infantil",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento Materno Infantil",
+      "Department of Maternal and Child Health",
+      "Departamento Materno-Infantil"
+    ]
+  },
+  {
+    "uid": "med-mfc",
+    "name_en": "Department of Family and Community Medicine and Imaging",
+    "name_local": "Departamento de Medicina de Família e Comunidade e Imagem",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Medicina de Família e Comunidade e Imagem",
+      "Department of Family and Community Medicine and Imaging"
+    ]
+  },
+  {
+    "uid": "med-vet",
+    "name_en": "Department of Veterinary Medicine",
+    "name_local": "Departamento de Medicina Veterinária",
+    "kind": "department",
+    "parent": "medicina",
+    "context_aliases": [
+      "Departamento de Medicina Veterinária",
+      "Department of Veterinary Medicine",
+      "Departamento de Medicina Veterinaria"
+    ]
+  },
+  {
+    "uid": "odo-clo",
+    "name_en": "Department of Dental Clinic",
+    "name_local": "Departamento de Clínica Odontológica",
+    "kind": "department",
+    "parent": "odontologia",
+    "context_aliases": [
+      "Departamento de Clínica Odontológica",
+      "Department of Dental Clinic",
+      "Department of Clinical Dentistry",
+      "Departamento de Clinica Odontologica"
+    ]
+  },
+  {
+    "uid": "odo-ore",
+    "name_en": "Department of Restorative Dentistry",
+    "name_local": "Departamento de Odontologia Restauradora",
+    "kind": "department",
+    "parent": "odontologia",
+    "context_aliases": [
+      "Departamento de Odontologia Restauradora",
+      "Department of Restorative Dentistry"
+    ]
+  },
+  {
+    "uid": "odo-osi",
+    "name_en": "Department of Social and Pediatric Dentistry",
+    "name_local": "Departamento de Odontologia Social e Infantil",
+    "kind": "department",
+    "parent": "odontologia",
+    "context_aliases": [
+      "Departamento de Odontologia Social e Infantil",
+      "Department of Social and Pediatric Dentistry",
+      "Department of Social and Paediatric Dentistry"
+    ]
+  },
+  {
+    "uid": "sso-fun",
+    "name_en": "Department of Social Work Fundamentals",
+    "name_local": "Departamento de Fundamentos do Serviço Social",
+    "kind": "department",
+    "parent": "servico-social",
+    "context_aliases": [
+      "Departamento de Fundamentos do Serviço Social",
+      "Department of Social Work Fundamentals"
+    ]
+  },
+  {
+    "uid": "sso-pol",
+    "name_en": "Department of Social Work Policy and Action",
+    "name_local": "Departamento de Política de Ação do Serviço Social",
+    "kind": "department",
+    "parent": "servico-social",
+    "context_aliases": [
+      "Departamento de Política de Ação do Serviço Social",
+      "Department of Social Work Policy and Action"
+    ]
+  },
+  {
+    "uid": "icv-dcbv",
+    "name_en": "Department of Basic Life Sciences",
+    "name_local": "Departamento de Ciências Básicas da Vida",
+    "kind": "department",
+    "parent": "icv",
+    "context_aliases": [
+      "Departamento de Ciências Básicas da Vida",
+      "Department of Basic Life Sciences",
+      "DCBV",
+      "Departamento de Ciencias Basicas da Vida"
+    ]
+  }
+]

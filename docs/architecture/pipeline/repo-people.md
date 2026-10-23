@@ -38,6 +38,15 @@ stored `GitHubProfile.type`, which `repositories` set. The type is lowercase
 there, so `_is_person` compares case-insensitively; for contributors the same
 attribute arrives from the API as `User`.
 
+## Profiles come in batches
+
+The profiles a repository needs are requested together
+(`GitHubClient.get_users`): 50 per GraphQL query, one point of GraphQL's own
+hourly budget, where REST spends one of the core 5,000 per profile. Profiles
+were 80% of the GitHub requests on Innopolis. A batch succeeds or fails whole;
+a failure leaves every stored profile as it was and the repository `FAILED`
+for another attempt. Without a token, one REST request per profile.
+
 ## A filled profile is not requested again
 
 `GET /users/{login}` is made only for a login that has not yet had this request

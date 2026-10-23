@@ -81,7 +81,7 @@ def main() -> int:
         projection = {
             "id": True,
             "name_raw": True,
-            "is_itmo": True,
+            "is_member": True,
             "groups": True,
             **dict.fromkeys(REQUIRED_NAME_FIELDS, True),
         }
@@ -90,14 +90,14 @@ def main() -> int:
         )
         people = []
         for person in cursor:
-            field_issues = required_name_field_issues(person)
+            field_issues = required_name_field_issues(person, settings.institution.local_script)
             if not field_issues:
                 continue
             people.append(
                 {
                     "id": person.get("id") or str(person["_id"]),
                     "name_raw": person.get("name_raw"),
-                    "is_itmo": bool(person.get("is_itmo")),
+                    "is_member": bool(person.get("is_member")),
                     "groups": person.get("groups") or [],
                     "field_issues": field_issues,
                 }
@@ -141,7 +141,7 @@ def main() -> int:
         "database": settings.mongo_db,
         "host": host,
         "people": len(people),
-        "itmo_people": sum(person["is_itmo"] for person in people),
+        "member_people": sum(person["is_member"] for person in people),
         "invalid_by_field": dict(sorted(invalid_counts.items())),
         "unresolved_without_group": unresolved,
         "commands": command_rows,
@@ -153,7 +153,7 @@ def main() -> int:
     )
 
     print(f"invalid completed people: {len(people)}")
-    print(f"  ITMO people:             {manifest['itmo_people']}")
+    print(f"  members:             {manifest['member_people']}")
     for field, count in invalid_counts.most_common():
         print(f"  invalid {field:<15} {count}")
     print(f"repair groups: {len(assignments)}")

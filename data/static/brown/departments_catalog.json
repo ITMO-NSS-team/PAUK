@@ -1,0 +1,319 @@
+[
+  {
+    "uid": "brown",
+    "name_en": "Brown University",
+    "name_local": "Brown University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05gq02987",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "Warren Alpert Medical School",
+    "name_local": "Warren Alpert Medical School",
+    "kind": "school",
+    "parent": "brown",
+    "aliases": [
+      "Warren Alpert School of Medicine"
+    ],
+    "context_aliases": [
+      "Warren Alpert Medical School",
+      "Alpert Medical School"
+    ]
+  },
+  {
+    "uid": "sph",
+    "name_en": "Brown University School of Public Health",
+    "name_local": "Brown University School of Public Health",
+    "kind": "school",
+    "parent": "brown",
+    "aliases": [
+      "Brown University School of Public Health"
+    ],
+    "context_aliases": [
+      "School of Public Health"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "dmed",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "psych",
+    "name_en": "Department of Psychiatry and Human Behavior",
+    "name_local": "Department of Psychiatry and Human Behavior",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Human Behavior"
+    ]
+  },
+  {
+    "uid": "nsurg",
+    "name_en": "Department of Neurosurgery",
+    "name_local": "Department of Neurosurgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosurgery"
+    ]
+  },
+  {
+    "uid": "path",
+    "name_en": "Department of Pathology and Laboratory Medicine",
+    "name_local": "Department of Pathology and Laboratory Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology and Laboratory Medicine"
+    ]
+  },
+  {
+    "uid": "ortho",
+    "name_en": "Department of Orthopaedic Surgery",
+    "name_local": "Department of Orthopaedic Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopedic Surgery",
+      "Department of Orthopaedic Surgery",
+      "Department of Orthopaedics"
+    ]
+  },
+  {
+    "uid": "em",
+    "name_en": "Department of Emergency Medicine",
+    "name_local": "Department of Emergency Medicine",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Emergency Medicine"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "neuro",
+    "name_en": "Department of Neurology",
+    "name_local": "Department of Neurology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurology"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Department of Obstetrics and Gynecology",
+    "kind": "department",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "hspp",
+    "name_en": "Department of Health Services Policy and Practice",
+    "name_local": "Department of Health Services Policy and Practice",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Services",
+      "Policy and Practice"
+    ]
+  },
+  {
+    "uid": "epi",
+    "name_en": "Department of Epidemiology",
+    "name_local": "Department of Epidemiology",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Epidemiology"
+    ]
+  },
+  {
+    "uid": "bss",
+    "name_en": "Department of Behavioral and Social Sciences",
+    "name_local": "Department of Behavioral and Social Sciences",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Behavioral and Social Sciences"
+    ]
+  },
+  {
+    "uid": "biostat",
+    "name_en": "Department of Biostatistics",
+    "name_local": "Department of Biostatistics",
+    "kind": "department",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biostatistics"
+    ]
+  },
+  {
+    "uid": "caas",
+    "name_en": "Center for Alcohol and Addiction Studies",
+    "name_local": "Center for Alcohol and Addiction Studies",
+    "kind": "center",
+    "parent": "sph",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Alcohol and Addiction Studies"
+    ]
+  },
+  {
+    "uid": "mcb",
+    "name_en": "Department of Molecular Biology Cell Biology and Biochemistry",
+    "name_local": "Department of Molecular Biology Cell Biology and Biochemistry",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Biology",
+      "Cell Biology and Biochemistry"
+    ]
+  },
+  {
+    "uid": "neuroscience",
+    "name_en": "Department of Neuroscience",
+    "name_local": "Department of Neuroscience",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuroscience"
+    ]
+  },
+  {
+    "uid": "mmi",
+    "name_en": "Department of Molecular Microbiology and Immunology",
+    "name_local": "Department of Molecular Microbiology and Immunology",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Microbiology and Immunology"
+    ]
+  },
+  {
+    "uid": "deeps",
+    "name_en": "Department of Earth Environmental and Planetary Sciences",
+    "name_local": "Department of Earth Environmental and Planetary Sciences",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth",
+      "Environmental and Planetary Sciences",
+      "and Planetary Sciences"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "apma",
+    "name_en": "Division of Applied Mathematics",
+    "name_local": "Division of Applied Mathematics",
+    "kind": "division",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Applied Mathematics"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "brown",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "carney",
+    "name_en": "Carney Institute for Brain Science",
+    "name_local": "Carney Institute for Brain Science",
+    "kind": "institute",
+    "parent": "brown",
+    "aliases": [
+      "Carney Institute for Brain Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "legorreta",
+    "name_en": "Legorreta Cancer Center",
+    "name_local": "Legorreta Cancer Center",
+    "kind": "center",
+    "parent": "brown",
+    "aliases": [
+      "Legorreta Cancer Center"
+    ],
+    "context_aliases": []
+  }
+]

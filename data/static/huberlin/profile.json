@@ -1,0 +1,36 @@
+{
+  "key": "huberlin",
+  "short_name": "HU Berlin",
+  "short_name_local": "HU Berlin",
+  "name_en": "Humboldt-Universität zu Berlin",
+  "name_local": "Humboldt-Universität zu Berlin",
+  "ror_id": "01hcx6992",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "hu-berlin.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:HumboldtUnivBerlin|HU\\ Berlin)(?![^\\W\\d_])",
+  "long_name": "Humboldt[\\s‐-]+Universitaet[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+Berlin|Humboldt[\\s‐-]+University[\\s‐-]+Berlin|Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+University",
+  "marker_replacement": "HumboldtUnivBerlin",
+  "place_words": "adlershof|aleja|allee|augustenburger|av|ave|avenue|bd|berlin|bldg|boulevard|box|building|calle|campus|charitéplatz|dahlem|den|deutschland|east|floor|gatan|germany|hindenburgdamm|katu|laan|linden|mitte|north|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|unter|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Charit[ée]|Universitätsmedizin Berlin|University Medical Center Berlin|Freie Universität Berlin|Berlin Institute of Health|Technische Universität Berlin|Deutsches Herzzentrum|(?<![^\\W\\d_])DZHK(?![^\\W\\d_])|Fraunhofer|Max Planck|Leibniz|Helmholtz|Berlin\\ Mathematical\\ School|Berlin\\ Mathematics\\ Research\\ Center\\ MATH\\+|Centre\\ Marc\\ Bloch|Charité\\ –\\ Universitätsmedizin\\ Berlin|Institute\\ for\\ Educational\\ Quality\\ Improvement|Weierstrass\\ Institute\\ for\\ Applied\\ Analysis\\ and\\ Stochastics|Weizenbaum\\ Institute",
+  "identity": "(?<![^\\W\\d_])HU\\ Berlin(?![^\\W\\d_])|Humboldt[\\s‐-]+Universitaet[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Berlin|Humboldt[\\s‐-]+Universität[\\s‐-]+Berlin|Humboldt[\\s‐-]+University[\\s‐-]+Berlin|Universität[\\s‐-]+zu[\\s‐-]+Berlin|Humboldt[\\s‐-]+University",
+  "city": "Berlin",
+  "staff_catalog": null,
+  "mongo_db": "pauk_huberlin",
+  "site_url": "https://www.hu-berlin.de",
+  "unit_words": "faculty|fakultät|institute|institut|department|school|centre|center|zentrum",
+  "external_authors": false
+}

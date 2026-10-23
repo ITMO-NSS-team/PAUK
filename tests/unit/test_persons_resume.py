@@ -26,8 +26,8 @@ class PersonsResumeTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.persons.OpenAlexClient")
     def test_completed_source_is_saved_before_later_person_interrupts(self, openalex, _crossref, _orcid):
         self.prepared.write_models("persons", [
-            Person(id="P1", openalex_id="A1", is_itmo=False),
-            Person(id="P2", openalex_id="A2", is_itmo=False),
+            Person(id="P1", openalex_id="A1", is_member=False),
+            Person(id="P2", openalex_id="A2", is_member=False),
         ])
         openalex.return_value.get_author.side_effect = [
             {"display_name": "First"}, KeyboardInterrupt(),
@@ -44,7 +44,7 @@ class PersonsResumeTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.persons.OpenAlexClient")
     def test_legacy_openreview_state_does_not_block_orcid_or_resume(self, openalex, _crossref, orcid):
         self.prepared.write_rows("persons", [{
-            "id": "P1", "is_itmo": True, "orcid": "0000-0001-2345-6789",
+            "id": "P1", "is_member": True, "orcid": "0000-0001-2345-6789",
             "openreview": "~Ada_Lovelace1",
             "_processing": {"openreview": {"status": "failed", "phase": "email"}},
         }])

@@ -1,0 +1,277 @@
+[
+  {
+    "uid": "uwarsaw",
+    "name_en": "University of Warsaw",
+    "name_local": "Uniwersytet Warszawski",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/039bjqg32",
+    "type": "university"
+  },
+  {
+    "uid": "fuw",
+    "name_en": "Faculty of Physics",
+    "name_local": "Faculty of Physics",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Physics"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Faculty of Biology",
+    "name_local": "Faculty of Biology",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biology"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Faculty of Chemistry",
+    "name_local": "Faculty of Chemistry",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Chemistry"
+    ]
+  },
+  {
+    "uid": "mimuw",
+    "name_en": "Faculty of Mathematics Informatics and Mechanics",
+    "name_local": "Faculty of Mathematics Informatics and Mechanics",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics",
+      "Informatics and Mechanics"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Faculty of Economic Sciences",
+    "name_local": "Faculty of Economic Sciences",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economic Sciences"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Faculty of Psychology",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology"
+    ]
+  },
+  {
+    "uid": "geol",
+    "name_en": "Faculty of Geology",
+    "name_local": "Faculty of Geology",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Geology"
+    ]
+  },
+  {
+    "uid": "geog",
+    "name_en": "Faculty of Geography and Regional Studies",
+    "name_local": "Faculty of Geography and Regional Studies",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Geography and Regional Studies"
+    ]
+  },
+  {
+    "uid": "arch",
+    "name_en": "Faculty of Archaeology",
+    "name_local": "Faculty of Archaeology",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Archaeology"
+    ]
+  },
+  {
+    "uid": "mgmt",
+    "name_en": "Faculty of Management",
+    "name_local": "Faculty of Management",
+    "kind": "faculty",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Management"
+    ]
+  },
+  {
+    "uid": "cnbch",
+    "name_en": "Biological and Chemical Research Centre",
+    "name_local": "Biological and Chemical Research Centre",
+    "kind": "center",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Biological and Chemical Research Centre",
+      "Biological and Chemical Research Center"
+    ]
+  },
+  {
+    "uid": "cent",
+    "name_en": "Centre of New Technologies",
+    "name_local": "Centre of New Technologies",
+    "kind": "center",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Centre of New Technologies"
+    ]
+  },
+  {
+    "uid": "obs",
+    "name_en": "Astronomical Observatory",
+    "name_local": "Astronomical Observatory",
+    "kind": "center",
+    "parent": "fuw",
+    "aliases": [],
+    "context_aliases": [
+      "Astronomical Observatory"
+    ]
+  },
+  {
+    "uid": "ifd",
+    "name_en": "Institute of Experimental Physics",
+    "name_local": "Institute of Experimental Physics",
+    "kind": "institute",
+    "parent": "fuw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Experimental Physics"
+    ]
+  },
+  {
+    "uid": "ift",
+    "name_en": "Institute of Theoretical Physics",
+    "name_local": "Institute of Theoretical Physics",
+    "kind": "institute",
+    "parent": "fuw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Theoretical Physics"
+    ]
+  },
+  {
+    "uid": "slcj",
+    "name_en": "Heavy Ion Laboratory",
+    "name_local": "Heavy Ion Laboratory",
+    "kind": "lab",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Heavy Ion Laboratory"
+    ]
+  },
+  {
+    "uid": "inf",
+    "name_en": "Institute of Informatics",
+    "name_local": "Institute of Informatics",
+    "kind": "institute",
+    "parent": "mimuw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Informatics"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Institute of Mathematics",
+    "name_local": "Institute of Mathematics",
+    "kind": "institute",
+    "parent": "mimuw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Mathematics"
+    ]
+  },
+  {
+    "uid": "micro",
+    "name_en": "Institute of Microbiology",
+    "name_local": "Institute of Microbiology",
+    "kind": "institute",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Microbiology"
+    ]
+  },
+  {
+    "uid": "evo",
+    "name_en": "Institute of Evolutionary Biology",
+    "name_local": "Institute of Evolutionary Biology",
+    "kind": "institute",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Evolutionary Biology"
+    ]
+  },
+  {
+    "uid": "dev",
+    "name_en": "Institute of Developmental Biology and Biomedical Sciences",
+    "name_local": "Institute of Developmental Biology and Biomedical Sciences",
+    "kind": "institute",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Developmental Biology and Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "eco",
+    "name_en": "Institute of Ecology",
+    "name_local": "Institute of Ecology",
+    "kind": "institute",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Ecology"
+    ]
+  },
+  {
+    "uid": "genbio",
+    "name_en": "Institute of Genetics and Biotechnology",
+    "name_local": "Institute of Genetics and Biotechnology",
+    "kind": "institute",
+    "parent": "bio",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Genetics and Biotechnology"
+    ]
+  },
+  {
+    "uid": "cmr",
+    "name_en": "Centre of Migration Research",
+    "name_local": "Centre of Migration Research",
+    "kind": "center",
+    "parent": "uwarsaw",
+    "aliases": [],
+    "context_aliases": [
+      "Centre of Migration Research"
+    ]
+  }
+]

@@ -142,6 +142,14 @@ class OpenRouterResolutionModels:
         ]
         return self._run(requests)
 
+    def _too_many(self, requests: list[_Request]) -> bool:
+        if len(requests) <= self.config.person_resolution_max_pairs:
+            return False
+        logger.warning("person resolution: %d %s pairs exceed PAUK_PERSON_RESOLUTION_MAX_PAIRS=%d; "
+                       "the model is not asked and they stay unmerged", len(requests), requests[0].stage,
+                       self.config.person_resolution_max_pairs)
+        return True
+
     def _client(self) -> OpenRouterClient:
         client = getattr(self._local, "client", None)
         if client is None:
@@ -245,7 +253,7 @@ class OpenRouterResolutionModels:
         return result
 
     def _run(self, requests: list[_Request]) -> dict[int, Verdict | None]:
-        if not requests:
+        if not requests or self._too_many(requests):
             return {}
         results: list[_Result] = []
         if not self.config.openrouter_api_key:

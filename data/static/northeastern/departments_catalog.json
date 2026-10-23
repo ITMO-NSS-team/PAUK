@@ -1,0 +1,315 @@
+[
+  {
+    "uid": "northeastern",
+    "name_en": "Northeastern University",
+    "name_local": "Northeastern University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04t5xt781",
+    "type": "university"
+  },
+  {
+    "uid": "khoury",
+    "name_en": "Khoury College of Computer Sciences",
+    "name_local": "Khoury College of Computer Sciences",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [
+      "Khoury College of Computer Sciences",
+      "Khoury College of Computer Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cos",
+    "name_en": "College of Science",
+    "name_local": "College of Science",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "College of Science",
+      "College of Sciences"
+    ]
+  },
+  {
+    "uid": "coe",
+    "name_en": "College of Engineering",
+    "name_local": "College of Engineering",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "College of Engineering"
+    ]
+  },
+  {
+    "uid": "bouve",
+    "name_en": "Bouvé College of Health Sciences",
+    "name_local": "Bouvé College of Health Sciences",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [
+      "Bouve College of Health Sciences"
+    ],
+    "context_aliases": [
+      "Bouvé College of Health Sciences"
+    ]
+  },
+  {
+    "uid": "camd",
+    "name_en": "College of Arts Media and Design",
+    "name_local": "College of Arts Media and Design",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "College of Arts",
+      "Media and Design"
+    ]
+  },
+  {
+    "uid": "cssh",
+    "name_en": "College of Social Sciences and Humanities",
+    "name_local": "College of Social Sciences and Humanities",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "College of Social Sciences and Humanities"
+    ]
+  },
+  {
+    "uid": "dmsb",
+    "name_en": "D'Amore-McKim School of Business",
+    "name_local": "D'Amore-McKim School of Business",
+    "kind": "school",
+    "parent": "northeastern",
+    "aliases": [
+      "D'Amore-McKim School of Business"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cps",
+    "name_en": "College of Professional Studies",
+    "name_local": "College of Professional Studies",
+    "kind": "college",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "College of Professional Studies"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "ccb",
+    "name_en": "Department of Chemistry and Chemical Biology",
+    "name_local": "Department of Chemistry and Chemical Biology",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Chemical Biology",
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "mes",
+    "name_en": "Department of Marine and Environmental Sciences",
+    "name_local": "Department of Marine and Environmental Sciences",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Marine and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "msc",
+    "name_en": "Marine Science Center",
+    "name_local": "Marine Science Center",
+    "kind": "center",
+    "parent": "mes",
+    "aliases": [],
+    "context_aliases": [
+      "Marine Science Center"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "bioe",
+    "name_en": "Department of Bioengineering",
+    "name_local": "Department of Bioengineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Bioengineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "mie",
+    "name_en": "Department of Mechanical and Industrial Engineering",
+    "name_local": "Department of Mechanical and Industrial Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical and Industrial Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "phhs",
+    "name_en": "Department of Public Health and Health Sciences",
+    "name_local": "Department of Public Health and Health Sciences",
+    "kind": "department",
+    "parent": "bouve",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Public Health and Health Sciences"
+    ]
+  },
+  {
+    "uid": "pt",
+    "name_en": "Department of Physical Therapy Movement and Rehabilitation Sciences",
+    "name_local": "Department of Physical Therapy Movement and Rehabilitation Sciences",
+    "kind": "department",
+    "parent": "bouve",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physical Therapy",
+      "Movement"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Department of Pharmaceutical Sciences",
+    "name_local": "Department of Pharmaceutical Sciences",
+    "kind": "department",
+    "parent": "bouve",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "nsi",
+    "name_en": "Network Science Institute",
+    "name_local": "Network Science Institute",
+    "kind": "institute",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "Network Science Institute"
+    ]
+  },
+  {
+    "uid": "icbh",
+    "name_en": "Institute for Cognitive and Brain Health",
+    "name_local": "Institute for Cognitive and Brain Health",
+    "kind": "institute",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Cognitive and Brain Health"
+    ]
+  },
+  {
+    "uid": "wiot",
+    "name_en": "Institute for the Wireless Internet of Things",
+    "name_local": "Institute for the Wireless Internet of Things",
+    "kind": "institute",
+    "parent": "northeastern",
+    "aliases": [
+      "Institute for the Wireless Internet of Things"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ctbp",
+    "name_en": "Center for Theoretical Biological Physics",
+    "name_local": "Center for Theoretical Biological Physics",
+    "kind": "center",
+    "parent": "northeastern",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Theoretical Biological Physics"
+    ]
+  }
+]

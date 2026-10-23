@@ -1,0 +1,315 @@
+[
+  {
+    "uid": "qmul",
+    "name_en": "Queen Mary University of London",
+    "name_local": "Queen Mary University of London",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/026zzn846",
+    "type": "university"
+  },
+  {
+    "uid": "fmd",
+    "name_en": "Faculty of Medicine and Dentistry",
+    "name_local": "Faculty of Medicine and Dentistry",
+    "kind": "faculty",
+    "parent": "qmul",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine and Dentistry"
+    ]
+  },
+  {
+    "uid": "fse",
+    "name_en": "Faculty of Science and Engineering",
+    "name_local": "Faculty of Science and Engineering",
+    "kind": "faculty",
+    "parent": "qmul",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science and Engineering"
+    ]
+  },
+  {
+    "uid": "fhss",
+    "name_en": "Faculty of Humanities and Social Sciences",
+    "name_local": "Faculty of Humanities and Social Sciences",
+    "kind": "faculty",
+    "parent": "qmul",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities and Social Sciences"
+    ]
+  },
+  {
+    "uid": "wiph",
+    "name_en": "Wolfson Institute of Population Health",
+    "name_local": "Wolfson Institute of Population Health",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [],
+    "context_aliases": [
+      "Wolfson Institute of Population Health"
+    ]
+  },
+  {
+    "uid": "whri",
+    "name_en": "William Harvey Research Institute",
+    "name_local": "William Harvey Research Institute",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [],
+    "context_aliases": [
+      "William Harvey Research Institute"
+    ]
+  },
+  {
+    "uid": "blizard",
+    "name_en": "Blizard Institute",
+    "name_local": "Blizard Institute",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [],
+    "context_aliases": [
+      "Blizard Institute"
+    ]
+  },
+  {
+    "uid": "bci",
+    "name_en": "Barts Cancer Institute",
+    "name_local": "Barts Cancer Institute",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [],
+    "context_aliases": [
+      "Barts Cancer Institute"
+    ]
+  },
+  {
+    "uid": "dentistry",
+    "name_en": "Institute of Dentistry",
+    "name_local": "Institute of Dentistry",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Dentistry"
+    ]
+  },
+  {
+    "uid": "phu",
+    "name_en": "Precision Healthcare University Research Institute",
+    "name_local": "Precision Healthcare University Research Institute",
+    "kind": "institute",
+    "parent": "fmd",
+    "aliases": [
+      "Precision Healthcare University Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sbbs",
+    "name_en": "School of Biological and Behavioural Sciences",
+    "name_local": "School of Biological and Behavioural Sciences",
+    "kind": "school",
+    "parent": "fse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological and Behavioural Sciences"
+    ]
+  },
+  {
+    "uid": "sems",
+    "name_en": "School of Engineering and Materials Science",
+    "name_local": "School of Engineering and Materials Science",
+    "kind": "school",
+    "parent": "fse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering and Materials Science",
+      "Queen Mary University of London Engineering School"
+    ]
+  },
+  {
+    "uid": "eecs",
+    "name_en": "School of Electronic Engineering and Computer Science",
+    "name_local": "School of Electronic Engineering and Computer Science",
+    "kind": "school",
+    "parent": "fse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Electronic Engineering and Computer Science"
+    ]
+  },
+  {
+    "uid": "maths",
+    "name_en": "School of Mathematical Sciences",
+    "name_local": "School of Mathematical Sciences",
+    "kind": "school",
+    "parent": "fse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "spcs",
+    "name_en": "School of Physical and Chemical Sciences",
+    "name_local": "School of Physical and Chemical Sciences",
+    "kind": "school",
+    "parent": "fse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physical and Chemical Sciences",
+      "Department of Chemistry",
+      "Department of Physics and Astronomy",
+      "Astronomy Unit"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "School of Economics and Finance",
+    "name_local": "School of Economics and Finance",
+    "kind": "school",
+    "parent": "fhss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Economics and Finance"
+    ]
+  },
+  {
+    "uid": "business",
+    "name_en": "School of Business and Management",
+    "name_local": "School of Business and Management",
+    "kind": "school",
+    "parent": "fhss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Business and Management"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "School of Law",
+    "name_local": "School of Law",
+    "kind": "school",
+    "parent": "fhss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Law",
+      "Centre for Commercial Law Studies"
+    ]
+  },
+  {
+    "uid": "pol",
+    "name_en": "School of Politics and International Relations",
+    "name_local": "School of Politics and International Relations",
+    "kind": "school",
+    "parent": "fhss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Politics and International Relations"
+    ]
+  },
+  {
+    "uid": "geog",
+    "name_en": "School of Geography",
+    "name_local": "School of Geography",
+    "kind": "school",
+    "parent": "fhss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Geography"
+    ]
+  },
+  {
+    "uid": "cpn",
+    "name_en": "Centre for Preventive Neurology",
+    "name_local": "Centre for Preventive Neurology",
+    "kind": "center",
+    "parent": "wiph",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Preventive Neurology"
+    ]
+  },
+  {
+    "uid": "ccs",
+    "name_en": "Centre for Cancer Screening Prevention and Early Diagnosis",
+    "name_local": "Centre for Cancer Screening Prevention and Early Diagnosis",
+    "kind": "center",
+    "parent": "wiph",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Cancer Screening",
+      "Prevention and Early Diagnosis"
+    ]
+  },
+  {
+    "uid": "cpmh",
+    "name_en": "Centre for Psychiatry and Mental Health",
+    "name_local": "Centre for Psychiatry and Mental Health",
+    "kind": "center",
+    "parent": "wiph",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Psychiatry and Mental Health"
+    ]
+  },
+  {
+    "uid": "cii",
+    "name_en": "Centre for Immunobiology",
+    "name_local": "Centre for Immunobiology",
+    "kind": "center",
+    "parent": "blizard",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Immunobiology and Infection",
+      "Centre for Immunobiology"
+    ]
+  },
+  {
+    "uid": "cgch",
+    "name_en": "Centre for Genomics and Child Health",
+    "name_local": "Centre for Genomics and Child Health",
+    "kind": "center",
+    "parent": "blizard",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Genomics and Child Health"
+    ]
+  },
+  {
+    "uid": "cend",
+    "name_en": "Centre for Endocrinology",
+    "name_local": "Centre for Endocrinology",
+    "kind": "center",
+    "parent": "whri",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Endocrinology"
+    ]
+  },
+  {
+    "uid": "ccmd",
+    "name_en": "Centre for Cardiovascular Medicine and Devices",
+    "name_local": "Centre for Cardiovascular Medicine and Devices",
+    "kind": "center",
+    "parent": "whri",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Cardiovascular Medicine and Devices"
+    ]
+  },
+  {
+    "uid": "cbio",
+    "name_en": "Centre for Bioengineering",
+    "name_local": "Centre for Bioengineering",
+    "kind": "center",
+    "parent": "sems",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Bioengineering"
+    ]
+  }
+]

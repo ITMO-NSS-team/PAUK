@@ -1,0 +1,1612 @@
+[
+  {
+    "uid": "epfl",
+    "name_en": "Swiss Federal Institute of Technology in Lausanne",
+    "name_local": "École Polytechnique Fédérale de Lausanne",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02s376052",
+    "type": "university"
+  },
+  {
+    "uid": "enac",
+    "name_en": "School of Architecture, Civil and Environmental Engineering",
+    "name_local": "Faculté de l'environnement naturel, architectural et construit",
+    "kind": "school",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL ENAC",
+      "EPFL-ENAC"
+    ],
+    "context_aliases": [
+      "ENAC",
+      "School of Architecture",
+      "Civil and Environmental Engineering",
+      "Civil and Environmental Engineering (ENAC)",
+      "Civil and Environmental Engineering ENAC",
+      "Civil & Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "sb",
+    "name_en": "School of Basic Sciences",
+    "name_local": "Faculté des sciences de base",
+    "kind": "school",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL SB",
+      "EPFL-SB"
+    ],
+    "context_aliases": [
+      "School of Basic Sciences",
+      "School of Basic Sciences (SB)",
+      "SB"
+    ]
+  },
+  {
+    "uid": "sti",
+    "name_en": "School of Engineering",
+    "name_local": "Faculté des sciences et techniques de l'ingénieur",
+    "kind": "school",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL STI",
+      "EPFL-STI"
+    ],
+    "context_aliases": [
+      "School of Engineering",
+      "School of Engineering (STI)",
+      "STI"
+    ]
+  },
+  {
+    "uid": "ic",
+    "name_en": "School of Computer and Communication Sciences",
+    "name_local": "Faculté informatique et communications",
+    "kind": "school",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL IC",
+      "EPFL-IC"
+    ],
+    "context_aliases": [
+      "School of Computer and Communication Sciences"
+    ]
+  },
+  {
+    "uid": "sv",
+    "name_en": "School of Life Sciences",
+    "name_local": "Faculté des sciences de la vie",
+    "kind": "school",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL School of Life Sciences",
+      "EPFL SV",
+      "EPFL-SV"
+    ],
+    "context_aliases": [
+      "School of Life Sciences",
+      "School of Life Science",
+      "Faculty of Life Sciences",
+      "Faculté des sciences de la vie",
+      "SV"
+    ]
+  },
+  {
+    "uid": "cdm",
+    "name_en": "College of Management of Technology",
+    "name_local": "Collège du management de la technologie",
+    "kind": "college",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL CDM"
+    ],
+    "context_aliases": [
+      "College of Management of Technology",
+      "CDM"
+    ]
+  },
+  {
+    "uid": "cdh",
+    "name_en": "College of Humanities",
+    "name_local": "Collège des humanités",
+    "kind": "college",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL CDH"
+    ],
+    "context_aliases": [
+      "College of Humanities",
+      "CDH"
+    ]
+  },
+  {
+    "uid": "iphys",
+    "name_en": "Institute of Physics",
+    "name_local": "Institut de physique",
+    "kind": "institute",
+    "parent": "sb",
+    "aliases": [
+      "EPFL IPHYS",
+      "EPFL-SB-IPHYS"
+    ],
+    "context_aliases": [
+      "Institute of Physics",
+      "Institute of Physics (IPHYS)",
+      "Institute of Physic",
+      "Institut de Physique",
+      "IPHYS",
+      "Department of Physics",
+      "Institut de physique"
+    ]
+  },
+  {
+    "uid": "isic",
+    "name_en": "Institute of Chemical Sciences and Engineering",
+    "name_local": "Institut des sciences et ingénierie chimiques",
+    "kind": "institute",
+    "parent": "sb",
+    "aliases": [
+      "EPFL ISIC",
+      "EPFL-SB-ISIC",
+      "Institut des Sciences et Ingenierie Chimiques"
+    ],
+    "context_aliases": [
+      "Institute of Chemical Sciences and Engineering",
+      "Institute of Chemical Sciences and Engineering (ISIC)",
+      "Institute of Chemical Sciences and Engineering (ISIC",
+      "Institute of Chemical Engineering Sciences",
+      "ISIC",
+      "Institut des sciences et ingénierie chimiques",
+      "Institut des Sciences et Ingénierie Chimiques"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Institute of Mathematics",
+    "name_local": "Institut de mathématiques",
+    "kind": "institute",
+    "parent": "sb",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Mathematics",
+      "Institut de Mathématiques",
+      "Institut de mathématiques"
+    ]
+  },
+  {
+    "uid": "spc",
+    "name_en": "Swiss Plasma Center",
+    "name_local": "Swiss Plasma Center",
+    "kind": "center",
+    "parent": "sb",
+    "aliases": [
+      "EPFL-SPC",
+      "EPFL SB SPC"
+    ],
+    "context_aliases": [
+      "SPC",
+      "Swiss Plasma Center",
+      "Swiss Plasma Center (SPC)"
+    ]
+  },
+  {
+    "uid": "qse",
+    "name_en": "Center for Quantum Science and Engineering",
+    "name_local": "Centre for Quantum Science and Engineering",
+    "kind": "center",
+    "parent": "sb",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Quantum Science and Engineering",
+      "Centre for Quantum Science and Engineering"
+    ]
+  },
+  {
+    "uid": "lacus",
+    "name_en": "Lausanne Centre for Ultrafast Science",
+    "name_local": "Lausanne Centre for Ultrafast Science",
+    "kind": "center",
+    "parent": "sb",
+    "aliases": [],
+    "context_aliases": [
+      "LACUS",
+      "Lausanne Centre for Ultrafast Science",
+      "Lausanne Centre for Ultrafast Science (LACUS)"
+    ]
+  },
+  {
+    "uid": "lastro",
+    "name_en": "Laboratory of Astrophysics",
+    "name_local": "Laboratoire d'astrophysique",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Astrophysics",
+      "Laboratoire d'Astrophysique",
+      "LASTRO",
+      "Laboratoire d'astrophysique"
+    ]
+  },
+  {
+    "uid": "galspec",
+    "name_en": "Laboratory for Galaxy Evolution and Spectral Modelling",
+    "name_local": "Laboratory for Galaxy Evolution and Spectral Modelling",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [
+      "Laboratory for Galaxy Evolution and Spectral Modelling"
+    ],
+    "context_aliases": [
+      "GALSPEC"
+    ]
+  },
+  {
+    "uid": "lbem",
+    "name_en": "Laboratory of Biological Electron Microscopy",
+    "name_local": "Laboratory of Biological Electron Microscopy",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Biological Electron Microscopy",
+      "LBEM"
+    ]
+  },
+  {
+    "uid": "hqc",
+    "name_en": "Hybrid Quantum Circuits Laboratory",
+    "name_local": "Hybrid Quantum Circuits Laboratory",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Hybrid Quantum Circuits Laboratory"
+    ]
+  },
+  {
+    "uid": "lptp",
+    "name_en": "Laboratory for Theoretical Fundamental Physics",
+    "name_local": "Laboratory for Theoretical Fundamental Physics",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Theoretical Fundamental Physics"
+    ]
+  },
+  {
+    "uid": "fsl",
+    "name_en": "Fields and Strings Laboratory",
+    "name_local": "Fields and Strings Laboratory",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Fields and Strings Laboratory"
+    ]
+  },
+  {
+    "uid": "spoc",
+    "name_en": "Statistical Physics of Computation Laboratory",
+    "name_local": "Statistical Physics of Computation Laboratory",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Statistical Physics of Computation Laboratory"
+    ]
+  },
+  {
+    "uid": "lqm",
+    "name_en": "Laboratory for Quantum Magnetism",
+    "name_local": "Laboratory for Quantum Magnetism",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Quantum Magnetism"
+    ]
+  },
+  {
+    "uid": "ecps",
+    "name_en": "Emergent Complexity in Physical Systems Laboratory",
+    "name_local": "Emergent Complexity in Physical Systems Laboratory",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [
+      "Emergent Complexity in Physical Systems Laboratory",
+      "Emergent Complexity in Physical Systems Laboratory (ECPS)"
+    ],
+    "context_aliases": [
+      "ECPS"
+    ]
+  },
+  {
+    "uid": "lrs",
+    "name_en": "Laboratory for Reactor Physics and Systems Behaviour",
+    "name_local": "Laboratory for Reactor Physics and Systems Behaviour",
+    "kind": "lab",
+    "parent": "iphys",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Reactor Physics and Systems Behaviour"
+    ]
+  },
+  {
+    "uid": "liac",
+    "name_en": "Laboratory of Artificial Chemical Intelligence",
+    "name_local": "Laboratory of Artificial Chemical Intelligence",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [
+      "Laboratory of Artificial Chemical Intelligence (LIAC)"
+    ],
+    "context_aliases": [
+      "Laboratory of Artificial Chemical Intelligence",
+      "LIAC"
+    ]
+  },
+  {
+    "uid": "lsci",
+    "name_en": "Laboratory of Inorganic Synthesis and Catalysis",
+    "name_local": "Laboratory of Inorganic Synthesis and Catalysis",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Inorganic Synthesis and Catalysis"
+    ]
+  },
+  {
+    "uid": "lsu",
+    "name_en": "Laboratory of Ultrafast Spectroscopy",
+    "name_local": "Laboratory of Ultrafast Spectroscopy",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Ultrafast Spectroscopy",
+      "Laboratory of Ultrafast Spectroscopy (LSU)"
+    ]
+  },
+  {
+    "uid": "lpi",
+    "name_en": "Laboratory of Photonics and Interfaces",
+    "name_local": "Laboratory of Photonics and Interfaces",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Photonics and Interfaces"
+    ]
+  },
+  {
+    "uid": "lpdc",
+    "name_en": "Laboratory of Sustainable and Catalytic Processing",
+    "name_local": "Laboratory of Sustainable and Catalytic Processing",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Sustainable and Catalytic Processing",
+      "Laboratory of Sustainable and Catalytic Processing (LPDC",
+      "LPDC"
+    ]
+  },
+  {
+    "uid": "las",
+    "name_en": "Laboratory of Advanced Separations",
+    "name_local": "Laboratory of Advanced Separations",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Advanced Separations",
+      "Laboratory of Advanced Separations (LAS)"
+    ]
+  },
+  {
+    "uid": "lspn",
+    "name_en": "Laboratory of Synthesis and Natural Products",
+    "name_local": "Laboratory of Synthesis and Natural Products",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [
+      "EPFL-SB-ISIC-LSPN"
+    ],
+    "context_aliases": [
+      "Laboratory of Synthesis and Natural Products",
+      "Laboratory of Synthesis and Natural Products (LSPN)",
+      "LSPN"
+    ]
+  },
+  {
+    "uid": "lcmd",
+    "name_en": "Laboratory for Computational Molecular Design",
+    "name_local": "Laboratory for Computational Molecular Design",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Computational Molecular Design"
+    ]
+  },
+  {
+    "uid": "limno",
+    "name_en": "Laboratory for Molecular Engineering of Optoelectronic Nanomaterials",
+    "name_local": "Laboratory for Molecular Engineering of Optoelectronic Nanomaterials",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [
+      "Laboratory for Molecular Engineering of Optoelectronic Nanomaterials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lcbc",
+    "name_en": "Laboratory of Computational Chemistry and Biochemistry",
+    "name_local": "Laboratory of Computational Chemistry and Biochemistry",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Computational Chemistry and Biochemistry"
+    ]
+  },
+  {
+    "uid": "lcsb",
+    "name_en": "Laboratory of Computational Systems Biotechnology",
+    "name_local": "Laboratory of Computational Systems Biotechnology",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Computational Systems Biotechnology"
+    ]
+  },
+  {
+    "uid": "lmn",
+    "name_en": "Laboratory of Molecular Nanodynamics",
+    "name_local": "Laboratory of Molecular Nanodynamics",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Molecular Nanodynamics"
+    ]
+  },
+  {
+    "uid": "gem",
+    "name_en": "Group of Energy Materials",
+    "name_local": "Group of Energy Materials",
+    "kind": "lab",
+    "parent": "isic",
+    "aliases": [],
+    "context_aliases": [
+      "Group of Energy Materials"
+    ]
+  },
+  {
+    "uid": "ibi",
+    "name_en": "Institute of Bioengineering",
+    "name_local": "Institut de bioingénierie",
+    "kind": "institute",
+    "parent": "sti",
+    "aliases": [
+      "EPFL IBI"
+    ],
+    "context_aliases": [
+      "Institute of Bioengineering",
+      "Institute of Bioengineering (IBI)",
+      "Interfaculty Institute of Bioengineering",
+      "IBI"
+    ]
+  },
+  {
+    "uid": "imx",
+    "name_en": "Institute of Materials",
+    "name_local": "Institut des matériaux",
+    "kind": "institute",
+    "parent": "sti",
+    "aliases": [
+      "EPFL IMX"
+    ],
+    "context_aliases": [
+      "Institute of Materials",
+      "Institute of Materials (IMX)",
+      "Institut des Matériaux",
+      "Institute of Materials Science and Engineering",
+      "Institute of Materials Science & Engineering",
+      "IMX",
+      "Institut des matériaux"
+    ]
+  },
+  {
+    "uid": "iem",
+    "name_en": "Institute of Electrical and Micro Engineering",
+    "name_local": "Institut de génie électrique et microtechnique",
+    "kind": "institute",
+    "parent": "sti",
+    "aliases": [
+      "STI-IEM",
+      "EPFL IEM"
+    ],
+    "context_aliases": [
+      "Institute of Electrical and Micro Engineering",
+      "Institute of Electrical and Micro Engineering (IEM)",
+      "Institute of Electrical and Microengineering",
+      "Institute of Electrical and Micro engineering",
+      "IEM"
+    ]
+  },
+  {
+    "uid": "igm",
+    "name_en": "Institute of Mechanical Engineering",
+    "name_local": "Institut de génie mécanique",
+    "kind": "institute",
+    "parent": "sti",
+    "aliases": [
+      "EPFL IGM"
+    ],
+    "context_aliases": [
+      "Institute of Mechanical Engineering",
+      "IGM"
+    ]
+  },
+  {
+    "uid": "neurox",
+    "name_en": "Neuro-X Institute",
+    "name_local": "Institut Neuro-X",
+    "kind": "institute",
+    "parent": "sti",
+    "aliases": [
+      "Neuro-X Institute",
+      "Neuro-X Institute (INX)",
+      "EPFL Neuro-X"
+    ],
+    "context_aliases": [
+      "INX"
+    ]
+  },
+  {
+    "uid": "cmi",
+    "name_en": "Center of MicroNano Technologies",
+    "name_local": "Centre de MicroNanoTechnologie",
+    "kind": "center",
+    "parent": "sti",
+    "aliases": [
+      "Center of MicroNano Technologies",
+      "Center of MicroNano Technologies (CMi)"
+    ],
+    "context_aliases": [
+      "CMi"
+    ]
+  },
+  {
+    "uid": "lsbg",
+    "name_en": "Laboratory of Systems Biology and Genetics",
+    "name_local": "Laboratory of Systems Biology and Genetics",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Systems Biology and Genetics"
+    ]
+  },
+  {
+    "uid": "lcbl",
+    "name_en": "Lipid Cell Biology Laboratory",
+    "name_local": "Lipid Cell Biology Laboratory",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Lipid Cell Biology Laboratory"
+    ]
+  },
+  {
+    "uid": "lbp",
+    "name_en": "Laboratory for Fundamental BioPhotonics",
+    "name_local": "Laboratory for Fundamental BioPhotonics",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [
+      "Laboratory for Fundamental BioPhotonics"
+    ],
+    "context_aliases": [
+      "Laboratory for Fundamental BioPhotonics (LBP)"
+    ]
+  },
+  {
+    "uid": "lpdi",
+    "name_en": "Laboratory of Protein Design and Immunoengineering",
+    "name_local": "Laboratory of Protein Design and Immunoengineering",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Protein Design and Immunoengineering"
+    ]
+  },
+  {
+    "uid": "lisp",
+    "name_en": "Laboratory of Integrative Systems Physiology",
+    "name_local": "Laboratory of Integrative Systems Physiology",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Integrative Systems Physiology"
+    ]
+  },
+  {
+    "uid": "lben",
+    "name_en": "Laboratory of Nanoscale Biology",
+    "name_local": "Laboratory of Nanoscale Biology",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Nanoscale Biology",
+      "Laboratory of Nanoscale Biology (LBEN)"
+    ]
+  },
+  {
+    "uid": "lhtc",
+    "name_en": "Laboratory of Hemodynamics and Cardiovascular Technology",
+    "name_local": "Laboratory of Hemodynamics and Cardiovascular Technology",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Hemodynamics and Cardiovascular Technology",
+      "Laboratory of Hemodynamics and Cardiovascular Technology (LHTC)"
+    ]
+  },
+  {
+    "uid": "miplab",
+    "name_en": "Medical Image Processing Laboratory",
+    "name_local": "Medical Image Processing Laboratory",
+    "kind": "lab",
+    "parent": "ibi",
+    "aliases": [],
+    "context_aliases": [
+      "Medical Image Processing Laboratory"
+    ]
+  },
+  {
+    "uid": "cosmo",
+    "name_en": "Laboratory of Computational Science and Modeling",
+    "name_local": "Laboratory of Computational Science and Modeling",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Computational Science and Modeling",
+      "COSMO"
+    ]
+  },
+  {
+    "uid": "lmc",
+    "name_en": "Laboratory of Construction Materials",
+    "name_local": "Laboratoire des matériaux de construction",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Construction Materials"
+    ]
+  },
+  {
+    "uid": "theos",
+    "name_en": "Theory and Simulation of Materials",
+    "name_local": "Theory and Simulation of Materials",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Theory and Simulation of Materials",
+      "Theory and Simulation of Materials (THEOS)",
+      "THEOS"
+    ]
+  },
+  {
+    "uid": "lmsc",
+    "name_en": "Laboratory of Semiconductor Materials",
+    "name_local": "Laboratory of Semiconductor Materials",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Semiconductor Materials"
+    ]
+  },
+  {
+    "uid": "lpac",
+    "name_en": "Laboratory for Processing of Advanced Composites",
+    "name_local": "Laboratory for Processing of Advanced Composites",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Processing of Advanced Composites",
+      "Laboratory for Processing of Advanced Composites (LPAC)",
+      "LPAC"
+    ]
+  },
+  {
+    "uid": "lmtm",
+    "name_en": "Thermomechanical Metallurgy Laboratory",
+    "name_local": "Thermomechanical Metallurgy Laboratory",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [
+      "Thermomechanical Metallurgy Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lnet",
+    "name_en": "Laboratory of Nanoscience for Energy Technologies",
+    "name_local": "Laboratory of Nanoscience for Energy Technologies",
+    "kind": "lab",
+    "parent": "imx",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Nanoscience for Energy Technologies",
+      "Laboratory of Nanoscience for Energy Technologies (LNET)"
+    ]
+  },
+  {
+    "uid": "pvlab",
+    "name_en": "Photovoltaics and Thin Film Electronics Laboratory",
+    "name_local": "Photovoltaics and Thin Film Electronics Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [
+      "Photovoltaics and Thin Film Electronics Laboratory",
+      "Photovoltaics and Thin-Film Electronics Laboratory"
+    ],
+    "context_aliases": [
+      "Photovoltaics and Thin Film Electronics Laboratory (PV-lab)",
+      "Photovoltaics and Thin-Film Electronics Laboratory (PV-Lab)",
+      "PV-lab"
+    ]
+  },
+  {
+    "uid": "lwe",
+    "name_en": "Laboratory of Wave Engineering",
+    "name_local": "Laboratory of Wave Engineering",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Wave Engineering"
+    ]
+  },
+  {
+    "uid": "aqua",
+    "name_en": "Advanced Quantum Architecture Laboratory",
+    "name_local": "Advanced Quantum Architecture Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Quantum Architecture Laboratory",
+      "Advanced Quantum Architecture Laboratory (AQUA)"
+    ]
+  },
+  {
+    "uid": "phosl",
+    "name_en": "Photonic Systems Laboratory",
+    "name_local": "Photonic Systems Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Photonic Systems Laboratory",
+      "Photonic Systems Laboratory (PHOSL)",
+      "PHOSL"
+    ]
+  },
+  {
+    "uid": "lts5",
+    "name_en": "Signal Processing Laboratory 5",
+    "name_local": "Laboratoire de traitement des signaux 5",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Signal Processing Laboratory 5",
+      "LTS5"
+    ]
+  },
+  {
+    "uid": "lts4",
+    "name_en": "Signal Processing Laboratory 4",
+    "name_local": "Laboratoire de traitement des signaux 4",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Signal Processing Laboratory 4",
+      "LTS4"
+    ]
+  },
+  {
+    "uid": "esl",
+    "name_en": "Embedded Systems Laboratory",
+    "name_local": "Embedded Systems Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Embedded Systems Laboratory",
+      "Embedded Systems Laboratory (ESL)"
+    ]
+  },
+  {
+    "uid": "big",
+    "name_en": "Biomedical Imaging Group",
+    "name_local": "Biomedical Imaging Group",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Biomedical Imaging Group"
+    ]
+  },
+  {
+    "uid": "bci",
+    "name_en": "Bio/CMOS Interfaces Laboratory",
+    "name_local": "Bio/CMOS Interfaces Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [
+      "Bio/CMOS Interfaces Laboratory"
+    ],
+    "context_aliases": [
+      "Bio/CMOS Interfaces Laboratory (BCI)"
+    ]
+  },
+  {
+    "uid": "nam",
+    "name_en": "Nanophotonics and Metrology Laboratory",
+    "name_local": "Nanophotonics and Metrology Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Nanophotonics and Metrology Laboratory",
+      "Nanophotonics and Metrology Laboratory (NAM)"
+    ]
+  },
+  {
+    "uid": "lai",
+    "name_en": "Integrated Actuators Laboratory",
+    "name_local": "Laboratoire d'actionneurs intégrés",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Integrated Actuators Laboratory",
+      "Integrated Actuators Laboratory (LAI)"
+    ]
+  },
+  {
+    "uid": "pel",
+    "name_en": "Power Electronics Laboratory",
+    "name_local": "Power Electronics Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Power Electronics Laboratory",
+      "Power Electronics Laboratory – PEL"
+    ]
+  },
+  {
+    "uid": "lions",
+    "name_en": "Laboratory for Information and Inference Systems",
+    "name_local": "Laboratory for Information and Inference Systems",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Information and Inference Systems",
+      "LIONS"
+    ]
+  },
+  {
+    "uid": "lmis",
+    "name_en": "Microsystems Laboratory",
+    "name_local": "Laboratoire de microsystèmes",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Microsystems Laboratory"
+    ]
+  },
+  {
+    "uid": "tcl",
+    "name_en": "Telecommunication Circuits Laboratory",
+    "name_local": "Telecommunication Circuits Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Telecommunication Circuits Laboratory"
+    ]
+  },
+  {
+    "uid": "idephics",
+    "name_en": "Information Learning and Physics Laboratory",
+    "name_local": "Information Learning and Physics Laboratory",
+    "kind": "lab",
+    "parent": "iem",
+    "aliases": [],
+    "context_aliases": [
+      "Information Learning and Physics Laboratory",
+      "Learning and Physics Laboratory",
+      "IdePHICS"
+    ]
+  },
+  {
+    "uid": "la",
+    "name_en": "Automatic Control Laboratory",
+    "name_local": "Laboratoire d'Automatique",
+    "kind": "lab",
+    "parent": "sti",
+    "aliases": [],
+    "context_aliases": [
+      "Automatic Control Laboratory",
+      "Laboratoire d'Automatique"
+    ]
+  },
+  {
+    "uid": "bion",
+    "name_en": "Laboratory for Bio-Iontronics",
+    "name_local": "Laboratory for Bio-Iontronics",
+    "kind": "lab",
+    "parent": "sti",
+    "aliases": [
+      "Laboratory for Bio-Iontronics"
+    ],
+    "context_aliases": [
+      "Laboratory for Bio-Iontronics (BION)"
+    ]
+  },
+  {
+    "uid": "rrl",
+    "name_en": "Reconfigurable Robotics Lab",
+    "name_local": "Reconfigurable Robotics Lab",
+    "kind": "lab",
+    "parent": "igm",
+    "aliases": [],
+    "context_aliases": [
+      "Reconfigurable Robotics Lab"
+    ]
+  },
+  {
+    "uid": "flexlab",
+    "name_en": "Flexible Structures Laboratory",
+    "name_local": "Flexible Structures Laboratory",
+    "kind": "lab",
+    "parent": "igm",
+    "aliases": [],
+    "context_aliases": [
+      "Flexible Structures Laboratory"
+    ]
+  },
+  {
+    "uid": "lrese",
+    "name_en": "Laboratory of Renewable Energy Science and Engineering",
+    "name_local": "Laboratory of Renewable Energy Science and Engineering",
+    "kind": "lab",
+    "parent": "igm",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Renewable Energy Science and Engineering"
+    ]
+  },
+  {
+    "uid": "lis",
+    "name_en": "Laboratory of Intelligent Systems",
+    "name_local": "Laboratory of Intelligent Systems",
+    "kind": "lab",
+    "parent": "igm",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Intelligent Systems"
+    ]
+  },
+  {
+    "uid": "susro",
+    "name_en": "Laboratory of Sustainability Robotics",
+    "name_local": "Laboratory of Sustainability Robotics",
+    "kind": "lab",
+    "parent": "igm",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Sustainability Robotics"
+    ]
+  },
+  {
+    "uid": "neurorestore",
+    "name_en": "NeuroRestore",
+    "name_local": "NeuroRestore",
+    "kind": "center",
+    "parent": "neurox",
+    "aliases": [
+      "NeuroRestore"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "defitech",
+    "name_en": "Defitech Chair of Clinical Neuroengineering",
+    "name_local": "Defitech Chair of Clinical Neuroengineering",
+    "kind": "lab",
+    "parent": "neurox",
+    "aliases": [
+      "Defitech Chair of Clinical Neuroengineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lnco",
+    "name_en": "Laboratory of Cognitive Neuroscience",
+    "name_local": "Laboratory of Cognitive Neuroscience",
+    "kind": "lab",
+    "parent": "neurox",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Cognitive Neuroscience"
+    ]
+  },
+  {
+    "uid": "inl",
+    "name_en": "Integrated Neurotechnologies Laboratory",
+    "name_local": "Integrated Neurotechnologies Laboratory",
+    "kind": "lab",
+    "parent": "neurox",
+    "aliases": [],
+    "context_aliases": [
+      "Integrated Neurotechnologies Laboratory"
+    ]
+  },
+  {
+    "uid": "lsbi",
+    "name_en": "Laboratory for Soft Bioelectronic Interfaces",
+    "name_local": "Laboratory for Soft Bioelectronic Interfaces",
+    "kind": "lab",
+    "parent": "neurox",
+    "aliases": [
+      "Laboratory for Soft Bioelectronic Interfaces"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "tml",
+    "name_en": "Theory of Machine Learning Laboratory",
+    "name_local": "Theory of Machine Learning Laboratory",
+    "kind": "lab",
+    "parent": "ic",
+    "aliases": [],
+    "context_aliases": [
+      "Theory of Machine Learning Laboratory",
+      "TML Lab"
+    ]
+  },
+  {
+    "uid": "chili",
+    "name_en": "Computer-Human Interaction in Learning and Instruction Laboratory",
+    "name_local": "CHILI Lab",
+    "kind": "lab",
+    "parent": "ic",
+    "aliases": [],
+    "context_aliases": [
+      "Computer-Human Interaction in Learning and Instruction Laboratory",
+      "CHILI Lab"
+    ]
+  },
+  {
+    "uid": "sacs",
+    "name_en": "Scalable Computing Systems Laboratory",
+    "name_local": "Scalable Computing Systems Laboratory",
+    "kind": "lab",
+    "parent": "ic",
+    "aliases": [],
+    "context_aliases": [
+      "Scalable Computing Systems Laboratory"
+    ]
+  },
+  {
+    "uid": "mlo",
+    "name_en": "Machine Learning and Optimization Laboratory",
+    "name_local": "Machine Learning and Optimization Laboratory",
+    "kind": "lab",
+    "parent": "ic",
+    "aliases": [],
+    "context_aliases": [
+      "Machine Learning and Optimization Laboratory",
+      "Machine Learning and Optimization Laboratory (MLO)"
+    ]
+  },
+  {
+    "uid": "bmi",
+    "name_en": "Brain Mind Institute",
+    "name_local": "Brain Mind Institute",
+    "kind": "institute",
+    "parent": "sv",
+    "aliases": [
+      "Brain Mind Institute"
+    ],
+    "context_aliases": [
+      "BMI"
+    ]
+  },
+  {
+    "uid": "ghi",
+    "name_en": "Global Health Institute",
+    "name_local": "Global Health Institute",
+    "kind": "institute",
+    "parent": "sv",
+    "aliases": [],
+    "context_aliases": [
+      "Global Health Institute",
+      "GHI"
+    ]
+  },
+  {
+    "uid": "isrec",
+    "name_en": "Swiss Institute for Experimental Cancer Research",
+    "name_local": "Institut suisse de recherche expérimentale sur le cancer",
+    "kind": "institute",
+    "parent": "sv",
+    "aliases": [],
+    "context_aliases": [
+      "ISREC",
+      "Swiss Institute for Experimental Cancer Research",
+      "Swiss Institute for Experimental Cancer Research (ISREC)"
+    ]
+  },
+  {
+    "uid": "bioem",
+    "name_en": "Bio Electron Microscopy Facility",
+    "name_local": "Bio Electron Microscopy Facility",
+    "kind": "center",
+    "parent": "sv",
+    "aliases": [],
+    "context_aliases": [
+      "Bio Electron Microscopy Facility"
+    ]
+  },
+  {
+    "uid": "bicc",
+    "name_en": "Bioinformatics Competence Center",
+    "name_local": "Bioinformatics Competence Center",
+    "kind": "center",
+    "parent": "sv",
+    "aliases": [],
+    "context_aliases": [
+      "Bioinformatics Competence Center"
+    ]
+  },
+  {
+    "uid": "lsens",
+    "name_en": "Laboratory of Sensory Processing",
+    "name_local": "Laboratory of Sensory Processing",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Sensory Processing"
+    ]
+  },
+  {
+    "uid": "lmnn",
+    "name_en": "Laboratory of Molecular and Chemical Biology of Neurodegeneration",
+    "name_local": "Laboratory of Molecular and Chemical Biology of Neurodegeneration",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [
+      "Laboratory of Molecular and Chemical Biology of Neurodegeneration"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lnmc",
+    "name_en": "Laboratory of Neural Microcircuitry",
+    "name_local": "Laboratory of Neural Microcircuitry",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Neural Microcircuitry",
+      "Laboratory of Neural Microcircuitry (LNMC)",
+      "LNMC"
+    ]
+  },
+  {
+    "uid": "lpsy",
+    "name_en": "Laboratory of Psychophysics",
+    "name_local": "Laboratory of Psychophysics",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Psychophysics"
+    ]
+  },
+  {
+    "uid": "lgc",
+    "name_en": "Laboratory of Behavioral Genetics",
+    "name_local": "Laboratory of Behavioral Genetics",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Behavioral Genetics"
+    ]
+  },
+  {
+    "uid": "lne",
+    "name_en": "Laboratory of Neuroepigenetics",
+    "name_local": "Laboratory of Neuroepigenetics",
+    "kind": "lab",
+    "parent": "bmi",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Neuroepigenetics"
+    ]
+  },
+  {
+    "uid": "iic",
+    "name_en": "Institute of Civil Engineering",
+    "name_local": "Institut d'ingénierie civile",
+    "kind": "institute",
+    "parent": "enac",
+    "aliases": [
+      "ENAC IIC"
+    ],
+    "context_aliases": [
+      "Institute of Civil Engineering",
+      "Civil Engineering Institute",
+      "IIC"
+    ]
+  },
+  {
+    "uid": "iie",
+    "name_en": "Environmental Engineering Institute",
+    "name_local": "Institut d'ingénierie de l'environnement",
+    "kind": "institute",
+    "parent": "enac",
+    "aliases": [
+      "ENAC IIE"
+    ],
+    "context_aliases": [
+      "Environmental Engineering Institute",
+      "IIE"
+    ]
+  },
+  {
+    "uid": "alpole",
+    "name_en": "Alpine and Polar Environmental Research Center",
+    "name_local": "Alpine and Polar Environmental Research Center",
+    "kind": "center",
+    "parent": "enac",
+    "aliases": [
+      "Alpine and Polar Environmental Research Center"
+    ],
+    "context_aliases": [
+      "ALPOLE"
+    ]
+  },
+  {
+    "uid": "imos",
+    "name_en": "Intelligent Maintenance and Operations Systems Lab",
+    "name_local": "Intelligent Maintenance and Operations Systems Lab",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [
+      "Intelligent Maintenance and Operations Systems Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "luts",
+    "name_en": "Urban Transport Systems Laboratory",
+    "name_local": "Urban Transport Systems Laboratory",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [],
+    "context_aliases": [
+      "Urban Transport Systems Laboratory",
+      "Urban Transport Systems Laboratory (LUTS)"
+    ]
+  },
+  {
+    "uid": "lms",
+    "name_en": "Laboratory of Soil Mechanics",
+    "name_local": "Laboratoire de mécanique des sols",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Soil Mechanics"
+    ]
+  },
+  {
+    "uid": "lemr",
+    "name_en": "Laboratory of Experimental Rock Mechanics",
+    "name_local": "Laboratory of Experimental Rock Mechanics",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Experimental Rock Mechanics"
+    ]
+  },
+  {
+    "uid": "vita",
+    "name_en": "Visual Intelligence for Transportation Laboratory",
+    "name_local": "Visual Intelligence for Transportation Laboratory",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [
+      "ENAC IIC Visual Intelligence for Transportation"
+    ],
+    "context_aliases": [
+      "Visual Intelligence for Transportation"
+    ]
+  },
+  {
+    "uid": "resslab",
+    "name_en": "Resilient Steel Structures Laboratory",
+    "name_local": "Resilient Steel Structures Laboratory",
+    "kind": "lab",
+    "parent": "iic",
+    "aliases": [],
+    "context_aliases": [
+      "Resilient Steel Structures Laboratory",
+      "RESSLab"
+    ]
+  },
+  {
+    "uid": "river",
+    "name_en": "River Ecosystems Laboratory",
+    "name_local": "River Ecosystems Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "River Ecosystems Laboratory"
+    ]
+  },
+  {
+    "uid": "eerl",
+    "name_en": "Extreme Environments Research Laboratory",
+    "name_local": "Extreme Environments Research Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Extreme Environments Research Laboratory"
+    ]
+  },
+  {
+    "uid": "eml",
+    "name_en": "Environmental Microbiology Laboratory",
+    "name_local": "Environmental Microbiology Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Environmental Microbiology Laboratory"
+    ]
+  },
+  {
+    "uid": "perl",
+    "name_en": "Plant Ecology Research Laboratory",
+    "name_local": "Plant Ecology Research Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Plant Ecology Research Laboratory",
+      "Plant Ecology Research Laboratory PERL"
+    ]
+  },
+  {
+    "uid": "lapi",
+    "name_en": "Laboratory of Atmospheric Processes and their Impacts",
+    "name_local": "Laboratory of Atmospheric Processes and their Impacts",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [
+      "Laboratory of Atmospheric Processes and their Impacts (LAPI)"
+    ],
+    "context_aliases": [
+      "Laboratory of Atmospheric Processes and their Impacts",
+      "LAPI"
+    ]
+  },
+  {
+    "uid": "eceo",
+    "name_en": "Environmental Computational Science and Earth Observation Laboratory",
+    "name_local": "Environmental Computational Science and Earth Observation Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [
+      "Environmental Computational Science and Earth Observation Laboratory"
+    ],
+    "context_aliases": [
+      "ECEO"
+    ]
+  },
+  {
+    "uid": "cryos",
+    "name_en": "Laboratory of Cryospheric Sciences",
+    "name_local": "Laboratory of Cryospheric Sciences",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Cryospheric Sciences"
+    ]
+  },
+  {
+    "uid": "lgb",
+    "name_en": "Laboratory for Biological Geochemistry",
+    "name_local": "Laboratory for Biological Geochemistry",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Biological Geochemistry"
+    ]
+  },
+  {
+    "uid": "wire",
+    "name_en": "Wind Engineering and Renewable Energy Laboratory",
+    "name_local": "Wind Engineering and Renewable Energy Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [
+      "Wind Engineering and Renewable Energy Laboratory"
+    ],
+    "context_aliases": [
+      "Wind Engineering and Renewable Energy Laboratory (WIRE)"
+    ]
+  },
+  {
+    "uid": "cel",
+    "name_en": "Central Environmental Laboratory",
+    "name_local": "Central Environmental Laboratory",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Central Environmental Laboratory"
+    ]
+  },
+  {
+    "uid": "change",
+    "name_en": "Laboratory of Catchment Hydrology and Geomorphology",
+    "name_local": "Laboratory of Catchment Hydrology and Geomorphology",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Catchment Hydrology and Geomorphology"
+    ]
+  },
+  {
+    "uid": "lbe",
+    "name_en": "Laboratory for Environmental Biotechnology",
+    "name_local": "Laboratory for Environmental Biotechnology",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Environmental Biotechnology"
+    ]
+  },
+  {
+    "uid": "lhe",
+    "name_en": "Environmental Hydraulics Laboratory",
+    "name_local": "Laboratoire d'hydraulique environnementale",
+    "kind": "lab",
+    "parent": "iie",
+    "aliases": [],
+    "context_aliases": [
+      "Environmental Hydraulics Laboratory"
+    ]
+  },
+  {
+    "uid": "hobel",
+    "name_en": "Human-Oriented Built Environment Lab",
+    "name_local": "Human-Oriented Built Environment Lab",
+    "kind": "lab",
+    "parent": "enac",
+    "aliases": [],
+    "context_aliases": [
+      "Human-Oriented Built Environment Lab"
+    ]
+  },
+  {
+    "uid": "lipid",
+    "name_en": "Laboratory of Integrated Performance in Design",
+    "name_local": "Laboratory of Integrated Performance in Design",
+    "kind": "lab",
+    "parent": "enac",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Integrated Performance in Design",
+      "Laboratory of Integrated Performance in Design (LIPID)"
+    ]
+  },
+  {
+    "uid": "giraph",
+    "name_en": "Geographic Information Research and Analysis in Population Health Lab",
+    "name_local": "Geographic Information Research and Analysis in Population Health Lab",
+    "kind": "lab",
+    "parent": "enac",
+    "aliases": [],
+    "context_aliases": [
+      "GIRAPH",
+      "Geographic Information Research and Analysis in Population Health (GIRAPH) Lab"
+    ]
+  },
+  {
+    "uid": "cape",
+    "name_en": "Teaching Support Centre",
+    "name_local": "Centre d'appui à l'enseignement",
+    "kind": "center",
+    "parent": "epfl",
+    "aliases": [],
+    "context_aliases": [
+      "Teaching Support Centre",
+      "Centre d'appui à l'enseignement"
+    ]
+  },
+  {
+    "uid": "bbp",
+    "name_en": "Blue Brain Project",
+    "name_local": "Blue Brain Project",
+    "kind": "center",
+    "parent": "epfl",
+    "aliases": [
+      "Blue Brain Project"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "epfl-ecal-lab",
+    "name_en": "EPFL+ECAL Lab",
+    "name_local": "EPFL+ECAL Lab",
+    "kind": "center",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL+ECAL Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "valais",
+    "name_en": "EPFL Valais Wallis",
+    "name_local": "EPFL Valais Wallis",
+    "kind": "campus",
+    "parent": "epfl",
+    "aliases": [
+      "EPFL Valais",
+      "EPFL Valais Wallis",
+      "École Polytechnique Fédérale de Lausanne (EPFL) Valais Wallis"
+    ],
+    "context_aliases": []
+  }
+]

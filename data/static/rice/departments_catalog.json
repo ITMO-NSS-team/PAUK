@@ -1,0 +1,274 @@
+[
+  {
+    "uid": "rice",
+    "name_en": "Rice University",
+    "name_local": "Rice University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/008zs3103",
+    "type": "university"
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "bioe",
+    "name_en": "Department of Bioengineering",
+    "name_local": "Department of Bioengineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Bioengineering"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "physast",
+    "name_en": "Department of Physics and Astronomy",
+    "name_local": "Department of Physics and Astronomy",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics and Astronomy",
+      "Department of Physics & Astronomy",
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "msne",
+    "name_en": "Department of Materials Science and NanoEngineering",
+    "name_local": "Department of Materials Science and NanoEngineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and NanoEngineering",
+      "Department of Materials Science and Nanoengineering"
+    ]
+  },
+  {
+    "uid": "chbe",
+    "name_en": "Department of Chemical and Biomolecular Engineering",
+    "name_local": "Department of Chemical and Biomolecular Engineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biomolecular Engineering"
+    ]
+  },
+  {
+    "uid": "biosci",
+    "name_en": "Department of BioSciences",
+    "name_local": "Department of BioSciences",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of BioSciences",
+      "Department of Biosciences"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "eeps",
+    "name_en": "Department of Earth Environmental and Planetary Sciences",
+    "name_local": "Department of Earth Environmental and Planetary Sciences",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth",
+      "Environmental and Planetary Sciences"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychological Sciences",
+    "name_local": "Department of Psychological Sciences",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychological Sciences"
+    ]
+  },
+  {
+    "uid": "stat",
+    "name_en": "Department of Statistics",
+    "name_local": "Department of Statistics",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics"
+    ]
+  },
+  {
+    "uid": "cmor",
+    "name_en": "Department of Computational Applied Mathematics and Operations Research",
+    "name_local": "Department of Computational Applied Mathematics and Operations Research",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computational Applied Mathematics and Operations Research",
+      "Department of Computational Applied Mathematics and Operations Re"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "neuro",
+    "name_en": "Department of Neuroscience",
+    "name_local": "Department of Neuroscience",
+    "kind": "department",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuroscience"
+    ]
+  },
+  {
+    "uid": "sci",
+    "name_en": "Smalley-Curl Institute",
+    "name_local": "Smalley-Curl Institute",
+    "kind": "institute",
+    "parent": "rice",
+    "aliases": [
+      "Smalley-Curl Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rami",
+    "name_en": "Rice Advanced Materials Institute",
+    "name_local": "Rice Advanced Materials Institute",
+    "kind": "institute",
+    "parent": "rice",
+    "aliases": [
+      "Rice Advanced Materials Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ctbp",
+    "name_en": "Center for Theoretical Biological Physics",
+    "name_local": "Center for Theoretical Biological Physics",
+    "kind": "center",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Theoretical Biological Physics"
+    ]
+  },
+  {
+    "uid": "rice360",
+    "name_en": "Rice360 Institute for Global Health Technologies",
+    "name_local": "Rice360 Institute for Global Health Technologies",
+    "kind": "institute",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Rice360 Institute for Global Health Technologies",
+      "Rice360",
+      "Institute for Global Health Technologies"
+    ]
+  },
+  {
+    "uid": "rni",
+    "name_en": "Rice Neuroengineering Initiative",
+    "name_local": "Rice Neuroengineering Initiative",
+    "kind": "institute",
+    "parent": "rice",
+    "aliases": [
+      "Rice Neuroengineering Initiative"
+    ],
+    "context_aliases": [
+      "Neuroengineering Initiative"
+    ]
+  },
+  {
+    "uid": "apgp",
+    "name_en": "Applied Physics Graduate Program",
+    "name_local": "Applied Physics Graduate Program",
+    "kind": "program",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Applied Physics Graduate Program"
+    ]
+  },
+  {
+    "uid": "kinder",
+    "name_en": "Kinder Institute for Urban Research",
+    "name_local": "Kinder Institute for Urban Research",
+    "kind": "institute",
+    "parent": "rice",
+    "aliases": [],
+    "context_aliases": [
+      "Kinder Institute for Urban Research"
+    ]
+  }
+]

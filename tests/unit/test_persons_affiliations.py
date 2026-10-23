@@ -61,7 +61,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         return next(prepared.read_models("persons", Person))
 
     def test_affiliation_of_the_works_own_year_fills_the_gap(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False, name_raw="Anonymous Depositor",
+        person = Person(id="A1", openalex_id="A1", is_member=False, name_raw="Anonymous Depositor",
                         authored=[Authorship(publication_id="W1", position=1),
                                   Authorship(publication_id="W2", position=1)])
         result = self.run_stage(
@@ -80,7 +80,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual(by_publication["W2"].affiliation_source, "openalex")
 
     def test_an_affiliation_the_work_states_is_left_alone(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False,
+        person = Person(id="A1", openalex_id="A1", is_member=False,
                         authored=[Authorship(publication_id="W1", position=1,
                                              affiliation="As printed on the paper")])
         result = self.run_stage(
@@ -91,17 +91,53 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual(authorship.affiliation, "As printed on the paper")
         self.assertIsNone(authorship.affiliation_source)
 
-    def test_an_itmo_affiliation_no_work_stated_still_marks_the_person(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False,
-                        authored=[Authorship(publication_id="W1", position=1)])
+    def test_an_openalex_profile_affiliation_alone_does_not_make_a_member(self):
+        # OpenAlex pools every work's institutions into the profile, consortium
+        # papers included, so the profile is not evidence of membership.
+        person = Person(id="A1", openalex_id="A1", is_member=False,
+                        authored=[Authorship(publication_id="W1", position=1, is_member=False)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Deposit without affiliations", year=2026)],
             openalex_author(affiliations=[(ITMO_INSTITUTION, [2026])]),
         )
-        self.assertTrue(result.is_itmo)
+        self.assertFalse(result.is_member)
+
+    def test_an_orcid_employment_at_the_university_makes_a_member(self):
+        # The person said so themselves, unlike the pooled OpenAlex profile.
+        person = Person(id="A1", openalex_id="A1", is_member=False, orcid="0000-0001",
+                        authored=[Authorship(publication_id="W1", position=1, is_member=False)])
+        result = self.run_stage(
+            person, [Publication(id="W1", title="Work", year=2024)],
+            openalex_author(),
+            orcid_record("ITMO University", start=2020, ror="https://ror.org/04txgxn49"),
+        )
+        self.assertTrue(result.is_member)
+
+    def test_membership_is_recomputed_not_kept_from_an_older_rule(self):
+        # Marked a member earlier through the OpenAlex profile; no work and no
+        # ORCID record names the university, so the mark goes.
+        person = Person(id="A1", openalex_id="A1", is_member=True,
+                        authored=[Authorship(publication_id="W1", position=1, is_member=False)])
+        result = self.run_stage(
+            person, [Publication(id="W1", title="Work", year=2024)],
+            openalex_author(affiliations=[(ITMO_INSTITUTION, [2024])]),
+        )
+        self.assertFalse(result.is_member)
+
+    def test_an_unflagged_old_authorship_does_not_keep_an_old_mark(self):
+        # The row still lists a work from a run before the flag existed; the
+        # one flagged authorship decides.
+        person = Person(id="A1", openalex_id="A1", is_member=True,
+                        authored=[Authorship(publication_id="W0", position=1),
+                                  Authorship(publication_id="W1", position=3, is_member=False)])
+        result = self.run_stage(
+            person, [Publication(id="W1", title="Work", year=2025)],
+            openalex_author(affiliations=[(ITMO_INSTITUTION, [2025])]),
+        )
+        self.assertFalse(result.is_member)
 
     def test_orcid_employment_fills_what_openalex_does_not_know(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False, orcid="0000-0001",
+        person = Person(id="A1", openalex_id="A1", is_member=False, orcid="0000-0001",
                         authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work", year=2024)],
@@ -114,7 +150,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual([a.source for a in result.affiliations], ["orcid"])
 
     def test_last_known_institution_is_the_fallback_for_an_uncovered_year(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False,
+        person = Person(id="A1", openalex_id="A1", is_member=False,
                         authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work of an unknown year")],
@@ -124,7 +160,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual(authorship.affiliation, "ITMO University")
 
     def test_nothing_to_fill_from_leaves_the_authorship_empty(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False,
+        person = Person(id="A1", openalex_id="A1", is_member=False,
                         authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work", year=2026)], openalex_author())
@@ -148,7 +184,7 @@ class OrcidIdentityTest(AffiliationBackfillTest):
         }}
 
     def run_orcid(self, payload, person=None):
-        person = person or Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1")
+        person = person or Person(id="A1", openalex_id="A1", is_member=True, orcid="0000-1")
         return self.run_stage(person, [], openalex_author(orcid="0000-1"), payload)
 
     def test_every_spelling_the_author_registered_is_kept(self):
@@ -167,7 +203,7 @@ class OrcidIdentityTest(AffiliationBackfillTest):
         self.assertEqual(result.email, "work@itmo.ru")
 
     def test_an_address_the_person_already_had_is_not_replaced(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1",
+        person = Person(id="A1", openalex_id="A1", is_member=True, orcid="0000-1",
                         email="known@itmo.ru")
         result = self.run_orcid(self.orcid_person(emails=["other@gmail.com"]), person)
         self.assertEqual(result.email, "known@itmo.ru")
@@ -213,7 +249,7 @@ class OrcidIdentityTest(AffiliationBackfillTest):
         self.assertIsNone(result.homepage)
 
     def test_an_account_found_earlier_is_not_overwritten(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1",
+        person = Person(id="A1", openalex_id="A1", is_member=True, orcid="0000-1",
                         github="matched-by-hand")
         result = self.run_orcid(self.orcid_urls("https://github.com/other"), person)
         self.assertEqual(result.github, "matched-by-hand")
@@ -221,3 +257,29 @@ class OrcidIdentityTest(AffiliationBackfillTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExternalAuthorsTest(unittest.TestCase):
+    """A university without external coauthors in its graph does not enrich them."""
+
+    def test_external_coauthors_are_left_as_normalize_made_them(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        member = Person(id="A1", openalex_id="A1", is_member=True,
+                        authored=[Authorship(publication_id="W1", position=1, is_member=True)])
+        external = Person(id="A2", openalex_id="A2", is_member=False,
+                          authored=[Authorship(publication_id="W1", position=2, is_member=False)])
+        prepared.write_models("persons", [member, external])
+        prepared.write_models("publications", [Publication(id="W1", title="Work", year=2025)])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("pauk.pipeline.stages.persons.OpenAlexClient") as openalex, \
+                patch("pauk.pipeline.stages.persons.OrcidClient"), \
+                patch("pauk.pipeline.stages.persons.CrossrefClient") as crossref:
+            openalex.return_value.get_author.return_value = openalex_author()
+            PersonsStage(prepared, RawStore(db, "sample"),
+                         Settings(data_dir=Path(tmp), institution_key="ufjf")).run()
+        openalex.return_value.get_author.assert_called_once_with("A1")
+        # Crossref is off unless PAUK_CROSSREF_ENABLED asks for it.
+        crossref.return_value.get_work.assert_not_called()
+        rows = {p.id: p for p in prepared.read_models("persons", Person)}
+        self.assertNotIn("openalex_author", rows["A2"].processing)

@@ -340,7 +340,7 @@ class ActorContextTest(unittest.TestCase):
         create_user(self.db, "roman", "hunter2", role="editor")
         from tests.unit.test_admin_nodes import FakePanelGraph
         self.graph = FakePanelGraph()
-        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_ru": "Иван"}
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_local": "Иван"}
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
 
@@ -361,7 +361,7 @@ class ActorContextTest(unittest.TestCase):
         csrf = self.db[SESSIONS].find_one({"_id": session_key(token)})["csrf"]
         with mock.patch.object(self.client.app.state.graph, "audited",
                                return_value=self.graph):
-            self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_ru": "Пётр"})
+            self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_local": "Пётр"})
         (override,) = list(self.db["graph_overrides"].find())
         self.assertEqual(override["actor"], "user:roman")
 

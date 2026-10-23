@@ -31,7 +31,7 @@ function, so both stages read a name the same way.
 
 ## Address from an author's page
 
-For ITMO people who still have no address, the stage downloads the page the
+For members who still have no address, the stage downloads the page the
 author listed in ORCID (`Person.homepage`). It takes `mailto` links and text
 with obfuscation removed: `name [at] itmo [dot] ru`, `&#64;`, spaces around
 the at sign, which is how addresses are hidden from spam bots on lab pages.

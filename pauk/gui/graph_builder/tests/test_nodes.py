@@ -57,7 +57,7 @@ class AuthorLabelTest(unittest.TestCase):
 
     def test_no_surname_returns_empty_the_caller_owns_the_fallback(self):
         # author_label doesn't guess a combined raw string; AuthorNodeBuilder
-        # falls back to name_ru / the other language's label.
+        # falls back to name_local / the other language's label.
         self.assertEqual(author_label(None, "Иван", "Иванович"), "")
         self.assertEqual(author_label("", "", ""), "")
 
@@ -77,30 +77,30 @@ class AuthorLabelTest(unittest.TestCase):
 
 class AuthorVariantsTest(unittest.TestCase):
     def test_excludes_already_shown_labels(self):
-        row = {"name_ru": "Иванов И.И.", "name_variants": ["Ivanov I.I.", "И. Иванов"]}
-        variants = author_variants(row, label_ru="Иванов И.И.", label_en="Ivanov I.I.")
+        row = {"name_local": "Иванов И.И.", "name_variants": ["Ivanov I.I.", "И. Иванов"]}
+        variants = author_variants(row, label_local="Иванов И.И.", label_en="Ivanov I.I.")
         self.assertEqual(variants, {"openalex": ["И. Иванов"], "orcid": []})
 
     def test_excludes_full_name_ru_and_en_too(self):
-        """name_ru/name_en become the card title (see author_variants), so they must not resurface."""
+        """name_local/name_en become the card title (see author_variants), so they must not resurface."""
         row = {
-            "name_ru": "Иванов Иван Иванович",
+            "name_local": "Иванов Иван Иванович",
             "name_en": "Ivan Ivanov",
             "name_variants": ["Ivan Ivanov", "И. Иванов"],
         }
-        variants = author_variants(row, label_ru="Иванов И.И.", label_en="Ivanov I.I.")
+        variants = author_variants(row, label_local="Иванов И.И.", label_en="Ivanov I.I.")
         self.assertEqual(variants, {"openalex": ["И. Иванов"], "orcid": []})
 
     def test_deduplicates_case_insensitively_within_one_source(self):
-        row = {"name_ru": "", "name_variants": ["A B", "a b", "C D"]}
-        variants = author_variants(row, label_ru="x", label_en="y")
+        row = {"name_local": "", "name_variants": ["A B", "a b", "C D"]}
+        variants = author_variants(row, label_local="x", label_en="y")
         self.assertEqual(variants, {"openalex": ["A B", "C D"], "orcid": []})
 
     def test_other_names_go_to_orcid_group_separately_from_name_variants(self):
-        row = {"name_ru": "", "name_variants": ["Ivan Ivanov"], "other_names": ["I. Ivanov", "Ivan I."]}
-        variants = author_variants(row, label_ru="x", label_en="y")
+        row = {"name_local": "", "name_variants": ["Ivan Ivanov"], "other_names": ["I. Ivanov", "Ivan I."]}
+        variants = author_variants(row, label_local="x", label_en="y")
         self.assertEqual(variants, {"openalex": ["Ivan Ivanov"], "orcid": ["I. Ivanov", "Ivan I."]})
 
     def test_no_variants_returns_empty_groups(self):
-        row = {"name_ru": "", "name_variants": [], "other_names": []}
+        row = {"name_local": "", "name_variants": [], "other_names": []}
         self.assertEqual(author_variants(row, "x", "y"), {"openalex": [], "orcid": []})

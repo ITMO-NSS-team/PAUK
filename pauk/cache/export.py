@@ -93,8 +93,8 @@ def cypher_dict(driver, query, **params) -> list[dict]:
         A list of dicts, one per result row, keyed by `RETURN` column alias.
 
     Example:
-        >>> cypher_dict(driver, "MATCH (p:Person {is_itmo: true}) RETURN p.id AS id, p.name_ru AS name_ru")
-        [{'id': 'A1', 'name_ru': 'Ivanov'}]
+        >>> cypher_dict(driver, "MATCH (p:Person {is_member: true}) RETURN p.id AS id, p.name_local AS name_local")
+        [{'id': 'A1', 'name_local': 'Ivanov'}]
     """
     return [r.data() for r in _execute_retrying(driver, query, **params)]
 
@@ -122,18 +122,18 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         "RETURN "
         # required
         "p.id AS id, "
-        "coalesce(p.is_itmo, false) AS is_itmo, "
+        "coalesce(p.is_member, false) AS is_member, "
         # public
         "p.openalex_id AS openalex_id, "
         # both (split into public/private)
-        "p.surname_ru AS surname_ru, "
-        "p.first_name_ru AS first_name_ru, "
-        "p.second_name_ru AS second_name_ru, "
+        "p.surname_local AS surname_local, "
+        "p.first_name_local AS first_name_local, "
+        "p.second_name_local AS second_name_local, "
         "p.surname_en AS surname_en, "
         "p.first_name_en AS first_name_en, "
         "p.second_name_en AS second_name_en, "
         # private
-        "p.name_ru AS name_ru, "
+        "p.name_local AS name_local, "
         "p.name_en AS name_en, "
         "p.name_variants AS name_variants, "
         "p.other_names AS other_names, "
@@ -212,7 +212,7 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         # required
         "d.id AS id, "
         # public
-        "d.name_ru AS name_ru, "
+        "d.name_local AS name_local, "
         "d.name_en AS name_en, "
         "d.name_variants AS name_variants, "
         "d.context_aliases AS context_aliases, "
@@ -227,7 +227,7 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         # required
         "o.id AS id, "
         # public
-        "o.name_ru AS name_ru, "
+        "o.name_local AS name_local, "
         "o.name_en AS name_en, "
         "o.ror_id AS ror_id, "
         "o.country AS country, "
@@ -250,7 +250,7 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
     queries["person_depts"] = partial(
         cypher_dict,
         driver,
-        "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) "
+        "MATCH (p:Person {is_member: true})-[:BELONGS_TO]->(d:Department) "
         "RETURN "
         # required
         "p.id AS per, "
@@ -306,7 +306,7 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
     queries["repo_persons"] = partial(
         cypher_dict,
         driver,
-        "MATCH (p:Person {is_itmo: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
+        "MATCH (p:Person {is_member: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
         "RETURN "
         # required
         "r.id AS rid, "

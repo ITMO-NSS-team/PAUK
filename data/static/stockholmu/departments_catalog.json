@@ -1,0 +1,258 @@
+[
+  {
+    "uid": "stockholmu",
+    "name_en": "Stockholm University",
+    "name_local": "Stockholms universitet",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05f0yaq80",
+    "type": "university"
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "dbb",
+    "name_en": "Department of Biochemistry and Biophysics",
+    "name_local": "Department of Biochemistry and Biophysics",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Biophysics"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "aces",
+    "name_en": "Department of Environmental Science",
+    "name_local": "Department of Environmental Science",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Science"
+    ]
+  },
+  {
+    "uid": "mbw",
+    "name_en": "Department of Molecular Biosciences The Wenner-Gren Institute",
+    "name_local": "Department of Molecular Biosciences The Wenner-Gren Institute",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [
+      "The Wenner-Gren Institute"
+    ],
+    "context_aliases": [
+      "Department of Molecular Biosciences"
+    ]
+  },
+  {
+    "uid": "astro",
+    "name_en": "Department of Astronomy",
+    "name_local": "Department of Astronomy",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Astronomy"
+    ]
+  },
+  {
+    "uid": "ecology",
+    "name_en": "Department of Ecology Environment and Plant Sciences",
+    "name_local": "Department of Ecology Environment and Plant Sciences",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ecology",
+      "Environment and Plant Sciences"
+    ]
+  },
+  {
+    "uid": "dsv",
+    "name_en": "Department of Computer and Systems Sciences",
+    "name_local": "Department of Computer and Systems Sciences",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer and Systems Sciences"
+    ]
+  },
+  {
+    "uid": "zoology",
+    "name_en": "Department of Zoology",
+    "name_local": "Department of Zoology",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Zoology"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geological Sciences",
+    "name_local": "Department of Geological Sciences",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geological Sciences"
+    ]
+  },
+  {
+    "uid": "physgeo",
+    "name_en": "Department of Physical Geography",
+    "name_local": "Department of Physical Geography",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physical Geography"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "misu",
+    "name_en": "Department of Meteorology",
+    "name_local": "Department of Meteorology",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Meteorology"
+    ]
+  },
+  {
+    "uid": "mmk",
+    "name_en": "Department of Materials and Environmental Chemistry",
+    "name_local": "Department of Materials and Environmental Chemistry",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials and Environmental Chemistry"
+    ]
+  },
+  {
+    "uid": "ph",
+    "name_en": "Department of Public Health Sciences",
+    "name_local": "Department of Public Health Sciences",
+    "kind": "department",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Public Health Sciences"
+    ]
+  },
+  {
+    "uid": "bolin",
+    "name_en": "Bolin Centre for Climate Research",
+    "name_local": "Bolin Centre for Climate Research",
+    "kind": "center",
+    "parent": "stockholmu",
+    "aliases": [
+      "Bolin Centre for Climate Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "src",
+    "name_en": "Stockholm Resilience Centre",
+    "name_local": "Stockholm Resilience Centre",
+    "kind": "center",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Stockholm Resilience Centre"
+    ]
+  },
+  {
+    "uid": "okc",
+    "name_en": "Oskar Klein Centre",
+    "name_local": "Oskar Klein Centre",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Oskar Klein Centre"
+    ]
+  },
+  {
+    "uid": "arc",
+    "name_en": "Aging Research Center",
+    "name_local": "Aging Research Center",
+    "kind": "center",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Aging Research Center"
+    ]
+  },
+  {
+    "uid": "cpg",
+    "name_en": "Centre for Palaeogenetics",
+    "name_local": "Centre for Palaeogenetics",
+    "kind": "center",
+    "parent": "stockholmu",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Palaeogenetics"
+    ]
+  },
+  {
+    "uid": "baltic",
+    "name_en": "Baltic Sea Centre",
+    "name_local": "Baltic Sea Centre",
+    "kind": "center",
+    "parent": "stockholmu",
+    "aliases": [
+      "Stockholm University Baltic Sea Centre"
+    ],
+    "context_aliases": [
+      "Baltic Sea Centre"
+    ]
+  }
+]

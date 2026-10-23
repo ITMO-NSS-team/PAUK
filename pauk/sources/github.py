@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import requests
 
@@ -11,11 +12,21 @@ from .base import HttpClient, HttpRequestError
 class GitHubClient(HttpClient):
     API_URL = "https://api.github.com"
 
+    # Profiles per GraphQL query. A query costs one point of a separate
+    # 5,000-an-hour budget whatever its size, where REST spends one request
+    # of the core 5,000 per profile; profiles were 80% of the requests on
+    # Innopolis.
+    USERS_PER_QUERY = 50
+
     def __init__(self, timeout: int, token: str = "") -> None:
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         super().__init__(timeout, headers)
+        self.has_token = bool(token)
+        # (owner, name) lowercased -> REST-shaped repository payload with
+        # "_has_readme", or None when GitHub knows no such repository.
+        self._repositories: dict[tuple[str, str], dict | None] = {}
 
     @staticmethod
     def _error_message(response: requests.Response) -> str:
@@ -66,14 +77,79 @@ class GitHubClient(HttpClient):
             return self._backoff_delay(attempt)
         return None
 
+    REPOSITORIES_PER_QUERY = 25
+    README_NAMES = ("README.md", "README.rst", "README.txt", "README", "readme.md", "Readme.md",
+                    "README.markdown", "readme.rst", "README.MD")
+
+    def prefetch_repositories(self, pairs: Iterable[tuple[str, str]]) -> None:
+        """Load many repositories' metadata and README status at once.
+
+        REST spends two requests a repository (the metadata, then /readme);
+        a GraphQL query covers 25 for one point of its own budget. Afterwards
+        get_repository and has_readme answer from what was loaded. Without a
+        token (GraphQL needs one) this does nothing and both stay on REST.
+        """
+        if not self.has_token:
+            return
+        pairs = list(dict.fromkeys((owner.lower(), name.lower()) for owner, name in pairs))
+        pairs = [pair for pair in pairs if pair not in self._repositories]
+        readme = " ".join(f'f{i}: object(expression: {json.dumps("HEAD:" + n)}) {{ id }}'
+                          for i, n in enumerate(self.README_NAMES))
+        for start in range(0, len(pairs), self.REPOSITORIES_PER_QUERY):
+            chunk = pairs[start:start + self.REPOSITORIES_PER_QUERY]
+            fields = " ".join(
+                f"r{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{"
+                " databaseId url name description stargazerCount forkCount isArchived isFork pushedAt"
+                " primaryLanguage { name } licenseInfo { spdxId } repositoryTopics(first: 20) { nodes { topic { name } } }"
+                f" owner {{ __typename login url }} {readme} }}"
+                for i, (owner, name) in enumerate(chunk)
+            )
+            try:
+                data = self.request_json("POST", f"{self.API_URL}/graphql", json={"query": f"query {{ {fields} }}"})
+            except HttpRequestError:
+                # REST stays the fallback for this chunk.
+                continue
+            nodes = data.get("data") or {}
+            for i, pair in enumerate(chunk):
+                node = nodes.get(f"r{i}")
+                self._repositories[pair] = None if node is None else {
+                    "id": node.get("databaseId"),
+                    "html_url": node.get("url"),
+                    "name": node.get("name"),
+                    "description": node.get("description"),
+                    "stargazers_count": node.get("stargazerCount"),
+                    "forks_count": node.get("forkCount"),
+                    "archived": node.get("isArchived"),
+                    "fork": node.get("isFork"),
+                    "pushed_at": node.get("pushedAt"),
+                    "language": (node.get("primaryLanguage") or {}).get("name"),
+                    "license": {"spdx_id": (node.get("licenseInfo") or {}).get("spdxId")},
+                    # Sorted as REST serves them.
+                    "topics": sorted(n["topic"]["name"] for n in (node.get("repositoryTopics") or {}).get("nodes") or []),
+                    "owner": {"login": (node.get("owner") or {}).get("login"),
+                              "type": (node.get("owner") or {}).get("__typename"),
+                              "html_url": (node.get("owner") or {}).get("url")},
+                    "_has_readme": any(node.get(f"f{j}") for j in range(len(self.README_NAMES))),
+                }
+
     def get_repository(self, owner: str, name: str) -> dict:
+        key = (owner.lower(), name.lower())
+        if key in self._repositories:
+            payload = self._repositories[key]
+            if payload is None:
+                raise HttpRequestError("GET", f"{self.API_URL}/repos/{owner}/{name}", status_code=404)
+            return payload
         return self.get_json(f"{self.API_URL}/repos/{owner}/{name}")
 
     def has_readme(self, owner: str, name: str) -> bool:
         """Check for a README via GET .../readme (200 = yes, 404 = no).
 
-        Not exposed by the repository payload itself, needs its own call.
+        Not exposed by the REST repository payload, so it needs its own call
+        unless prefetch_repositories already looked.
         """
+        payload = self._repositories.get((owner.lower(), name.lower()))
+        if payload is not None:
+            return payload["_has_readme"]
         try:
             self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
         except HttpRequestError as exc:
@@ -117,6 +193,48 @@ class GitHubClient(HttpClient):
 
     def get_user(self, login: str) -> dict:
         return self.get_json(f"{self.API_URL}/users/{login}")
+
+    def get_users(self, logins: Iterable[str]) -> dict[str, dict]:
+        """Profiles of many accounts, shaped like get_user's; {} for an account that does not exist.
+
+        GraphQL in batches when there is a token (GraphQL needs one), else
+        one REST request each.
+        """
+        logins = list(dict.fromkeys(logins))
+        if not self.has_token:
+            found = {}
+            for login in logins:
+                try:
+                    found[login] = self.get_user(login)
+                except HttpRequestError as exc:
+                    if exc.status_code != 404:
+                        raise
+                    found[login] = {}
+            return found
+        found = {}
+        for start in range(0, len(logins), self.USERS_PER_QUERY):
+            chunk = logins[start:start + self.USERS_PER_QUERY]
+            fields = " ".join(
+                f"u{i}: repositoryOwner(login: {json.dumps(login)}) {{ __typename login url"
+                " ... on User { name email bio location company }"
+                " ... on Organization { name email description location } }"
+                for i, login in enumerate(chunk)
+            )
+            data = self.request_json("POST", f"{self.API_URL}/graphql", json={"query": f"query {{ {fields} }}"})
+            nodes = data.get("data") or {}
+            for i, login in enumerate(chunk):
+                node = nodes.get(f"u{i}")
+                found[login] = {
+                    "login": node.get("login"),
+                    "html_url": node.get("url"),
+                    "type": node.get("__typename"),
+                    "name": node.get("name"),
+                    "email": node.get("email") or None,
+                    "bio": node.get("bio") or node.get("description") or None,
+                    "location": node.get("location"),
+                    "company": node.get("company"),
+                } if node else {}
+        return found
 
     def user_repositories(self, login: str, limit: int) -> list[dict]:
         """Repositories the account owns, most recently pushed first.

@@ -353,9 +353,9 @@ describe("populateGraph on fixture data", () => {
     expect(realNodeKeys(hidden)).toEqual(["A1"]); // A2 is in "no department"
   });
 
-  it("external authors (is_itmo: false) are hidden while filters.showExternalAuthors is off", () => {
+  it("external authors (is_member: false) are hidden while filters.showExternalAuthors is off", () => {
     const data = dataWithNoDept();
-    data.authors = data.authors.map((a) => (a.key === "A1" ? { ...a, is_itmo: false } : a));
+    data.authors = data.authors.map((a) => (a.key === "A1" ? { ...a, is_member: false } : a));
 
     const hidden = new Graph();
     populateGraph(hidden, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -381,7 +381,7 @@ describe("populateGraph on fixture data", () => {
         { key: "A3", pubs_count: 1 },
         { key: "A4", pubs_count: 1 }, // alone on P3, but has a repo
         { key: "A5", pubs_count: 2 }, // alone, but two pubs
-        { key: "E1", pubs_count: 1, is_itmo: false },
+        { key: "E1", pubs_count: 1, is_member: false },
       ],
       all_edges: [
         { s: "A1", t: "P1" },
@@ -428,7 +428,7 @@ describe("populateGraph on fixture data", () => {
     const base = dataWithNoDept();
     const [author] = base.authors;
     if (!author) throw new Error("the fixture must contain an author");
-    const external = { ...author, key: "E1", is_itmo: false };
+    const external = { ...author, key: "E1", is_member: false };
     const data: GraphData = {
       ...base,
       authors: [{ ...author, pubs_count: 1 }, external],
@@ -456,7 +456,7 @@ describe("populateGraph on fixture data", () => {
     expect(realNodeKeys(externalsOn)).toEqual([author.key, "E1"]);
   });
 
-  it("an author without an is_itmo field (graph-data.json from before external authors) counts as ITMO and is always visible", () => {
+  it("an author without an is_member field (graph-data.json from before external authors) counts as ITMO and is always visible", () => {
     const graph = new Graph();
     populateGraph(graph, dataWithNoDept(), "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     expect(realNodeKeys(graph)).toEqual(["A1", "A2"]);

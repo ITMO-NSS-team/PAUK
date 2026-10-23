@@ -1,0 +1,34 @@
+{
+  "key": "tum",
+  "short_name": "TUM",
+  "short_name_local": "TU München",
+  "name_en": "Technical University of Munich",
+  "name_local": "Technische Universität München",
+  "ror_id": "02kkvpp62",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "de",
+    "der",
+    "zu",
+    "vom",
+    "den"
+  ],
+  "email_domains": [
+    "tum.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TUM|TU\\s*M(?:ü|ue|u)nchen|TU\\s+Munich)(?![^\\W\\d_])",
+  "long_name": "Technical\\s+Univ(?:ersity|\\.)?\\s+(?:of\\s+)?Munich|Technischen?\\s+Univ(?:ersit(?:ä|ae|a)t|\\.)?\\s+M(?:ü|ue|u)nchen",
+  "marker_replacement": "TUM",
+  "place_words": "munich|münchen|muenchen|munchen|garching|freising|weihenstephan|straubing|heilbronn|neuherberg|ottobrunn|martinsried|taufkirchen|oberschleissheim|germany|deutschland|bavaria|bayern|bei|b|near|d|str|straße|strasse|ismaninger|boltzmannstr|boltzmannstraße|boltzmannstrasse|arcisstr|arcisstraße|arcisstrasse|lichtenbergstr|lichtenbergstraße|lichtenbergstrasse|james|franck|schellingstr|schellingstraße|lazarettstr|lazarettstraße|biedersteiner|uferstraße|schulgasse|am|olympiacampus|coulombwall|freisinger|landstraße|alte|akademie|platz|weg",
+  "other_organisations": "Helmholtz|LMU|Ludwig[-\\s]Maximilians|Max[-\\s]Planck|MPI|Fraunhofer|Leibniz|DZHK|DKTK|DZIF|DZPG|DZD|DZL|DKFZ|BZKF|Europäisches\\s+Kinderherzzentrum|Munich\\s+Heart\\s+Alliance|Bayerische\\s+Akademie|Walther[-\\s]Mei(?:ß|ss)ner|MCML|Munich\\s+Center\\s+for\\s+Machine\\s+Learning|MCQST|Munich\\s+Center\\s+for\\s+Quantum|Munich\\s+Cluster\\s+for\\s+Systems\\s+Neurology|SyNergy|German\\s+Cent(?:er|re)\\s+for|German\\s+Cancer|German\\s+Research\\s+Center|Comprehensive\\s+Cancer\\s+Center|Potsdam\\s+Institute|Imperial|Aalto|Technion|Beijing\\s+Institute\\s+of\\s+Technology",
+  "identity": "(?<![^\\W\\d_])TUM(?![^\\W\\d_])|Technical\\s+University\\s+of\\s+Munich|Technische\\s+Universit(?:ä|ae)t\\s+M(?:ü|ue)nchen",
+  "city": "Munich|M(?:ü|ue|u)nchen|Garching|Freising",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tum",
+  "site_url": "https://www.tum.de",
+  "unit_words": ""
+}

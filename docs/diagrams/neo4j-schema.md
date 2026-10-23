@@ -4,7 +4,7 @@
 classDiagram
     class Person {
         +id : OpenAlex author ID
-        +is_itmo : bool
+        +is_member : bool
         +openalex_id
         +orcid
         +name_raw
@@ -12,9 +12,9 @@ classDiagram
         +name_variants
         +email
         +emails
-        +first_name_ru
-        +second_name_ru
-        +surname_ru
+        +first_name_local
+        +second_name_local
+        +surname_local
         +degree
         +github
         +google_scholar
@@ -31,7 +31,7 @@ classDiagram
     class Organization {
         +id : name_en slug (uid)
         +name_en : unique
-        +name_ru
+        +name_local
         +ror_id
         +country
         +type
@@ -40,7 +40,7 @@ classDiagram
     class Department {
         +id : name_en slug (uid)
         +name_en
-        +name_ru
+        +name_local
         +name_variants
         +context_aliases
         +kind : megafaculty|faculty|institute|center|department|lab
@@ -129,8 +129,8 @@ Details and unique keys: [`../architecture/neo4j-graph.md`](../architecture/neo4
 
 The department hierarchy is recursive: a unit is `PART_OF` its parent, either
 another `Department` (`parent_id`) or a root `Organization`
-(`organization_id`); exactly one of the two is set. Several organizations (ITMO
-and co-affiliations) coexist in one graph as separate roots.
+(`organization_id`); exactly one of the two is set. Several organizations (the
+university and co-affiliations) coexist in one graph as separate roots.
 
 Commit-derived data collected by the matcher (`GitHubProfile.emails`,
 `commit_names`, `repos`) is not published to the graph: it is evidence for the

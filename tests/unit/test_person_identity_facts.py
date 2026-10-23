@@ -23,7 +23,7 @@ from pauk.settings import Settings
 
 def facts(first, second):
     return name_comparison_facts(
-        Person(id="A1", name_raw=first, is_itmo=True), Person(id="A2", name_raw=second, is_itmo=True)
+        Person(id="A1", name_raw=first, is_member=True), Person(id="A2", name_raw=second, is_member=True)
     )
 
 
@@ -66,8 +66,8 @@ class PersonIdentityFactsTest(unittest.TestCase):
                 self.assertEqual(result["meaning"], "spelling_observations_not_identity_proof")
 
     def test_an_alias_cannot_hide_a_primary_name_conflict(self):
-        first = Person(id="A1", name_raw="Ivan Petrov", name_variants=["Igor Petrov"], is_itmo=True)
-        second = Person(id="A2", name_raw="Igor Petrov", is_itmo=True)
+        first = Person(id="A1", name_raw="Ivan Petrov", name_variants=["Igor Petrov"], is_member=True)
+        second = Person(id="A2", name_raw="Igor Petrov", is_member=True)
         result = name_comparison_facts(first, second)
         self.assertEqual(result["alignments"][0]["given_components"][0]["relation"], "different_full_tokens")
 
@@ -83,8 +83,8 @@ class PersonIdentityFactsTest(unittest.TestCase):
 
     def test_pipeline_sends_identical_facts_to_both_views(self):
         people = [
-            Person(id="A1", name_raw="Nikolay Nikitin", is_itmo=True),
-            Person(id="A2", name_raw="Nikolay O. Nikitin", is_itmo=True),
+            Person(id="A1", name_raw="Nikolay Nikitin", is_member=True),
+            Person(id="A2", name_raw="Nikolay O. Nikitin", is_member=True),
         ]
         test = self
 

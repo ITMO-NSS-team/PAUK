@@ -182,6 +182,8 @@ class UrlAlternativesTest(unittest.TestCase):
 
 class ProfileFailureTest(unittest.TestCase):
     def test_failure_preserves_profiles_and_retry_skips_successful_accounts(self):
+        # Profiles come in one batch per repository, so a batch fails or
+        # succeeds whole; what a failure must not do is touch what is stored.
         db = mongomock.MongoClient()["test"]
         prepared = PreparedStore(db, "test")
         raw = RawStore(db, "test")
@@ -197,25 +199,30 @@ class ProfileFailureTest(unittest.TestCase):
             api = client.return_value
             api.contributors.return_value = [{"login": "bob", "type": "User"}]
             api.commits.return_value = []
-            api.get_user.side_effect = [{"login": "alice", "name": "Alice"}, RuntimeError("502")]
+            api.get_users.side_effect = RuntimeError("502")
             RepoPeopleStage(prepared, raw).run()
             repo = next(prepared.read_models("repositories", Repository))
             self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.FAILED)
             profiles = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
-            self.assertTrue(profiles["alice"].profile_fetched)
             self.assertEqual(profiles["bob"].name, "Existing name")
             self.assertFalse(profiles["bob"].profile_fetched)
-            self.assertEqual(len(list(raw.read("github_user"))), 1)
+            self.assertEqual(list(raw.read("github_user")), [])
 
-            api.get_user.reset_mock(side_effect=True)
-            api.get_user.return_value = {"login": "bob", "name": "Bob"}
+            api.get_users.reset_mock(side_effect=True)
+            api.get_users.return_value = {"alice": {"login": "alice", "name": "Alice"},
+                                          "bob": {"login": "bob", "name": "Bob"}}
             RepoPeopleStage(prepared, raw).run()
-            api.get_user.assert_called_once_with("bob")
+            api.get_users.assert_called_once_with(["alice", "bob"])
             repo = next(prepared.read_models("repositories", Repository))
             self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.COMPLETED)
 
-            api.get_user.reset_mock()
-            api.get_user.side_effect = RuntimeError("502 during refresh")
+            # Both fetched now: a retry has nothing left to ask for.
+            api.get_users.reset_mock()
+            prepared.write_models("repositories", [repo.model_copy(update={"processing": {}})])
+            RepoPeopleStage(prepared, raw).run()
+            api.get_users.assert_not_called()
+
+            api.get_users.side_effect = RuntimeError("502 during refresh")
             RepoPeopleStage(prepared, raw, force=True).run()
             profiles = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
             self.assertEqual(profiles["alice"].name, "Alice")

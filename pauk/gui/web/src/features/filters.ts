@@ -201,7 +201,7 @@ export function mountFilters(store: Store<AppState>): () => void {
  * @returns Unmount function.
  */
 export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
-  const external = new Set(data.authors.filter((a) => a.is_itmo === false).map((a) => a.key));
+  const external = new Set(data.authors.filter((a) => a.is_member === false).map((a) => a.key));
   return store.subscribe((state) => {
     const { selection, filters } = state;
     if (selection?.kind !== "node") return;

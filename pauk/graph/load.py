@@ -38,7 +38,7 @@ ENTITY_FILES = {
 # the pipeline must not silently lose its tombstones because a second list
 # was never updated.
 # persons.jsonl is the one file FILE_SPECS does not carry: it feeds two
-# registry entries, ITMO and external, that share the base label.
+# registry entries, member and external, that share the base label.
 FILE_LABELS = {
     filename: NODE_REGISTRY[spec_key].labels.split(":")[0]
     for filename, spec_key in FILE_SPECS.items()
@@ -107,6 +107,11 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
         for entity, filename in ENTITY_FILES.items()
     }
     rows_by_file = _drop_tombstoned(rows_by_file, mongo_db)
+    if not config.institution.external_authors:
+        # External coauthors stay in Mongo for dedup's coauthor evidence but
+        # are not part of this university's graph; their AUTHORED edges go
+        # with them, since those are read off the person rows.
+        rows_by_file["persons.jsonl"] = [row for row in rows_by_file["persons.jsonl"] if row.get("is_member")]
     client = audited_client(config, mongo_db)
     try:
         create_constraints(client)

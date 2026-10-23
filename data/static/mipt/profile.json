@@ -1,0 +1,27 @@
+{
+  "key": "mipt",
+  "short_name": "MIPT",
+  "short_name_local": "МФТИ",
+  "name_en": "Moscow Institute of Physics and Technology (National Research University)",
+  "name_local": "Московский физико-технический институт (национальный исследовательский университет)",
+  "ror_id": "00v0z9322",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "mipt.ru",
+    "phystech.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:MIPT|МФТИ|Phystech|Физтех)(?![^\\W\\d_])",
+  "long_name": "(?:the\\s+)?Moscow\\s+Ins?t?itute\\s+(?:of|for)\\s+Physics\\s*(?:and|&)\\s*Technolog(?:y|ies)|Moscow\\s+Physics\\s+and\\s+Technology\\s+Institute|National\\s+Research\\s+University\\s+Moscow\\s+Institute\\s+of\\s+Physics\\s+and\\s+Technology|Московский\\s+физико[\\s\\-‐–]*технический\\s+институт|Moskovskij\\s+fiziko[\\s\\-]*tehniceskij\\s+institut",
+  "marker_replacement": "MIPT",
+  "place_words": "russia|russian|federation|moscow|moskovskaya|oblast|region|reg|mosc|dolgoprudny|dolgoprudnyi|dolgoprudniy|dolgoprudnii|dolgoprydny|institutskiy|institutsky|institutskii|institusky|per|pereulok|lane|ln|sidestreet|bld|bldg|building|st|str|street|\\d+|россия|российская|федерация|москва|московская|обл|долгопрудный|г",
+  "other_organisations": "Russian\\s+Academy\\s+of\\s+Sciences|(?<![^\\W\\d_])(?:RAS|РАН|JINR|ITEP|IITP|VNIIA|TsAGI|AIRI|HSE|MEPhI|MISIS|Skoltech|FEFU|ITMO|TRINITI|GosNIIAS|NRC)(?![^\\W\\d_])|Russian\\s+Quantum\\s+Cent(?:er|re)|Skolkovo|Kurchatov|Joint\\s+Institute\\s+for\\s+(?:Nuclear\\s+Research|High\\s+Temperatures)|Lebedev\\s+(?:Physical\\s+)?Institute|Landau\\s+Institute|Kotelnikov\\s+Institute|Shirshov\\s+Institute|Dukhov|All-Russian\\s+Research\\s+Institute|Всероссийский\\s+научно-исследовательский|Institute\\s+for\\s+Nuclear\\s+Research|Institute\\s+for\\s+Information\\s+Transmission\\s+Problems|Institute\\s+for\\s+Physics\\s+of\\s+Microstructures|Institute\\s+for\\s+Theoretical\\s+and\\s+Experimental\\s+Physics|Prokhorov\\s+General\\s+Physics\\s+Institute|Semenov\\s+Federal\\s+Research\\s+Cent(?:er|re)|Federal\\s+Research\\s+Cent(?:er|re)|Central\\s+Aerohydrodynamic\\s+Institute|Ivannikov\\s+Institute|Marchuk\\s+Institute|Keldysh\\s+Institute|Steklov\\s+Mathematical\\s+Institute|Osipyan\\s+Institute|Engelhardt\\s+Institute|Skobeltsyn\\s+Institute|Bogoliubov\\s+Laboratory|Frank\\s+Laboratory|Shemyakin|Lopukhin|Schmidt\\s+Institute|Space\\s+Research\\s+Institute|Artificial\\s+Intelligence\\s+Research\\s+Institute|Higher\\s+School\\s+of\\s+Economics|Moscow\\s+Cent(?:er|re)\\s+for\\s+Advanced\\s+Studies|Smart\\s+Engines|Skanda\\s+Rus|QSpace\\s+Technologies|Molecular\\s+Electronics\\s+Research\\s+Institute|CNRS",
+  "identity": "(?<![^\\W\\d_])(?:MIPT|МФТИ|Phystech|Физтех)(?![^\\W\\d_])|Moscow\\s+Institute\\s+of\\s+Physics\\s+and\\s+Technology|Московский\\s+физико-технический\\s+институт",
+  "city": "Dolgoprud(?:ny|nyi|niy|nii)|Долгопрудн",
+  "staff_catalog": null,
+  "mongo_db": "pauk_mipt",
+  "site_url": "https://mipt.ru",
+  "unit_words": ""
+}

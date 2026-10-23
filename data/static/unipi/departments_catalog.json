@@ -1,0 +1,200 @@
+[
+  {
+    "uid": "unipi",
+    "name_en": "University of Pisa",
+    "name_local": "Università di Pisa",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03ad39j10",
+    "type": "university"
+  },
+  {
+    "uid": "dcme",
+    "name_en": "Department of Clinical and Experimental Medicine",
+    "name_local": "Department of Clinical and Experimental Medicine",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical and Experimental Medicine"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgical Medical and Molecular Pathology and Critical Care Medicine",
+    "name_local": "Department of Surgical Medical and Molecular Pathology and Critical Care Medicine",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgical",
+      "Medical and Molecular Pathology and Critical Care Medicine",
+      "Medical and Molecular Pathology and Critical Area"
+    ]
+  },
+  {
+    "uid": "trans",
+    "name_en": "Department of Translational Research and New Technologies in Medicine and Surgery",
+    "name_local": "Department of Translational Research and New Technologies in Medicine and Surgery",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Translational Research and New Technologies in Medicine and Surgery",
+      "Department of Translational Research and New Technologies in Medicine"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "dii",
+    "name_en": "Department of Information Engineering",
+    "name_local": "Department of Information Engineering",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Information Engineering",
+      "Dipartimento di Ingegneria dell’Informazione",
+      "Dipartimento di Ingegneria dell'Informazione"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Department of Pharmacy",
+    "name_local": "Department of Pharmacy",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacy"
+    ]
+  },
+  {
+    "uid": "agr",
+    "name_en": "Department of Agriculture Food and Environment",
+    "name_local": "Department of Agriculture Food and Environment",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Agriculture",
+      "Food and Environment"
+    ]
+  },
+  {
+    "uid": "dici",
+    "name_en": "Department of Civil and Industrial Engineering",
+    "name_local": "Department of Civil and Industrial Engineering",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Industrial Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Dipartimento di Informatica"
+    ]
+  },
+  {
+    "uid": "vet",
+    "name_en": "Department of Veterinary Sciences",
+    "name_local": "Department of Veterinary Sciences",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Veterinary Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry and Industrial Chemistry",
+    "name_local": "Department of Chemistry and Industrial Chemistry",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Industrial Chemistry",
+      "Dipartimento di Chimica e Chimica Industriale"
+    ]
+  },
+  {
+    "uid": "destec",
+    "name_en": "Department of Energy Systems Territory and Construction Engineering",
+    "name_local": "Department of Energy Systems Territory and Construction Engineering",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy",
+      "Systems",
+      "Territory and Construction Engineering"
+    ]
+  },
+  {
+    "uid": "earth",
+    "name_en": "Department of Earth Sciences",
+    "name_local": "Department of Earth Sciences",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth Sciences",
+      "Dipartimento di Scienze della Terra"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Dipartimento di Fisica"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Dipartimento di Matematica"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics and Management",
+    "name_local": "Department of Economics and Management",
+    "kind": "department",
+    "parent": "unipi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics and Management"
+    ]
+  }
+]

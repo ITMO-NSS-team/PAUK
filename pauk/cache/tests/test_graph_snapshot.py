@@ -18,7 +18,7 @@ from pauk.cache.graph_snapshot import (
 
 class WriteReadSnapshotTest(unittest.TestCase):
     def test_round_trip_preserves_graph_unchanged(self):
-        graph = {"persons": [{"id": "p1", "is_itmo": True}], "publications": []}
+        graph = {"persons": [{"id": "p1", "is_member": True}], "publications": []}
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "snapshot.json"
             write_snapshot(path, graph)

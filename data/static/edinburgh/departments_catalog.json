@@ -1,0 +1,1237 @@
+[
+  {
+    "uid": "edinburgh",
+    "name_en": "University of Edinburgh",
+    "name_local": "University of Edinburgh",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01nrxwf90",
+    "type": "university"
+  },
+  {
+    "uid": "cahss",
+    "name_en": "College of Arts Humanities and Social Sciences",
+    "name_local": "College of Arts Humanities and Social Sciences",
+    "kind": "college",
+    "parent": "edinburgh",
+    "aliases": [],
+    "context_aliases": [
+      "College of Arts Humanities and Social Sciences",
+      "College of Arts",
+      "CAHSS"
+    ]
+  },
+  {
+    "uid": "cmvm",
+    "name_en": "College of Medicine and Veterinary Medicine",
+    "name_local": "College of Medicine and Veterinary Medicine",
+    "kind": "college",
+    "parent": "edinburgh",
+    "aliases": [
+      "University of Edinburgh College of Medicine and Veterinary Medicine"
+    ],
+    "context_aliases": [
+      "College of Medicine and Veterinary Medicine",
+      "College of Medicine & Veterinary Medicine",
+      "CMVM"
+    ]
+  },
+  {
+    "uid": "cse",
+    "name_en": "College of Science and Engineering",
+    "name_local": "College of Science and Engineering",
+    "kind": "college",
+    "parent": "edinburgh",
+    "aliases": [],
+    "context_aliases": [
+      "College of Science and Engineering"
+    ]
+  },
+  {
+    "uid": "business-school",
+    "name_en": "University of Edinburgh Business School",
+    "name_local": "University of Edinburgh Business School",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [
+      "University of Edinburgh Business School",
+      "Edinburgh University Business School"
+    ],
+    "context_aliases": [
+      "Business School"
+    ]
+  },
+  {
+    "uid": "eca",
+    "name_en": "Edinburgh College of Art",
+    "name_local": "Edinburgh College of Art",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "Edinburgh College of Art"
+    ]
+  },
+  {
+    "uid": "esala",
+    "name_en": "Edinburgh School of Architecture and Landscape Architecture",
+    "name_local": "Edinburgh School of Architecture and Landscape Architecture",
+    "kind": "school",
+    "parent": "eca",
+    "aliases": [
+      "Edinburgh School of Architecture and Landscape Architecture"
+    ],
+    "context_aliases": [
+      "ESALA"
+    ]
+  },
+  {
+    "uid": "design-informatics",
+    "name_en": "Institute for Design Informatics",
+    "name_local": "Institute for Design Informatics",
+    "kind": "institute",
+    "parent": "eca",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Design Informatics",
+      "Design Informatics"
+    ]
+  },
+  {
+    "uid": "divinity",
+    "name_en": "School of Divinity",
+    "name_local": "School of Divinity",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Divinity"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "School of Economics",
+    "name_local": "School of Economics",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Economics"
+    ]
+  },
+  {
+    "uid": "moray-house",
+    "name_en": "Moray House School of Education and Sport",
+    "name_local": "Moray House School of Education and Sport",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Education and Sport",
+      "Moray House School of Education and Sport",
+      "Moray House School of Education"
+    ]
+  },
+  {
+    "uid": "ispehs",
+    "name_en": "Institute for Sport Physical Education and Health Sciences",
+    "name_local": "Institute for Sport Physical Education and Health Sciences",
+    "kind": "institute",
+    "parent": "moray-house",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Sport Physical Education and Health Sciences",
+      "Institute for Sport",
+      "Physical Education and Health Sciences"
+    ]
+  },
+  {
+    "uid": "health-social-science",
+    "name_en": "School of Health in Social Science",
+    "name_local": "School of Health in Social Science",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Health in Social Science"
+    ]
+  },
+  {
+    "uid": "nursing-studies",
+    "name_en": "Nursing Studies",
+    "name_local": "Nursing Studies",
+    "kind": "department",
+    "parent": "health-social-science",
+    "aliases": [],
+    "context_aliases": [
+      "Nursing Studies"
+    ]
+  },
+  {
+    "uid": "clinical-psychology",
+    "name_en": "Department of Clinical Psychology",
+    "name_local": "Department of Clinical Psychology",
+    "kind": "department",
+    "parent": "health-social-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Psychology",
+      "Clinical Psychology"
+    ]
+  },
+  {
+    "uid": "hca",
+    "name_en": "School of History Classics and Archaeology",
+    "name_local": "School of History Classics and Archaeology",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of History Classics and Archaeology",
+      "School of History",
+      "Classics and Archaeology"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "School of Law",
+    "name_local": "School of Law",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Law",
+      "Edinburgh Law School"
+    ]
+  },
+  {
+    "uid": "llc",
+    "name_en": "School of Literatures Languages and Cultures",
+    "name_local": "School of Literatures Languages and Cultures",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Literatures Languages and Cultures",
+      "School of Literatures"
+    ]
+  },
+  {
+    "uid": "ppls",
+    "name_en": "School of Philosophy Psychology and Language Sciences",
+    "name_local": "School of Philosophy Psychology and Language Sciences",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Philosophy Psychology and Language Sciences",
+      "School of Philosophy",
+      "Psychology and Language Sciences",
+      "Psychology & Language Sciences",
+      "PPLS"
+    ]
+  },
+  {
+    "uid": "psychology",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "ppls",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "lothian-birth-cohorts",
+    "name_en": "Lothian Birth Cohorts",
+    "name_local": "Lothian Birth Cohorts",
+    "kind": "program",
+    "parent": "psychology",
+    "aliases": [
+      "Lothian Birth Cohorts",
+      "Lothian Birth Cohort"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "language-evolution",
+    "name_en": "Centre for Language Evolution",
+    "name_local": "Centre for Language Evolution",
+    "kind": "center",
+    "parent": "ppls",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Language Evolution"
+    ]
+  },
+  {
+    "uid": "sps",
+    "name_en": "School of Social and Political Science",
+    "name_local": "School of Social and Political Science",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Social and Political Science"
+    ]
+  },
+  {
+    "uid": "neuropolitics",
+    "name_en": "Neuropolitics Research Lab",
+    "name_local": "Neuropolitics Research Lab",
+    "kind": "lab",
+    "parent": "sps",
+    "aliases": [
+      "Neuropolitics Research Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "issti",
+    "name_en": "Institute for the Study of Science Technology and Innovation",
+    "name_local": "Institute for the Study of Science Technology and Innovation",
+    "kind": "institute",
+    "parent": "sps",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for the Study of Science Technology and Innovation",
+      "Institute for the Study of Science",
+      "ISSTI"
+    ]
+  },
+  {
+    "uid": "scadr",
+    "name_en": "Scottish Centre for Administrative Data Research",
+    "name_local": "Scottish Centre for Administrative Data Research",
+    "kind": "center",
+    "parent": "sps",
+    "aliases": [],
+    "context_aliases": [
+      "Scottish Centre for Administrative Data Research",
+      "SCADR"
+    ]
+  },
+  {
+    "uid": "efi",
+    "name_en": "Edinburgh Futures Institute",
+    "name_local": "Edinburgh Futures Institute",
+    "kind": "institute",
+    "parent": "edinburgh",
+    "aliases": [
+      "Edinburgh Futures Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ecci",
+    "name_en": "Edinburgh Climate Change Institute",
+    "name_local": "Edinburgh Climate Change Institute",
+    "kind": "institute",
+    "parent": "edinburgh",
+    "aliases": [
+      "Edinburgh Climate Change Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ems",
+    "name_en": "Edinburgh Medical School",
+    "name_local": "Edinburgh Medical School",
+    "kind": "school",
+    "parent": "cmvm",
+    "aliases": [
+      "Edinburgh Medical School"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "biomedical-sciences",
+    "name_en": "Deanery of Biomedical Sciences",
+    "name_local": "Deanery of Biomedical Sciences",
+    "kind": "school",
+    "parent": "cmvm",
+    "aliases": [
+      "Edinburgh Medical School: Biomedical Sciences"
+    ],
+    "context_aliases": [
+      "Deanery of Biomedical Sciences",
+      "Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "discovery-brain-sciences",
+    "name_en": "Centre for Discovery Brain Sciences",
+    "name_local": "Centre for Discovery Brain Sciences",
+    "kind": "center",
+    "parent": "biomedical-sciences",
+    "aliases": [
+      "Centre for Discovery Brain Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "infection-medicine",
+    "name_en": "Infection Medicine",
+    "name_local": "Infection Medicine",
+    "kind": "department",
+    "parent": "biomedical-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Infection Medicine"
+    ]
+  },
+  {
+    "uid": "sidb",
+    "name_en": "Simons Initiative for the Developing Brain",
+    "name_local": "Simons Initiative for the Developing Brain",
+    "kind": "center",
+    "parent": "biomedical-sciences",
+    "aliases": [
+      "Simons Initiative for the Developing Brain"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "usher",
+    "name_en": "Usher Institute",
+    "name_local": "Usher Institute",
+    "kind": "institute",
+    "parent": "ems",
+    "aliases": [
+      "Usher Institute of Population Health Sciences and Informatics",
+      "Usher School of Population Health Sciences"
+    ],
+    "context_aliases": [
+      "School of Population Health Sciences",
+      "Usher Institute"
+    ]
+  },
+  {
+    "uid": "global-health",
+    "name_en": "Centre for Global Health",
+    "name_local": "Centre for Global Health",
+    "kind": "center",
+    "parent": "usher",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Global Health",
+      "Centre for Global Health Research"
+    ]
+  },
+  {
+    "uid": "medical-informatics",
+    "name_en": "Centre for Medical Informatics",
+    "name_local": "Centre for Medical Informatics",
+    "kind": "center",
+    "parent": "usher",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Medical Informatics"
+    ]
+  },
+  {
+    "uid": "population-health-sciences",
+    "name_en": "Centre for Population Health Sciences",
+    "name_local": "Centre for Population Health Sciences",
+    "kind": "center",
+    "parent": "usher",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Population Health Sciences"
+    ]
+  },
+  {
+    "uid": "ectu",
+    "name_en": "Edinburgh Clinical Trials Unit",
+    "name_local": "Edinburgh Clinical Trials Unit",
+    "kind": "center",
+    "parent": "usher",
+    "aliases": [
+      "Edinburgh Clinical Trials Unit",
+      "Edinburgh Clinical Trial Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "acrc",
+    "name_en": "Advanced Care Research Centre",
+    "name_local": "Advanced Care Research Centre",
+    "kind": "center",
+    "parent": "usher",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Care Research Centre"
+    ]
+  },
+  {
+    "uid": "igc",
+    "name_en": "Institute of Genetics and Cancer",
+    "name_local": "Institute of Genetics and Cancer",
+    "kind": "institute",
+    "parent": "ems",
+    "aliases": [
+      "Institute of Genetics and Cancer",
+      "Institute of Genetics & Cancer",
+      "Institute of Cancer and Genetics"
+    ],
+    "context_aliases": [
+      "IGC"
+    ]
+  },
+  {
+    "uid": "mrc-hgu",
+    "name_en": "MRC Human Genetics Unit",
+    "name_local": "MRC Human Genetics Unit",
+    "kind": "center",
+    "parent": "igc",
+    "aliases": [
+      "MRC Human Genetics Unit"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cruk-scotland-edinburgh",
+    "name_en": "Cancer Research UK Scotland Centre",
+    "name_local": "Cancer Research UK Scotland Centre",
+    "kind": "center",
+    "parent": "igc",
+    "aliases": [
+      "Cancer Research UK Scotland Centre (Edinburgh)"
+    ],
+    "context_aliases": [
+      "Cancer Research UK Scotland Centre",
+      "CRUK Scotland Centre"
+    ]
+  },
+  {
+    "uid": "edinburgh-cancer-research",
+    "name_en": "Edinburgh Cancer Research",
+    "name_local": "Edinburgh Cancer Research",
+    "kind": "center",
+    "parent": "igc",
+    "aliases": [],
+    "context_aliases": [
+      "Edinburgh Cancer Research"
+    ]
+  },
+  {
+    "uid": "cgem",
+    "name_en": "Centre for Genomic and Experimental Medicine",
+    "name_local": "Centre for Genomic and Experimental Medicine",
+    "kind": "center",
+    "parent": "igc",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Genomic and Experimental Medicine"
+    ]
+  },
+  {
+    "uid": "irr",
+    "name_en": "Institute for Regeneration and Repair",
+    "name_local": "Institute for Regeneration and Repair",
+    "kind": "institute",
+    "parent": "ems",
+    "aliases": [
+      "Institute of Regeneration and Repair"
+    ],
+    "context_aliases": [
+      "IRR",
+      "Institute for Regeneration and Repair"
+    ]
+  },
+  {
+    "uid": "inflammation-research",
+    "name_en": "Centre for Inflammation Research",
+    "name_local": "Centre for Inflammation Research",
+    "kind": "center",
+    "parent": "irr",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Inflammation Research"
+    ]
+  },
+  {
+    "uid": "regenerative-medicine",
+    "name_en": "MRC Centre for Regenerative Medicine",
+    "name_local": "MRC Centre for Regenerative Medicine",
+    "kind": "center",
+    "parent": "irr",
+    "aliases": [
+      "MRC Centre for Regenerative Medicine"
+    ],
+    "context_aliases": [
+      "Centre for Regenerative Medicine"
+    ]
+  },
+  {
+    "uid": "reproductive-health",
+    "name_en": "Centre for Reproductive Health",
+    "name_local": "Centre for Reproductive Health",
+    "kind": "center",
+    "parent": "irr",
+    "aliases": [
+      "MRC Centre for Reproductive Health"
+    ],
+    "context_aliases": [
+      "Centre for Reproductive Health"
+    ]
+  },
+  {
+    "uid": "pandemic-science-hub",
+    "name_en": "Baillie Gifford Pandemic Science Hub",
+    "name_local": "Baillie Gifford Pandemic Science Hub",
+    "kind": "center",
+    "parent": "irr",
+    "aliases": [
+      "Baillie Gifford Pandemic Science Hub"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "irr-chemistry-hub",
+    "name_en": "IRR Chemistry Hub",
+    "name_local": "IRR Chemistry Hub",
+    "kind": "lab",
+    "parent": "irr",
+    "aliases": [
+      "IRR Chemistry Hub"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "child-life-health",
+    "name_en": "Department of Child Life and Health",
+    "name_local": "Department of Child Life and Health",
+    "kind": "department",
+    "parent": "ems",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Child Life and Health",
+      "Child Life and Health"
+    ]
+  },
+  {
+    "uid": "clinical-surgery",
+    "name_en": "Department of Clinical Surgery",
+    "name_local": "Department of Clinical Surgery",
+    "kind": "department",
+    "parent": "ems",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Surgery",
+      "Clinical Surgery"
+    ]
+  },
+  {
+    "uid": "anaesthesia",
+    "name_en": "Anaesthesia Critical Care and Pain Medicine",
+    "name_local": "Anaesthesia Critical Care and Pain Medicine",
+    "kind": "department",
+    "parent": "ems",
+    "aliases": [],
+    "context_aliases": [
+      "Anaesthesia Critical Care and Pain Medicine",
+      "Department of Anaesthesia",
+      "Critical Care and Pain Medicine"
+    ]
+  },
+  {
+    "uid": "incr",
+    "name_en": "Institute for Neuroscience and Cardiovascular Research",
+    "name_local": "Institute for Neuroscience and Cardiovascular Research",
+    "kind": "institute",
+    "parent": "ems",
+    "aliases": [
+      "Institute for Neuroscience and Cardiovascular Research",
+      "Institute of Neuroscience & Cardiovascular Research",
+      "Institute for Neurological and Cardiovascular Research"
+    ],
+    "context_aliases": [
+      "INCR",
+      "Institute of Neuroscience and Cardiovascular Research"
+    ]
+  },
+  {
+    "uid": "cardiovascular-science",
+    "name_en": "Centre for Cardiovascular Science",
+    "name_local": "Centre for Cardiovascular Science",
+    "kind": "center",
+    "parent": "incr",
+    "aliases": [
+      "British Heart Foundation Centre for Cardiovascular Science",
+      "BHF Centre for Cardiovascular Science",
+      "BHF/University Centre for Cardiovascular Science"
+    ],
+    "context_aliases": [
+      "Centre for Cardiovascular Science",
+      "Center for Cardiovascular Science",
+      "Centre for Cardiovascular Sciences",
+      "British Heart Foundation Centre of Research Excellence",
+      "British Heart Foundation Center of Research Excellence",
+      "BHF Centre of Research Excellence"
+    ]
+  },
+  {
+    "uid": "ccbs",
+    "name_en": "Centre for Clinical Brain Sciences",
+    "name_local": "Centre for Clinical Brain Sciences",
+    "kind": "center",
+    "parent": "incr",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Clinical Brain Sciences",
+      "CCBS"
+    ]
+  },
+  {
+    "uid": "uk-dri-edinburgh",
+    "name_en": "UK Dementia Research Institute at the University of Edinburgh",
+    "name_local": "UK Dementia Research Institute at the University of Edinburgh",
+    "kind": "center",
+    "parent": "incr",
+    "aliases": [
+      "UK Dementia Research Institute at the University of Edinburgh",
+      "UK Dementia Research Institute at University of Edinburgh",
+      "UK Dementia Research Institute (UK DRI) at the University of Edinburgh"
+    ],
+    "context_aliases": [
+      "UK Dementia Research Institute",
+      "Centre for Clinical Brain Sciences and UK Dementia Research Institute"
+    ]
+  },
+  {
+    "uid": "psychiatry",
+    "name_en": "Division of Psychiatry",
+    "name_local": "Division of Psychiatry",
+    "kind": "department",
+    "parent": "ccbs",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Psychiatry"
+    ]
+  },
+  {
+    "uid": "anne-rowling-clinic",
+    "name_en": "Anne Rowling Regenerative Neurology Clinic",
+    "name_local": "Anne Rowling Regenerative Neurology Clinic",
+    "kind": "center",
+    "parent": "ccbs",
+    "aliases": [
+      "Anne Rowling Regenerative Neurology Clinic"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "euan-macdonald",
+    "name_en": "Euan MacDonald Centre for Motor Neuron Disease Research",
+    "name_local": "Euan MacDonald Centre for Motor Neuron Disease Research",
+    "kind": "center",
+    "parent": "ccbs",
+    "aliases": [
+      "Euan MacDonald Centre for Motor Neuron Disease Research",
+      "Euan MacDonald Centre for MND Research",
+      "Euan MacDonald Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "edinburgh-imaging",
+    "name_en": "Edinburgh Imaging",
+    "name_local": "Edinburgh Imaging",
+    "kind": "center",
+    "parent": "cmvm",
+    "aliases": [],
+    "context_aliases": [
+      "Edinburgh Imaging"
+    ]
+  },
+  {
+    "uid": "ecrf",
+    "name_en": "Edinburgh Clinical Research Facility",
+    "name_local": "Edinburgh Clinical Research Facility",
+    "kind": "center",
+    "parent": "cmvm",
+    "aliases": [],
+    "context_aliases": [
+      "Edinburgh Clinical Research Facility"
+    ]
+  },
+  {
+    "uid": "qmri",
+    "name_en": "The Queen's Medical Research Institute",
+    "name_local": "The Queen's Medical Research Institute",
+    "kind": "campus",
+    "parent": "cmvm",
+    "aliases": [],
+    "context_aliases": [
+      "QMRI",
+      "Queen's Medical Research Institute",
+      "Queen’s Medical Research Institute"
+    ]
+  },
+  {
+    "uid": "rdsvs",
+    "name_en": "Royal (Dick) School of Veterinary Studies",
+    "name_local": "Royal (Dick) School of Veterinary Studies",
+    "kind": "school",
+    "parent": "cmvm",
+    "aliases": [
+      "Royal (Dick) School of Veterinary Medicine",
+      "R(D)SVS"
+    ],
+    "context_aliases": [
+      "RDSVS",
+      "Royal (Dick) School of Veterinary Studies",
+      "Royal Dick School of Veterinary Studies"
+    ]
+  },
+  {
+    "uid": "global-agriculture",
+    "name_en": "Division of Global Agriculture and Food Systems",
+    "name_local": "Division of Global Agriculture and Food Systems",
+    "kind": "department",
+    "parent": "rdsvs",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Global Agriculture and Food Systems",
+      "Global Agriculture and Food Systems"
+    ]
+  },
+  {
+    "uid": "roslin",
+    "name_en": "The Roslin Institute",
+    "name_local": "The Roslin Institute",
+    "kind": "institute",
+    "parent": "cmvm",
+    "aliases": [],
+    "context_aliases": [
+      "Roslin Institute"
+    ]
+  },
+  {
+    "uid": "ctlgh",
+    "name_en": "Centre for Tropical Livestock Genetics and Health",
+    "name_local": "Centre for Tropical Livestock Genetics and Health",
+    "kind": "center",
+    "parent": "roslin",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Tropical Livestock Genetics and Health",
+      "CTLGH"
+    ]
+  },
+  {
+    "uid": "zju-uoe",
+    "name_en": "Zhejiang University-University of Edinburgh Institute",
+    "name_local": "Zhejiang University-University of Edinburgh Institute",
+    "kind": "institute",
+    "parent": "edinburgh",
+    "aliases": [],
+    "context_aliases": [
+      "Zhejiang University-University of Edinburgh Institute",
+      "Zhejiang University-University of Edinburgh International Institute",
+      "ZJU-UoE Institute"
+    ]
+  },
+  {
+    "uid": "biological-sciences",
+    "name_en": "School of Biological Sciences",
+    "name_local": "School of Biological Sciences",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "cell-biology",
+    "name_en": "Institute of Cell Biology",
+    "name_local": "Institute of Cell Biology",
+    "kind": "institute",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Cell Biology",
+      "Institute for Cell Biology"
+    ]
+  },
+  {
+    "uid": "wcb",
+    "name_en": "Wellcome Centre for Cell Biology",
+    "name_local": "Wellcome Centre for Cell Biology",
+    "kind": "center",
+    "parent": "biological-sciences",
+    "aliases": [
+      "Wellcome Centre for Cell Biology",
+      "Wellcome Trust Centre for Cell Biology"
+    ],
+    "context_aliases": [
+      "Centre for Cell Biology"
+    ]
+  },
+  {
+    "uid": "ecology-evolution",
+    "name_en": "Institute of Ecology and Evolution",
+    "name_local": "Institute of Ecology and Evolution",
+    "kind": "institute",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Ecology and Evolution",
+      "Institute of Evolutionary Biology"
+    ]
+  },
+  {
+    "uid": "iiir",
+    "name_en": "Institute of Immunology and Infection Research",
+    "name_local": "Institute of Immunology and Infection Research",
+    "kind": "institute",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Immunology and Infection Research"
+    ]
+  },
+  {
+    "uid": "molecular-plant-sciences",
+    "name_en": "Institute of Molecular Plant Sciences",
+    "name_local": "Institute of Molecular Plant Sciences",
+    "kind": "institute",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Plant Sciences"
+    ]
+  },
+  {
+    "uid": "iqb3",
+    "name_en": "Institute of Quantitative Biology Biochemistry and Biotechnology",
+    "name_local": "Institute of Quantitative Biology Biochemistry and Biotechnology",
+    "kind": "institute",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Quantitative Biology Biochemistry and Biotechnology",
+      "Institute of Quantitative Biology",
+      "Institute for Quantitative Biology",
+      "IQB3"
+    ]
+  },
+  {
+    "uid": "engineering-biology",
+    "name_en": "Centre for Engineering Biology",
+    "name_local": "Centre for Engineering Biology",
+    "kind": "center",
+    "parent": "biological-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Engineering Biology"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "School of Chemistry",
+    "name_local": "School of Chemistry",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemistry",
+      "EaStCHEM School of Chemistry"
+    ]
+  },
+  {
+    "uid": "engineering",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "energy-systems",
+    "name_en": "Institute for Energy Systems",
+    "name_local": "Institute for Energy Systems",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Energy Systems"
+    ]
+  },
+  {
+    "uid": "infrastructure-environment",
+    "name_en": "Institute for Infrastructure and Environment",
+    "name_local": "Institute for Infrastructure and Environment",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Infrastructure and Environment"
+    ]
+  },
+  {
+    "uid": "imns",
+    "name_en": "Institute for Integrated Micro and Nano Systems",
+    "name_local": "Institute for Integrated Micro and Nano Systems",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Integrated Micro and Nano Systems"
+    ]
+  },
+  {
+    "uid": "imp",
+    "name_en": "Institute for Materials and Processes",
+    "name_local": "Institute for Materials and Processes",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Materials and Processes",
+      "Institute for Materials & Processes"
+    ]
+  },
+  {
+    "uid": "multiscale-thermofluids",
+    "name_en": "Institute for Multiscale Thermofluids",
+    "name_local": "Institute for Multiscale Thermofluids",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Multiscale Thermofluids"
+    ]
+  },
+  {
+    "uid": "bioengineering",
+    "name_en": "Institute for Bioengineering",
+    "name_local": "Institute for Bioengineering",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Bioengineering",
+      "Institute of Bioengineering"
+    ]
+  },
+  {
+    "uid": "idcom",
+    "name_en": "Institute for Imaging Data and Communications",
+    "name_local": "Institute for Imaging Data and Communications",
+    "kind": "institute",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Imaging Data and Communications",
+      "Institute for Imaging",
+      "IDCOM"
+    ]
+  },
+  {
+    "uid": "electronics-frontiers",
+    "name_en": "Centre for Electronics Frontiers",
+    "name_local": "Centre for Electronics Frontiers",
+    "kind": "center",
+    "parent": "engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Electronics Frontiers"
+    ]
+  },
+  {
+    "uid": "geosciences",
+    "name_en": "School of GeoSciences",
+    "name_local": "School of GeoSciences",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of GeoSciences",
+      "Grant Institute"
+    ]
+  },
+  {
+    "uid": "informatics",
+    "name_en": "School of Informatics",
+    "name_local": "School of Informatics",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Informatics"
+    ]
+  },
+  {
+    "uid": "ilcc",
+    "name_en": "Institute for Language Cognition and Computation",
+    "name_local": "Institute for Language Cognition and Computation",
+    "kind": "institute",
+    "parent": "informatics",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Language Cognition and Computation",
+      "Institute for Language"
+    ]
+  },
+  {
+    "uid": "cstr",
+    "name_en": "Centre for Speech Technology Research",
+    "name_local": "Centre for Speech Technology Research",
+    "kind": "center",
+    "parent": "informatics",
+    "aliases": [
+      "Centre for Speech Technology Research"
+    ],
+    "context_aliases": [
+      "CSTR"
+    ]
+  },
+  {
+    "uid": "mathematics",
+    "name_en": "School of Mathematics",
+    "name_local": "School of Mathematics",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematics"
+    ]
+  },
+  {
+    "uid": "maxwell-institute",
+    "name_en": "Maxwell Institute for Mathematical Sciences",
+    "name_local": "Maxwell Institute for Mathematical Sciences",
+    "kind": "institute",
+    "parent": "mathematics",
+    "aliases": [],
+    "context_aliases": [
+      "Maxwell Institute for Mathematical Sciences",
+      "School of Mathematics and Maxwell Institute for Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "physics-astronomy",
+    "name_en": "School of Physics and Astronomy",
+    "name_local": "School of Physics and Astronomy",
+    "kind": "school",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physics and Astronomy",
+      "SUPA - School of Physics and Astronomy",
+      "SUPA-School of Physics and Astronomy"
+    ]
+  },
+  {
+    "uid": "ifa",
+    "name_en": "Institute for Astronomy",
+    "name_local": "Institute for Astronomy",
+    "kind": "institute",
+    "parent": "physics-astronomy",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Astronomy",
+      "Royal Observatory",
+      "Royal Observatory Edinburgh"
+    ]
+  },
+  {
+    "uid": "higgs-centre",
+    "name_en": "Higgs Centre for Theoretical Physics",
+    "name_local": "Higgs Centre for Theoretical Physics",
+    "kind": "center",
+    "parent": "physics-astronomy",
+    "aliases": [],
+    "context_aliases": [
+      "Higgs Centre for Theoretical Physics"
+    ]
+  },
+  {
+    "uid": "csec",
+    "name_en": "Centre for Science at Extreme Conditions",
+    "name_local": "Centre for Science at Extreme Conditions",
+    "kind": "center",
+    "parent": "physics-astronomy",
+    "aliases": [
+      "Centre for Science at Extreme Conditions"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "icmcs",
+    "name_en": "Institute for Condensed Matter and Complex Systems",
+    "name_local": "Institute for Condensed Matter and Complex Systems",
+    "kind": "institute",
+    "parent": "physics-astronomy",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Condensed Matter and Complex Systems"
+    ]
+  },
+  {
+    "uid": "exoplanet-science",
+    "name_en": "Centre for Exoplanet Science",
+    "name_local": "Centre for Exoplanet Science",
+    "kind": "center",
+    "parent": "physics-astronomy",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Exoplanet Science"
+    ]
+  },
+  {
+    "uid": "astrobiology",
+    "name_en": "UK Centre for Astrobiology",
+    "name_local": "UK Centre for Astrobiology",
+    "kind": "center",
+    "parent": "physics-astronomy",
+    "aliases": [
+      "UK Centre for Astrobiology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "epcc",
+    "name_en": "EPCC",
+    "name_local": "EPCC",
+    "kind": "center",
+    "parent": "cse",
+    "aliases": [
+      "Edinburgh Parallel Computing Centre"
+    ],
+    "context_aliases": [
+      "EPCC"
+    ]
+  },
+  {
+    "uid": "kings-buildings",
+    "name_en": "King's Buildings",
+    "name_local": "King's Buildings",
+    "kind": "campus",
+    "parent": "edinburgh",
+    "aliases": [],
+    "context_aliases": [
+      "King's Buildings",
+      "King’s Buildings",
+      "Kings Buildings"
+    ]
+  },
+  {
+    "uid": "easter-bush",
+    "name_en": "Easter Bush Campus",
+    "name_local": "Easter Bush Campus",
+    "kind": "campus",
+    "parent": "edinburgh",
+    "aliases": [],
+    "context_aliases": [
+      "Easter Bush Campus"
+    ]
+  }
+]

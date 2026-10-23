@@ -5,16 +5,15 @@ from pathlib import Path
 
 import mongomock
 
+from pauk.institution import ITMO, UFJF
 from pauk.models import GitHubProfile, Person, Repository
-from pauk.pipeline.stages import social_graph
 from pauk.pipeline.stages.github_match import (
-    ITMO_IN_TEXT,
     MATCHES_FILENAME,
-    PETERSBURG_PATTERN,
     GitHubMatchStage,
     confidence,
     decide,
     login_carries_surname,
+    mentions_institution,
     name_similarity,
     pick_email,
     score_account,
@@ -26,7 +25,7 @@ from pauk.storage import PreparedStore, RawStore, review
 def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), other=(),
            works=(), github=None):
     return Person(
-        id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, email=email, github=github,
+        id=pid, openalex_id=pid, is_member=itmo, name_raw=name, email=email, github=github,
         emails=list(emails), name_variants=list(variants), other_names=list(other),
         authored=[{"publication_id": work, "position": 1} for work in works],
     )
@@ -103,7 +102,7 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(decide(["name_fuzzy"], in_bridge=False), "rejected")
 
     def test_corroboration_alone_identifies_nobody(self):
-        self.assertEqual(decide(["owner", "itmo_profile", "org_itmo"], in_bridge=True), "rejected")
+        self.assertEqual(decide(["owner", "member_profile", "member_org"], in_bridge=True), "rejected")
 
 
 class ScoreAccountTest(unittest.TestCase):
@@ -114,10 +113,12 @@ class ScoreAccountTest(unittest.TestCase):
     """
 
     @staticmethod
-    def account(login="ipetrov", *, names=(), emails=(), itmo_text=False,
-                org_itmo=False, is_owner=False):
+    def account(login="ipetrov", *, names=(), emails=(), member_text=False,
+                member_org=False, is_owner=False):
         return {"login": login, "url": "", "names": set(names), "emails": set(emails),
-                "itmo_text": itmo_text, "org_itmo": org_itmo, "is_owner": is_owner,
+                "member_text": member_text,
+                "member_email": any(ITMO.is_institutional_email(email) for email in emails),
+                "member_org": member_org, "is_owner": is_owner,
                 "publication_ids": set(), "repos": set()}
 
     @staticmethod
@@ -160,11 +161,11 @@ class ScoreAccountTest(unittest.TestCase):
         # three raises it.
         for field in ("company", "location", "bio"):
             with self.subTest(field=field):
-                self.assertIn("itmo_profile",
-                              self.signals(self.account(itmo_text=True), self.author()))
+                self.assertIn("member_profile",
+                              self.signals(self.account(member_text=True), self.author()))
 
     def test_a_university_address_on_the_account(self):
-        self.assertIn("itmo_email", self.signals(
+        self.assertIn("member_email", self.signals(
             self.account(emails={"someone@itmo.ru"}), self.author()))
 
     def test_a_login_built_from_the_authors_surname(self):
@@ -175,12 +176,12 @@ class ScoreAccountTest(unittest.TestCase):
         self.assertIn("owner", self.signals(self.account(is_owner=True), self.author()))
 
     def test_a_repository_under_an_itmo_organization(self):
-        self.assertIn("org_itmo", self.signals(self.account(org_itmo=True), self.author()))
+        self.assertIn("member_org", self.signals(self.account(member_org=True), self.author()))
 
     def test_weights_add_up_and_stop_at_one(self):
         score = score_account(
             self.account(login="petrov", names={"ivan petrov"}, emails={"p@itmo.ru"},
-                         itmo_text=True, org_itmo=True, is_owner=True),
+                         member_text=True, member_org=True, is_owner=True),
             self.author(names={"ivan petrov"}, surnames={"petrov"}), True)[0]
         self.assertEqual(score, 1.0)
 
@@ -194,8 +195,8 @@ class ConfidenceTest(unittest.TestCase):
     def test_a_name_plus_a_university_wide_signal_is_only_probable(self):
         # Nothing here belongs to this person alone: the name is shared and
         # ITMO in a profile is shared by thousands.
-        self.assertEqual(confidence(["name_exact", "itmo_profile"], in_bridge=False), "probable")
-        self.assertEqual(confidence(["name_exact", "org_itmo"], in_bridge=False), "probable")
+        self.assertEqual(confidence(["name_exact", "member_profile"], in_bridge=False), "probable")
+        self.assertEqual(confidence(["name_exact", "member_org"], in_bridge=False), "probable")
 
 
 class GitHubMatchStageTest(unittest.TestCase):
@@ -210,7 +211,7 @@ class GitHubMatchStageTest(unittest.TestCase):
                 )
                 self.assertEqual(people["A1"].github, "someone" if matched else None)
                 entry = self.journal()[0]
-                self.assertEqual("org_itmo" in entry["signals"], matched)
+                self.assertEqual("member_org" in entry["signals"], matched)
 
     def run_stage(self, people, profiles, repositories):
         tmp = tempfile.TemporaryDirectory()
@@ -373,7 +374,7 @@ class GitHubMatchStageTest(unittest.TestCase):
             [],
         )
         (row,) = self.journal()
-        self.assertNotIn("itmo_profile", row["signals"])
+        self.assertNotIn("member_profile", row["signals"])
         self.assertEqual(result["github_matched"], 0)
 
     def test_a_login_built_from_the_surname_corroborates_the_name(self):
@@ -403,12 +404,12 @@ class GitHubMatchStageTest(unittest.TestCase):
         self.assertEqual(rows["coder42"]["decision"], "review")
 
 
-class ItmoInTextTest(unittest.TestCase):
+class MentionsInstitutionTest(unittest.TestCase):
     """Person matching keeps the city signal; organization seeding does not."""
 
     def test_social_graph_uses_the_stricter_identity_pattern(self):
-        self.assertIsNot(ITMO_IN_TEXT, social_graph.ITMO_IDENTITY_PATTERN)
-        self.assertFalse(social_graph.ITMO_IDENTITY_PATTERN.search("Saint Petersburg"))
+        self.assertTrue(mentions_institution("Saint Petersburg", ITMO))
+        self.assertFalse(ITMO.identity_re.search("Saint Petersburg"))
 
     def test_the_spellings_social_graph_added_are_recognised_here(self):
         for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
@@ -418,7 +419,7 @@ class ItmoInTextTest(unittest.TestCase):
                      "Sankt Peterburg", "Saint Peterburg", "SAINT PETERSBURG",
                      "saint petersburg", "САНКТ-ПЕТЕРБУРГ"):
             with self.subTest(text=text):
-                self.assertTrue(ITMO_IN_TEXT.search(text))
+                self.assertTrue(mentions_institution(text, ITMO))
 
     def test_russian_case_endings_are_still_the_city(self):
         for text in ("в Санкт-Петербурге", "из Санкт-Петербурга", "по Санкт-Петербургу",
@@ -426,14 +427,22 @@ class ItmoInTextTest(unittest.TestCase):
                      "Санкт-Петербургский политехнический университет",
                      "Лаборатория, Санкт-Петербурга, Россия"):
             with self.subTest(text=text):
-                self.assertTrue(ITMO_IN_TEXT.search(text))
+                self.assertTrue(mentions_institution(text, ITMO))
 
     def test_bare_sankt_is_not_a_city_signal(self):
-        self.assertFalse(PETERSBURG_PATTERN.search("Sankt Gallenkirch"))
+        self.assertFalse(ITMO.city_re.search("Sankt Gallenkirch"))
 
     def test_itmo_as_a_word_still_wins_and_ritmo_still_does_not(self):
-        self.assertTrue(ITMO_IN_TEXT.search("ITMO University"))
-        self.assertFalse(ITMO_IN_TEXT.search("RITMO, University of Oslo"))
+        self.assertTrue(mentions_institution("ITMO University", ITMO))
+        self.assertFalse(mentions_institution("RITMO, University of Oslo", ITMO))
+
+    def test_ufjf_by_abbreviation_full_name_or_city(self):
+        for text in ("UFJF", "Universidade Federal de Juiz de Fora", "Federal University of Juiz de Fora",
+                     "Juiz de Fora, MG"):
+            with self.subTest(text=text):
+                self.assertTrue(mentions_institution(text, UFJF))
+        self.assertFalse(UFJF.identity_re.search("Juiz de Fora, MG"))
+        self.assertFalse(mentions_institution("ITMO University", UFJF))
 
 
 class GitHubReviewTest(unittest.TestCase):

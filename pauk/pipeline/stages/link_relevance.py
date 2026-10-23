@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
@@ -208,15 +211,84 @@ class LinkRelevanceStage(EnrichmentStage):
     name = "link_relevance"
     progress_label = "Code links: assessing whether they are authors' artifacts"
 
+    def _judge(self, client: OpenRouterClient, llm_log: LlmLogStore, row: RepoLink, pub: Publication,
+               pending: list[CodeLink]) -> None:
+        """Ask the model about each pending link of one publication and record the publication's state."""
+        state = pub.processing.get(self.name)
+        error = None
+        for link in pending:
+            prompt = _build_prompt(pub.title, link.url, link.occurrences)
+            result = client.chat_json(prompt)
+            llm_error = None
+            if result is None:
+                llm_error = client.last_error if isinstance(client.last_error, str) else "no response"
+            else:
+                try:
+                    verdict, confidence, reason = _parse_verdict(result)
+                except ValueError as exc:
+                    llm_error = str(exc)
+            llm_log.record(
+                group=self.prepared.group,
+                model=self.config.llm_model,
+                prompt=prompt,
+                raw_response=client.last_response,
+                parsed=result,
+                usage=client.last_usage,
+                error=llm_error,
+                context={"publication_id": pub.id, "url": link.url},
+            )
+            if llm_error is not None:
+                link.classification_status = ClassificationStatus.FAILED
+                link.is_relevant = None
+                link.llm_confidence = None
+                link.llm_reason = None
+                error = "llm request failed"
+                logger.warning(
+                    "link_relevance: %s -> %s: %s (%s)",
+                    pub.id,
+                    link.url,
+                    llm_error,
+                    self.config.llm_model,
+                )
+                continue
+            link.classification_status = ClassificationStatus.CLASSIFIED
+            link.is_relevant = verdict
+            link.llm_confidence = confidence
+            link.llm_reason = reason
+            logger.info(
+                "link_relevance: %s -> %s: %s (confidence=%.2f) %s",
+                pub.id,
+                link.url,
+                (
+                    "authors' own"
+                    if link.is_relevant is True
+                    else ("not authors' own" if link.is_relevant is False else "uncertain")
+                ),
+                link.llm_confidence,
+                link.llm_reason or "",
+            )
+        # A failed batch can contain a mix of new verdicts and links whose
+        # previous verdict was cleared for retry. Keep the last complete
+        # publication-level state until every link has been classified.
+        if error is None:
+            _update_publication_code(pub, row.links)
+        resolved = sum(
+            link.classification_status == ClassificationStatus.CLASSIFIED
+            for link in row.links
+        )
+        pub.processing[self.name] = ProcessingState(
+            status=ProcessingStatus.FAILED
+            if error
+            else (ProcessingStatus.COMPLETED if row.links else ProcessingStatus.COMPLETED_EMPTY),
+            attempts=(state.attempts if state else 0) + 1,
+            finished_at=datetime.now(UTC),
+            result_count=resolved,
+            error=error,
+        )
+
     def run(self) -> dict[str, int]:
         publications = {pub.id: pub for pub in self.prepared.read_models("publications", Publication)}
         links_by_publication = list(self.prepared.read_models("repo_links", RepoLink))
-        client = OpenRouterClient(
-            self.config.request_timeout,
-            self.config.openrouter_api_key,
-            self.config.llm_model,
-            self.config.openrouter_proxy_url,
-        )
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
         logger.info(
             "link_relevance: model=%s, %d publication(s) with links to consider",
@@ -249,80 +321,42 @@ class LinkRelevanceStage(EnrichmentStage):
                 )
             ]
             candidates.append((row, pub, pending))
-        changed = 0
-        for row, pub, pending in self.progress(candidates, total=len(candidates), unit="publication"):
-            state = pub.processing.get(self.name)
-            error = None
-            for link in pending:
-                prompt = _build_prompt(pub.title, link.url, link.occurrences)
-                result = client.chat_json(prompt)
-                llm_error = None
-                if result is None:
-                    llm_error = client.last_error if isinstance(client.last_error, str) else "no response"
-                else:
+        local = threading.local()
+
+        def client_for_thread() -> OpenRouterClient:
+            # One per thread: chat_json leaves the response, usage and error
+            # on the instance.
+            if not hasattr(local, "client"):
+                local.client = OpenRouterClient(
+                    self.config.request_timeout,
+                    self.config.openrouter_api_key,
+                    self.config.llm_model,
+                    self.config.openrouter_proxy_url,
+                )
+            return local.client
+
+        def judge(item: tuple[RepoLink, Publication, list[CodeLink]]) -> None:
+            row, pub, pending = item
+            self._judge(client_for_thread(), llm_log, row, pub, pending)
+
+        workers = max(1, self.config.link_relevance_concurrency)
+
+        def done() -> Iterator[None]:
+            if workers == 1:
+                yield from (judge(item) for item in candidates)
+                return
+            for start in range(0, len(candidates), workers * 8):
+                block = candidates[start:start + workers * 8]
+                with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
+                    futures = [pool.submit(judge, item) for item in block]
                     try:
-                        verdict, confidence, reason = _parse_verdict(result)
-                    except ValueError as exc:
-                        llm_error = str(exc)
-                llm_log.record(
-                    group=self.prepared.group,
-                    model=self.config.llm_model,
-                    prompt=prompt,
-                    raw_response=client.last_response,
-                    parsed=result,
-                    usage=client.last_usage,
-                    error=llm_error,
-                    context={"publication_id": pub.id, "url": link.url},
-                )
-                if llm_error is not None:
-                    link.classification_status = ClassificationStatus.FAILED
-                    link.is_relevant = None
-                    link.llm_confidence = None
-                    link.llm_reason = None
-                    error = "llm request failed"
-                    logger.warning(
-                        "link_relevance: %s -> %s: %s (%s)",
-                        pub.id,
-                        link.url,
-                        llm_error,
-                        self.config.llm_model,
-                    )
-                    continue
-                link.classification_status = ClassificationStatus.CLASSIFIED
-                link.is_relevant = verdict
-                link.llm_confidence = confidence
-                link.llm_reason = reason
-                logger.info(
-                    "link_relevance: %s -> %s: %s (confidence=%.2f) %s",
-                    pub.id,
-                    link.url,
-                    (
-                        "authors' own"
-                        if link.is_relevant is True
-                        else ("not authors' own" if link.is_relevant is False else "uncertain")
-                    ),
-                    link.llm_confidence,
-                    link.llm_reason or "",
-                )
-            # A failed batch can contain a mix of new verdicts and links whose
-            # previous verdict was cleared for retry. Keep the last complete
-            # publication-level state until every link has been classified.
-            if error is None:
-                _update_publication_code(pub, row.links)
-            resolved = sum(
-                link.classification_status == ClassificationStatus.CLASSIFIED
-                for link in row.links
-            )
-            pub.processing[self.name] = ProcessingState(
-                status=ProcessingStatus.FAILED
-                if error
-                else (ProcessingStatus.COMPLETED if row.links else ProcessingStatus.COMPLETED_EMPTY),
-                attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(UTC),
-                result_count=resolved,
-                error=error,
-            )
-            changed += 1
+                        for future in as_completed(futures):
+                            yield future.result()
+                    except BaseException:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
+
+        changed = sum(1 for _ in self.progress(done(), total=len(candidates), unit="publication"))
         logger.info("link_relevance: done, %d publication(s) processed", changed)
         self.prepared.write_models("publications", publications.values())
         self.prepared.write_models("repo_links", links_by_publication)

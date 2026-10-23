@@ -110,7 +110,7 @@ describe("mountGlobalSearch", () => {
     const sample = await loadSampleGraphData();
     const data = {
       ...sample,
-      authors: sample.authors.map((a) => (a.key === "A1" ? { ...a, is_itmo: false } : a)),
+      authors: sample.authors.map((a) => (a.key === "A1" ? { ...a, is_member: false } : a)),
     };
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);

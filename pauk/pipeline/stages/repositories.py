@@ -140,7 +140,7 @@ class RepositoriesStage(EnrichmentStage):
                 known.type = (owner_data.get("type") or "").lower() or known.type
                 # The people stage skips organizations, so the stub above would be
                 # all their profile gets, leaving social_graph nothing to
-                # recognise an ITMO lab by. One call per organization fills it.
+                # recognise a university lab by. One call per organization fills it.
                 if known.type == "organization" and profile_id not in fetched_orgs:
                     fetched_orgs.add(profile_id)
                     try:
@@ -298,9 +298,12 @@ class RepositoriesStage(EnrichmentStage):
                         for publication_id in repo.publication_ids
                         if publication_id != row.publication_id
                     ]
-        progress = self.progress_bar(
-            total=len(self._pending_repository_ids(rows, repositories, unlinked)),
-            unit="repository")
+        pending_ids = self._pending_repository_ids(rows, repositories, unlinked)
+        # Ids are github_{owner}_{name}, and a GitHub login holds no underscore.
+        client.prefetch_repositories(
+            tuple(repo_id.removeprefix("github_").split("_", 1)) for repo_id in pending_ids
+            if repo_id.startswith("github_") and "_" in repo_id.removeprefix("github_"))
+        progress = self.progress_bar(total=len(pending_ids), unit="repository")
         for row in rows:
             if not self._row_in_scope(row):
                 continue

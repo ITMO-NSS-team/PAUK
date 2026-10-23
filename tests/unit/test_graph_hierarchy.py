@@ -7,7 +7,7 @@ TOP_UNIT = {"id": "d_school", "name_en": "School of X", "kind": "megafaculty", "
 ORG = {
     "id": "org_itmo",
     "name_en": "ITMO University",
-    "name_ru": "Университет ИТМО",
+    "name_local": "Университет ИТМО",
     "country": "Russia",
     "type": "university",
 }

@@ -1,0 +1,27 @@
+{
+  "key": "ntutw",
+  "short_name": "NTU",
+  "short_name_local": "臺大",
+  "name_en": "National Taiwan University",
+  "name_local": "國立臺灣大學",
+  "ror_id": "05bqach95",
+  "language": "Chinese",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "ntu.edu.tw"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:NatTaiwanUniv)(?![^\\W\\d_])",
+  "long_name": "National[\\s‐-]+Taiwan[\\s‐-]+University(?![\\s‐-]+(?:Hospital|Cancer|of[\\s‐-]))|國立臺灣大學|國立台灣大學",
+  "marker_replacement": "NatTaiwanUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|china|city|east|floor|gatan|hsinchu|katu|laan|new|north|of|piazza|platz|plaza|plein|po|rd|republic|road|roc|room|roosevelt|rue|sec|section|south|st|str|straat|strasse|straße|street|taipei|taiwan|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "National Taiwan University Hospital|National Taiwan University Cancer Center|Academia Sinica|Taipei Medical University|National Taiwan University of Science and Technology|National Taiwan Normal University|Taipei Veterans General Hospital|National\\ Taiwan\\ University\\ Hospital",
+  "identity": "National[\\s‐-]+Taiwan[\\s‐-]+University(?![\\s‐-]+(?:Hospital|Cancer|of[\\s‐-]))|國立臺灣大學|國立台灣大學",
+  "city": "Taipei",
+  "staff_catalog": null,
+  "mongo_db": "pauk_ntutw",
+  "site_url": "https://www.ntu.edu.tw",
+  "unit_words": "college|school|department|institute|graduate|division|center|centre",
+  "external_authors": false
+}

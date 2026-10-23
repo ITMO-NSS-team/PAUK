@@ -1,0 +1,27 @@
+{
+  "key": "technion",
+  "short_name": "Technion",
+  "short_name_local": "Technion",
+  "name_en": "Technion – Israel Institute of Technology",
+  "name_local": "Technion – Israel Institute of Technology",
+  "ror_id": "03qryx823",
+  "language": "Hebrew",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "technion.ac.il"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TechnionHaifa|Technion\\-IIT)(?![^\\W\\d_])",
+  "long_name": "(?<!Guangdong[\\s‐-])(?<!Guangdong)Technion(?![\\s‐–—−─-]*Guangdong)|הטכניון[\\s‐-]+–[\\s‐-]+מכון[\\s‐-]+טכנולוגי[\\s‐-]+לישראל|جامعة[\\s‐-]+تخنيون",
+  "marker_replacement": "TechnionHaifa",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|city|east|floor|gatan|haifa|israel|katu|laan|north|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|technion|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Guangdong Technion|(?<![^\\W\\d_])GTIIT(?![^\\W\\d_])|Shantou|Rambam Health Care Campus|Rambam|Bnai Zion|Carmel Medical Center|Hillel Yaffe|Emek Medical Center|University of Haifa|Bnai\\ Zion\\ Medical\\ Center|Rambam\\ Health\\ Care\\ Campus",
+  "identity": "(?<![^\\W\\d_])Technion\\-IIT(?![^\\W\\d_])|(?<!Guangdong[\\s‐-])(?<!Guangdong)Technion(?![\\s‐–—−─-]*Guangdong)|הטכניון[\\s‐-]+–[\\s‐-]+מכון[\\s‐-]+טכנולוגי[\\s‐-]+לישראל|جامعة[\\s‐-]+تخنيون",
+  "city": "Haifa",
+  "staff_catalog": null,
+  "mongo_db": "pauk_technion",
+  "site_url": "https://www.technion.ac.il",
+  "unit_words": "faculty|department|institute|school|center|centre",
+  "external_authors": false
+}

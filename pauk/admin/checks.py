@@ -7,6 +7,8 @@ algorithms.
 
 from dataclasses import dataclass
 
+from pauk.settings import settings
+
 
 @dataclass(frozen=True)
 class Check:
@@ -27,6 +29,12 @@ class Check:
         examples: Cypher returning example rows, taking a $lim parameter,
             or None if this check has no drill-down. Column aliases stay
             Russian.
+        cyrillic_only: The check is about Russian names (patronymics,
+            transliteration) and means nothing for a university whose local
+            names are written in Latin script.
+
+    Ids stay as they were when the panel served only ITMO: they are page
+    addresses people bookmark.
     """
 
     id: str
@@ -40,6 +48,7 @@ class Check:
     hint: str | None = None
     hint_en: str | None = None
     examples: str | None = None
+    cyrillic_only: bool = False
 
 
 # UI group heading, Russian -> English.
@@ -51,21 +60,21 @@ GROUP_EN = {
 }
 
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
-RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
+RU_NAME_FIELDS = "[p.surname_local, p.first_name_local, p.second_name_local]"
 
-# Staff are told from external authors by the sticky is_itmo property, not by a
-# label (see itmo_person and external_person in pauk/graph/extract.py).
-_ITMO_TOTAL = "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"
+# Members are told from external authors by the sticky is_member property, not by a
+# label (see member_person and external_person in pauk/graph/extract.py).
+_MEMBER_TOTAL = "MATCH (p:Person) WHERE p.is_member RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
 
 _PARTS = (
-    "trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
-    "+ ' ' + coalesce(p.second_name_ru,''))"
+    "trim(coalesce(p.surname_local,'') + ' ' + coalesce(p.first_name_local,'') "
+    "+ ' ' + coalesce(p.second_name_local,''))"
 )
 # The assembled name comes first and the parts second: the parts can be empty
 # for everybody at once, and a column built from them alone is all dashes.
-_FIO = f"coalesce(p.name_ru, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '–')"
+_FIO = f"coalesce(p.name_local, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '–')"
 
 _PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"
 
@@ -75,13 +84,13 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без департамента",
         title_en="Staff without a department",
-        count="MATCH (p:Person) WHERE p.is_itmo AND NOT (p)-[:BELONGS_TO]->() RETURN count(p)",
-        of=_ITMO_TOTAL,
+        count="MATCH (p:Person) WHERE p.is_member AND NOT (p)-[:BELONGS_TO]->() RETURN count(p)",
+        of=_MEMBER_TOTAL,
         warn=0.05,
         fail=0.25,
         hint="Итоги по департаментам занижены.",
         hint_en="Department totals are undercounted.",
-        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND NOT (p)-[:BELONGS_TO]->()
+        examples=f"""MATCH (p:Person) WHERE p.is_member AND NOT (p)-[:BELONGS_TO]->()
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs, max(pub.year) AS last_year
             RETURN p.id AS id, p.name_raw AS `Как подписан`, {_FIO} AS `Имя по-русски`,
@@ -107,15 +116,15 @@ CHECKS = [
     Check(
         id="pub_no_itmo_author",
         group="Пропуски",
-        title="Публикации без автора из ИТМО",
-        title_en="Publications with no ITMO author",
-        count="MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } RETURN count(p)",
+        title="Публикации без автора из университета",
+        title_en="Publications with no member author",
+        count="MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_member } RETURN count(p)",
         of=_PUB_TOTAL,
         warn=0.01,
         fail=0.05,
         hint="Не попадают на карту.",
         hint_en="Don't make it onto the map.",
-        examples="""MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo }
+        examples="""MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_member }
             OPTIONAL MATCH (p)<-[:AUTHORED]-(a:Person)
             WITH p, count(a) AS authors
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
@@ -141,19 +150,19 @@ CHECKS = [
     Check(
         id="itmo_no_ru_name",
         group="Пропуски",
-        title="Сотрудники без русского ФИО",
-        title_en="Staff without a Russian full name",
-        count="MATCH (p:Person) WHERE p.is_itmo AND (p.name_ru IS NULL "
-        "OR trim(p.name_ru) = '') RETURN count(p)",
-        of=_ITMO_TOTAL,
+        title="Сотрудники без ФИО на языке университета",
+        title_en="Staff without a full name in the university's language",
+        count="MATCH (p:Person) WHERE p.is_member AND (p.name_local IS NULL "
+        "OR trim(p.name_local) = '') RETURN count(p)",
+        of=_MEMBER_TOTAL,
         warn=0.02,
         fail=0.10,
-        hint="Показываются латиницей. Этап author_names не запускался "
+        hint="Показываются так, как подписаны в источнике. Этап author_names не запускался "
         "для группы, из которой пришли эти люди.",
-        hint_en="Shown in Latin script. The author_names stage hasn't run "
+        hint_en="Shown as signed in the source. The author_names stage hasn't run "
         "for the batch these people came from.",
         examples="""MATCH (p:Person)
-            WHERE p.is_itmo AND (p.name_ru IS NULL OR trim(p.name_ru) = '')
+            WHERE p.is_member AND (p.name_local IS NULL OR trim(p.name_local) = '')
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
             RETURN p.id AS id, p.name_raw AS `Как подписан`, pubs AS `Публикаций`
@@ -164,9 +173,9 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без отчества",
         title_en="Staff without a patronymic",
-        count="MATCH (p:Person) WHERE p.is_itmo AND (p.second_name_ru IS NULL "
-        "OR trim(p.second_name_ru) = '') RETURN count(p)",
-        of=_ITMO_TOTAL,
+        count="MATCH (p:Person) WHERE p.is_member AND (p.second_name_local IS NULL "
+        "OR trim(p.second_name_local) = '') RETURN count(p)",
+        of=_MEMBER_TOTAL,
         warn=0.25,
         fail=0.60,
         hint="Подписываются как «Фамилия Имя». Сократить до «Фамилия И.О.» нечем: "
@@ -174,19 +183,20 @@ CHECKS = [
         hint_en='Signed as "Surname Given name". Nothing to shorten to '
         '"Surname G.P." with: the patronymic comes only from the staff directory.',
         examples=f"""MATCH (p:Person)
-            WHERE p.is_itmo AND (p.second_name_ru IS NULL OR trim(p.second_name_ru) = '')
+            WHERE p.is_member AND (p.second_name_local IS NULL OR trim(p.second_name_local) = '')
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
             RETURN p.id AS id, p.name_raw AS `Как подписан`,
                    {_FIO} AS `Имя по-русски`, pubs AS `Публикаций`
             ORDER BY pubs DESC LIMIT $lim""",
+        cyrillic_only=True,
     ),
     Check(
         id="dept_no_ru_name",
         group="Пропуски",
-        title="Департаменты без русского названия",
-        title_en="Departments without a Russian name",
-        count="MATCH (d:Department) WHERE d.name_ru IS NULL OR trim(d.name_ru) = '' "
+        title="Департаменты без названия на языке университета",
+        title_en="Departments without a name in the university's language",
+        count="MATCH (d:Department) WHERE d.name_local IS NULL OR trim(d.name_local) = '' "
         "RETURN count(d)",
         of=_DEPT_TOTAL,
         warn=0.05,
@@ -194,9 +204,9 @@ CHECKS = [
         hint="Подписи получаются на смеси языков.",
         hint_en="Labels end up mixing languages.",
         examples="""MATCH (d:Department)
-            WHERE d.name_ru IS NULL OR trim(d.name_ru) = ''
+            WHERE d.name_local IS NULL OR trim(d.name_local) = ''
             OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person)
-            WHERE p.is_itmo
+            WHERE p.is_member
             WITH d, count(p) AS people
             RETURN d.id AS id, d.name_en AS `Название (лат.)`, people AS `Сотрудников`
             ORDER BY people DESC LIMIT $lim""",
@@ -230,8 +240,8 @@ CHECKS = [
         of="MATCH ()-[a:AUTHORED]->() RETURN count(a)",
         warn=0.01,
         fail=0.05,
-        hint="Такого автора нельзя отнести ни к ИТМО, ни к внешним.",
-        hint_en="Such an author can't be classified as ITMO or external.",
+        hint="Такого автора нельзя отнести ни к университету, ни к внешним.",
+        hint_en="Such an author can't be classified as a member or external.",
         examples="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WHERE a.affiliation IS NULL OR a.affiliation = ''
             RETURN p.id AS id, p.name_raw AS `Автор`, pub.id AS `id публикации`,
@@ -251,9 +261,9 @@ CHECKS = [
         hint_en="These are how a department gets recognized in a paper's text.",
         examples="""MATCH (d:Department) WHERE size(coalesce(d.name_variants, [])) = 0
             OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person)
-            WHERE p.is_itmo
+            WHERE p.is_member
             WITH d, count(p) AS people
-            RETURN d.id AS id, coalesce(d.name_ru, d.name_en) AS `Департамент`,
+            RETURN d.id AS id, coalesce(d.name_local, d.name_en) AS `Департамент`,
                    people AS `Сотрудников`
             ORDER BY people DESC LIMIT $lim""",
     ),
@@ -262,36 +272,37 @@ CHECKS = [
         group="Имена",
         title="Кириллица и латиница внутри одного слова",
         title_en="Cyrillic and Latin mixed within one word",
-        count=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
+        count=f"""MATCH (p:Person) WHERE p.is_member AND any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
                      RETURN count(p)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=1e-9,
         fail=0.005,
         hint="Сбой транслитерации: «Вершиinin», «Полевaя», «Аkhмеров».",
         hint_en='Transliteration glitch: "Вершиinin", "Полевaя", "Аkhмеров".',
-        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
+        examples=f"""MATCH (p:Person) WHERE p.is_member AND any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
             RETURN p.id AS id, {_FIO} AS `Имя по-русски`, p.name_raw AS `Как подписан`,
-                   coalesce(p.surname_ru,'') AS `Фамилия`,
-                   coalesce(p.first_name_ru,'') AS `Имя`,
-                   coalesce(p.second_name_ru,'') AS `Отчество`
+                   coalesce(p.surname_local,'') AS `Фамилия`,
+                   coalesce(p.first_name_local,'') AS `Имя`,
+                   coalesce(p.second_name_local,'') AS `Отчество`
             ORDER BY p.name_raw LIMIT $lim""",
+        cyrillic_only=True,
     ),
     Check(
         id="name_accent",
         group="Имена",
         title="Знак ударения внутри имени",
         title_en="Stress mark inside a name",
-        count=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
+        count=f"""MATCH (p:Person) WHERE p.is_member AND any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
                      RETURN count(p)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=1e-9,
         fail=0.005,
         hint="«Смоля́нская». Поиск по такому имени человека не найдёт.",
         hint_en='"Смоля́нская". Searching for this name will not find the person.',
-        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
+        examples=f"""MATCH (p:Person) WHERE p.is_member AND any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
             RETURN p.id AS id, {_FIO} AS `Имя по-русски`, p.name_raw AS `Как подписан`
             ORDER BY p.name_raw LIMIT $lim""",
@@ -301,16 +312,16 @@ CHECKS = [
         group="Имена",
         title="Фамилия из одной буквы",
         title_en="One-letter surname",
-        count="""MATCH (p:Person) WHERE p.is_itmo AND p.surname_ru IS NOT NULL
-                    AND size(trim(replace(p.surname_ru, '.', ''))) = 1 RETURN count(p)""",
-        of=_ITMO_TOTAL,
+        count="""MATCH (p:Person) WHERE p.is_member AND p.surname_local IS NOT NULL
+                    AND size(trim(replace(p.surname_local, '.', ''))) = 1 RETURN count(p)""",
+        of=_MEMBER_TOTAL,
         warn=1e-9,
         fail=0.005,
         hint="Короткие фамилии схлопнулись до инициала.",
         hint_en="Short surnames collapsed down to an initial.",
-        examples="""MATCH (p:Person) WHERE p.is_itmo AND p.surname_ru IS NOT NULL
-              AND size(trim(replace(p.surname_ru, '.', ''))) = 1
-            RETURN p.id AS id, p.surname_ru AS `Фамилия (рус.)`,
+        examples="""MATCH (p:Person) WHERE p.is_member AND p.surname_local IS NOT NULL
+              AND size(trim(replace(p.surname_local, '.', ''))) = 1
+            RETURN p.id AS id, p.surname_local AS `Фамилия (рус.)`,
                    p.name_raw AS `Как подписан`
             ORDER BY p.name_raw LIMIT $lim""",
     ),
@@ -320,40 +331,41 @@ CHECKS = [
         title="Русское ФИО записано латиницей",
         title_en="Russian name written in Latin script",
         count=f"""MATCH (p:Person)
-                     WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
-                       AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
+                     WHERE p.is_member AND p.surname_local IS NOT NULL AND trim(p.surname_local) <> ''
+                       AND p.surname_local =~ '[{LAT}\\\\s.-]+'
                      RETURN count(p)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=1e-9,
         fail=0.005,
         hint="Транслитерация не отработала.",
         hint_en="Transliteration didn't run.",
         examples=f"""MATCH (p:Person)
-              WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
-                AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
+              WHERE p.is_member AND p.surname_local IS NOT NULL AND trim(p.surname_local) <> ''
+                AND p.surname_local =~ '[{LAT}\\\\s.-]+'
             RETURN p.id AS id, {_FIO} AS `Имя по-русски`, p.name_raw AS `Как подписан`
             ORDER BY p.name_raw LIMIT $lim""",
+        cyrillic_only=True,
     ),
     Check(
         id="first_name_initials",
         group="Имена",
         title="Вместо имени только инициалы",
         title_en="Initials instead of a given name",
-        count="""MATCH (p:Person) WHERE p.is_itmo AND p.first_name_ru IS NOT NULL
-                    AND trim(p.first_name_ru) <> ''
-                    AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
+        count="""MATCH (p:Person) WHERE p.is_member AND p.first_name_local IS NOT NULL
+                    AND trim(p.first_name_local) <> ''
+                    AND size(trim(replace(replace(p.first_name_local,'.',''),' ',''))) <= 2
                     RETURN count(p)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=0.05,
         fail=0.15,
         hint="В источнике не было полного имени.",
         hint_en="The source didn't have a full name.",
-        examples="""MATCH (p:Person) WHERE p.is_itmo AND p.first_name_ru IS NOT NULL
-              AND trim(p.first_name_ru) <> ''
-              AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
-            RETURN p.id AS id, coalesce(p.surname_ru,'') AS `Фамилия`,
-                   p.first_name_ru AS `Имя`, p.name_raw AS `Как подписан`
-            ORDER BY p.surname_ru LIMIT $lim""",
+        examples="""MATCH (p:Person) WHERE p.is_member AND p.first_name_local IS NOT NULL
+              AND trim(p.first_name_local) <> ''
+              AND size(trim(replace(replace(p.first_name_local,'.',''),' ',''))) <= 2
+            RETURN p.id AS id, coalesce(p.surname_local,'') AS `Фамилия`,
+                   p.first_name_local AS `Имя`, p.name_raw AS `Как подписан`
+            ORDER BY p.surname_local LIMIT $lim""",
     ),
     Check(
         id="person_shared_orcid",
@@ -376,7 +388,7 @@ CHECKS = [
             RETURN orcid AS `ORCID`, size(ps) AS `Записей`,
                    [x IN ps | x.id] AS `Идентификаторы`,
                    [x IN ps | x.name_raw] AS `Как подписаны`,
-                   [x IN ps | x.is_itmo] AS `Сотрудник ИТМО`
+                   [x IN ps | x.is_member] AS `Сотрудник университета`
             ORDER BY size(ps) DESC, orcid LIMIT $lim""",
     ),
     Check(
@@ -385,12 +397,12 @@ CHECKS = [
         title="Полные тёзки среди сотрудников",
         title_en="Complete namesakes among staff",
         count="""MATCH (p:Person)
-            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
-            WITH toLower(trim(p.surname_ru)) + '|' +
-                 toLower(trim(coalesce(p.first_name_ru,''))) + '|' +
-                 toLower(trim(coalesce(p.second_name_ru,''))) AS k, count(*) AS c
+            WHERE p.is_member AND p.surname_local IS NOT NULL AND size(trim(p.surname_local)) > 1
+            WITH toLower(trim(p.surname_local)) + '|' +
+                 toLower(trim(coalesce(p.first_name_local,''))) + '|' +
+                 toLower(trim(coalesce(p.second_name_local,''))) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=0.01,
         fail=0.05,
         hint="Фамилия, имя и отчество совпадают полностью. Это либо однофамильцы, "
@@ -398,10 +410,10 @@ CHECKS = [
         hint_en="The full name matches completely. These are either namesakes, "
         "or one person entered twice.",
         examples=f"""MATCH (p:Person)
-            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
-            WITH toLower(trim(p.surname_ru)) + '|' +
-                 toLower(trim(coalesce(p.first_name_ru,''))) + '|' +
-                 toLower(trim(coalesce(p.second_name_ru,''))) AS k,
+            WHERE p.is_member AND p.surname_local IS NOT NULL AND size(trim(p.surname_local)) > 1
+            WITH toLower(trim(p.surname_local)) + '|' +
+                 toLower(trim(coalesce(p.first_name_local,''))) + '|' +
+                 toLower(trim(coalesce(p.second_name_local,''))) AS k,
                  collect(p) AS ps, collect({_FIO})[0] AS fio
             WHERE size(ps) > 1
             RETURN fio AS `Имя по-русски`, size(ps) AS `Записей`,
@@ -415,21 +427,21 @@ CHECKS = [
         title="Одинаковая подпись «Фамилия И.»",
         title_en='Same short signature "Surname I."',
         count="""MATCH (p:Person)
-            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
-              AND p.first_name_ru IS NOT NULL AND trim(p.first_name_ru) <> ''
-            WITH toLower(trim(p.surname_ru)) + ' ' +
-                 toLower(left(trim(p.first_name_ru),1)) AS k, count(*) AS c
+            WHERE p.is_member AND p.surname_local IS NOT NULL AND size(trim(p.surname_local)) > 1
+              AND p.first_name_local IS NOT NULL AND trim(p.first_name_local) <> ''
+            WITH toLower(trim(p.surname_local)) + ' ' +
+                 toLower(left(trim(p.first_name_local),1)) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
-        of=_ITMO_TOTAL,
+        of=_MEMBER_TOTAL,
         warn=0.05,
         fail=0.12,
         hint="Именно так люди подписаны на карте. Этих не различить на глаз.",
         hint_en="This is exactly how people are labeled on the map. "
         "These cannot be told apart by eye.",
         examples="""MATCH (p:Person)
-            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
-              AND p.first_name_ru IS NOT NULL AND trim(p.first_name_ru) <> ''
-            WITH trim(p.surname_ru) + ' ' + left(trim(p.first_name_ru),1) + '.' AS sig,
+            WHERE p.is_member AND p.surname_local IS NOT NULL AND size(trim(p.surname_local)) > 1
+              AND p.first_name_local IS NOT NULL AND trim(p.first_name_local) <> ''
+            WITH trim(p.surname_local) + ' ' + left(trim(p.first_name_local),1) + '.' AS sig,
                  collect(p) AS ps
             WHERE size(ps) > 1
             RETURN sig AS `Подпись на карте`, size(ps) AS `Человек`,
@@ -531,15 +543,15 @@ CHECKS = [
         group="Дубликаты",
         title="Департаменты с одинаковым названием",
         title_en="Departments with the same name",
-        count="""MATCH (d:Department) WHERE trim(coalesce(d.name_ru, d.name_en, '')) <> ''
-            WITH toLower(trim(coalesce(d.name_ru, d.name_en))) AS k, count(*) AS c
+        count="""MATCH (d:Department) WHERE trim(coalesce(d.name_local, d.name_en, '')) <> ''
+            WITH toLower(trim(coalesce(d.name_local, d.name_en))) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
         of=None,
         warn=1,
         fail=5,
         hint=None,
-        examples="""MATCH (d:Department) WHERE trim(coalesce(d.name_ru, d.name_en, '')) <> ''
-            WITH toLower(trim(coalesce(d.name_ru, d.name_en))) AS k, collect(d) AS ds
+        examples="""MATCH (d:Department) WHERE trim(coalesce(d.name_local, d.name_en, '')) <> ''
+            WITH toLower(trim(coalesce(d.name_local, d.name_en))) AS k, collect(d) AS ds
             WHERE size(ds) > 1
             RETURN k AS `Название`, size(ds) AS `Записей`,
                    [x IN ds | x.id] AS `Идентификаторы`
@@ -714,5 +726,8 @@ CHECKS = [
                    type(e) AS `Связь` LIMIT $lim""",
     ),
 ]
+
+if settings.institution.local_script != "cyrillic":
+    CHECKS = [c for c in CHECKS if not c.cyrillic_only]
 
 BY_ID = {c.id: c for c in CHECKS}

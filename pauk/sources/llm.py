@@ -11,6 +11,7 @@ from .base import HttpClient
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _CODE_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+_FENCED_BLOCK = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 _RAW_TEXT_LIMIT = 64 * 1024
 _TRANSIENT_RETRIES = 2
 
@@ -25,6 +26,31 @@ def _strip_code_fence(content: str) -> str:
     """
     match = _CODE_FENCE.match(content.strip())
     return match.group(1) if match else content
+
+
+def _parse_json_body(content: str):
+    """The JSON a reply carries, fenced or not.
+
+    A model sometimes answers in a fenced block, writes "Wait, let me
+    reconsider" and answers again in a second one (seen with claude-haiku-4.5
+    on real names); the last block that parses is its final word.
+    """
+    try:
+        return json.loads(_strip_code_fence(content))
+    except json.JSONDecodeError:
+        for block in reversed(_FENCED_BLOCK.findall(content)):
+            try:
+                return json.loads(block)
+            except json.JSONDecodeError:
+                continue
+        # A bare object followed by prose ("Extra data"): the object is the answer.
+        start = content.find("{")
+        if start >= 0:
+            try:
+                return json.JSONDecoder().raw_decode(content[start:])[0]
+            except json.JSONDecodeError:
+                pass
+        raise
 
 
 class OpenRouterClient(HttpClient):
@@ -156,7 +182,7 @@ class OpenRouterClient(HttpClient):
                 self.last_error = "empty model response"
                 logger.warning("OpenRouter: %s returned an empty response body", self.model)
                 return None
-            parsed = json.loads(_strip_code_fence(content))
+            parsed = _parse_json_body(content)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             self.last_error = f"could not parse model response: {type(exc).__name__}"
             logger.warning("OpenRouter: could not parse %s's response: %s", self.model, exc)

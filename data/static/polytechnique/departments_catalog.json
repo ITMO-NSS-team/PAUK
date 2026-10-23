@@ -1,0 +1,244 @@
+[
+  {
+    "uid": "polytechnique",
+    "name_en": "École Polytechnique",
+    "name_local": "École Polytechnique",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05hy3tk52",
+    "type": "university"
+  },
+  {
+    "uid": "lix",
+    "name_en": "LIX Computer Science Laboratory",
+    "name_local": "LIX Computer Science Laboratory",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire d'Informatique de l'École Polytechnique"
+    ],
+    "context_aliases": [
+      "LIX"
+    ]
+  },
+  {
+    "uid": "cmap",
+    "name_en": "Centre de Mathématiques Appliquées",
+    "name_local": "Centre de Mathématiques Appliquées",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Centre de Mathématiques Appliquées de l'École polytechnique",
+      "Centre de Mathématiques Appliquées de l'Ecole polytechnique"
+    ],
+    "context_aliases": [
+      "CMAP",
+      "Centre de Mathématiques Appliquées"
+    ]
+  },
+  {
+    "uid": "cmls",
+    "name_en": "Centre de Mathématiques Laurent Schwartz",
+    "name_local": "Centre de Mathématiques Laurent Schwartz",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "CMLS",
+      "Centre de Mathématiques Laurent Schwartz"
+    ]
+  },
+  {
+    "uid": "cpht",
+    "name_en": "Centre de Physique Théorique",
+    "name_local": "Centre de Physique Théorique",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "CPHT",
+      "Centre de Physique Théorique"
+    ]
+  },
+  {
+    "uid": "lmd",
+    "name_en": "Laboratoire de Météorologie Dynamique",
+    "name_local": "Laboratoire de Météorologie Dynamique",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LMD",
+      "Laboratoire de Météorologie Dynamique"
+    ]
+  },
+  {
+    "uid": "lob",
+    "name_en": "Laboratoire d'Optique et Biosciences",
+    "name_local": "Laboratoire d'Optique et Biosciences",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire d'Optique et Biosciences",
+      "Laboratoire d’Optique et Biosciences"
+    ],
+    "context_aliases": [
+      "LOB"
+    ]
+  },
+  {
+    "uid": "llr",
+    "name_en": "Laboratoire Leprince-Ringuet",
+    "name_local": "Laboratoire Leprince-Ringuet",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LLR",
+      "Laboratoire Leprince-Ringuet"
+    ]
+  },
+  {
+    "uid": "lpp",
+    "name_en": "Laboratoire de Physique des Plasmas",
+    "name_local": "Laboratoire de Physique des Plasmas",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LPP",
+      "Laboratoire de Physique des Plasmas"
+    ]
+  },
+  {
+    "uid": "lpmc",
+    "name_en": "Laboratoire de Physique de la Matière Condensée",
+    "name_local": "Laboratoire de Physique de la Matière Condensée",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire de Physique de la Matière Condensée"
+    ],
+    "context_aliases": [
+      "PMC"
+    ]
+  },
+  {
+    "uid": "lpicm",
+    "name_en": "LPICM",
+    "name_local": "LPICM",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire de Physique des Interfaces et des Couches Minces"
+    ],
+    "context_aliases": [
+      "LPICM"
+    ]
+  },
+  {
+    "uid": "lsi",
+    "name_en": "Laboratoire des Solides Irradiés",
+    "name_local": "Laboratoire des Solides Irradiés",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LSI",
+      "Laboratoire des Solides Irradiés"
+    ]
+  },
+  {
+    "uid": "lms",
+    "name_en": "Laboratoire de Mécanique des Solides",
+    "name_local": "Laboratoire de Mécanique des Solides",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LMS",
+      "Laboratoire de Mécanique des Solides"
+    ]
+  },
+  {
+    "uid": "ladhyx",
+    "name_en": "LadHyX",
+    "name_local": "LadHyX",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LadHyX"
+    ]
+  },
+  {
+    "uid": "luli",
+    "name_en": "LULI",
+    "name_local": "LULI",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LULI",
+      "Laboratoire pour l'Utilisation des Lasers Intenses"
+    ]
+  },
+  {
+    "uid": "crest",
+    "name_en": "CREST",
+    "name_local": "CREST",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "CREST"
+    ]
+  },
+  {
+    "uid": "lsom",
+    "name_en": "Laboratoire de Synthèse Organique",
+    "name_local": "Laboratoire de Synthèse Organique",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire de Synthèse Organique"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bioc",
+    "name_en": "Laboratoire de Biologie Structurale de la Cellule",
+    "name_local": "Laboratoire de Biologie Structurale de la Cellule",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [
+      "Laboratoire de Biologie Structurale de la Cellule"
+    ],
+    "context_aliases": [
+      "BIOC"
+    ]
+  },
+  {
+    "uid": "lcm",
+    "name_en": "Laboratoire de Chimie Moléculaire",
+    "name_local": "Laboratoire de Chimie Moléculaire",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "LCM",
+      "Laboratoire de Chimie Moléculaire"
+    ]
+  },
+  {
+    "uid": "lsce-x",
+    "name_en": "Laboratoire d'Hydrodynamique",
+    "name_local": "Laboratoire d'Hydrodynamique",
+    "kind": "lab",
+    "parent": "polytechnique",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratoire d'Hydrodynamique"
+    ]
+  }
+]

@@ -1,0 +1,1289 @@
+[
+  {
+    "uid": "nus",
+    "name_en": "National University of Singapore",
+    "name_local": "National University of Singapore",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/01tgyzw49",
+    "type": "university"
+  },
+  {
+    "uid": "yllsom",
+    "name_en": "Yong Loo Lin School of Medicine",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "NUS Yong Loo Lin School of Medicine"
+    ],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Yong Loo Lin School of Medicine",
+      "Yong Loo-Lin School of Medicine"
+    ]
+  },
+  {
+    "uid": "sph",
+    "name_en": "Saw Swee Hock School of Public Health",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "Saw Swee Hock School of Public Health"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dukenus",
+    "name_en": "Duke-NUS Medical School",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Duke-NUS Medical School",
+      "Duke–NUS Medical School",
+      "Duke NUS Medical School",
+      "Duke‐NUS Medical School",
+      "Duke-NUS Graduate Medical School",
+      "Duke NUS Graduate Medical School",
+      "Duke-National University of Singapore Medical School",
+      "Duke–National University of Singapore Medical School",
+      "Duke‐National University of Singapore Medical School",
+      "Duke-National University of Singapore (NUS) Medical School",
+      "Duke-National University of Singapore Graduate Medical School"
+    ]
+  },
+  {
+    "uid": "cde",
+    "name_en": "College of Design and Engineering",
+    "name_local": "",
+    "kind": "college",
+    "parent": "nus",
+    "aliases": [
+      "NUS College of Design and Engineering"
+    ],
+    "context_aliases": [
+      "College of Design and Engineering",
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "fos",
+    "name_en": "Faculty of Science",
+    "name_local": "",
+    "kind": "faculty",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "fass",
+    "name_en": "Faculty of Arts and Social Sciences",
+    "name_local": "",
+    "kind": "faculty",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts and Social Sciences"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "School of Computing",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "NUS School of Computing"
+    ],
+    "context_aliases": [
+      "School of Computing"
+    ]
+  },
+  {
+    "uid": "biz",
+    "name_en": "NUS Business School",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "NUS Business School"
+    ],
+    "context_aliases": [
+      "Business School"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "",
+    "kind": "faculty",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "dent",
+    "name_en": "Faculty of Dentistry",
+    "name_local": "",
+    "kind": "faculty",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Dentistry"
+    ]
+  },
+  {
+    "uid": "lkysppp",
+    "name_en": "Lee Kuan Yew School of Public Policy",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "Lee Kuan Yew School of Public Policy"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ystcm",
+    "name_en": "Yong Siew Toh Conservatory of Music",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "Yong Siew Toh Conservatory of Music"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chs",
+    "name_en": "College of Humanities and Sciences",
+    "name_local": "",
+    "kind": "college",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "College of Humanities and Sciences"
+    ]
+  },
+  {
+    "uid": "nuscollege",
+    "name_en": "NUS College",
+    "name_local": "",
+    "kind": "college",
+    "parent": "nus",
+    "aliases": [
+      "NUS College"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "rc4",
+    "name_en": "Residential College 4",
+    "name_local": "",
+    "kind": "college",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Residential College 4"
+    ]
+  },
+  {
+    "uid": "iss",
+    "name_en": "Institute of Systems Science",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "NUS Institute of Systems Science"
+    ],
+    "context_aliases": [
+      "Institute of Systems Science"
+    ]
+  },
+  {
+    "uid": "nushs",
+    "name_en": "NUS High School of Mathematics and Science",
+    "name_local": "",
+    "kind": "school",
+    "parent": "nus",
+    "aliases": [
+      "NUS High School of Mathematics and Science",
+      "National University of Singapore High School of Math and Science",
+      "National University of Singapore High School of Mathematics and Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering",
+      "Department of Electrical & Computer Engineering",
+      "Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "Department of Materials Science & Engineering",
+      "Department of Material Science and Engineering"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Department of Civil & Environmental Engineering",
+      "Civil and Environmental Engineering Department"
+    ]
+  },
+  {
+    "uid": "chbe",
+    "name_en": "Department of Chemical and Biomolecular Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biomolecular Engineering",
+      "Chemical and Biomolecular Engineering"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "isem",
+    "name_en": "Department of Industrial Systems Engineering and Management",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial Systems Engineering and Management",
+      "Department of Industrial Systems Engineering & Management",
+      "Dept. of Industrial Systems Engineering and Management"
+    ]
+  },
+  {
+    "uid": "arch",
+    "name_en": "Department of Architecture",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "dbe",
+    "name_en": "Department of the Built Environment",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Department of the Built Environment"
+    ]
+  },
+  {
+    "uid": "did",
+    "name_en": "Division of Industrial Design",
+    "name_local": "",
+    "kind": "department",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Industrial Design",
+      "Department of Industrial Design"
+    ]
+  },
+  {
+    "uid": "showlab",
+    "name_en": "Show Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ece",
+    "aliases": [],
+    "context_aliases": [
+      "Show Lab"
+    ]
+  },
+  {
+    "uid": "arc",
+    "name_en": "Advanced Robotics Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "cde",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Robotics Centre"
+    ]
+  },
+  {
+    "uid": "tlab",
+    "name_en": "Temasek Laboratories",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "nus",
+    "aliases": [
+      "Temasek Laboratories @ NUS"
+    ],
+    "context_aliases": [
+      "Temasek Laboratories",
+      "T-Lab"
+    ]
+  },
+  {
+    "uid": "rst",
+    "name_en": "Department of Real Estate",
+    "name_local": "",
+    "kind": "department",
+    "parent": "biz",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Real Estate"
+    ]
+  },
+  {
+    "uid": "dao",
+    "name_en": "Department of Analytics and Operations",
+    "name_local": "",
+    "kind": "department",
+    "parent": "biz",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Analytics and Operations",
+      "Department of Analytics & Operations",
+      "Department of Decision Sciences",
+      "Department of Decision Science"
+    ]
+  },
+  {
+    "uid": "mno",
+    "name_en": "Department of Management and Organisation",
+    "name_local": "",
+    "kind": "department",
+    "parent": "biz",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Management and Organisation",
+      "Department of Management & Organisation"
+    ]
+  },
+  {
+    "uid": "aidf",
+    "name_en": "Asian Institute of Digital Finance",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Asian Institute of Digital Finance"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "stat",
+    "name_en": "Department of Statistics and Data Science",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics and Data Science"
+    ]
+  },
+  {
+    "uid": "fst",
+    "name_en": "Department of Food Science and Technology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Food Science and Technology",
+      "Department of Food Science & Technology",
+      "Department of Food Science"
+    ]
+  },
+  {
+    "uid": "bezos",
+    "name_en": "Bezos Center for Sustainable Protein",
+    "name_local": "",
+    "kind": "center",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Bezos Center for Sustainable Protein"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Department of Pharmacy and Pharmaceutical Sciences",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacy and Pharmaceutical Sciences",
+      "Department of Pharmacy"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "",
+    "kind": "department",
+    "parent": "soc",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "isa",
+    "name_en": "Department of Information Systems and Analytics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "soc",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Information Systems and Analytics"
+    ]
+  },
+  {
+    "uid": "ahlab",
+    "name_en": "Augmented Human Lab",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "soc",
+    "aliases": [
+      "Augmented Human Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "next",
+    "name_en": "NExT++ Research Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "soc",
+    "aliases": [
+      "NExT++ Research Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "geog",
+    "name_en": "Department of Geography",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Economics"
+    ]
+  },
+  {
+    "uid": "cnm",
+    "name_en": "Department of Communications and New Media",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Communications and New Media"
+    ]
+  },
+  {
+    "uid": "elt",
+    "name_en": "Department of English, Linguistics and Theatre Studies",
+    "name_local": "",
+    "kind": "department",
+    "parent": "fass",
+    "aliases": [],
+    "context_aliases": [
+      "Department of English Linguistics and Theatre Studies",
+      "Department of English"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "Department of Medicine",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "Department of Biochemistry",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "paed",
+    "name_en": "Department of Paediatrics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Paediatrics",
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "ophth",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "phcl",
+    "name_en": "Department of Pharmacology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology"
+    ]
+  },
+  {
+    "uid": "path",
+    "name_en": "Department of Pathology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "physio",
+    "name_en": "Department of Physiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physiology"
+    ]
+  },
+  {
+    "uid": "psymed",
+    "name_en": "Department of Psychological Medicine",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychological Medicine"
+    ]
+  },
+  {
+    "uid": "obgyn",
+    "name_en": "Department of Obstetrics and Gynaecology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynaecology",
+      "Department of Obstetrics & Gynaecology",
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "radiol",
+    "name_en": "Department of Diagnostic Radiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Diagnostic Radiology"
+    ]
+  },
+  {
+    "uid": "anat",
+    "name_en": "Department of Anatomy",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anatomy"
+    ]
+  },
+  {
+    "uid": "micro",
+    "name_en": "Department of Microbiology and Immunology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology and Immunology"
+    ]
+  },
+  {
+    "uid": "ortho",
+    "name_en": "Department of Orthopaedic Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedic Surgery"
+    ]
+  },
+  {
+    "uid": "bmi",
+    "name_en": "Department of Biomedical Informatics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Informatics"
+    ]
+  },
+  {
+    "uid": "nursing",
+    "name_en": "Alice Lee Centre for Nursing Studies",
+    "name_local": "",
+    "kind": "department",
+    "parent": "yllsom",
+    "aliases": [
+      "Alice Lee Centre for Nursing Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cbme",
+    "name_en": "Centre for Biomedical Ethics",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Biomedical Ethics"
+    ]
+  },
+  {
+    "uid": "sleep",
+    "name_en": "Centre for Sleep and Cognition",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [
+      "Centre for Sleep & Cognition & Centre for Translational Magnetic Resonance Research"
+    ],
+    "context_aliases": [
+      "Centre for Sleep and Cognition",
+      "Centre for Sleep & Cognition",
+      "Center for Sleep and Cognition"
+    ]
+  },
+  {
+    "uid": "ctmr",
+    "name_en": "Centre for Translational Magnetic Resonance Research",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [
+      "Centre for Translational Magnetic Resonance Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ipeh",
+    "name_en": "Centre for Innovation and Precision Eye Health",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [
+      "Centre for Innovation and Precision Eye Health"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "empower",
+    "name_en": "Early Mental Potential and Wellbeing Research (EMPOWER) Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [
+      "Early Mental Potential and Wellbeing Research Centre"
+    ],
+    "context_aliases": [
+      "Early Mental Potential and Wellbeing Research (EMPOWER) Centre"
+    ]
+  },
+  {
+    "uid": "wisdm",
+    "name_en": "Institute for Digital Medicine (WisDM)",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "yllsom",
+    "aliases": [
+      "Institute for Digital Medicine (WisDM)"
+    ],
+    "context_aliases": [
+      "Institute for Digital Medicine"
+    ]
+  },
+  {
+    "uid": "n2cr",
+    "name_en": "NUS Centre for Cancer Research",
+    "name_local": "",
+    "kind": "center",
+    "parent": "yllsom",
+    "aliases": [
+      "NUS Centre for Cancer Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trp-hl",
+    "name_en": "Healthy Longevity Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [
+      "Healthy Longevity Translational Research Programme"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trp-hp",
+    "name_en": "Human Potential Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [
+      "Human Potential Translational Research Programme"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trp-id",
+    "name_en": "Infectious Diseases Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [],
+    "context_aliases": [
+      "Infectious Diseases Translational Research Programme"
+    ]
+  },
+  {
+    "uid": "trp-pm",
+    "name_en": "Precision Medicine Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [
+      "Precision Medicine Translational Research Programme"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trp-cvmd",
+    "name_en": "Cardiovascular Metabolic Disease Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [
+      "Cardiovascular Metabolic Disease Translational Research Programme"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "trp-nano",
+    "name_en": "Nanomedicine Translational Research Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "yllsom",
+    "aliases": [
+      "Nanomedicine Translational Research Program",
+      "Nanomedicine Translational Research Programme"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ahl",
+    "name_en": "NUS Academy for Healthy Longevity",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "yllsom",
+    "aliases": [
+      "NUS Academy for Healthy Longevity"
+    ],
+    "context_aliases": [
+      "Centre for Healthy Longevity"
+    ]
+  },
+  {
+    "uid": "omfs",
+    "name_en": "Discipline of Oral and Maxillofacial Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "dent",
+    "aliases": [],
+    "context_aliases": [
+      "Discipline of Oral and Maxillofacial Surgery",
+      "Department of Oral and Maxillofacial Surgery"
+    ]
+  },
+  {
+    "uid": "csb",
+    "name_en": "Cancer and Stem Cell Biology Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "dukenus",
+    "aliases": [],
+    "context_aliases": [
+      "Cancer and Stem Cell Biology Programme",
+      "Program in Cancer and Stem Cell Biology"
+    ]
+  },
+  {
+    "uid": "cvmd",
+    "name_en": "Signature Research Program in Cardiovascular and Metabolic Disorders",
+    "name_local": "",
+    "kind": "program",
+    "parent": "dukenus",
+    "aliases": [],
+    "context_aliases": [
+      "Signature Research Program in Cardiovascular and Metabolic Disorders"
+    ]
+  },
+  {
+    "uid": "cqt",
+    "name_en": "Centre for Quantum Technologies",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Quantum Technologies"
+    ]
+  },
+  {
+    "uid": "mbi",
+    "name_en": "Mechanobiology Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Mechanobiology Institute"
+    ]
+  },
+  {
+    "uid": "ifim",
+    "name_en": "Institute for Functional Intelligent Materials",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Institute for Functional Intelligent Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "csi",
+    "name_en": "Cancer Science Institute of Singapore",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Cancer Science Institute of Singapore"
+    ]
+  },
+  {
+    "uid": "seris",
+    "name_en": "Solar Energy Research Institute of Singapore",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Solar Energy Research Institute of Singapore"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lsi",
+    "name_en": "Life Sciences Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Life Sciences Institute"
+    ]
+  },
+  {
+    "uid": "neuroprog",
+    "name_en": "Neurobiology Programme",
+    "name_local": "",
+    "kind": "program",
+    "parent": "lsi",
+    "aliases": [],
+    "context_aliases": [
+      "Neurobiology Programme"
+    ]
+  },
+  {
+    "uid": "sli",
+    "name_en": "Singapore Lipidomics Incubator",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "lsi",
+    "aliases": [
+      "Singapore Lipidomics Incubator"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lkcnhm",
+    "name_en": "Lee Kong Chian Natural History Museum",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Lee Kong Chian Natural History Museum"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "n1",
+    "name_en": "The N.1 Institute for Health",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "N.1 Institute for Health"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ihealthtech",
+    "name_en": "Institute for Health Innovation and Technology",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Institute for Health Innovation and Technology",
+      "iHealthtech"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ids",
+    "name_en": "Institute of Data Science",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Data Science"
+    ]
+  },
+  {
+    "uid": "iora",
+    "name_en": "Institute of Operations Research and Analytics",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Operations Research and Analytics"
+    ]
+  },
+  {
+    "uid": "ssi",
+    "name_en": "Smart Systems Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Smart Systems Institute"
+    ]
+  },
+  {
+    "uid": "esi",
+    "name_en": "Energy Studies Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Energy Studies Institute"
+    ]
+  },
+  {
+    "uid": "ari",
+    "name_en": "Asia Research Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [],
+    "context_aliases": [
+      "Asia Research Institute"
+    ]
+  },
+  {
+    "uid": "ssls",
+    "name_en": "Singapore Synchrotron Light Source",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Singapore Synchrotron Light Source"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "tmsi",
+    "name_en": "Tropical Marine Science Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "Tropical Marine Science Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "neri",
+    "name_en": "NUS Environmental Research Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "nus",
+    "aliases": [
+      "NUS Environmental Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chi",
+    "name_en": "Centre for Hydrogen Innovations",
+    "name_local": "",
+    "kind": "center",
+    "parent": "nus",
+    "aliases": [
+      "Centre for Hydrogen Innovations"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "shine",
+    "name_en": "Singapore Hybrid-Integrated Next-Generation μ-Electronics Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "nus",
+    "aliases": [
+      "Singapore Hybrid-Integrated Next-Generation μ-Electronics Research Center",
+      "Singapore Hybrid-Integrated Next-Generation μ-Electronics (SHINE) Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "arices",
+    "name_en": "Advanced Research Initiative for Correlated-Electron Systems",
+    "name_local": "",
+    "kind": "center",
+    "parent": "nus",
+    "aliases": [
+      "Advanced Research Initiative for Correlated-Electron Systems"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "wilnus",
+    "name_en": "WIL@NUS Corporate Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "nus",
+    "aliases": [
+      "WIL@NUS Corporate Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "circ",
+    "name_en": "A*STAR-NUS Clinical Imaging Research Centre",
+    "name_local": "",
+    "kind": "center",
+    "parent": "nus",
+    "aliases": [
+      "A*STAR-NUS Clinical Imaging Research Centre"
+    ],
+    "context_aliases": [
+      "Clinical Imaging Research Centre"
+    ]
+  },
+  {
+    "uid": "chongqing",
+    "name_en": "National University of Singapore (Chongqing) Research Institute",
+    "name_local": "",
+    "kind": "campus",
+    "parent": "nus",
+    "aliases": [
+      "National University of Singapore (Chongqing) Research Institute",
+      "NUS (Chongqing) Research Institute",
+      "NUS Chongqing Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nustju",
+    "name_en": "Joint School of National University of Singapore and Tianjin University",
+    "name_local": "",
+    "kind": "campus",
+    "parent": "nus",
+    "aliases": [
+      "Joint School of National University of Singapore and Tianjin University"
+    ],
+    "context_aliases": []
+  }
+]

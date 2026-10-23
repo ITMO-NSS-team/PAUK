@@ -5,7 +5,7 @@ pipeline must survive is a named constant here, and `build_universe()`
 returns the raw payloads exactly as the external APIs would serve them.
 
 What is covered, by id:
-* A01-A16: identity merge, sticky is_itmo, ambiguous and hyphenated
+* A01-A16: identity merge, sticky is_member, ambiguous and hyphenated
   surnames, ORCID via Crossref, a failing authors endpoint.
 * A51-A59 (works W101..W110): authors split by OpenAlex, which the dedup
   stage folds, plus one pair with different ORCIDs that must not merge.
@@ -34,7 +34,7 @@ WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 125)]
 # also carries the consortium itself in an author slot - an organization,
 # not a person.
 CONSORTIUM_WORK = "W70000000124"
-CONSORTIUM_ITMO_INDEX = 22  # existing ITMO author A5000000022
+CONSORTIUM_ITMO_INDEX = 22  # existing member author A5000000022
 CONSORTIUM_ORG_NAME = "Synthetic Science Consortium Collaborators"
 CONSORTIUM_FILLERS = [f"A59000001{i:02d}" for i in range(3)]
 
@@ -192,7 +192,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": ORG_UID,
         "name_en": ORG_NAME,
-        "name_ru": "Университет ИТМО",
+        "name_local": "Университет ИТМО",
         "kind": "organization",
         "parent": None,
         "ror_id": "https://ror.org/04txgxn49",
@@ -202,7 +202,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": "institute-of-applied-computer-science",
         "name_en": "Institute of Applied Computer Science",
-        "name_ru": "Институт прикладной информатики",
+        "name_local": "Институт прикладной информатики",
         "kind": "institute",
         "parent": ORG_UID,
         "aliases": ["IACS"],
@@ -210,7 +210,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": "faculty-of-photonics",
         "name_en": "Faculty of Photonics",
-        "name_ru": "Факультет фотоники",
+        "name_local": "Факультет фотоники",
         "kind": "faculty",
         "parent": None,
         "aliases": [],
@@ -218,7 +218,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": "biotech-research-center",
         "name_en": "Biotech Research Center",
-        "name_ru": "Центр биотехнологий",
+        "name_local": "Центр биотехнологий",
         "kind": "center",
         "parent": None,
         "aliases": ["BioTech Center"],
@@ -226,7 +226,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": "school-of-robotics",
         "name_en": "School of Robotics",
-        "name_ru": "Школа робототехники",
+        "name_local": "Школа робототехники",
         "kind": "school",
         "parent": None,
         "aliases": ["Robotics School"],
@@ -234,7 +234,7 @@ DEPARTMENTS_CATALOG = [
     {
         "uid": "quantum-computing-lab",
         "name_en": "Quantum Computing Lab",
-        "name_ru": "Лаборатория квантовых вычислений",
+        "name_local": "Лаборатория квантовых вычислений",
         "kind": "lab",
         "parent": None,
         "aliases": ["QC Lab"],
@@ -367,7 +367,7 @@ def _affiliation(i: int, itmo: bool) -> list[str]:
     return ["ITMO University, St. Petersburg, Russia"]
 
 
-def _is_itmo(i: int, n: int) -> bool:
+def _is_member(i: int, n: int) -> bool:
     """A01..A30 and the dedup authors (except A52) are ITMO; A01..A05 lose
     the affiliation on odd works, A52 is the external half of a split."""
     if 31 <= i <= 50 or i == 52:
@@ -376,7 +376,7 @@ def _is_itmo(i: int, n: int) -> bool:
 
 
 def _authorship(i: int, n: int) -> dict:
-    itmo = _is_itmo(i, n)
+    itmo = _is_member(i, n)
     author: dict = {"id": f"https://openalex.org/{AUTHOR_IDS[i - 1]}"}
     name = _author_name(i)
     if name is not None:

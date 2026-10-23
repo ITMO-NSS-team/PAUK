@@ -1,0 +1,404 @@
+[
+  {
+    "uid": "vt",
+    "name_en": "Virginia Tech",
+    "name_local": "Virginia Tech",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02smfhw86",
+    "type": "university"
+  },
+  {
+    "uid": "cals",
+    "name_en": "College of Agriculture and Life Sciences",
+    "name_local": "College of Agriculture and Life Sciences",
+    "kind": "college",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "College of Agriculture and Life Sciences"
+    ]
+  },
+  {
+    "uid": "coe",
+    "name_en": "College of Engineering",
+    "name_local": "College of Engineering",
+    "kind": "college",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "College of Engineering"
+    ]
+  },
+  {
+    "uid": "cos",
+    "name_en": "College of Science",
+    "name_local": "College of Science",
+    "kind": "college",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "College of Science"
+    ]
+  },
+  {
+    "uid": "vmcvm",
+    "name_en": "Virginia-Maryland College of Veterinary Medicine",
+    "name_local": "Virginia-Maryland College of Veterinary Medicine",
+    "kind": "college",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "Virginia-Maryland College of Veterinary Medicine"
+    ]
+  },
+  {
+    "uid": "vtc",
+    "name_en": "Virginia Tech Carilion School of Medicine",
+    "name_local": "Virginia Tech Carilion School of Medicine",
+    "kind": "school",
+    "parent": "vt",
+    "aliases": [
+      "Virginia Tech Carilion School of Medicine"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fralin",
+    "name_en": "Fralin Biomedical Research Institute",
+    "name_local": "Fralin Biomedical Research Institute",
+    "kind": "institute",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "Fralin Biomedical Research Institute"
+    ]
+  },
+  {
+    "uid": "mii",
+    "name_en": "Macromolecules Innovation Institute",
+    "name_local": "Macromolecules Innovation Institute",
+    "kind": "institute",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "Macromolecules Innovation Institute"
+    ]
+  },
+  {
+    "uid": "nsi",
+    "name_en": "Virginia Tech National Security Institute",
+    "name_local": "Virginia Tech National Security Institute",
+    "kind": "institute",
+    "parent": "vt",
+    "aliases": [
+      "Virginia Tech National Security Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cezap",
+    "name_en": "Center for Emerging Zoonotic and Arthropod-borne Pathogens",
+    "name_local": "Center for Emerging Zoonotic and Arthropod-borne Pathogens",
+    "kind": "center",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Emerging",
+      "Zoonotic",
+      "and Arthropod-borne Pathogens"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Computer Science"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Bradley Department of Electrical and Computer Engineering",
+    "name_local": "Bradley Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "Bradley Department of Electrical and Computer Engineering"
+    ],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "ise",
+    "name_en": "Grado Department of Industrial and Systems Engineering",
+    "name_local": "Grado Department of Industrial and Systems Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "Grado Department of Industrial and Systems Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "aoe",
+    "name_en": "Kevin T. Crofton Department of Aerospace and Ocean Engineering",
+    "name_local": "Kevin T. Crofton Department of Aerospace and Ocean Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [
+      "Crofton Department of Aerospace and Ocean Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering and Mechanics",
+    "name_local": "Department of Biomedical Engineering and Mechanics",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering",
+      "Department of Biomedical Engineering and Mechanics"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "coe",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "bse",
+    "name_en": "Department of Biological Systems Engineering",
+    "name_local": "Department of Biological Systems Engineering",
+    "kind": "department",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Systems Engineering"
+    ]
+  },
+  {
+    "uid": "hnfe",
+    "name_en": "Department of Human Nutrition Foods and Exercise",
+    "name_local": "Department of Human Nutrition Foods and Exercise",
+    "kind": "department",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Human Nutrition",
+      "Foods",
+      "and Exercise"
+    ]
+  },
+  {
+    "uid": "spes",
+    "name_en": "School of Plant and Environmental Sciences",
+    "name_local": "School of Plant and Environmental Sciences",
+    "kind": "school",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "School of Plant and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "ento",
+    "name_en": "Department of Entomology",
+    "name_local": "Department of Entomology",
+    "kind": "department",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Entomology"
+    ]
+  },
+  {
+    "uid": "fst",
+    "name_en": "Department of Food Science and Technology",
+    "name_local": "Department of Food Science and Technology",
+    "kind": "department",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Food Science and Technology"
+    ]
+  },
+  {
+    "uid": "sas",
+    "name_en": "School of Animal Sciences",
+    "name_local": "School of Animal Sciences",
+    "kind": "school",
+    "parent": "cals",
+    "aliases": [],
+    "context_aliases": [
+      "School of Animal Sciences"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "Department of Biological Sciences",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geosciences",
+    "name_local": "Department of Geosciences",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geosciences"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "stat",
+    "name_en": "Department of Statistics",
+    "name_local": "Department of Statistics",
+    "kind": "department",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics"
+    ]
+  },
+  {
+    "uid": "neuro",
+    "name_en": "School of Neuroscience",
+    "name_local": "School of Neuroscience",
+    "kind": "school",
+    "parent": "cos",
+    "aliases": [],
+    "context_aliases": [
+      "School of Neuroscience"
+    ]
+  },
+  {
+    "uid": "fwc",
+    "name_en": "Department of Fish and Wildlife Conservation",
+    "name_local": "Department of Fish and Wildlife Conservation",
+    "kind": "department",
+    "parent": "vt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Fish and Wildlife Conservation"
+    ]
+  },
+  {
+    "uid": "bmsp",
+    "name_en": "Department of Biomedical Sciences and Pathobiology",
+    "name_local": "Department of Biomedical Sciences and Pathobiology",
+    "kind": "department",
+    "parent": "vmcvm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Sciences and Pathobiology"
+    ]
+  },
+  {
+    "uid": "phs",
+    "name_en": "Department of Population Health Sciences",
+    "name_local": "Department of Population Health Sciences",
+    "kind": "department",
+    "parent": "vmcvm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Population Health Sciences"
+    ]
+  }
+]

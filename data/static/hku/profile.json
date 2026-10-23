@@ -1,0 +1,26 @@
+{
+  "key": "hku",
+  "short_name": "HKU",
+  "short_name_local": "港大",
+  "name_en": "The University of Hong Kong",
+  "name_local": "香港大學",
+  "ror_id": "02zhqgq86",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "hku.hk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:HKU|港大)(?![^\\W\\d_])",
+  "long_name": "(?:(?<!chinese )(?<!nese )(?<!city )(?<!open )(?<!education )(?<!metropolitan )(?<!seng )(?:the\\s+)?univ(?:ersity|\\.)?\\s+of\\s+hong\\s*kong|hong\\s*kong\\s+university(?!\\s+of\\s+science))(?![\\s\\-–]*shenzhen\\s+hospital)|香港大[學学]",
+  "marker_replacement": "HKU",
+  "place_words": "hong|kong|hongkong|hk|hksar|sar|china|prc|p|r|of|the|pokfulam|pok|fu|lam|road|sassoon|sai|ying|pun|central|western|district|island|special|administrative|region|people's|people’s|peoples|republic|shenzhen|999077",
+  "other_organisations": "HKUST|CUHK|PolyU|CityU|HKBU|EdUHK|Hong\\s+Kong\\s+University\\s+of\\s+Science\\s+and\\s+Technology|Chinese\\s+University\\s+of\\s+Hong\\s+Kong|City\\s+University\\s+of\\s+Hong\\s+Kong|Hong\\s+Kong\\s+Polytechnic|Queen\\s+Mary\\s+Hospital|Prince\\s+Philip\\s+Dental\\s+Hospital|Tsan\\s+Yuk|Grantham|Pamela\\s+Youde|Alice\\s+Ho\\s+Miu\\s+Ling|Ruttonjee|Tung\\s+Wah|Kowloon\\s+Hospital|Duchess\\s+of\\s+Kent|Hong\\s+Kong\\s+Sanatorium|Hong\\s+Kong\\s+Children.s\\s+Hospital|Hospital\\s+Authority|HKU-SZH|University\\s+of\\s+Hong\\s+Kong[\\s\\-–]*Shenzhen\\s+Hospital|HKU-Pasteur|Pasteur|Chinese\\s+Academy\\s+of\\s+Sciences|GIBH|Guangzhou\\s+Institutes\\s+of\\s+Biomedicine\\s+and\\s+Health|Hong\\s+Kong\\s+Science\\s+(?:and\\s+Technology\\s+)?Parks?|InnoHK|Laboratory\\s+of\\s+Data\\s+Discovery\\s+for\\s+Health|D24H|Centre\\s+for\\s+Oncology\\s+and\\s+Immunology|Centre\\s+for\\s+Immunology\\s*&\\s*Infection|Centre\\s+for\\s+Virology|Advanced\\s+Biomedical\\s+Instrumentation\\s+Centre|Hong\\s+Kong\\s+Quantum\\s+AI\\s+Lab|Hainan\\s+Medical|Shantou|Tencent|Honor\\s+Device|Fudan\\s+NLP",
+  "identity": "(?<![^\\W\\d_])HKU(?![^\\W\\d_])|(?<!chinese )(?<!city )University\\s+of\\s+Hong\\s*Kong|香港大學",
+  "city": "pok\\s*fu\\s*lam|pokfulam|hong\\s*kong",
+  "staff_catalog": null,
+  "mongo_db": "pauk_hku",
+  "site_url": "https://www.hku.hk",
+  "unit_words": ""
+}

@@ -225,7 +225,7 @@ pauk cache inspect [path_to_snapshot] [--table <table>] [--sample N]
 ```
 
 `export` snapshots the current graph into
-`data/cache/graph_snapshot_<dd-mm-yyyy>.json` (or the given path), the input
+`data/cache/<institution>/graph_snapshot_<dd-mm-yyyy>.json` (or the given path), the input
 for `pauk gui build`. `--only` takes any of `persons`, `publications`,
 `repos`, `departments`, `organizations` and re-reads only those entities'
 tables from Neo4j, taking the rest from the newest snapshot.

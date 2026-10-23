@@ -63,6 +63,7 @@ RULES = {
 }
 
 WORDS = {
+    "only one person is a member": "только один из двоих из университета",
     "only one person is ITMO-affiliated": "только один из двоих в ИТМО",
     "no shared coauthors": "нет общих соавторов",
     "single-token display name": "имя из одного слова",
@@ -101,12 +102,15 @@ SIGNALS = {
     "email_exact": "тот же адрес",
     "name_exact": "имя совпадает целиком",
     "name_fuzzy": "имя похоже",
-    "itmo_email": "адрес в домене ИТМО",
+    "member_email": "адрес в домене университета",
     "login_surname": "фамилия в логине",
     "owner": "владелец репозитория",
-    "org_itmo": "состоит в организации ИТМО",
-    "itmo_profile": "ИТМО указан в профиле",
+    "member_org": "состоит в организации университета",
+    "member_profile": "университет указан в профиле",
 }
+# Names the queue stored before the signals stopped naming ITMO.
+SIGNALS |= {"itmo_email": SIGNALS["member_email"], "org_itmo": SIGNALS["member_org"],
+            "itmo_profile": SIGNALS["member_profile"]}
 
 
 def _asks(row: dict) -> str:

@@ -1,0 +1,32 @@
+{
+  "key": "umontreal",
+  "short_name": "UdeM",
+  "short_name_local": "UdeM",
+  "name_en": "University of Montreal",
+  "name_local": "Université de Montréal",
+  "ror_id": "0161xgx34",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "du",
+    "des",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "umontreal.ca"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UdeM|UMontr[ée]al)(?![^\\W\\d_])",
+  "long_name": "Universit[ée]\\s+de\\s+Montr[ée]al|University\\s+of\\s+Montr[ée]al|Montr[ée]al\\s+University",
+  "marker_replacement": "UdeM",
+  "place_words": "montreal|montréal|quebec|québec|québe|qc|que|canada|saint|sainte|st|ste|hyacinthe|édouard|edouard|montpetit|boulevard|boul|blvd|bd|avenue|ave|av|rue|chemin|côte|cote|catherine|denis|thérèse|therese|lavoie|roux|sicotte|hochelaga|sherbrooke|est|parc|succursale|succ|centre|ville|centre-ville|station|cp|po|box|outremont|[a-z]\\d[a-z]|\\d[a-z]\\d",
+  "other_organisations": "CHUM|CRCHUM|Centre\\s+hospitalier\\s+de\\s+l[’']Universit[ée]\\s+de\\s+Montr[ée]al|CHU\\s+Sainte?-?\\s*Justine|Sainte?-Justine|Azrieli|Montreal\\s+Heart\\s+Institute|Institut\\s+de\\s+cardiologie\\s+de\\s+Montr[ée]al|Maisonneuve-Rosemont|Sacr[ée]-C(?:œ|oe)ur|IRCM|Montreal\\s+Clinical\\s+Research\\s+Institute|Institut\\s+de\\s+recherches\\s+cliniques\\s+de\\s+Montr[ée]al|Mila|McGill|HEC\\s+Montr[ée]al|Polytechnique\\s+Montr[ée]al|UQAM|UQTR|Universit[ée]\\s+du\\s+Qu[ée]bec|Universit[ée]\\s+Laval|CRIUGM|Institut\\s+universitaire\\s+de\\s+g[ée]riatrie|Institut\\s+universitaire\\s+en\\s+sant[ée]\\s+mentale|Philippe-Pinel|CIUSSS|CISSS|GRIL|INRS|Armand-Frappier|Public\\s+Health\\s+Agency\\s+of\\s+Canada",
+  "identity": "(?<![^\\W\\d_])UdeM(?![^\\W\\d_])|Universit[ée]\\s+de\\s+Montr[ée]al|University\\s+of\\s+Montr[ée]al",
+  "city": "Montr[ée]al",
+  "staff_catalog": null,
+  "mongo_db": "pauk_umontreal",
+  "site_url": "https://www.umontreal.ca",
+  "unit_words": ""
+}

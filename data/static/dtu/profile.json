@@ -1,0 +1,27 @@
+{
+  "key": "dtu",
+  "short_name": "DTU",
+  "short_name_local": "DTU",
+  "name_en": "Technical University of Denmark",
+  "name_local": "Danmarks Tekniske Universitet",
+  "ror_id": "04qtj9h94",
+  "language": "Danish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "dtu.dk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:DTUDenmarkUniv)(?![^\\W\\d_])",
+  "long_name": "Dänemarks[\\s‐-]+Technische[\\s‐-]+Universität|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Denmark|Danmarks[\\s‐-]+Tekniske[\\s‐-]+Universitetet|Danmarks[\\s‐-]+Tekniske[\\s‐-]+Universitet|Danish[\\s‐-]+Technical[\\s‐-]+University|Tech[\\s‐-]+Univ[\\s‐-]+Denmark",
+  "marker_replacement": "DTUDenmarkUniv",
+  "place_words": "aleja|allee|allé|anker|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|copenhagen|dams|danmark|denmark|dk|east|elektrovej|engelunds|floor|frederiksborgvej|fysikvej|gatan|henrik|katu|kgs|kongens|laan|lyngby|north|piazza|plads|platz|plaza|plein|po|rd|risoe|risø|road|room|roskilde|rue|south|st|str|straat|strasse|straße|street|søltofts|tie|ul|vej|via|viale|vägen|weg|west|ørsteds",
+  "other_organisations": "University of Copenhagen|Aarhus University|Rigshospitalet|Novo Nordisk Foundation Center|Novo Nordisk Foundation Biotechnology Research Institute|Cosmic Dawn Center|Civilingeniør\\ Frants\\ Allings\\ Legat|Jj\\ X\\-Ray",
+  "identity": "Dänemarks[\\s‐-]+Technische[\\s‐-]+Universität|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Denmark|Danmarks[\\s‐-]+Tekniske[\\s‐-]+Universitetet|Danmarks[\\s‐-]+Tekniske[\\s‐-]+Universitet|Danish[\\s‐-]+Technical[\\s‐-]+University|Tech[\\s‐-]+Univ[\\s‐-]+Denmark",
+  "city": "Kongens\\ Lyngby",
+  "staff_catalog": null,
+  "mongo_db": "pauk_dtu",
+  "site_url": "https://www.dtu.dk",
+  "unit_words": "department|institute|centre|center|section",
+  "external_authors": false
+}

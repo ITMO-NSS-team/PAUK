@@ -15,6 +15,7 @@ from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
+from pauk.pipeline.progress_record import ProgressRecord
 from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
@@ -182,14 +183,17 @@ def _build_parser() -> argparse.ArgumentParser:
 def _cmd_run(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
-        _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
+        with ProgressRecord(db, "run", group) as progress:
+            result = PipelineRunner(settings, group, db).run(_selector(args), on_stage=progress)
+        _log_result("run", group, result)
 
 
 def _cmd_collect(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
         count = Collector(
-            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group),
+            settings.institution,
         ).collect(_selector(args))
         _log_result("collect", group, {"raw_works": count})
 
@@ -197,7 +201,7 @@ def _cmd_collect(args) -> None:
 def _cmd_normalize(args) -> None:
     with _mongo_db() as db:
         group = validate_group(args.group)
-        result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
+        result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group), settings.institution).run()
         _log_result("normalize", group, result)
 
 
@@ -212,9 +216,10 @@ def _cmd_enrich(args, parser: argparse.ArgumentParser) -> None:
     with _mongo_db() as db:
         group = validate_group(args.group)
         selection = _selection_from_input(args.input, args.entity) if args.input else None
-        result = Enricher(PreparedStore(db, group), RawStore(db, group), settings).run(
-            args.stage, selection, args.force
-        )
+        with ProgressRecord(db, f"enrich {args.stage}", group) as progress:
+            result = Enricher(PreparedStore(db, group), RawStore(db, group), settings).run(
+                args.stage, selection, args.force, on_stage=progress
+            )
         _log_result(f"enrich {args.stage}", group, result)
 
 

@@ -37,10 +37,10 @@ def snapshot() -> dict[str, list]:
     return {
         **blank(),
         "persons": [
-            {"id": "A1", "is_itmo": True, "openalex_id": "A1",
-             "first_name_ru": "Иван", "second_name_ru": "Петрович", "surname_ru": "Петров",
+            {"id": "A1", "is_member": True, "openalex_id": "A1",
+             "first_name_local": "Иван", "second_name_local": "Петрович", "surname_local": "Петров",
              "first_name_en": "Ivan", "second_name_en": "Petrovich", "surname_en": "Petrov",
-             "name_ru": "Петров Иван Петрович", "name_en": "Ivan Petrov",
+             "name_local": "Петров Иван Петрович", "name_en": "Ivan Petrov",
              "name_variants": ["И. П. Петров"], "other_names": [], "degree": "к.т.н.",
              "github": "octocat", "orcid": "0000-0002-1825-0097", "google_scholar": None,
              "email": None, "affiliations": "[]"},
@@ -51,7 +51,7 @@ def snapshot() -> dict[str, list]:
              "description": "описание", "stars_num": 42, "has_readme": True, "license": "",
              "contributors": ["octocat"], "owner": "octocat", "owner_type": "user"},
         ],
-        "departments": [{"id": "D1", "name_ru": "Кафедра", "name_en": "Department"}],
+        "departments": [{"id": "D1", "name_local": "Кафедра", "name_en": "Department"}],
         "authorship": [{"pid": "W1", "per": "A1", "position": 1, "is_corresponding": True}],
         "person_depts": [{"per": "A1", "did": "D1"}],
         "pub_depts": [{"pid": "W1", "did": "D1"}],
@@ -159,7 +159,7 @@ class RebuildMapTest(unittest.TestCase):
 
 
 class EmptyGraphTest(unittest.TestCase):
-    """A graph with no ITMO authors is an empty map, not a failure.
+    """A graph with no member authors is an empty map, not a failure.
 
     cKDTree and fa2_modified both refuse an empty graph, so the layout step
     must be skipped on a fresh database or a group nobody has published.
@@ -181,7 +181,7 @@ class EmptyGraphTest(unittest.TestCase):
 
     def test_departments_without_people_build(self):
         db = {**blank(), "publications": [publication()], "pub_depts": [{"pid": "W1", "did": "D0"}],
-              "departments": [{"id": f"D{n}", "name_ru": f"Кафедра {n}", "name_en": ""} for n in range(4)]}
+              "departments": [{"id": f"D{n}", "name_local": f"Кафедра {n}", "name_en": ""} for n in range(4)]}
         self.assertEqual(self.build(db)["map_authors"], 0)
 
     def test_the_files_are_written_even_when_empty(self):

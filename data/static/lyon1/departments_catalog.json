@@ -1,0 +1,307 @@
+[
+  {
+    "uid": "lyon1",
+    "name_en": "Lyon 1 Université",
+    "name_local": "Université Claude Bernard Lyon 1",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/029brtt94",
+    "type": "university"
+  },
+  {
+    "uid": "ciri",
+    "name_en": "International Center for Infectiology Research",
+    "name_local": "International Center for Infectiology Research",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "International Center for Infectiology Research",
+      "Centre International de Recherche en Infectiologie",
+      "CIRI"
+    ]
+  },
+  {
+    "uid": "crcl",
+    "name_en": "Cancer Research Center of Lyon",
+    "name_local": "Cancer Research Center of Lyon",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Cancer Research Center of Lyon",
+      "Centre de Recherche en Cancérologie de Lyon",
+      "CRCL"
+    ]
+  },
+  {
+    "uid": "crnl",
+    "name_en": "Lyon Neuroscience Research Center",
+    "name_local": "Lyon Neuroscience Research Center",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Lyon Neuroscience Research Center",
+      "Centre de Recherche en Neurosciences de Lyon",
+      "CRNL"
+    ]
+  },
+  {
+    "uid": "ilm",
+    "name_en": "Institut Lumière Matière",
+    "name_local": "Institut Lumière Matière",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "ILM",
+      "Institut Lumière Matière"
+    ]
+  },
+  {
+    "uid": "liris",
+    "name_en": "LIRIS",
+    "name_local": "LIRIS",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "LIRIS"
+    ]
+  },
+  {
+    "uid": "ircelyon",
+    "name_en": "IRCELYON",
+    "name_local": "IRCELYON",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "IRCELYON",
+      "Institut de Recherches sur la Catalyse et l'Environnement de Lyon"
+    ]
+  },
+  {
+    "uid": "creatis",
+    "name_en": "CREATIS",
+    "name_local": "CREATIS",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "CREATIS"
+    ]
+  },
+  {
+    "uid": "inl",
+    "name_en": "Lyon Institute of Nanotechnology",
+    "name_local": "Lyon Institute of Nanotechnology",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [
+      "Institut des Nanotechnologies de Lyon"
+    ],
+    "context_aliases": [
+      "INL"
+    ]
+  },
+  {
+    "uid": "imp",
+    "name_en": "Ingénierie des Matériaux Polymères",
+    "name_local": "Ingénierie des Matériaux Polymères",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "IMP",
+      "Ingénierie des Matériaux Polymères"
+    ]
+  },
+  {
+    "uid": "icbms",
+    "name_en": "Institute of Molecular and Supramolecular Chemistry and Biochemistry",
+    "name_local": "Institute of Molecular and Supramolecular Chemistry and Biochemistry",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "ICBMS"
+    ]
+  },
+  {
+    "uid": "lbbe",
+    "name_en": "Biometry and Evolutionary Biology Laboratory",
+    "name_local": "Biometry and Evolutionary Biology Laboratory",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratoire de Biométrie et Biologie Evolutive",
+      "LBBE"
+    ]
+  },
+  {
+    "uid": "lehna",
+    "name_en": "LEHNA",
+    "name_local": "LEHNA",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "LEHNA"
+    ]
+  },
+  {
+    "uid": "igfl",
+    "name_en": "Institut de Génomique Fonctionnelle de Lyon",
+    "name_local": "Institut de Génomique Fonctionnelle de Lyon",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "IGFL",
+      "Institut de Génomique Fonctionnelle de Lyon"
+    ]
+  },
+  {
+    "uid": "ip2i",
+    "name_en": "Institut de Physique des 2 Infinis de Lyon",
+    "name_local": "Institut de Physique des 2 Infinis de Lyon",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "IP2I",
+      "Institut de Physique des 2 Infinis"
+    ]
+  },
+  {
+    "uid": "icj",
+    "name_en": "Institut Camille Jordan",
+    "name_local": "Institut Camille Jordan",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Institut Camille Jordan"
+    ]
+  },
+  {
+    "uid": "cral",
+    "name_en": "Centre de Recherche Astrophysique de Lyon",
+    "name_local": "Centre de Recherche Astrophysique de Lyon",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "CRAL",
+      "Centre de Recherche Astrophysique de Lyon"
+    ]
+  },
+  {
+    "uid": "lagepp",
+    "name_en": "LAGEPP",
+    "name_local": "LAGEPP",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "LAGEPP"
+    ]
+  },
+  {
+    "uid": "mateis",
+    "name_en": "MATEIS",
+    "name_local": "MATEIS",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "MATEIS"
+    ]
+  },
+  {
+    "uid": "lgl",
+    "name_en": "Laboratoire de Géologie de Lyon",
+    "name_local": "Laboratoire de Géologie de Lyon",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratoire de Géologie de Lyon"
+    ]
+  },
+  {
+    "uid": "carmen",
+    "name_en": "CarMeN Laboratory",
+    "name_local": "CarMeN Laboratory",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "CarMeN Laboratory",
+      "CarMeN"
+    ]
+  },
+  {
+    "uid": "lmi",
+    "name_en": "Laboratoire des Multimatériaux et Interfaces",
+    "name_local": "Laboratoire des Multimatériaux et Interfaces",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "LMI",
+      "Laboratoire des Multimatériaux et Interfaces"
+    ]
+  },
+  {
+    "uid": "rescue",
+    "name_en": "RESHAPE",
+    "name_local": "RESHAPE",
+    "kind": "lab",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "RESHAPE"
+    ]
+  },
+  {
+    "uid": "medicine",
+    "name_en": "Faculty of Medicine Lyon Est",
+    "name_local": "Faculty of Medicine Lyon Est",
+    "kind": "faculty",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Faculty of Medicine Lyon Est",
+      "Faculté de Médecine Lyon Est"
+    ]
+  },
+  {
+    "uid": "pharmacy",
+    "name_en": "Institute of Pharmaceutical and Biological Sciences",
+    "name_local": "Institute of Pharmaceutical and Biological Sciences",
+    "kind": "faculty",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Faculté de Pharmacie",
+      "ISPB"
+    ]
+  },
+  {
+    "uid": "fst",
+    "name_en": "Faculty of Science and Technology",
+    "name_local": "Faculty of Science and Technology",
+    "kind": "faculty",
+    "parent": "lyon1",
+    "aliases": [],
+    "context_aliases": [
+      "Faculté des Sciences et Technologies",
+      "Faculty of Science and Technology"
+    ]
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "key": "cardiff",
+  "short_name": "Cardiff",
+  "short_name_local": "Prifysgol Caerdydd",
+  "name_en": "Cardiff University",
+  "name_local": "Cardiff University",
+  "ror_id": "03kk7td41",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "cardiff.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:CardiffUniv)(?![^\\W\\d_])",
+  "long_name": "University[\\s‐-]+of[\\s‐-]+Wales[\\s‐-]+College[\\s‐-]+of[\\s‐-]+Cardiff|University[\\s‐-]+of[\\s‐-]+Wales,[\\s‐-]+Cardiff|University[\\s‐-]+College,[\\s‐-]+Cardiff|University[\\s‐-]+College[\\s‐-]+Cardiff|University[\\s‐-]+of[\\s‐-]+Cardiff|Cardiff[\\s‐-]+University|Prifysgol[\\s‐-]+Caerdydd|Cardiff[\\s‐-]+Univ",
+  "marker_replacement": "CardiffUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|britain|building|buildings|caerdydd|calle|campus|cardiff|cathays|cf|colum|drive|east|edward|england|floor|gatan|gb|great|heath|katu|king|kingdom|laan|main|maindy|museum|north|parade|park|piazza|place|platz|plaza|plein|po|queen|rd|road|room|rue|s|scotland|south|st|str|straat|strasse|straße|street|tie|uk|ul|united|vej|via|viale|vii|vägen|wales|weg|west",
+  "other_organisations": "University Hospital of Wales|Cardiff and Vale University Health Board|Velindre|Max Planck|UK Dementia Research Institute|Cardiff\\ and\\ Vale\\ University\\ Health\\ Board|GW4|GW4\\ Facility\\ for\\ High\\-Resolution\\ Electron\\ Cryo\\-Microscopy|Morriston\\ Hospital|University\\ Hospital\\ of\\ Wales|Wales\\ Centre\\ for\\ Public\\ Policy|Whitchurch\\ Hospital",
+  "identity": "University[\\s‐-]+of[\\s‐-]+Wales[\\s‐-]+College[\\s‐-]+of[\\s‐-]+Cardiff|University[\\s‐-]+of[\\s‐-]+Wales,[\\s‐-]+Cardiff|University[\\s‐-]+College,[\\s‐-]+Cardiff|University[\\s‐-]+College[\\s‐-]+Cardiff|University[\\s‐-]+of[\\s‐-]+Cardiff|Cardiff[\\s‐-]+University|Prifysgol[\\s‐-]+Caerdydd|Cardiff[\\s‐-]+Univ",
+  "city": "Cardiff",
+  "staff_catalog": null,
+  "mongo_db": "pauk_cardiff",
+  "site_url": "https://www.cardiff.ac.uk",
+  "unit_words": "school|division|institute|centre|center|college",
+  "external_authors": false
+}

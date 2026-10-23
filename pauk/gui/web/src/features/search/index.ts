@@ -39,7 +39,7 @@ export function buildSearchIndex(
     terms: spellings([
       author.label,
       author.label_en,
-      authorDetails.get(author.key)?.name_ru,
+      authorDetails.get(author.key)?.name_local,
       authorDetails.get(author.key)?.name_en,
       ...(authorDetails.get(author.key)?.name_variants.openalex ?? []),
       ...(authorDetails.get(author.key)?.name_variants.orcid ?? []),

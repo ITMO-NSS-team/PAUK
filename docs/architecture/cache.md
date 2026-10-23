@@ -14,7 +14,7 @@ from disk, not the database.
 
 `GraphSnapshotExporter.export(path=None, only=None)` opens a driver, runs
 the queries behind `load_db()` (one per table, thirteen in all), and writes
-`data/cache/graph_snapshot_<dd-mm-yyyy>.json` (or the path given with
+`data/cache/<institution>/graph_snapshot_<dd-mm-yyyy>.json` (or the path given with
 `--output`). An empty Neo4j password raises `ValueError` immediately, before
 the driver gets a chance to fail late.
 

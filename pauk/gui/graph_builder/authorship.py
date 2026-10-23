@@ -11,25 +11,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Authorship:
-    """Authorship index and publications, filtered to those with an ITMO author."""
+    """Authorship index and publications, filtered to those with an member author."""
 
     pub_authors: dict[str, list[str]]
-    """Publication -> list of all its authors, ITMO and external."""
+    """Publication -> list of all its authors, member and external."""
     author_pubs: dict[str, list[str]]
     """Author -> list of their publications (the ones in pub_authors)."""
     pubs_rows: list[dict]
     """Rows from db["publications"], filtered down to pub_ids."""
     pub_ids: set[str]
-    """ids of publications with at least one ITMO author."""
+    """ids of publications with at least one member author."""
     external_ids: frozenset[str] = frozenset()
-    """Authors with `is_itmo` false - shown on the map like everyone else, just hidden by default."""
+    """Authors with `is_member` false - shown on the map like everyone else, just hidden by default."""
 
 
 def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
-    """Builds the authorship index and drops publications with no ITMO author.
+    """Builds the authorship index and drops publications with no member author.
 
-    A person counts as external only when the snapshot says `is_itmo: false`;
-    older snapshots carry no such field and held only ITMO people.
+    A person counts as external only when the snapshot says `is_member: false`;
+    older snapshots carry no such field and held only members.
 
     Args:
         db: Graph snapshot in the shape `pauk.cache.export::load_db()` returns.
@@ -37,7 +37,7 @@ def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
     Returns:
         `Authorship` with indexes both ways and the filtered publication list.
     """
-    external_ids = frozenset(row["id"] for row in db.get("persons", []) if row.get("is_itmo") is False)
+    external_ids = frozenset(row["id"] for row in db.get("persons", []) if row.get("is_member") is False)
     pub_authors: dict[str, list[str]] = defaultdict(list)
     for row in db["authorship"]:
         pub_authors[row["pid"]].append(row["per"])
@@ -50,5 +50,5 @@ def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
 
     pubs_rows = [r for r in db["publications"] if r["id"] in pub_authors]
     pub_ids = {r["id"] for r in pubs_rows}
-    logger.info("Publications with ITMO authors: %d of %d", len(pubs_rows), len(db["publications"]))
+    logger.info("Publications with member authors: %d of %d", len(pubs_rows), len(db["publications"]))
     return Authorship(pub_authors, dict(author_pubs), pubs_rows, pub_ids, external_ids)

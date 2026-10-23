@@ -1,0 +1,329 @@
+[
+  {
+    "uid": "skoltech",
+    "name_en": "Skolkovo Institute of Science and Technology",
+    "name_local": "Сколковский институт науки и технологий",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03f9nc143",
+    "type": "university"
+  },
+  {
+    "uid": "cbmt",
+    "name_en": "Center for Bio- and Medical Technologies",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Bio- and Medical Technologies",
+      "Center for Bio and Medical Technologies"
+    ]
+  },
+  {
+    "uid": "cpse",
+    "name_en": "Center for Petroleum Science and Engineering",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Petroleum Science and Engineering"
+    ]
+  },
+  {
+    "uid": "chr",
+    "name_en": "Center for Hydrocarbon Recovery",
+    "name_local": "Центр науки и технологий добычи углеводородов",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Центр науки и технологий добычи углеводородов"
+    ],
+    "context_aliases": [
+      "Center for Hydrocarbon Recovery"
+    ]
+  },
+  {
+    "uid": "cest",
+    "name_en": "Center for Energy Science and Technology",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Center for Energy Science and Technology",
+      "Center of Energy Science and Technology",
+      "Skoltech Center for Energy Science and Technology"
+    ],
+    "context_aliases": [
+      "Center for EST",
+      "CEST"
+    ]
+  },
+  {
+    "uid": "cmt",
+    "name_en": "Center for Materials Technologies",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Materials Technologies"
+    ]
+  },
+  {
+    "uid": "cmcb",
+    "name_en": "Center for Molecular and Cellular Biology",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Molecular and Cellular Biology",
+      "Center of Molecular and Cellular Biology"
+    ]
+  },
+  {
+    "uid": "cpqm",
+    "name_en": "Center for Photonic Science and Engineering",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Center for Photonic Science and Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cde",
+    "name_en": "Center for Digital Engineering",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Digital Engineering",
+      "Digital Engineering Department",
+      "CDE"
+    ]
+  },
+  {
+    "uid": "cess",
+    "name_en": "Center for Engineering Systems and Sciences",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Center for Engineering Systems and Sciences",
+      "Center for Engineering Systems & Sciences"
+    ],
+    "context_aliases": [
+      "CESS"
+    ]
+  },
+  {
+    "uid": "cep",
+    "name_en": "Center for Engineering Physics",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Engineering Physics"
+    ]
+  },
+  {
+    "uid": "aic",
+    "name_en": "Artificial Intelligence Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Artificial Intelligence Center",
+      "The Artificial Intelligence Center",
+      "AI Center",
+      "AI Centre",
+      "Center for Artificial Intelligence"
+    ]
+  },
+  {
+    "uid": "applied-ai",
+    "name_en": "Applied AI Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Applied AI Center Skoltech"
+    ],
+    "context_aliases": [
+      "Applied AI Center"
+    ]
+  },
+  {
+    "uid": "neuro",
+    "name_en": "Vladimir Zelman Center for Neurobiology and Brain Rehabilitation",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Neurobiology and Brain Rehabilitation",
+      "Vladimir Zelman Center for Neurobiology and Brain Rehabilitation"
+    ]
+  },
+  {
+    "uid": "ngw",
+    "name_en": "Center for Next Generation Wireless and IoT",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Center for Next Generation Wireless and IoT"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "agro",
+    "name_en": "Project Center for Agro Technologies",
+    "name_local": "Проектный центр агротехнологий",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Project Center for Agro Technologies",
+      "Project Centre for Agro Technologies",
+      "Проектный Центр Агро Технологий"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cdmm",
+    "name_en": "Center for Design, Manufacturing and Materials",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Design"
+    ]
+  },
+  {
+    "uid": "ccsb",
+    "name_en": "Center for Computational and Systems Biology",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [
+      "Skoltech Center for Computational and Systems Biology"
+    ],
+    "context_aliases": [
+      "Center for Computational and Systems Biology"
+    ]
+  },
+  {
+    "uid": "cls",
+    "name_en": "Center for Life Sciences",
+    "name_local": "",
+    "kind": "center",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Life Sciences"
+    ]
+  },
+  {
+    "uid": "isr-lab",
+    "name_en": "Intelligent Space Robotics Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cde",
+    "aliases": [
+      "Intelligent Space Robotics Laboratory",
+      "Intelligent Space Robotics Lab"
+    ],
+    "context_aliases": [
+      "Space Robotics Laboratory",
+      "ISR Lab"
+    ]
+  },
+  {
+    "uid": "hybrid-photonics",
+    "name_en": "Hybrid Photonics Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cpqm",
+    "aliases": [],
+    "context_aliases": [
+      "Hybrid Photonics Laboratory"
+    ]
+  },
+  {
+    "uid": "hsm-lab",
+    "name_en": "Hierarchically Structured Materials Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cmt",
+    "aliases": [
+      "Hierarchically Structured Materials (HSM) lab",
+      "Hierarchically Structured Materials (HSM) Laboratory"
+    ],
+    "context_aliases": [
+      "HSM lab"
+    ]
+  },
+  {
+    "uid": "nanomaterials",
+    "name_en": "Laboratory of Nanomaterials",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Nanomaterials"
+    ]
+  },
+  {
+    "uid": "materials-discovery",
+    "name_en": "Materials Discovery Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Materials Discovery Laboratory"
+    ]
+  },
+  {
+    "uid": "advanced-imaging",
+    "name_en": "Advanced Imaging Core Facility",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Imaging Core Facility"
+    ]
+  },
+  {
+    "uid": "genomics-bioimaging",
+    "name_en": "Genomics and Bioimaging Core Facility",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Genomics and Bioimaging Core Facility"
+    ]
+  },
+  {
+    "uid": "cdse",
+    "name_en": "Computational and Data Science and Engineering",
+    "name_local": "",
+    "kind": "program",
+    "parent": "skoltech",
+    "aliases": [],
+    "context_aliases": [
+      "Computational and Data Science and Engineering"
+    ]
+  }
+]

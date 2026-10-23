@@ -1,0 +1,329 @@
+[
+  {
+    "uid": "tcd",
+    "name_en": "Trinity College Dublin",
+    "name_local": "Trinity College Dublin",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02tyrky19",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "School of Medicine",
+    "name_local": "School of Medicine",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [
+      "Trinity College Dublin School of Medicine"
+    ],
+    "context_aliases": [
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "School of Physics",
+    "name_local": "School of Physics",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physics"
+    ]
+  },
+  {
+    "uid": "natsci",
+    "name_en": "School of Natural Sciences",
+    "name_local": "School of Natural Sciences",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Natural Sciences"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "School of Biochemistry and Immunology",
+    "name_local": "School of Biochemistry and Immunology",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biochemistry and Immunology"
+    ]
+  },
+  {
+    "uid": "scss",
+    "name_en": "School of Computer Science and Statistics",
+    "name_local": "School of Computer Science and Statistics",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science and Statistics"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "School of Pharmacy and Pharmaceutical Sciences",
+    "name_local": "School of Pharmacy and Pharmaceutical Sciences",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Pharmacy and Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "nurs",
+    "name_en": "School of Nursing and Midwifery",
+    "name_local": "School of Nursing and Midwifery",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nursing and Midwifery",
+      "School of Nursing & Midwifery"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "School of Chemistry",
+    "name_local": "School of Chemistry",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemistry"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "School of Psychology",
+    "name_local": "School of Psychology",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychology"
+    ]
+  },
+  {
+    "uid": "gen",
+    "name_en": "School of Genetics and Microbiology",
+    "name_local": "School of Genetics and Microbiology",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "School of Genetics and Microbiology"
+    ]
+  },
+  {
+    "uid": "tbs",
+    "name_en": "Trinity Business School",
+    "name_local": "Trinity Business School",
+    "kind": "school",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Business School"
+    ]
+  },
+  {
+    "uid": "tbsi",
+    "name_en": "Trinity Biomedical Sciences Institute",
+    "name_local": "Trinity Biomedical Sciences Institute",
+    "kind": "institute",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Biomedical Sciences Institute"
+    ]
+  },
+  {
+    "uid": "tcin",
+    "name_en": "Trinity College Institute of Neuroscience",
+    "name_local": "Trinity College Institute of Neuroscience",
+    "kind": "institute",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity College Institute of Neuroscience"
+    ]
+  },
+  {
+    "uid": "ttmi",
+    "name_en": "Trinity Translational Medicine Institute",
+    "name_local": "Trinity Translational Medicine Institute",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Translational Medicine Institute"
+    ]
+  },
+  {
+    "uid": "gbhi",
+    "name_en": "Global Brain Health Institute",
+    "name_local": "Global Brain Health Institute",
+    "kind": "institute",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "Global Brain Health Institute"
+    ]
+  },
+  {
+    "uid": "smurfit",
+    "name_en": "Smurfit Institute of Genetics",
+    "name_local": "Smurfit Institute of Genetics",
+    "kind": "institute",
+    "parent": "gen",
+    "aliases": [],
+    "context_aliases": [
+      "Smurfit Institute of Genetics"
+    ]
+  },
+  {
+    "uid": "tcbe",
+    "name_en": "Trinity Centre for Biomedical Engineering",
+    "name_local": "Trinity Centre for Biomedical Engineering",
+    "kind": "center",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Centre for Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "mmbe",
+    "name_en": "Department of Mechanical Manufacturing and Biomedical Engineering",
+    "name_local": "Department of Mechanical Manufacturing and Biomedical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical",
+      "Manufacturing and Biomedical Engineering",
+      "Manufacturing & Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "civil",
+    "name_en": "Department of Civil Structural and Environmental Engineering",
+    "name_local": "Department of Civil Structural and Environmental Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil",
+      "Structural and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "eee",
+    "name_en": "Department of Electronic and Electrical Engineering",
+    "name_local": "Department of Electronic and Electrical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronic and Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "geology",
+    "name_en": "Department of Geology",
+    "name_local": "Department of Geology",
+    "kind": "department",
+    "parent": "natsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geology"
+    ]
+  },
+  {
+    "uid": "tsjci",
+    "name_en": "Trinity St James's Cancer Institute",
+    "name_local": "Trinity St James's Cancer Institute",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity St James's Cancer Institute",
+      "Trinity St James’s Cancer Institute",
+      "Trinity St. James's Cancer Institute"
+    ]
+  },
+  {
+    "uid": "amber",
+    "name_en": "Advanced Materials and Bioengineering Research Centre",
+    "name_local": "Advanced Materials and Bioengineering Research Centre",
+    "kind": "center",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "Advanced Materials and Bioengineering Research Centre",
+      "AMBER",
+      "Advanced Materials and Bioengineering Research"
+    ]
+  },
+  {
+    "uid": "adapt",
+    "name_en": "ADAPT Centre",
+    "name_local": "ADAPT Centre",
+    "kind": "center",
+    "parent": "tcd",
+    "aliases": [],
+    "context_aliases": [
+      "ADAPT Centre"
+    ]
+  },
+  {
+    "uid": "moyne",
+    "name_en": "Moyne Institute of Preventive Medicine",
+    "name_local": "Moyne Institute of Preventive Medicine",
+    "kind": "institute",
+    "parent": "tcd",
+    "aliases": [
+      "Moyne Institute of Preventive Medicine"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "panoz",
+    "name_en": "Panoz Institute",
+    "name_local": "Panoz Institute",
+    "kind": "institute",
+    "parent": "pharm",
+    "aliases": [],
+    "context_aliases": [
+      "Panoz Institute"
+    ]
+  },
+  {
+    "uid": "tchs",
+    "name_en": "Trinity Centre for Health Sciences",
+    "name_local": "Trinity Centre for Health Sciences",
+    "kind": "center",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Trinity Centre for Health Sciences"
+    ]
+  }
+]

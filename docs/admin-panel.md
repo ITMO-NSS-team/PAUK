@@ -280,7 +280,7 @@ both under different spellings, neither group's dedup sees the other. Only a
 pass over the whole graph catches that pair.
 
 Disputed pairs are not merged but held: written to
-`data/cache/dedup_candidates_graph.jsonl` with status `held` and a reason, and
+`data/cache/<institution>/dedup_candidates_graph.jsonl` with status `held` and a reason, and
 put in the "Спорные случаи" (Disputed cases) queue for a human answer.
 
 Rule-based merges cannot be undone, so the button asks for confirmation, like

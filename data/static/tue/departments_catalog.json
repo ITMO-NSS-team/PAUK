@@ -1,0 +1,195 @@
+[
+  {
+    "uid": "tue",
+    "name_en": "Eindhoven University of Technology",
+    "name_local": "Technische Universiteit Eindhoven",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02c2kyt77",
+    "type": "university"
+  },
+  {
+    "uid": "ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering",
+      "Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "mcs",
+    "name_en": "Department of Mathematics and Computer Science",
+    "name_local": "Department of Mathematics and Computer Science",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics and Computer Science"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "ap",
+    "name_en": "Department of Applied Physics and Science Education",
+    "name_local": "Department of Applied Physics and Science Education",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics and Science Education",
+      "Department of Applied Physics"
+    ]
+  },
+  {
+    "uid": "cce",
+    "name_en": "Department of Chemical Engineering and Chemistry",
+    "name_local": "Department of Chemical Engineering and Chemistry",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering and Chemistry"
+    ]
+  },
+  {
+    "uid": "be",
+    "name_en": "Department of the Built Environment",
+    "name_local": "Department of the Built Environment",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of the Built Environment",
+      "Department of Built Environment"
+    ]
+  },
+  {
+    "uid": "id",
+    "name_en": "Department of Industrial Design",
+    "name_local": "Department of Industrial Design",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial Design",
+      "Industrial Design"
+    ]
+  },
+  {
+    "uid": "ieis",
+    "name_en": "Department of Industrial Engineering and Innovation Sciences",
+    "name_local": "Department of Industrial Engineering and Innovation Sciences",
+    "kind": "department",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial Engineering and Innovation Sciences",
+      "Department of Industrial Engineering & Innovation Sciences",
+      "Industrial Engineering and Innovation Sciences"
+    ]
+  },
+  {
+    "uid": "icms",
+    "name_en": "Institute for Complex Molecular Systems",
+    "name_local": "Institute for Complex Molecular Systems",
+    "kind": "institute",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "ICMS",
+      "Institute for Complex Molecular Systems"
+    ]
+  },
+  {
+    "uid": "eaisi",
+    "name_en": "Eindhoven Artificial Intelligence Systems Institute",
+    "name_local": "Eindhoven Artificial Intelligence Systems Institute",
+    "kind": "institute",
+    "parent": "tue",
+    "aliases": [],
+    "context_aliases": [
+      "EAISI",
+      "Eindhoven Artificial Intelligence Systems Institute"
+    ]
+  },
+  {
+    "uid": "cst",
+    "name_en": "Control Systems Technology Section",
+    "name_local": "Control Systems Technology Section",
+    "kind": "lab",
+    "parent": "me",
+    "aliases": [],
+    "context_aliases": [
+      "Control Systems Technology Section"
+    ]
+  },
+  {
+    "uid": "phi",
+    "name_en": "Photonic Integration Group",
+    "name_local": "Photonic Integration Group",
+    "kind": "lab",
+    "parent": "ee",
+    "aliases": [],
+    "context_aliases": [
+      "Photonic Integration Group"
+    ]
+  },
+  {
+    "uid": "cbio",
+    "name_en": "Laboratory of Chemical Biology",
+    "name_local": "Laboratory of Chemical Biology",
+    "kind": "lab",
+    "parent": "cce",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Chemical Biology"
+    ]
+  },
+  {
+    "uid": "smoc",
+    "name_en": "Laboratory of Macromolecular and Organic Chemistry",
+    "name_local": "Laboratory of Macromolecular and Organic Chemistry",
+    "kind": "lab",
+    "parent": "cce",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Macromolecular and Organic Chemistry"
+    ]
+  },
+  {
+    "uid": "spe",
+    "name_en": "Sustainable Process Engineering",
+    "name_local": "Sustainable Process Engineering",
+    "kind": "lab",
+    "parent": "cce",
+    "aliases": [],
+    "context_aliases": [
+      "Sustainable Process Engineering"
+    ]
+  }
+]

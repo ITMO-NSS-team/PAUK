@@ -1,0 +1,27 @@
+{
+  "key": "postech",
+  "short_name": "POSTECH",
+  "short_name_local": "포항공대",
+  "name_en": "Pohang University of Science and Technology",
+  "name_local": "포항공과대학교",
+  "ror_id": "04xysgw12",
+  "language": "Korean",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "postech.ac.kr"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:POSTECHUniv|POSTECH)(?![^\\W\\d_])",
+  "long_name": "Pohang[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Science[\\s‐-]+and[\\s‐-]+Technology|Pohang[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Science[\\s‐-]+\\&[\\s‐-]+Technology|Pohang[\\s‐-]+Univ[\\s‐-]+Sci[\\s‐-]+Technol|포항공과대학교",
+  "marker_replacement": "POSTECHUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|cheongam|do|east|floor|gatan|gu|gyeongbuk|gyeongsangbuk|katu|korea|laan|nam|north|of|piazza|platz|plaza|plein|po|pohang|rd|republic|ro|road|rok|room|rue|si|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Pohang Accelerator Laboratory|Institute for Basic Science|(?<![^\\W\\d_])IBS(?![^\\W\\d_])|Yonsei University|Tohoku University",
+  "identity": "(?<![^\\W\\d_])POSTECH(?![^\\W\\d_])|Pohang[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Science[\\s‐-]+and[\\s‐-]+Technology|Pohang[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Science[\\s‐-]+\\&[\\s‐-]+Technology|Pohang[\\s‐-]+Univ[\\s‐-]+Sci[\\s‐-]+Technol|포항공과대학교",
+  "city": "Pohang",
+  "staff_catalog": null,
+  "mongo_db": "pauk_postech",
+  "site_url": "https://www.postech.ac.kr",
+  "unit_words": "department|division|graduate|school|institute|center|centre",
+  "external_authors": false
+}

@@ -1,0 +1,1027 @@
+[
+  {
+    "uid": "ustc",
+    "name_en": "University of Science and Technology of China",
+    "name_local": "中国科学技术大学",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04c4dkn09",
+    "type": "university"
+  },
+  {
+    "uid": "math",
+    "name_en": "School of Mathematical Sciences",
+    "name_local": "数学科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematical Sciences",
+      "数学科学学院"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "School of Physical Sciences",
+    "name_local": "物理学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [
+      "Microscale and School of Physical Sciences"
+    ],
+    "context_aliases": [
+      "School of Physical Sciences",
+      "School of Physics",
+      "物理学院"
+    ]
+  },
+  {
+    "uid": "phys-dept",
+    "name_en": "Department of Physics",
+    "name_local": "物理系",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "物理系"
+    ]
+  },
+  {
+    "uid": "phys-modern",
+    "name_en": "Department of Modern Physics",
+    "name_local": "近代物理系",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Modern Physics",
+      "近代物理系"
+    ]
+  },
+  {
+    "uid": "phys-optics",
+    "name_en": "Department of Optics and Optical Engineering",
+    "name_local": "光学与光学工程系",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Optics and Optical Engineering",
+      "光学与光学工程系"
+    ]
+  },
+  {
+    "uid": "phys-eap",
+    "name_en": "Department of Engineering and Applied Physics",
+    "name_local": "工程与应用物理系",
+    "kind": "department",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering and Applied Physics",
+      "工程与应用物理系"
+    ]
+  },
+  {
+    "uid": "astro",
+    "name_en": "School of Astronomy and Space Science",
+    "name_local": "天文与空间科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Astronomy and Space Sciences?",
+      "天文与空间科学学院",
+      "School of Astronomy and Space Science"
+    ]
+  },
+  {
+    "uid": "astro-dept",
+    "name_en": "Department of Astronomy",
+    "name_local": "天文学系",
+    "kind": "department",
+    "parent": "astro",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Astronomy",
+      "天文学系"
+    ]
+  },
+  {
+    "uid": "scms",
+    "name_en": "School of Chemistry and Materials Science",
+    "name_local": "化学与材料科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemistry and Materials? Sciences?",
+      "化学与材料科学学院",
+      "School of Chemistry and Materials Science"
+    ]
+  },
+  {
+    "uid": "scms-chemphys",
+    "name_en": "Department of Chemical Physics",
+    "name_local": "化学物理系",
+    "kind": "department",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Physics",
+      "化学物理系"
+    ]
+  },
+  {
+    "uid": "scms-chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "化学系",
+    "kind": "department",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "化学系"
+    ]
+  },
+  {
+    "uid": "scms-mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "材料科学与工程系",
+    "kind": "department",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "材料科学与工程系"
+    ]
+  },
+  {
+    "uid": "scms-polymer",
+    "name_en": "Department of Polymer Science and Engineering",
+    "name_local": "高分子科学与工程系",
+    "kind": "department",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Polymer Science and Engineering",
+      "高分子科学与工程系"
+    ]
+  },
+  {
+    "uid": "scms-appchem",
+    "name_en": "Department of Applied Chemistry",
+    "name_local": "应用化学系",
+    "kind": "department",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Chemistry",
+      "应用化学系"
+    ]
+  },
+  {
+    "uid": "env",
+    "name_en": "Department of Environmental Science and Engineering",
+    "name_local": "环境科学与工程系",
+    "kind": "department",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Science and Engineering",
+      "环境科学与工程系"
+    ]
+  },
+  {
+    "uid": "lsm",
+    "name_en": "Division of Life Sciences and Medicine",
+    "name_local": "生命科学与医学部",
+    "kind": "faculty",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Life Sciences? and Medicine",
+      "生命科学与医学部"
+    ]
+  },
+  {
+    "uid": "life",
+    "name_en": "School of Life Sciences",
+    "name_local": "生命科学学院",
+    "kind": "school",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "School of Life Sciences",
+      "生命科学学院"
+    ]
+  },
+  {
+    "uid": "basicmed",
+    "name_en": "School of Basic Medical Sciences",
+    "name_local": "基础医学院",
+    "kind": "school",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "School of Basic Medical Sciences",
+      "基础医学院"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "School of Biomedical Engineering",
+    "name_local": "生物医学工程学院",
+    "kind": "school",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biomedical Engineering",
+      "生物医学工程学院"
+    ]
+  },
+  {
+    "uid": "immunology",
+    "name_en": "Institute of Immunology",
+    "name_local": "免疫学研究所",
+    "kind": "institute",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Immunology",
+      "免疫学研究所"
+    ]
+  },
+  {
+    "uid": "aging-brain",
+    "name_en": "Institute on Aging and Brain Disorders",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "Institute on Aging and Brain Disorders"
+    ]
+  },
+  {
+    "uid": "ndrc",
+    "name_en": "Neurodegenerative Disorder Research Center",
+    "name_local": "",
+    "kind": "center",
+    "parent": "lsm",
+    "aliases": [],
+    "context_aliases": [
+      "Neurodegenerative Disorder Research Center"
+    ]
+  },
+  {
+    "uid": "moe-cellular",
+    "name_en": "MOE Key Laboratory for Membraneless Organelles and Cellular Dynamics",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "lsm",
+    "aliases": [
+      "MOE Key Laboratory for Membraneless Organelles and Cellular Dynamics"
+    ],
+    "context_aliases": [
+      "MOE Key Laboratory for Cellular Dynamics"
+    ]
+  },
+  {
+    "uid": "ses",
+    "name_en": "School of Engineering Science",
+    "name_local": "工程科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering Science",
+      "工程科学学院"
+    ]
+  },
+  {
+    "uid": "ses-mech",
+    "name_en": "Department of Modern Mechanics",
+    "name_local": "近代力学系",
+    "kind": "department",
+    "parent": "ses",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Modern Mechanics",
+      "近代力学系"
+    ]
+  },
+  {
+    "uid": "ses-precision",
+    "name_en": "Department of Precision Machinery and Precision Instrumentation",
+    "name_local": "精密机械与精密仪器系",
+    "kind": "department",
+    "parent": "ses",
+    "aliases": [
+      "精密机械与精密仪器系"
+    ],
+    "context_aliases": [
+      "Department of Precision Machinery and Precision Instrumentation"
+    ]
+  },
+  {
+    "uid": "ses-thermal",
+    "name_en": "Department of Thermal Science and Energy Engineering",
+    "name_local": "热科学和能源工程系",
+    "kind": "department",
+    "parent": "ses",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Thermal Science and Energy Engineering",
+      "热科学和能源工程系"
+    ]
+  },
+  {
+    "uid": "sist",
+    "name_en": "School of Information Science and Technology",
+    "name_local": "信息科学技术学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Information Science and Technology",
+      "信息科学技术学院"
+    ]
+  },
+  {
+    "uid": "sist-eeis",
+    "name_en": "Department of Electronic Engineering and Information Science",
+    "name_local": "电子工程与信息科学系",
+    "kind": "department",
+    "parent": "sist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronic Engineering and Information Science",
+      "电子工程与信息科学系"
+    ]
+  },
+  {
+    "uid": "sist-auto",
+    "name_en": "Department of Automation",
+    "name_local": "自动化系",
+    "kind": "department",
+    "parent": "sist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Automation",
+      "自动化系"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "School of Computer Science and Technology",
+    "name_local": "计算机科学与技术学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science and Technology",
+      "计算机科学与技术学院"
+    ]
+  },
+  {
+    "uid": "cyber",
+    "name_en": "School of Cyber Science and Technology",
+    "name_local": "网络空间安全学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Cyber Science and Technology",
+      "网络空间安全学院"
+    ]
+  },
+  {
+    "uid": "digital-security",
+    "name_en": "Anhui Province Key Laboratory of Digital Security",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "cyber",
+    "aliases": [],
+    "context_aliases": [
+      "Anhui Province Key Laboratory of Digital Security"
+    ]
+  },
+  {
+    "uid": "micro",
+    "name_en": "School of Microelectronics",
+    "name_local": "微电子学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Microelectronics",
+      "微电子学院"
+    ]
+  },
+  {
+    "uid": "software",
+    "name_en": "School of Software Engineering",
+    "name_local": "软件学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Software Engineering",
+      "软件学院"
+    ]
+  },
+  {
+    "uid": "aids",
+    "name_en": "School of Artificial Intelligence and Data Science",
+    "name_local": "人工智能与数据科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Artificial Intelligence and Data Science",
+      "人工智能与数据科学学院"
+    ]
+  },
+  {
+    "uid": "ess",
+    "name_en": "School of Earth and Space Sciences",
+    "name_local": "地球和空间科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Earth and Space Sciences",
+      "地球和空间科学学院"
+    ]
+  },
+  {
+    "uid": "mengcheng",
+    "name_en": "Mengcheng National Geophysical Observatory",
+    "name_local": "蒙城地球物理国家野外科学观测研究站",
+    "kind": "center",
+    "parent": "ess",
+    "aliases": [],
+    "context_aliases": [
+      "Mengcheng National Geophysical Observatory"
+    ]
+  },
+  {
+    "uid": "nuclear",
+    "name_en": "School of Nuclear Science and Technology",
+    "name_local": "核科学技术学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nuclear Science and Technology",
+      "核科学技术学院"
+    ]
+  },
+  {
+    "uid": "nuclear-plasma",
+    "name_en": "Department of Plasma Physics and Fusion Engineering",
+    "name_local": "等离子体物理与聚变工程系",
+    "kind": "department",
+    "parent": "nuclear",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plasma Physics and Fusion Engineering",
+      "等离子体物理与聚变工程系"
+    ]
+  },
+  {
+    "uid": "mgmt",
+    "name_en": "School of Management",
+    "name_local": "管理学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Management",
+      "管理学院"
+    ]
+  },
+  {
+    "uid": "mgmt-statfin",
+    "name_en": "Department of Statistics and Finance",
+    "name_local": "统计与金融系",
+    "kind": "department",
+    "parent": "mgmt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics and Finance",
+      "统计与金融系"
+    ]
+  },
+  {
+    "uid": "iif",
+    "name_en": "International Institute of Finance",
+    "name_local": "国际金融研究院",
+    "kind": "institute",
+    "parent": "mgmt",
+    "aliases": [],
+    "context_aliases": [
+      "International Institute of Finance",
+      "国际金融研究院"
+    ]
+  },
+  {
+    "uid": "humanities",
+    "name_en": "School of Humanities and Social Sciences",
+    "name_local": "人文与社会科学学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Humanities and Social Sciences",
+      "人文与社会科学学院"
+    ]
+  },
+  {
+    "uid": "hist-sci",
+    "name_en": "Department of History of Science and Scientific Archaeology",
+    "name_local": "科技史与科技考古系",
+    "kind": "department",
+    "parent": "humanities",
+    "aliases": [],
+    "context_aliases": [
+      "Department of History of Science and Scientific Archaeology",
+      "科技史与科技考古系"
+    ]
+  },
+  {
+    "uid": "linguistics",
+    "name_en": "Interdisciplinary Research Center for Linguistic Sciences",
+    "name_local": "语言科学交叉研究中心",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "Interdisciplinary Research Center for Linguistic Sciences",
+      "语言科学交叉研究中心"
+    ]
+  },
+  {
+    "uid": "public-affairs",
+    "name_en": "School of Public Affairs",
+    "name_local": "公共事务学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Affairs",
+      "公共事务学院"
+    ]
+  },
+  {
+    "uid": "gifted",
+    "name_en": "School of the Gifted Young",
+    "name_local": "少年班学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [
+      "少年班学院"
+    ],
+    "context_aliases": [
+      "School of the Gifted Young",
+      "School of Gifted Young"
+    ]
+  },
+  {
+    "uid": "rare-earths",
+    "name_en": "School of Rare Earths",
+    "name_local": "稀土学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [
+      "School of Rare Earths"
+    ],
+    "context_aliases": [
+      "稀土学院"
+    ]
+  },
+  {
+    "uid": "energy",
+    "name_en": "School of Energy Science and Engineering",
+    "name_local": "能源科学与工程学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Energy Science and Engineering",
+      "能源科学与工程学院"
+    ]
+  },
+  {
+    "uid": "mse-shenyang",
+    "name_en": "School of Materials Science and Engineering",
+    "name_local": "材料科学与工程学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Materials? Science and Engineering",
+      "材料科学与工程学院",
+      "School of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "appchem-changchun",
+    "name_en": "School of Applied Chemistry and Engineering",
+    "name_local": "应用化学与工程学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Applied Chemistry and Engineering",
+      "应用化学与工程学院"
+    ]
+  },
+  {
+    "uid": "nano-suzhou",
+    "name_en": "School of Nano-Tech and Nano-Bionics",
+    "name_local": "纳米技术与纳米仿生学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [
+      "School of Nano[-‐]?\\s*Tech(?:nology)? and Nano[-‐]?\\s*Bionics",
+      "纳米技术与纳米仿生学院"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nano-sci-suzhou",
+    "name_en": "School of Nano Science and Technology",
+    "name_local": "纳米科学技术学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nano Science and Technology",
+      "Nano Science and Technology Institute",
+      "纳米科学技术学院"
+    ]
+  },
+  {
+    "uid": "env-optics",
+    "name_en": "School of Environmental Science and Optoelectronic Technology",
+    "name_local": "环境科学与光电技术学院",
+    "kind": "school",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Environmental Science and Optoelectronic Technology",
+      "环境科学与光电技术学院"
+    ]
+  },
+  {
+    "uid": "suzhou-iar",
+    "name_en": "Suzhou Institute for Advanced Research",
+    "name_local": "苏州高等研究院",
+    "kind": "institute",
+    "parent": "ustc",
+    "aliases": [
+      "USTC Suzhou Institute for Advanced Research"
+    ],
+    "context_aliases": [
+      "Suzhou Institute for Advanced Research",
+      "苏州高等研究院"
+    ]
+  },
+  {
+    "uid": "iat",
+    "name_en": "Institute of Advanced Technology",
+    "name_local": "先进技术研究院",
+    "kind": "institute",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Advanced Technology",
+      "先进技术研究院"
+    ]
+  },
+  {
+    "uid": "grad-island",
+    "name_en": "Science Island Branch of Graduate School",
+    "name_local": "研究生院科学岛分院",
+    "kind": "campus",
+    "parent": "ustc",
+    "aliases": [
+      "Science Island Branch of Graduate School",
+      "研究生院科学岛分院"
+    ],
+    "context_aliases": [
+      "Science Island Branch"
+    ]
+  },
+  {
+    "uid": "hfnl",
+    "name_en": "Hefei National Research Center for Physical Sciences at the Microscale",
+    "name_local": "合肥微尺度物质科学国家研究中心",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [
+      "Hefei National Research Center for Physical Sciences at the Microscale",
+      "Hefei National Laboratory for Physical Sciences at the Microscale",
+      "合肥微尺度物质科学国家研究中心"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nsrl",
+    "name_en": "National Synchrotron Radiation Laboratory",
+    "name_local": "国家同步辐射实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "国家同步辐射实验室"
+    ],
+    "context_aliases": [
+      "National Synchrotron Radiation Laboratory"
+    ]
+  },
+  {
+    "uid": "sklfs",
+    "name_en": "State Key Laboratory of Fire Science",
+    "name_local": "火灾科学国家重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "State Key Laboratory of Fire Science",
+      "火灾科学国家重点实验室"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "skl-pde",
+    "name_en": "State Key Laboratory of Particle Detection and Electronics",
+    "name_local": "粒子探测与电子学全国重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "State Key Laboratory of Nuclear Detection and Nuclear Electronics"
+    ],
+    "context_aliases": [
+      "State Key Laboratory of Particle Detection and Electronics",
+      "粒子探测与电子学全国重点实验室"
+    ]
+  },
+  {
+    "uid": "skl-pic",
+    "name_en": "State Key Laboratory of Precision and Intelligent Chemistry",
+    "name_local": "精准智能化学全国重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "State Key Laboratory of Precision and Intelligent Chemistry",
+      "精准智能化学全国重点实验室"
+    ],
+    "context_aliases": [
+      "Key Laboratory of Precision and Intelligent Chemistry"
+    ]
+  },
+  {
+    "uid": "skl-ci",
+    "name_en": "State Key Laboratory of Cognitive Intelligence",
+    "name_local": "认知智能全国重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Cognitive Intelligence",
+      "认知智能全国重点实验室"
+    ]
+  },
+  {
+    "uid": "nercslip",
+    "name_en": "National Engineering Research Center of Speech and Language Information Processing",
+    "name_local": "语音及语言信息处理国家工程研究中心",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [
+      "National Engineering Research Center of Speech and Language Information Processing",
+      "语音及语言信息处理国家工程研究中心"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "moe-bipc",
+    "name_en": "MOE Key Laboratory of Brain-Inspired Intelligent Perception and Cognition",
+    "name_local": "类脑智能感知与认知教育部重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "Key Laboratory of Brain-?\\s*Inspired Intelligent Perception and Cognition",
+      "MoE Key Lab of BIPC"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "skl-immune",
+    "name_en": "State Key Laboratory of Immune Response and Immunotherapy",
+    "name_local": "免疫应答与免疫治疗全国重点实验室",
+    "kind": "lab",
+    "parent": "lsm",
+    "aliases": [
+      "State Key Laboratory of Immune Response and Immunotherapy",
+      "National Key Laboratory of Immune Response and Immunotherapy"
+    ],
+    "context_aliases": [
+      "Key Laboratory of Immune Response and Immunotherapy"
+    ]
+  },
+  {
+    "uid": "skl-lithosphere",
+    "name_en": "State Key Laboratory of Lithospheric and Environmental Coevolution",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ess",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Lithospheric and Environmental Coevolution"
+    ]
+  },
+  {
+    "uid": "lqi",
+    "name_en": "CAS Key Laboratory of Quantum Information",
+    "name_local": "中国科学院量子信息重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "CAS Key Laboratory of Quantum Information",
+      "中国科学院量子信息重点实验室"
+    ],
+    "context_aliases": [
+      "Laboratory of Quantum Information"
+    ]
+  },
+  {
+    "uid": "cas-ceqiqp",
+    "name_en": "CAS Center for Excellence in Quantum Information and Quantum Physics",
+    "name_local": "中国科学院量子信息与量子科技创新研究院",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [
+      "CAS Center for Excellence in Quantum Information and Quantum Physics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sicqiqp",
+    "name_en": "Synergetic Innovation Center of Quantum Information and Quantum Physics",
+    "name_local": "量子信息与量子科技前沿协同创新中心",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [
+      "Synergetic Innovation Center of Quantum Information and Quantum Physics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "quantum-network",
+    "name_en": "Anhui Province Key Laboratory of Quantum Network",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [],
+    "context_aliases": [
+      "Anhui Province Key Laboratory of Quantum Network"
+    ]
+  },
+  {
+    "uid": "cas-mbdm",
+    "name_en": "CAS Key Laboratory of Mechanical Behavior and Design of Materials",
+    "name_local": "中国科学院材料力学行为和设计重点实验室",
+    "kind": "lab",
+    "parent": "ses",
+    "aliases": [],
+    "context_aliases": [
+      "CAS Key Laboratory of Mechanical Behavior and Design of Materials"
+    ]
+  },
+  {
+    "uid": "precision-instr",
+    "name_en": "Key Laboratory of Precision Scientific Instrumentation of Anhui Higher Education Institutes",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ses",
+    "aliases": [],
+    "context_aliases": [
+      "Key Laboratory of Precision Scientific Instrumentation of Anhui Higher Education Institutes"
+    ]
+  },
+  {
+    "uid": "cas-geospace",
+    "name_en": "CAS Key Laboratory of Geospace Environment",
+    "name_local": "中国科学院近地空间环境重点实验室",
+    "kind": "lab",
+    "parent": "ess",
+    "aliases": [
+      "CAS Key Laboratory of Geospace Environment"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas-woc",
+    "name_en": "CAS Key Laboratory of Wireless-Optical Communications",
+    "name_local": "中国科学院无线光电通信重点实验室",
+    "kind": "lab",
+    "parent": "sist",
+    "aliases": [
+      "CAS Key Laboratory of Wireless[-\\s]*Optical Communications?"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas-scqm",
+    "name_en": "CAS Key Laboratory of Strongly-Coupled Quantum Matter Physics",
+    "name_local": "中国科学院强耦合量子材料物理重点实验室",
+    "kind": "lab",
+    "parent": "phys",
+    "aliases": [
+      "Key Laboratory of Strongly-?\\s*Coupled Quantum Matter Physics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas-softmatter",
+    "name_en": "CAS Key Laboratory of Soft Matter Chemistry",
+    "name_local": "中国科学院软物质化学重点实验室",
+    "kind": "lab",
+    "parent": "scms",
+    "aliases": [
+      "CAS Key Laboratory of Soft Matter Chemistry"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas-upc",
+    "name_en": "CAS Key Laboratory of Urban Pollutant Conversion",
+    "name_local": "中国科学院城市污染物转化重点实验室",
+    "kind": "lab",
+    "parent": "ustc",
+    "aliases": [
+      "CAS Key Laboratory of Urban Pollutant Conversion"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas-mec",
+    "name_en": "CAS Key Laboratory of Materials for Energy Conversion",
+    "name_local": "中国科学院能量转换材料重点实验室",
+    "kind": "lab",
+    "parent": "scms",
+    "aliases": [
+      "CAS Key Laboratory of Materials for Energy Conversion"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "biomass-chem",
+    "name_en": "Anhui Province Key Laboratory of Biomass Chemistry",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Anhui Province Key Laboratory of Biomass Chemistry"
+    ]
+  },
+  {
+    "uid": "spin-mr",
+    "name_en": "Laboratory of Spin Magnetic Resonance",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "phys",
+    "aliases": [
+      "Laboratory of Spin Magnetic Resonance"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "icqd",
+    "name_en": "International Center for Quantum Design of Functional Materials",
+    "name_local": "",
+    "kind": "center",
+    "parent": "ustc",
+    "aliases": [
+      "International Center for Quantum Design of Functional Materials"
+    ],
+    "context_aliases": [
+      "ICQD"
+    ]
+  },
+  {
+    "uid": "surface-catalysis",
+    "name_en": "Key Laboratory of Surface and Interface Chemistry and Energy Catalysis of Anhui Higher Education Institutes",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "scms",
+    "aliases": [],
+    "context_aliases": [
+      "Key Laboratory of Surface and Interface Chemistry and Energy Catalysis of Anhui Higher Education Institutes"
+    ]
+  }
+]

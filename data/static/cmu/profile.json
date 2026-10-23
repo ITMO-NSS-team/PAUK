@@ -1,0 +1,36 @@
+{
+  "key": "cmu",
+  "short_name": "CMU",
+  "short_name_local": "CMU",
+  "name_en": "Carnegie Mellon University",
+  "name_local": "Carnegie Mellon University",
+  "ror_id": "05x2bcf33",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "cmu.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:CarnegieMellonUniv|Carnegie[\\s-]*Mellon)(?![^\\W\\d_])",
+  "long_name": "Carnegie[\\s‐-]*Mel[\\s‐-]*l?on(?:\\s+Un[a-z]*(?:-\\s*[a-z]+)?\\.?)?",
+  "marker_replacement": "CarnegieMellonUniv",
+  "place_words": "pittsburgh|pittsburg|pennsylvania|pa|usa|us|united|states|america|of|forbes|avenue|ave|fifth|street|hall|porter|doherty|15213|15312|kigali|rwanda|doha|qatar|education|city|lisbon|portugal|adelaide|australia",
+  "other_organisations": "UPMC|(?<![^\\W\\d_])Pitt(?![^\\W\\d_])|MBZUAI|Mohamed bin Zayed|Hillman Cancer|Allegheny Health|Lawrence Berkeley|(?<![^\\W\\d_])NIST(?![^\\W\\d_])|Westinghouse|Corning|Google|Microsoft|NVIDIA|Amazon|Meta AI|Bosch|Datadog|Santa Fe Institute|Vector Institute|Instituto Superior T[ée]cnico|(?<![^\\W\\d_])CNRS(?![^\\W\\d_])|Methodist|McGowan Institute|Woolcock|Karlsruhe Institute|Brookhaven|Fermi National|National Institutes of Health|Learning Research and Development Center|Autodesk",
+  "identity": "(?<![^\\W\\d_])CMU(?![^\\W\\d_])|Carnegie[\\s-]*Mellon",
+  "city": "Pittsburgh",
+  "staff_catalog": null,
+  "mongo_db": "pauk_cmu",
+  "site_url": "https://www.cmu.edu",
+  "unit_words": "college|institute|center|centre|lab|laboratory|school"
+}

@@ -1,0 +1,227 @@
+[
+  {
+    "uid": "technion",
+    "name_en": "Technion – Israel Institute of Technology",
+    "name_local": "Technion – Israel Institute of Technology",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03qryx823",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "Ruth and Bruce Rappaport Faculty of Medicine",
+    "name_local": "Ruth and Bruce Rappaport Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Ruth and Bruce Rappaport Faculty of Medicine",
+      "Rappaport Faculty of Medicine"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Faculty of Mechanical Engineering",
+    "name_local": "Faculty of Mechanical Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mechanical Engineering",
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Faculty of Materials Science and Engineering",
+    "name_local": "Faculty of Materials Science and Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "Faculty of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "civ",
+    "name_en": "Faculty of Civil and Environmental Engineering",
+    "name_local": "Faculty of Civil and Environmental Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Wolfson Department of Chemical Engineering",
+    "name_local": "Wolfson Department of Chemical Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [
+      "Wolfson Department of Chemical Engineering"
+    ],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Faculty of Biology",
+    "name_local": "Faculty of Biology",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biology"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Faculty of Physics",
+    "name_local": "Faculty of Physics",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department",
+      "Faculty of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Schulich Faculty of Chemistry",
+    "name_local": "Schulich Faculty of Chemistry",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [
+      "Schulich Faculty of Chemistry"
+    ],
+    "context_aliases": [
+      "Faculty of Chemistry"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Faculty of Biomedical Engineering",
+    "name_local": "Faculty of Biomedical Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Faculty of Mathematics",
+    "name_local": "Faculty of Mathematics",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Faculty of Mathematics"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Taub Faculty of Computer Science",
+    "name_local": "Taub Faculty of Computer Science",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [
+      "Taub Faculty of Computer Science"
+    ],
+    "context_aliases": [
+      "Faculty of Computer Science",
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "dds",
+    "name_en": "Faculty of Data and Decision Sciences",
+    "name_local": "Faculty of Data and Decision Sciences",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Data and Decision Sciences"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "Viterbi Faculty of Electrical and Computer Engineering",
+    "name_local": "Viterbi Faculty of Electrical and Computer Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [
+      "Viterbi Faculty of Electrical and Computer Engineering"
+    ],
+    "context_aliases": [
+      "Faculty of Electrical and Computer Engineering",
+      "Faculty of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "biotech",
+    "name_en": "Faculty of Biotechnology and Food Engineering",
+    "name_local": "Faculty of Biotechnology and Food Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biotechnology and Food Engineering",
+      "Department of Biotechnology and Food Engineering"
+    ]
+  },
+  {
+    "uid": "arch",
+    "name_en": "Faculty of Architecture and Town Planning",
+    "name_local": "Faculty of Architecture and Town Planning",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Architecture and Town Planning"
+    ]
+  },
+  {
+    "uid": "aero",
+    "name_en": "Faculty of Aerospace Engineering",
+    "name_local": "Faculty of Aerospace Engineering",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Aerospace Engineering"
+    ]
+  },
+  {
+    "uid": "edu",
+    "name_en": "Faculty of Education in Science and Technology",
+    "name_local": "Faculty of Education in Science and Technology",
+    "kind": "faculty",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Education in Science and Technology"
+    ]
+  },
+  {
+    "uid": "ssi",
+    "name_en": "Solid State Institute",
+    "name_local": "Solid State Institute",
+    "kind": "institute",
+    "parent": "technion",
+    "aliases": [],
+    "context_aliases": [
+      "Solid State Institute"
+    ]
+  }
+]

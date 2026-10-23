@@ -1,0 +1,1910 @@
+[
+  {
+    "uid": "utokyo",
+    "name_en": "The University of Tokyo",
+    "name_local": "東京大学",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/057zh3y96",
+    "type": "university"
+  },
+  {
+    "uid": "gs-humanities",
+    "name_en": "Graduate School of Humanities and Sociology",
+    "name_local": "大学院人文社会系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Humanities and Sociology",
+      "Faculty of Letters",
+      "大学院人文社会系研究科",
+      "人文社会系研究科",
+      "文学部"
+    ]
+  },
+  {
+    "uid": "gs-education",
+    "name_en": "Graduate School of Education",
+    "name_local": "大学院教育学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Education",
+      "Faculty of Education",
+      "大学院教育学研究科",
+      "教育学研究科"
+    ]
+  },
+  {
+    "uid": "gs-law",
+    "name_en": "Graduate Schools for Law and Politics",
+    "name_local": "大学院法学政治学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate Schools for Law and Politics",
+      "Graduate School of Law and Politics",
+      "Faculty of Law",
+      "大学院法学政治学研究科",
+      "法学政治学研究科"
+    ]
+  },
+  {
+    "uid": "gs-economics",
+    "name_en": "Graduate School of Economics",
+    "name_local": "大学院経済学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Economics",
+      "Faculty of Economics",
+      "大学院経済学研究科",
+      "経済学研究科"
+    ]
+  },
+  {
+    "uid": "gs-arts-sciences",
+    "name_en": "Graduate School of Arts and Sciences",
+    "name_local": "大学院総合文化研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Arts and Sciences",
+      "College of Arts and Sciences",
+      "Faculty of Arts and Sciences",
+      "大学院総合文化研究科",
+      "総合文化研究科"
+    ]
+  },
+  {
+    "uid": "gs-science",
+    "name_en": "Graduate School of Science",
+    "name_local": "大学院理学系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Science",
+      "School of Science",
+      "Faculty of Science",
+      "大学院理学系研究科",
+      "理学系研究科"
+    ]
+  },
+  {
+    "uid": "gs-engineering",
+    "name_en": "Graduate School of Engineering",
+    "name_local": "大学院工学系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Engineering",
+      "School of Engineering",
+      "Faculty of Engineering",
+      "大学院工学系研究科",
+      "工学系研究科"
+    ]
+  },
+  {
+    "uid": "gs-agriculture",
+    "name_en": "Graduate School of Agricultural and Life Sciences",
+    "name_local": "大学院農学生命科学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Agricultural and Life Sciences",
+      "Graduate School of Agricultural and Life Science",
+      "Graduate School of Agriculture and Life Sciences",
+      "Faculty of Agriculture",
+      "大学院農学生命科学研究科",
+      "農学生命科学研究科"
+    ]
+  },
+  {
+    "uid": "gs-medicine",
+    "name_en": "Graduate School of Medicine",
+    "name_local": "大学院医学系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [
+      "University of Tokyo Graduate School of Medicine"
+    ],
+    "context_aliases": [
+      "Graduate School of Medicine",
+      "Faculty of Medicine",
+      "Graduate School of Medicine and Faculty of Medicine",
+      "School of Medicine",
+      "大学院医学系研究科",
+      "医学系研究科"
+    ]
+  },
+  {
+    "uid": "gs-pharma",
+    "name_en": "Graduate School of Pharmaceutical Sciences",
+    "name_local": "大学院薬学系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Pharmaceutical Sciences",
+      "Faculty of Pharmaceutical Sciences",
+      "大学院薬学系研究科",
+      "薬学系研究科"
+    ]
+  },
+  {
+    "uid": "gs-math",
+    "name_en": "Graduate School of Mathematical Sciences",
+    "name_local": "大学院数理科学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Mathematical Sciences",
+      "大学院数理科学研究科",
+      "数理科学研究科"
+    ]
+  },
+  {
+    "uid": "gs-frontier",
+    "name_en": "Graduate School of Frontier Sciences",
+    "name_local": "大学院新領域創成科学研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [
+      "新領域創成科学研究科"
+    ],
+    "context_aliases": [
+      "Graduate School of Frontier Sciences",
+      "Graduate School of Frontier Science",
+      "大学院新領域創成科学研究科"
+    ]
+  },
+  {
+    "uid": "gs-ist",
+    "name_en": "Graduate School of Information Science and Technology",
+    "name_local": "大学院情報理工学系研究科",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Information Science and Technology",
+      "大学院情報理工学系研究科",
+      "情報理工学系研究科"
+    ]
+  },
+  {
+    "uid": "iii",
+    "name_en": "Interfaculty Initiative in Information Studies",
+    "name_local": "大学院情報学環・学際情報学府",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [
+      "Interfaculty Initiative in Information Studies"
+    ],
+    "context_aliases": [
+      "Graduate School of Interdisciplinary Information Studies",
+      "情報学環",
+      "学際情報学府"
+    ]
+  },
+  {
+    "uid": "gs-public-policy",
+    "name_en": "Graduate School of Public Policy",
+    "name_local": "公共政策大学院",
+    "kind": "school",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Public Policy",
+      "School of Public Policy",
+      "公共政策大学院"
+    ]
+  },
+  {
+    "uid": "imsut",
+    "name_en": "The Institute of Medical Science",
+    "name_local": "医科学研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "IMSUT"
+    ],
+    "context_aliases": [
+      "The Institute of Medical Science",
+      "Institute of Medical Science",
+      "医科学研究所"
+    ]
+  },
+  {
+    "uid": "eri",
+    "name_en": "Earthquake Research Institute",
+    "name_local": "地震研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Earthquake Research Institute",
+      "地震研究所"
+    ]
+  },
+  {
+    "uid": "iasa",
+    "name_en": "Institute for Advanced Studies on Asia",
+    "name_local": "東洋文化研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "Institute for Advanced Studies on Asia"
+    ],
+    "context_aliases": [
+      "東洋文化研究所",
+      "Institute of Oriental Culture"
+    ]
+  },
+  {
+    "uid": "iss",
+    "name_en": "Institute of Social Science",
+    "name_local": "社会科学研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Social Science",
+      "社会科学研究所"
+    ]
+  },
+  {
+    "uid": "iis",
+    "name_en": "Institute of Industrial Science",
+    "name_local": "生産技術研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Industrial Science",
+      "Inst. of Industrial Science",
+      "Institute for Industrial Science",
+      "生産技術研究所"
+    ]
+  },
+  {
+    "uid": "hi",
+    "name_en": "Historiographical Institute",
+    "name_local": "史料編纂所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "史料編纂所"
+    ],
+    "context_aliases": [
+      "Historiographical Institute"
+    ]
+  },
+  {
+    "uid": "iqb",
+    "name_en": "Institute for Quantitative Biosciences",
+    "name_local": "定量生命科学研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "定量生命科学研究所"
+    ],
+    "context_aliases": [
+      "Institute for Quantitative Biosciences"
+    ]
+  },
+  {
+    "uid": "icrr",
+    "name_en": "Institute for Cosmic Ray Research",
+    "name_local": "宇宙線研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "ICRR",
+      "宇宙線研究所",
+      "Institute for Cosmic Ray Research"
+    ]
+  },
+  {
+    "uid": "issp",
+    "name_en": "Institute for Solid State Physics",
+    "name_local": "物性研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "Institute for Solid State Physics"
+    ],
+    "context_aliases": [
+      "ISSP",
+      "物性研究所"
+    ]
+  },
+  {
+    "uid": "aori",
+    "name_en": "Atmosphere and Ocean Research Institute",
+    "name_local": "大気海洋研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "Atmosphere and Ocean Research Institute",
+      "大気海洋研究所"
+    ],
+    "context_aliases": [
+      "AORI"
+    ]
+  },
+  {
+    "uid": "rcast",
+    "name_en": "Research Center for Advanced Science and Technology",
+    "name_local": "先端科学技術研究センター",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "先端科学技術研究センター"
+    ],
+    "context_aliases": [
+      "Research Center for Advanced Science and Technology",
+      "RCAST"
+    ]
+  },
+  {
+    "uid": "rcast-lsbm",
+    "name_en": "Laboratory for Systems Biology and Medicine",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "rcast",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Systems Biology and Medicine"
+    ]
+  },
+  {
+    "uid": "utias",
+    "name_en": "The University of Tokyo Institutes for Advanced Study",
+    "name_local": "東京大学国際高等研究所",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "University of Tokyo Institutes for Advanced Study"
+    ],
+    "context_aliases": [
+      "国際高等研究所",
+      "UTIAS"
+    ]
+  },
+  {
+    "uid": "kavli-ipmu",
+    "name_en": "Kavli Institute for the Physics and Mathematics of the Universe",
+    "name_local": "カブリ数物連携宇宙研究機構",
+    "kind": "institute",
+    "parent": "utias",
+    "aliases": [
+      "Kavli IPMU",
+      "カブリ数物連携宇宙研究機構"
+    ],
+    "context_aliases": [
+      "IPMU",
+      "Kavli Institute for the Physics and Mathematics of the Universe"
+    ]
+  },
+  {
+    "uid": "ircn",
+    "name_en": "International Research Center for Neurointelligence",
+    "name_local": "ニューロインテリジェンス国際研究機構",
+    "kind": "center",
+    "parent": "utias",
+    "aliases": [
+      "International Research Center for Neurointelligence",
+      "WPI-IRCN"
+    ],
+    "context_aliases": [
+      "IRCN"
+    ]
+  },
+  {
+    "uid": "tokyo-college",
+    "name_en": "Tokyo College",
+    "name_local": "東京カレッジ",
+    "kind": "institute",
+    "parent": "utias",
+    "aliases": [],
+    "context_aliases": [
+      "Tokyo College",
+      "東京カレッジ"
+    ]
+  },
+  {
+    "uid": "csis",
+    "name_en": "Center for Spatial Information Science",
+    "name_local": "空間情報科学研究センター",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Spatial Information Science",
+      "CSIS",
+      "空間情報科学研究センター"
+    ]
+  },
+  {
+    "uid": "ifi",
+    "name_en": "Institute for Future Initiatives",
+    "name_local": "未来ビジョン研究センター",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Future Initiatives",
+      "未来ビジョン研究センター"
+    ]
+  },
+  {
+    "uid": "utopia",
+    "name_en": "Infection and Advanced Research Center",
+    "name_local": "新世代感染症センター",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [
+      "UTOPIA"
+    ],
+    "context_aliases": [
+      "Infection and Advanced Research Center"
+    ]
+  },
+  {
+    "uid": "criim",
+    "name_en": "Collaborative Research Institute for Innovative Microbiology",
+    "name_local": "微生物科学イノベーション連携研究機構",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [
+      "Collaborative Research Institute for Innovative Microbiology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "museum",
+    "name_en": "The University Museum",
+    "name_local": "総合研究博物館",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "The University Museum",
+      "University Museum",
+      "総合研究博物館"
+    ]
+  },
+  {
+    "uid": "isotope-center",
+    "name_en": "Isotope Science Center",
+    "name_local": "アイソトープ総合センター",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Isotope Science Center",
+      "アイソトープ総合センター"
+    ]
+  },
+  {
+    "uid": "itc",
+    "name_en": "Information Technology Center",
+    "name_local": "情報基盤センター",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Information Technology Center",
+      "情報基盤センター"
+    ]
+  },
+  {
+    "uid": "ipst",
+    "name_en": "Institute for Photon Science and Technology",
+    "name_local": "フォトンサイエンス研究機構",
+    "kind": "institute",
+    "parent": "utokyo",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Photon Science and Technology"
+    ]
+  },
+  {
+    "uid": "imsut-hgc",
+    "name_en": "Human Genome Center",
+    "name_local": "ヒトゲノム解析センター",
+    "kind": "center",
+    "parent": "imsut",
+    "aliases": [],
+    "context_aliases": [
+      "Human Genome Center",
+      "ヒトゲノム解析センター"
+    ]
+  },
+  {
+    "uid": "imsut-systems-virology",
+    "name_en": "Division of Systems Virology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "imsut",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Systems Virology"
+    ]
+  },
+  {
+    "uid": "imsut-molecular-pathology",
+    "name_en": "Division of Molecular Pathology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "imsut",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Molecular Pathology"
+    ]
+  },
+  {
+    "uid": "iqb-chromatin",
+    "name_en": "Laboratory of Chromatin Structure and Function",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iqb",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Chromatin Structure and Function"
+    ]
+  },
+  {
+    "uid": "iqb-genome-structure",
+    "name_en": "Laboratory of Genome Structure and Function",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "iqb",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Genome Structure and Function"
+    ]
+  },
+  {
+    "uid": "icrr-kamioka",
+    "name_en": "Kamioka Observatory",
+    "name_local": "神岡宇宙素粒子研究施設",
+    "kind": "center",
+    "parent": "icrr",
+    "aliases": [
+      "Kamioka Observatory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-physics",
+    "name_en": "Department of Physics",
+    "name_local": "物理学専攻",
+    "kind": "department",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "物理学専攻"
+    ]
+  },
+  {
+    "uid": "sci-chemistry",
+    "name_en": "Department of Chemistry",
+    "name_local": "化学専攻",
+    "kind": "department",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "化学専攻"
+    ]
+  },
+  {
+    "uid": "sci-biology",
+    "name_en": "Department of Biological Sciences",
+    "name_local": "生物科学専攻",
+    "kind": "department",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Sciences",
+      "生物科学専攻"
+    ]
+  },
+  {
+    "uid": "sci-eps",
+    "name_en": "Department of Earth and Planetary Science",
+    "name_local": "地球惑星科学専攻",
+    "kind": "department",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Planetary Science",
+      "地球惑星科学専攻"
+    ]
+  },
+  {
+    "uid": "sci-astronomy",
+    "name_en": "Department of Astronomy",
+    "name_local": "天文学専攻",
+    "kind": "department",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Astronomy",
+      "天文学専攻"
+    ]
+  },
+  {
+    "uid": "sci-ioa",
+    "name_en": "Institute of Astronomy",
+    "name_local": "天文学教育研究センター",
+    "kind": "center",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Astronomy",
+      "天文学教育研究センター"
+    ]
+  },
+  {
+    "uid": "sci-cns",
+    "name_en": "Center for Nuclear Study",
+    "name_local": "原子核科学研究センター",
+    "kind": "center",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Nuclear Study",
+      "原子核科学研究センター"
+    ]
+  },
+  {
+    "uid": "sci-resceu",
+    "name_en": "Research Center for the Early Universe",
+    "name_local": "ビッグバン宇宙国際研究センター",
+    "kind": "center",
+    "parent": "gs-science",
+    "aliases": [
+      "Research Center for the Early Universe",
+      "RESCEU"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-ubi",
+    "name_en": "Universal Biology Institute",
+    "name_local": "生物普遍性研究機構",
+    "kind": "institute",
+    "parent": "gs-science",
+    "aliases": [
+      "Universal Biology Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-misaki",
+    "name_en": "Misaki Marine Biological Station",
+    "name_local": "臨海実験所",
+    "kind": "center",
+    "parent": "gs-science",
+    "aliases": [
+      "Misaki Marine Biological Station"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-botanical",
+    "name_en": "Botanical Gardens",
+    "name_local": "附属植物園",
+    "kind": "center",
+    "parent": "gs-science",
+    "aliases": [],
+    "context_aliases": [
+      "Botanical Gardens",
+      "Botanical Garden"
+    ]
+  },
+  {
+    "uid": "icepp",
+    "name_en": "International Center for Elementary Particle Physics",
+    "name_local": "素粒子物理国際研究センター",
+    "kind": "center",
+    "parent": "utokyo",
+    "aliases": [
+      "International Center for Elementary Particle Physics",
+      "ICEPP"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "eng-mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "機械工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "機械工学専攻"
+    ]
+  },
+  {
+    "uid": "eng-civil",
+    "name_en": "Department of Civil Engineering",
+    "name_local": "社会基盤学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering",
+      "Dept. of Civil Eng",
+      "Dept. of Civil Engineering",
+      "社会基盤学専攻"
+    ]
+  },
+  {
+    "uid": "eng-applied-physics",
+    "name_en": "Department of Applied Physics",
+    "name_local": "物理工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics",
+      "物理工学専攻"
+    ]
+  },
+  {
+    "uid": "eng-qpec",
+    "name_en": "Quantum-Phase Electronics Center",
+    "name_local": "量子相エレクトロニクス研究センター",
+    "kind": "center",
+    "parent": "gs-engineering",
+    "aliases": [
+      "Quantum-Phase Electronics Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "eng-chem-system",
+    "name_en": "Department of Chemical System Engineering",
+    "name_local": "化学システム工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical System Engineering"
+    ]
+  },
+  {
+    "uid": "eng-eeis",
+    "name_en": "Department of Electrical Engineering and Information Systems",
+    "name_local": "電気系工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering and Information Systems",
+      "EEIS"
+    ]
+  },
+  {
+    "uid": "eng-systems-innovation",
+    "name_en": "Department of Systems Innovation",
+    "name_local": "システム創成学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Systems Innovation"
+    ]
+  },
+  {
+    "uid": "eng-bioengineering",
+    "name_en": "Department of Bioengineering",
+    "name_local": "バイオエンジニアリング専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Bioengineering"
+    ]
+  },
+  {
+    "uid": "eng-materials",
+    "name_en": "Department of Materials Engineering",
+    "name_local": "マテリアル工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Engineering"
+    ]
+  },
+  {
+    "uid": "eng-applied-chem",
+    "name_en": "Department of Applied Chemistry",
+    "name_local": "応用化学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Chemistry"
+    ]
+  },
+  {
+    "uid": "eng-chem-biotech",
+    "name_en": "Department of Chemistry and Biotechnology",
+    "name_local": "化学生命工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Biotechnology"
+    ]
+  },
+  {
+    "uid": "eng-aero",
+    "name_en": "Department of Aeronautics and Astronautics",
+    "name_local": "航空宇宙工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Aeronautics and Astronautics",
+      "Dept. of Aeronautics and Astronautics"
+    ]
+  },
+  {
+    "uid": "eng-precision",
+    "name_en": "Department of Precision Engineering",
+    "name_local": "精密工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Precision Engineering"
+    ]
+  },
+  {
+    "uid": "eng-nuclear",
+    "name_en": "Department of Nuclear Engineering and Management",
+    "name_local": "原子力国際専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Engineering and Management"
+    ]
+  },
+  {
+    "uid": "eng-nps",
+    "name_en": "Nuclear Professional School",
+    "name_local": "原子力専攻",
+    "kind": "program",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Nuclear Professional School"
+    ]
+  },
+  {
+    "uid": "eng-urban",
+    "name_en": "Department of Urban Engineering",
+    "name_local": "都市工学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Urban Engineering"
+    ]
+  },
+  {
+    "uid": "eng-architecture",
+    "name_en": "Department of Architecture",
+    "name_local": "建築学専攻",
+    "kind": "department",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "eng-iei",
+    "name_en": "Institute of Engineering Innovation",
+    "name_local": "総合研究機構",
+    "kind": "institute",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Engineering Innovation"
+    ]
+  },
+  {
+    "uid": "eng-water",
+    "name_en": "Research Center for Water Environment Technology",
+    "name_local": "水環境工学研究センター",
+    "kind": "center",
+    "parent": "gs-engineering",
+    "aliases": [],
+    "context_aliases": [
+      "Research Center for Water Environment Technology"
+    ]
+  },
+  {
+    "uid": "ist-cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "コンピュータ科学専攻",
+    "kind": "department",
+    "parent": "gs-ist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "ist-ipc",
+    "name_en": "Department of Information Physics and Computing",
+    "name_local": "システム情報学専攻",
+    "kind": "department",
+    "parent": "gs-ist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Information Physics and Computing"
+    ]
+  },
+  {
+    "uid": "ist-mi",
+    "name_en": "Department of Mathematical Informatics",
+    "name_local": "数理情報学専攻",
+    "kind": "department",
+    "parent": "gs-ist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematical Informatics"
+    ]
+  },
+  {
+    "uid": "ist-mechano",
+    "name_en": "Department of Mechano-Informatics",
+    "name_local": "知能機械情報学専攻",
+    "kind": "department",
+    "parent": "gs-ist",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechano-Informatics"
+    ]
+  },
+  {
+    "uid": "fs-integrated-bio",
+    "name_en": "Department of Integrated Biosciences",
+    "name_local": "先端生命科学専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Integrated Biosciences",
+      "Department of Integrated Bioscience"
+    ]
+  },
+  {
+    "uid": "fs-advanced-materials",
+    "name_en": "Department of Advanced Materials Science",
+    "name_local": "物質系専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Advanced Materials Science"
+    ]
+  },
+  {
+    "uid": "fs-cbms",
+    "name_en": "Department of Computational Biology and Medical Sciences",
+    "name_local": "メディカル情報生命専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computational Biology and Medical Sciences",
+      "Department of Computational Biology and Medical Science"
+    ]
+  },
+  {
+    "uid": "fs-complexity",
+    "name_en": "Department of Complexity Science and Engineering",
+    "name_local": "複雑理工学専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Complexity Science and Engineering"
+    ]
+  },
+  {
+    "uid": "fs-advanced-energy",
+    "name_en": "Department of Advanced Energy",
+    "name_local": "先端エネルギー工学専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Advanced Energy"
+    ]
+  },
+  {
+    "uid": "fs-hees",
+    "name_en": "Department of Human and Engineered Environmental Studies",
+    "name_local": "人間環境学専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Human and Engineered Environmental Studies"
+    ]
+  },
+  {
+    "uid": "fs-nes",
+    "name_en": "Department of Natural Environmental Studies",
+    "name_local": "自然環境学専攻",
+    "kind": "department",
+    "parent": "gs-frontier",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Natural Environmental Studies"
+    ]
+  },
+  {
+    "uid": "as-life",
+    "name_en": "Department of Life Sciences",
+    "name_local": "広域科学専攻生命環境科学系",
+    "kind": "department",
+    "parent": "gs-arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Sciences",
+      "Department of Life Science"
+    ]
+  },
+  {
+    "uid": "as-basic",
+    "name_en": "Department of Basic Science",
+    "name_local": "広域科学専攻相関基礎科学系",
+    "kind": "department",
+    "parent": "gs-arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Basic Science"
+    ]
+  },
+  {
+    "uid": "as-multi",
+    "name_en": "Department of Multi-Disciplinary Sciences",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Multi-Disciplinary Sciences"
+    ]
+  },
+  {
+    "uid": "as-general-systems",
+    "name_en": "Department of General Systems Studies",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of General Systems Studies"
+    ]
+  },
+  {
+    "uid": "as-integrated-sciences",
+    "name_en": "Department of Integrated Sciences",
+    "name_local": "統合自然科学科",
+    "kind": "department",
+    "parent": "gs-arts-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Integrated Sciences"
+    ]
+  },
+  {
+    "uid": "as-komaba-institute",
+    "name_en": "Komaba Institute for Science",
+    "name_local": "先進科学研究機構",
+    "kind": "institute",
+    "parent": "gs-arts-sciences",
+    "aliases": [
+      "Komaba Institute for Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ag-vet",
+    "name_en": "Department of Veterinary Medical Sciences",
+    "name_local": "獣医学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Veterinary Medical Sciences"
+    ]
+  },
+  {
+    "uid": "ag-vet-internal",
+    "name_en": "Laboratory of Veterinary Internal Medicine",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Internal Medicine"
+    ]
+  },
+  {
+    "uid": "ag-vet-pathology",
+    "name_en": "Laboratory of Veterinary Pathology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Pathology"
+    ]
+  },
+  {
+    "uid": "ag-vet-micro",
+    "name_en": "Laboratory of Veterinary Microbiology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Microbiology"
+    ]
+  },
+  {
+    "uid": "ag-vet-physiology",
+    "name_en": "Laboratory of Veterinary Physiology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Physiology"
+    ]
+  },
+  {
+    "uid": "ag-vet-anatomy",
+    "name_en": "Laboratory of Veterinary Anatomy",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Anatomy",
+      "Department of Veterinary Anatomy"
+    ]
+  },
+  {
+    "uid": "ag-vet-ethology",
+    "name_en": "Laboratory of Veterinary Ethology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "ag-vet",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Veterinary Ethology"
+    ]
+  },
+  {
+    "uid": "ag-aquatic",
+    "name_en": "Department of Aquatic Bioscience",
+    "name_local": "水圏生物科学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Aquatic Bioscience"
+    ]
+  },
+  {
+    "uid": "ag-abc",
+    "name_en": "Department of Applied Biological Chemistry",
+    "name_local": "応用生命化学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Biological Chemistry"
+    ]
+  },
+  {
+    "uid": "ag-biotech",
+    "name_en": "Department of Biotechnology",
+    "name_local": "応用生命工学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biotechnology"
+    ]
+  },
+  {
+    "uid": "ag-biomaterial",
+    "name_en": "Department of Biomaterial Sciences",
+    "name_local": "生物材料科学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomaterial Sciences"
+    ]
+  },
+  {
+    "uid": "ag-global-ag",
+    "name_en": "Department of Global Agricultural Sciences",
+    "name_local": "農学国際専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Global Agricultural Sciences"
+    ]
+  },
+  {
+    "uid": "ag-aeb",
+    "name_en": "Department of Agricultural and Environmental Biology",
+    "name_local": "生産・環境生物学専攻",
+    "kind": "department",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Agricultural and Environmental Biology"
+    ]
+  },
+  {
+    "uid": "ag-abrc",
+    "name_en": "Agro-Biotechnology Research Center",
+    "name_local": "アグロバイオテクノロジー研究センター",
+    "kind": "center",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Agro-Biotechnology Research Center"
+    ]
+  },
+  {
+    "uid": "ag-food-safety",
+    "name_en": "Research Center for Food Safety",
+    "name_local": "食の安全研究センター",
+    "kind": "center",
+    "parent": "gs-agriculture",
+    "aliases": [],
+    "context_aliases": [
+      "Research Center for Food Safety"
+    ]
+  },
+  {
+    "uid": "med-cardio",
+    "name_en": "Department of Cardiovascular Medicine",
+    "name_local": "循環器内科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cardiovascular Medicine",
+      "Cardiovascular Medicine"
+    ]
+  },
+  {
+    "uid": "med-gastro",
+    "name_en": "Department of Gastroenterology",
+    "name_local": "消化器内科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Gastroenterology"
+    ]
+  },
+  {
+    "uid": "med-obgyn",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "産婦人科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology"
+    ]
+  },
+  {
+    "uid": "med-ortho",
+    "name_en": "Department of Orthopaedic Surgery",
+    "name_local": "整形外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedic Surgery",
+      "Department of Orthopedic Surgery"
+    ]
+  },
+  {
+    "uid": "med-neurology",
+    "name_en": "Department of Neurology",
+    "name_local": "神経内科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurology"
+    ]
+  },
+  {
+    "uid": "med-surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "med-infectious",
+    "name_en": "Department of Infectious Diseases",
+    "name_local": "感染症内科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Infectious Diseases"
+    ]
+  },
+  {
+    "uid": "med-ophthalmology",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "眼科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "med-neurosurgery",
+    "name_en": "Department of Neurosurgery",
+    "name_local": "脳神経外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosurgery"
+    ]
+  },
+  {
+    "uid": "med-urology",
+    "name_en": "Department of Urology",
+    "name_local": "泌尿器外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Urology"
+    ]
+  },
+  {
+    "uid": "med-radiology",
+    "name_en": "Department of Radiology",
+    "name_local": "放射線医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology"
+    ]
+  },
+  {
+    "uid": "med-anesthesiology",
+    "name_en": "Department of Anesthesiology and Pain Relief Center",
+    "name_local": "麻酔科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anesthesiology and Pain Relief Center",
+      "Department of Anesthesiology"
+    ]
+  },
+  {
+    "uid": "med-pain-palliative",
+    "name_en": "Department of Pain and Palliative Medicine",
+    "name_local": "緩和ケア診療部",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pain and Palliative Medicine"
+    ]
+  },
+  {
+    "uid": "med-vascular",
+    "name_en": "Department of Vascular Surgery",
+    "name_local": "血管外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Vascular Surgery"
+    ]
+  },
+  {
+    "uid": "med-pediatric-surgery",
+    "name_en": "Department of Pediatric Surgery",
+    "name_local": "小児外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatric Surgery"
+    ]
+  },
+  {
+    "uid": "med-rehab",
+    "name_en": "Department of Rehabilitation Medicine",
+    "name_local": "リハビリテーション医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Rehabilitation Medicine"
+    ]
+  },
+  {
+    "uid": "med-child-psychiatry",
+    "name_en": "Department of Child Psychiatry",
+    "name_local": "児童精神医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Child Psychiatry"
+    ]
+  },
+  {
+    "uid": "med-healthcare-info",
+    "name_en": "Department of Healthcare Information Management",
+    "name_local": "医療情報経済学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Healthcare Information Management"
+    ]
+  },
+  {
+    "uid": "med-tissue-engineering",
+    "name_en": "Department of Tissue Engineering",
+    "name_local": "ティッシュ・エンジニアリング部",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Tissue Engineering",
+      "Division of Tissue Engineering"
+    ]
+  },
+  {
+    "uid": "med-surgical-oncology",
+    "name_en": "Department of Surgical Oncology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgical Oncology"
+    ]
+  },
+  {
+    "uid": "med-gi-surgery",
+    "name_en": "Department of Gastrointestinal Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Gastrointestinal Surgery"
+    ]
+  },
+  {
+    "uid": "med-hbp-transplant",
+    "name_en": "Hepato-Biliary-Pancreatic Surgery Division and Artificial Organ and Transplantation Division",
+    "name_local": "肝胆膵外科・人工臓器移植外科",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Hepato-Biliary-Pancreatic Surgery Division",
+      "Hepato‐Biliary‐Pancreatic Surgery Division",
+      "Artificial Organ and Transplantation Division",
+      "Artificial Organ and Transplantation Surgery Division"
+    ]
+  },
+  {
+    "uid": "med-neuropsychiatry",
+    "name_en": "Department of Neuropsychiatry",
+    "name_local": "精神医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuropsychiatry"
+    ]
+  },
+  {
+    "uid": "med-pediatrics",
+    "name_en": "Department of Pediatrics",
+    "name_local": "小児医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "med-geriatric",
+    "name_en": "Department of Geriatric Medicine",
+    "name_local": "加齢医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geriatric Medicine"
+    ]
+  },
+  {
+    "uid": "med-ent",
+    "name_en": "Department of Otolaryngology and Head and Neck Surgery",
+    "name_local": "耳鼻咽喉科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Otolaryngology and Head and Neck Surgery"
+    ]
+  },
+  {
+    "uid": "med-respiratory",
+    "name_en": "Department of Respiratory Medicine",
+    "name_local": "呼吸器内科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Respiratory Medicine"
+    ]
+  },
+  {
+    "uid": "med-dermatology",
+    "name_en": "Department of Dermatology",
+    "name_local": "皮膚科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Dermatology"
+    ]
+  },
+  {
+    "uid": "med-thoracic",
+    "name_en": "Department of Thoracic Surgery",
+    "name_local": "呼吸器外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Thoracic Surgery"
+    ]
+  },
+  {
+    "uid": "med-plastic",
+    "name_en": "Department of Plastic and Reconstructive Surgery",
+    "name_local": "形成外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plastic and Reconstructive Surgery",
+      "Department of Plastic and Reconstructive and Aesthetic Surgery"
+    ]
+  },
+  {
+    "uid": "med-breast",
+    "name_en": "Department of Breast and Endocrine Surgery",
+    "name_local": "乳腺内分泌外科学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Breast and Endocrine Surgery"
+    ]
+  },
+  {
+    "uid": "med-nephrology",
+    "name_en": "Division of Nephrology and Endocrinology",
+    "name_local": "腎臓・内分泌内科",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Nephrology and Endocrinology"
+    ]
+  },
+  {
+    "uid": "med-clinical-lab",
+    "name_en": "Department of Clinical Laboratory Medicine",
+    "name_local": "臨床病態検査医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Laboratory Medicine",
+      "Department of Clinical Laboratory"
+    ]
+  },
+  {
+    "uid": "med-infection-control",
+    "name_en": "Department of Infection Control and Prevention",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Infection Control and Prevention"
+    ]
+  },
+  {
+    "uid": "med-forensic",
+    "name_en": "Department of Forensic Medicine",
+    "name_local": "法医学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Forensic Medicine",
+      "Department of Legal Medicine"
+    ]
+  },
+  {
+    "uid": "med-neuropathology",
+    "name_en": "Department of Neuropathology",
+    "name_local": "神経病理学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuropathology"
+    ]
+  },
+  {
+    "uid": "med-immunology",
+    "name_en": "Department of Immunology",
+    "name_local": "免疫学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Immunology"
+    ]
+  },
+  {
+    "uid": "med-microbiology",
+    "name_en": "Department of Microbiology",
+    "name_local": "微生物学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology",
+      "Department of Microbiology and Immunology"
+    ]
+  },
+  {
+    "uid": "med-advanced-cardiology",
+    "name_en": "Department of Advanced Cardiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Advanced Cardiology"
+    ]
+  },
+  {
+    "uid": "med-frontier-cardio",
+    "name_en": "Department of Frontier Cardiovascular Science",
+    "name_local": "",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Frontier Cardiovascular Science"
+    ]
+  },
+  {
+    "uid": "med-cdbim",
+    "name_en": "Center for Disease Biology and Integrative Medicine",
+    "name_local": "疾患生命工学センター",
+    "kind": "center",
+    "parent": "gs-medicine",
+    "aliases": [
+      "Center for Disease Biology and Integrative Medicine"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "med-sph",
+    "name_en": "School of Public Health",
+    "name_local": "公共健康医学専攻",
+    "kind": "program",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health",
+      "公共健康医学専攻"
+    ]
+  },
+  {
+    "uid": "med-clin-epi",
+    "name_en": "Department of Clinical Epidemiology and Health Economics",
+    "name_local": "臨床疫学・経済学",
+    "kind": "department",
+    "parent": "med-sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Epidemiology and Health Economics"
+    ]
+  },
+  {
+    "uid": "med-biostatistics",
+    "name_en": "Department of Biostatistics",
+    "name_local": "生物統計学",
+    "kind": "department",
+    "parent": "med-sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biostatistics"
+    ]
+  },
+  {
+    "uid": "med-global-health",
+    "name_en": "Department of Global Health Policy",
+    "name_local": "国際保健政策学",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Global Health Policy"
+    ]
+  },
+  {
+    "uid": "med-health-comm",
+    "name_en": "Department of Health Communication",
+    "name_local": "医療コミュニケーション学",
+    "kind": "department",
+    "parent": "med-sph",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Communication"
+    ]
+  },
+  {
+    "uid": "med-nursing",
+    "name_en": "Division of Health Sciences and Nursing",
+    "name_local": "健康科学・看護学専攻",
+    "kind": "department",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Health Sciences and Nursing",
+      "Division of Health Sciences & Nursing"
+    ]
+  },
+  {
+    "uid": "med-mental-health",
+    "name_en": "Department of Mental Health",
+    "name_local": "精神保健学",
+    "kind": "department",
+    "parent": "med-nursing",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mental Health"
+    ]
+  },
+  {
+    "uid": "med-midwifery",
+    "name_en": "Department of Midwifery and Women's Health",
+    "name_local": "母性看護学・助産学",
+    "kind": "department",
+    "parent": "med-nursing",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Midwifery and Women's Health",
+      "Department of Midwifery and Women’s Health"
+    ]
+  },
+  {
+    "uid": "med-gero-nursing",
+    "name_en": "Department of Gerontological Nursing/Wound Care Management",
+    "name_local": "老年看護学/創傷看護学",
+    "kind": "department",
+    "parent": "med-nursing",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Gerontological Nursing/Wound Care Management",
+      "Department of Gerontological Nursing"
+    ]
+  },
+  {
+    "uid": "med-home-care-nursing",
+    "name_en": "Department of Gerontological Home Care and Long-Term Care Nursing",
+    "name_local": "高齢者在宅長期ケア看護学",
+    "kind": "department",
+    "parent": "med-nursing",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Gerontological Home Care and Long-Term Care Nursing"
+    ]
+  },
+  {
+    "uid": "med-gnrc",
+    "name_en": "Global Nursing Research Center",
+    "name_local": "グローバルナーシングリサーチセンター",
+    "kind": "center",
+    "parent": "gs-medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Global Nursing Research Center"
+    ]
+  }
+]

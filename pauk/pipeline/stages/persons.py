@@ -1,9 +1,12 @@
 import re
+import threading
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.pipeline.normalize import ITMO_ROR_ID
+from pauk.pipeline.normalize import membership
 from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
@@ -210,10 +213,70 @@ class PersonsStage(EnrichmentStage):
     def _save_person(self, person: Person) -> None:
         self.prepared.upsert_models("persons", [person])
 
+    def _enrich_person(self, person: Person, openalex: OpenAlexClient, orcid: OrcidClient) -> bool:
+        """Fetch the person's OpenAlex author record, then their ORCID record, as far as each is due.
+
+        Returns whether either source was due, i.e. whether the row changed.
+        """
+        ran = False
+        for source, request in ((self.openalex_name, openalex), (self.orcid_name, orcid)):
+            # OpenAlex can supply an ORCID, so calculate the second key
+            # after the first source has completed rather than up front.
+            key = person.openalex_id or "" if source == self.openalex_name else person.orcid or ""
+            state = person.processing.get(source)
+            if not self._needs_source(state, key):
+                continue
+            ran = True
+            if not key:
+                person.processing[source] = ProcessingState(status=ProcessingStatus.NOT_APPLICABLE, request_key="",
+                    attempts=self._next_attempt(state), finished_at=datetime.now(UTC), result_count=0)
+                continue
+            try:
+                if source == self.openalex_name:
+                    payload = request.get_author(key)
+                    self.raw.append("openalex_authors", payload, {"author_id": key})
+                    person.name_raw = payload.get("display_name") or person.name_raw
+                    person.name_variants = list(dict.fromkeys([*person.name_variants,
+                                                               *(payload.get("display_name_alternatives") or [])]))
+                    person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
+                    person.affiliations = _merge_affiliations(person.affiliations, _openalex_affiliations(payload))
+                else:
+                    payload = request.get_record(key)
+                    self.raw.append("orcid", payload, {"orcid": key})
+                    emails = (((payload.get("person") or {}).get("emails") or {}).get("email") or [])
+                    # Every address ORCID lists is kept: a third of the
+                    # people who list any list more than one, and the
+                    # matcher recognises an account by whichever it used.
+                    stated = [item["email"].strip().lower() for item in emails if item.get("email")]
+                    person.emails = sorted(set(person.emails) | set(stated))
+                    if not person.email and stated:
+                        person.email = stated[0]
+                    # Names the author publishes under besides the one
+                    # ORCID shows: a credit name they prefer, and the
+                    # spellings they registered themselves. A commit
+                    # signed "Dangana, RS" is only recognisable through
+                    # these.
+                    person.other_names = _orcid_other_names(payload, person.other_names)
+                    for field, url in _orcid_profiles(payload).items():
+                        value = _github_login(url) if field == "github" else url
+                        if value and not getattr(person, field):
+                            setattr(person, field, value)
+                    person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
+                person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
+                    attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
+            except Exception as exc:
+                person.processing[source] = ProcessingState(status=ProcessingStatus.FAILED, request_key=key,
+                    attempts=self._next_attempt(state), finished_at=datetime.now(UTC), error=redact_text(exc))
+        return ran
+
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
         publications = {row.id: row for row in self.prepared.read_models("publications", Publication)}
         eligible_people = self._people_in_scope(people)
+        if not self.config.institution.external_authors:
+            # External coauthors stay as normalize made them: nothing here is
+            # worth two requests each when the graph leaves them out.
+            eligible_people = [person for person in eligible_people if person.is_member]
         by_publication: dict[str, list[Person]] = {}
         for person in eligible_people:
             for authored in person.authored:
@@ -222,7 +285,8 @@ class PersonsStage(EnrichmentStage):
 
         crossref_changed = 0
         crossref = CrossrefClient(self.config.request_timeout)
-        for publication_id, authors in self.progress(by_publication.items(), total=len(by_publication),
+        crossref_items = by_publication.items() if self.config.crossref_enabled else []
+        for publication_id, authors in self.progress(crossref_items, total=len(crossref_items),
                                                       label="Publications: finding author ORCIDs via Crossref",
                                                       unit="publication"):
             publication = publications[publication_id]
@@ -258,60 +322,45 @@ class PersonsStage(EnrichmentStage):
             self.prepared.upsert_models("persons", authors)
             crossref_changed += 1
 
-        changed = 0
-        openalex = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key)
-        orcid = OrcidClient(self.config.request_timeout)
-        for person in self.progress(eligible_people, total=len(eligible_people), label="Authors: OpenAlex and ORCID"):
-            for source, request in ((self.openalex_name, openalex), (self.orcid_name, orcid)):
-                # OpenAlex can supply an ORCID, so calculate the second key
-                # after the first source has completed rather than up front.
-                key = person.openalex_id or "" if source == self.openalex_name else person.orcid or ""
-                state = person.processing.get(source)
-                if not self._needs_source(state, key):
-                    continue
-                if not key:
-                    person.processing[source] = ProcessingState(status=ProcessingStatus.NOT_APPLICABLE, request_key="",
-                        attempts=self._next_attempt(state), finished_at=datetime.now(UTC), result_count=0)
-                else:
+        local = threading.local()
+
+        def clients() -> tuple[OpenAlexClient, OrcidClient]:
+            # One pair per thread: a requests session is not meant to be shared.
+            if not hasattr(local, "clients"):
+                local.clients = (
+                    OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key),
+                    OrcidClient(self.config.request_timeout, self.config.orcid_client_id,
+                                self.config.orcid_client_secret),
+                )
+            return local.clients
+
+        def enrich(person: Person) -> bool:
+            if not self._enrich_person(person, *clients()):
+                return False
+            person.is_member = membership(person, self.config.institution)
+            self._fill_missing_affiliations(person, publications)
+            self._save_person(person)
+            return True
+
+        workers = max(1, self.config.persons_concurrency)
+
+        def done() -> Iterator[bool]:
+            if workers == 1:
+                yield from (enrich(person) for person in eligible_people)
+                return
+            # A block at a time, as in author_names: an interrupt waits only
+            # for the requests in flight, and memory stays flat.
+            for start in range(0, len(eligible_people), workers * 16):
+                block = eligible_people[start:start + workers * 16]
+                with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
+                    futures = [pool.submit(enrich, person) for person in block]
                     try:
-                        if source == self.openalex_name:
-                            payload = request.get_author(key)
-                            self.raw.append("openalex_authors", payload, {"author_id": key})
-                            person.name_raw = payload.get("display_name") or person.name_raw
-                            person.name_variants = list(dict.fromkeys([*person.name_variants,
-                                                                       *(payload.get("display_name_alternatives") or [])]))
-                            person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
-                            person.affiliations = _merge_affiliations(person.affiliations, _openalex_affiliations(payload))
-                        else:
-                            payload = request.get_record(key)
-                            self.raw.append("orcid", payload, {"orcid": key})
-                            emails = (((payload.get("person") or {}).get("emails") or {}).get("email") or [])
-                            # Every address ORCID lists is kept: a third of the
-                            # people who list any list more than one, and the
-                            # matcher recognises an account by whichever it used.
-                            stated = [item["email"].strip().lower() for item in emails if item.get("email")]
-                            person.emails = sorted(set(person.emails) | set(stated))
-                            if not person.email and stated:
-                                person.email = stated[0]
-                            # Names the author publishes under besides the one
-                            # ORCID shows: a credit name they prefer, and the
-                            # spellings they registered themselves. A commit
-                            # signed "Dangana, RS" is only recognisable through
-                            # these.
-                            person.other_names = _orcid_other_names(payload, person.other_names)
-                            for field, url in _orcid_profiles(payload).items():
-                                value = _github_login(url) if field == "github" else url
-                                if value and not getattr(person, field):
-                                    setattr(person, field, value)
-                            person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
-                        person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
-                            attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
-                    except Exception as exc:
-                        person.processing[source] = ProcessingState(status=ProcessingStatus.FAILED, request_key=key,
-                            attempts=self._next_attempt(state), finished_at=datetime.now(UTC), error=redact_text(exc))
-                person.is_itmo = person.is_itmo or any(a.ror == ITMO_ROR_ID for a in person.affiliations)
-                self._fill_missing_affiliations(person, publications)
-                self._save_person(person)
-                changed += 1
+                        for future in as_completed(futures):
+                            yield future.result()
+                    except BaseException:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
+
+        changed = sum(self.progress(done(), total=len(eligible_people), label="Authors: OpenAlex and ORCID"))
 
         return {"persons": changed, "crossref": crossref_changed}

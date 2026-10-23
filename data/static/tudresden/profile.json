@@ -1,0 +1,36 @@
+{
+  "key": "tudresden",
+  "short_name": "TU Dresden",
+  "short_name_local": "TU Dresden",
+  "name_en": "Technische Universität Dresden",
+  "name_local": "Technische Universität Dresden",
+  "ror_id": "042aqky30",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "zu",
+    "vom",
+    "zum",
+    "der",
+    "den",
+    "de"
+  ],
+  "email_domains": [
+    "tu-dresden.de"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:TUDresdenUniv|TU\\ Dresden)(?![^\\W\\d_])",
+  "long_name": "TUD[\\s‐-]+Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|TU[\\s‐-]+Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dresden|Technische[\\s‐-]+Universität[\\s‐-]+Dresden|Technische[\\s‐-]+Universitat[\\s‐-]+Dresden|Technical[\\s‐-]+University[\\s‐-]+Dresden",
+  "marker_replacement": "TUDresdenUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bautzner|bd|bldg|boulevard|box|building|calle|campus|deutschland|dresden|east|fetscherstr|fetscherstrasse|floor|gatan|germany|helmholtzstrasse|katu|laan|landstrasse|north|piazza|platz|plaza|plein|po|rd|road|room|rue|sachsen|saxony|south|st|str|straat|strasse|straße|street|tharandt|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Helmholtz-Zentrum Dresden-Rossendorf|(?<![^\\W\\d_])HZDR(?![^\\W\\d_])|(?<![^\\W\\d_])DKFZ(?![^\\W\\d_])|German Cancer Research Center|German Cancer Consortium|(?<![^\\W\\d_])DKTK(?![^\\W\\d_])|Max Planck Institute|Leibniz Institute|Fraunhofer|University Hospital Carl Gustav Carus|Universitätsklinikum Carl Gustav Carus|National Center for Tumor Diseases|Elbland\\ Rehabilitationsklinik\\ Großenhain|Elblandklinikum\\ Meißen|Elblandklinikum\\ Radebeul|Elblandklinikum\\ Riesa|Fraunhofer\\ Institute\\ for\\ Process\\ Engineering\\ and\\ Packaging\\ Dresden|GWT\\-TUD\\ GmbH\\ \\(Germany\\)|German\\ Cancer\\ Consortium\\ \\(DKTK\\)\\ Dresden|Hannah\\-Arendt\\-Institut\\ für\\ Totalitarismusforschung\\ e\\.V\\.\\ an\\ der\\ TU\\ Dresden|Helios\\ Klinikum\\ Aue|Herzzentrum\\ Dresden\\ Universitätsklinik|Institut\\ für\\ Softwaremethoden\\ zur\\ Produkt\\-Virtualisierung|Institute\\ for\\ Integrated\\ Management\\ of\\ Material\\ Fluxes\\ and\\ of\\ Resources|Klinikum\\ Görlitz|Krankenhaus\\ Dresden\\-Friedrichstadt|Krankenhaus\\ St\\.\\ Joseph\\-Stift\\ Dresden|Medizinische\\ Universität\\ Lausitz\\ \\-\\ Carl\\ Thiem|SLUB\\ Dresden|TU9|University\\ Hospital\\ Carl\\ Gustav\\ Carus|Verein\\ für\\ Nationales\\ Hochleistungsrechnen\\ –\\ NHR\\-Verein\\ e\\.V\\.|Verkehrsunfallforschung\\ an\\ der\\ TU\\ Dresden\\ GmbH\\ \\(Germany\\)",
+  "identity": "(?<![^\\W\\d_])TU\\ Dresden(?![^\\W\\d_])|TUD[\\s‐-]+Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|TU[\\s‐-]+Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Dresden[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Dresden|Technische[\\s‐-]+Universität[\\s‐-]+Dresden|Technische[\\s‐-]+Universitat[\\s‐-]+Dresden|Technical[\\s‐-]+University[\\s‐-]+Dresden",
+  "city": "Dresden",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tudresden",
+  "site_url": "https://tu-dresden.de",
+  "unit_words": "faculty|fakultät|institute|institut|centre|center|chair|professur|cluster",
+  "external_authors": false
+}

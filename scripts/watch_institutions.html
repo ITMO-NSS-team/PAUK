@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAUK Run Monitor</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1da;
+  --accent: #2f6fdb; --accent-soft: #e4edfc; --ok: #2e8b57; --ok-soft: #e2f3e9;
+  --warn: #c27c0e; --warn-soft: #fbf0dc; --bad: #c8412f; --bad-soft: #fbe6e2;
+  --s-run: #2f6fdb; --s-social: #8a5cd6; --s-publish: #1f9e8f; --s-dedup: #d0862b;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141414; --panel: #1d1d1c; --ink: #ecebe6; --muted: #9a998f; --line: #2f2f2c;
+    --accent: #6f9ff0; --accent-soft: #1f2a3d; --ok: #5cc28a; --ok-soft: #1b2e23;
+    --warn: #e6a640; --warn-soft: #33281a; --bad: #ef7461; --bad-soft: #3a211d;
+    --s-run: #6f9ff0; --s-social: #ad8bec; --s-publish: #4cc4b4; --s-dedup: #e6a640;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141414; --panel: #1d1d1c; --ink: #ecebe6; --muted: #9a998f; --line: #2f2f2c;
+  --accent: #6f9ff0; --accent-soft: #1f2a3d; --ok: #5cc28a; --ok-soft: #1b2e23;
+  --warn: #e6a640; --warn-soft: #33281a; --bad: #ef7461; --bad-soft: #3a211d;
+  --s-run: #6f9ff0; --s-social: #ad8bec; --s-publish: #4cc4b4; --s-dedup: #e6a640;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+.sub { color: var(--muted); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.live { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2s infinite; }
+.dead { background: var(--bad); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.kpi .label { color: var(--muted); font-size: 12px; }
+.kpi .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .hint { color: var(--muted); font-size: 12px; }
+.bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s; }
+.now h2 { font-size: 18px; margin: 0; }
+.now .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: baseline; }
+.timers { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.timers b { color: var(--ink); font-weight: 600; }
+.track { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 4px; }
+.chip { font-size: 12px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted);
+  white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip.done { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.chip.skip { opacity: .45; }
+.stagebox { margin-top: 12px; }
+.stagebox .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.stagebox .what { font-weight: 600; }
+.stagebox .nums { color: var(--muted); font-variant-numeric: tabular-nums; }
+.alerts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.alert { border-radius: 8px; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+.alert.warn { background: var(--warn-soft); color: var(--warn); }
+.alert.bad { background: var(--bad-soft); color: var(--bad); }
+.alert.info { background: var(--accent-soft); color: var(--accent); }
+.proc { margin-top: 10px; color: var(--muted); font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; }
+.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 0 8px 6px; }
+td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+tr.pick { cursor: pointer; }
+tr.pick:hover td { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+tr.sel td { background: var(--accent-soft); }
+td.num { text-align: right; white-space: nowrap; }
+.name small { color: var(--muted); display: block; font-size: 11px; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
+.badge.done { background: var(--ok-soft); color: var(--ok); }
+.badge.running { background: var(--accent); color: #fff; }
+.badge.partial { background: var(--warn-soft); color: var(--warn); }
+.badge.pending { color: var(--muted); border: 1px solid var(--line); }
+.stack { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--line); min-width: 60px; }
+.stack i { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; margin-top: 10px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 5px; background: var(--c); vertical-align: -1px; }
+.loghead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.loghead h3 { margin: 0; font-size: 14px; }
+.toggles { display: flex; gap: 6px; }
+.toggles button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); cursor: pointer; }
+.toggles button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+pre.log { margin: 0; font: 11.5px/1.5 var(--mono); max-height: 520px; overflow: auto; white-space: pre-wrap;
+  overflow-wrap: anywhere; color: var(--muted); }
+pre.log .w { color: var(--warn); } pre.log .e { color: var(--bad); } pre.log .h { color: var(--accent); font-weight: 600; }
+.empty { color: var(--muted); padding: 18px 0; text-align: center; }
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cols { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .hide-sm { display: none; } .kpi .value { font-size: 20px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Сбор графов PAUK</h1>
+    <span class="sub" id="orch"></span>
+    <span class="sub" id="fresh"></span>
+  </header>
+
+  <section class="grid">
+    <div class="card kpi"><div class="label">Готово вузов</div><div class="value" id="k-done">–</div>
+      <div class="bar"><i id="k-done-bar" style="width:0"></i></div></div>
+    <div class="card kpi"><div class="label">Идёт сбор</div><div class="value" id="k-elapsed">–</div>
+      <div class="hint">с запуска первого шага</div></div>
+    <div class="card kpi"><div class="label">Осталось примерно</div><div class="value" id="k-eta">–</div>
+      <div class="hint" id="k-eta-hint">по скорости готовых вузов</div></div>
+    <div class="card kpi"><div class="label">Окончание примерно</div><div class="value" id="k-end">–</div>
+      <div class="hint">грубая оценка</div></div>
+  </section>
+
+  <section class="card now" id="now"><div class="empty">Загрузка…</div></section>
+
+  <section class="cols">
+    <div class="card">
+      <table>
+        <thead><tr><th>#</th><th>Вуз</th><th class="hide-sm">Работ</th><th>Статус</th><th>Шаги</th><th class="num">Время</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="legend">
+        <span style="--c: var(--s-run)">run</span><span style="--c: var(--s-social)">social_graph</span>
+        <span style="--c: var(--s-publish)">publish</span><span style="--c: var(--s-dedup)">dedup graph</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="loghead">
+        <h3 id="log-title">Лог</h3>
+        <div class="toggles">
+          <button id="t-warn" title="Только предупреждения и ошибки">Только важное</button>
+          <button id="t-follow" class="on" title="Показывать лог текущего вуза">Следить</button>
+        </div>
+      </div>
+      <pre class="log" id="log"></pre>
+    </div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = { run: "var(--s-run)", social_graph: "var(--s-social)", publish: "var(--s-publish)", dedup_graph: "var(--s-dedup)" };
+const STATUS = { done: "готов", running: "идёт", partial: "прерван", pending: "в очереди" };
+let data = null, selected = null, follow = true, warnOnly = false, lastLog = [];
+
+function dur(sec) {
+  if (sec == null || !isFinite(sec)) return "–";
+  sec = Math.max(0, Math.round(sec));
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (d) return `${d} д ${h} ч`;
+  if (h) return `${h} ч ${String(m).padStart(2, "0")} мин`;
+  if (m) return `${m} мин ${String(s).padStart(2, "0")} с`;
+  return `${s} с`;
+}
+const since = iso => iso ? (Date.now() - Date.parse(iso)) / 1000 : null;
+const clock = iso => iso ? new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "–";
+const when = ms => new Date(ms).toLocaleString("ru-RU", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const fmt = n => n == null ? "–" : n.toLocaleString("ru-RU");
+
+function estimate(row) {
+  return data.seconds_per_work && row.works ? data.seconds_per_work * row.works : null;
+}
+
+function renderKpis() {
+  const rows = data.rows, done = rows.filter(r => r.complete).length;
+  $("k-done").textContent = `${done} / ${rows.length}`;
+  $("k-done-bar").style.width = `${100 * done / rows.length}%`;
+  const firsts = rows.map(r => r.started).filter(Boolean).map(Date.parse);
+  $("k-elapsed").textContent = firsts.length ? dur((Date.now() - Math.min(...firsts)) / 1000) : "–";
+  let left = 0, unknown = 0;
+  for (const r of rows) {
+    if (r.complete) continue;
+    const e = estimate(r);
+    if (e == null) { unknown++; continue; }
+    left += r.status === "running" && r.started ? Math.max(e * 0.1, e - since(r.steps.run.started || r.started)) : e;
+  }
+  $("k-eta").textContent = data.seconds_per_work ? dur(left) : "–";
+  $("k-eta-hint").textContent = data.seconds_per_work
+    ? `${(data.seconds_per_work * 1000 / 60).toFixed(0)} мин на 1000 работ` + (unknown ? `, без ${unknown} вузов` : "")
+    : "появится после первого вуза";
+  $("k-end").textContent = data.seconds_per_work ? when(Date.now() + left * 1000) : "–";
+  $("orch").innerHTML = data.orchestrator
+    ? `<span class="dot live"></span>оркестратор работает`
+    : `<span class="dot dead"></span>оркестратор не запущен`;
+  $("fresh").textContent = `обновлено ${new Date(data.now).toLocaleTimeString("ru-RU")}`;
+}
+
+function renderNow() {
+  const cur = data.rows.find(r => r.key === data.current);
+  const box = $("now");
+  if (!cur) {
+    box.innerHTML = `<div class="empty">${data.orchestrator ? "Оркестратор запускает следующий вуз…" : "Сейчас ничего не собирается."}</div>`;
+    return;
+  }
+  const p = cur.progress && cur.progress.finished_at == null ? cur.progress : null;
+  const stepChips = data.steps.map(s => {
+    const st = cur.steps[s];
+    const cls = st.finished ? "done" : (cur.step === s ? "active" : "");
+    const t = st.finished ? ` · ${dur(st.seconds)}` : (cur.step === s ? ` · ${dur(since(cur.step_started))}` : "");
+    return `<span class="chip ${cls}">${s}${t}</span>`;
+  }).join("");
+  let stage = "";
+  if (cur.step === "run") {
+    const at = p ? data.run_stages.indexOf(p.stage) : -1;
+    stage = `<div class="track">` + data.run_stages.map((s, i) =>
+      `<span class="chip ${at < 0 ? "" : i < at ? "done" : i === at ? "active" : ""}">${s}</span>`).join("") + `</div>`;
+  }
+  let box2 = "";
+  if (p) {
+    const pct = p.rows_total ? 100 * p.rows_done / p.rows_total : null;
+    const el = since(p.stage_started_at);
+    const rate = p.rows_done && el ? p.rows_done / el : null;
+    const left = rate && p.rows_total ? (p.rows_total - p.rows_done) / rate : null;
+    box2 = `<div class="stagebox">
+      <div class="row"><span class="what">${esc(p.stage || "—")}${p.label ? ` <span class="sub">· ${esc(p.label)}</span>` : ""}</span>
+      <span class="nums">${pct != null ? `${fmt(p.rows_done)} / ${fmt(p.rows_total)} · ${pct.toFixed(1)}%` : "считает…"}
+      · стадия идёт ${dur(el)}${left != null ? ` · осталось ~${dur(left)}` : ""}</span></div>
+      <div class="bar"><i style="width:${pct ?? 0}%"></i></div></div>`;
+  } else if (cur.step === "run") {
+    box2 = `<div class="alert info" style="margin-top:12px">Этот запуск начат до появления счётчиков: стадию видно только по логу. Со следующего шага прогресс будет здесь.</div>`;
+  }
+  const alerts = [];
+  const quiet = since(cur.log_updated), pq = p ? since(p.updated_at) : null;
+  const cpu = data.process ? data.process.cpu : null;
+  if (cur.waiting) alerts.push(`<div class="alert warn">Ждёт повтора запроса до ${clock(cur.waiting.until)} (${dur(cur.waiting.seconds)}): ${esc(cur.waiting.url)}</div>`);
+  if (!data.process) alerts.push(`<div class="alert bad">Процесс pauk не найден.</div>`);
+  else if (quiet > 900 && (pq == null || pq > 900)) {
+    alerts.push(`<div class="alert ${cpu > 90 ? "bad" : "warn"}">Лог и счётчики молчат ${dur(Math.min(quiet, pq ?? quiet))}`
+      + (cpu > 90 ? `, при этом CPU ${cpu.toFixed(0)}%: похоже на зацикливание.` : `, CPU ${cpu.toFixed(0)}%: возможно, ждёт сеть.`) + `</div>`);
+  }
+  box.innerHTML = `<div class="head">
+      <h2>${esc(cur.short)} <span class="sub" style="font-weight:400">· ${esc(cur.name)} · ${cur.index} из ${data.rows.length}</span></h2>
+      <div class="timers"><span>шаг <b>${esc(cur.step || "—")}</b> идёт <b>${dur(since(cur.step_started))}</b></span>
+      <span>вуз в работе <b>${dur(since(cur.started))}</b></span>
+      ${estimate(cur) ? `<span>оценка на вуз <b>${dur(estimate(cur))}</b></span>` : ""}</div></div>
+    <div class="track">${stepChips}</div>${stage}${box2}
+    <div class="alerts">${alerts.join("")}</div>
+    ${data.process ? `<div class="proc">pid ${data.process.pid} · CPU ${data.process.cpu.toFixed(0)}% · ${fmt(data.process.rss_mb)} МБ · запущен ${esc(data.process.etime)} назад · лог обновлён ${dur(quiet)} назад · pauk ${esc(data.process.command)}</div>` : ""}`;
+}
+
+function renderRows() {
+  const maxSec = Math.max(1, ...data.rows.map(r => r.complete ? r.seconds : (estimate(r) || 0)));
+  $("rows").innerHTML = data.rows.map(r => {
+    let bar = "", time = "–";
+    if (r.complete) {
+      bar = `<div class="stack" style="width:${Math.max(8, 100 * r.seconds / maxSec)}%">` + data.steps.map(s =>
+        `<i title="${s}: ${dur(r.steps[s].seconds)}" style="width:${100 * (r.steps[s].seconds || 0) / r.seconds}%;background:${COLORS[s]}"></i>`).join("") + `</div>`;
+      time = dur(r.seconds);
+    } else if (r.status === "running") {
+      const done = data.steps.filter(s => r.steps[s].finished).length;
+      bar = `<div class="stack"><i style="width:${100 * done / 4}%;background:var(--accent)"></i></div>`;
+      time = dur(since(r.started));
+    } else if (estimate(r)) {
+      time = `<span class="sub">~${dur(estimate(r))}</span>`;
+    }
+    return `<tr class="pick ${selected === r.key ? "sel" : ""}" data-key="${r.key}">
+      <td class="sub">${r.index}</td><td class="name">${esc(r.short)}<small>${esc(r.key)}</small></td>
+      <td class="hide-sm sub">${fmt(r.works)}</td><td><span class="badge ${r.status}">${STATUS[r.status]}</span></td>
+      <td style="width:28%">${bar}</td><td class="num">${time}</td></tr>`;
+  }).join("");
+  for (const tr of $("rows").querySelectorAll("tr")) tr.onclick = () => { selected = tr.dataset.key; follow = false; syncToggles(); loadLog(); renderRows(); };
+}
+
+function renderLog() {
+  const lines = warnOnly ? lastLog.filter(l => /\[(WARNING|ERROR)\]|Traceback|Error|^===/.test(l)) : lastLog;
+  const pre = $("log");
+  const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+  pre.innerHTML = lines.length ? lines.map(l => {
+    const cls = l.startsWith("===") ? "h" : /\[ERROR\]|Traceback|Error/.test(l) ? "e" : /\[WARNING\]/.test(l) ? "w" : "";
+    return cls ? `<span class="${cls}">${esc(l)}</span>` : esc(l);
+  }).join("\n") : `<span class="sub">пусто</span>`;
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+async function loadLog() {
+  const key = follow ? data && data.current : selected;
+  $("log-title").textContent = key ? `Лог · ${key}` : "Лог";
+  if (!key) { lastLog = []; renderLog(); return; }
+  try { lastLog = await (await fetch(`/api/log?key=${encodeURIComponent(key)}`)).json(); } catch { return; }
+  renderLog();
+}
+
+function syncToggles() {
+  $("t-follow").classList.toggle("on", follow);
+  $("t-warn").classList.toggle("on", warnOnly);
+}
+$("t-follow").onclick = () => { follow = !follow; if (follow) selected = null; syncToggles(); loadLog(); renderRows(); };
+$("t-warn").onclick = () => { warnOnly = !warnOnly; syncToggles(); renderLog(); };
+
+async function poll() {
+  try {
+    data = await (await fetch("/api/status")).json();
+    if (follow) selected = null;
+    renderKpis(); renderNow(); renderRows(); loadLog();
+  } catch {
+    $("orch").innerHTML = `<span class="dot dead"></span>нет связи с монитором`;
+  }
+}
+poll();
+setInterval(poll, 4000);
+// Timers tick between polls too.
+setInterval(() => { if (data) { renderKpis(); renderNow(); } }, 1000);
+</script>
+</body>
+</html>

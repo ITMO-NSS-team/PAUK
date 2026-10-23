@@ -1,0 +1,36 @@
+{
+  "key": "unipi",
+  "short_name": "UniPi",
+  "short_name_local": "UniPi",
+  "name_en": "University of Pisa",
+  "name_local": "Università di Pisa",
+  "ror_id": "03ad39j10",
+  "language": "Italian",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "di",
+    "de",
+    "del",
+    "della",
+    "da",
+    "dal",
+    "lo",
+    "la"
+  ],
+  "email_domains": [
+    "unipi.it"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivPisa|UniPi)(?![^\\W\\d_])",
+  "long_name": "Università[\\s‐-]+degli[\\s‐-]+Studi[\\s‐-]+di[\\s‐-]+Pisa|University[\\s‐-]+of[\\s‐-]+Pisa|Università[\\s‐-]+di[\\s‐-]+Pisa|Université[\\s‐-]+de[\\s‐-]+Pise|Universita[\\s‐-]+di[\\s‐-]+Pisa|Universität[\\s‐-]+Pisa|Pisa[\\s‐-]+University|Univ\\.[\\s‐-]+of[\\s‐-]+Pisa|Univ[\\s‐-]+Pisa",
+  "marker_replacement": "UnivPisa",
+  "place_words": "aleja|allee|av|ave|avenue|b|bd|bldg|bonanno|borghetto|boulevard|box|bruno|building|calle|campus|east|floor|gatan|italia|italy|katu|laan|largo|lazzarino|lucio|lungarno|moruzzi|north|pacinotti|paradisa|pi|piagge|piazza|pisa|platz|plaza|plein|po|pontecorvo|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "University Hospital of Pisa|Pisa University Hospital|Azienda Ospedaliero[\\s-]Universitaria Pisana|INFN|Istituto Nazionale di Fisica Nucleare|Scuola Normale Superiore|Sant[’']Anna|(?<![^\\W\\d_])CNR(?![^\\W\\d_])|Ospedale Cisanello|Centro\\ di\\ Ricerca\\ Matematica\\ Ennio\\ De\\ Giorgi|Istituto\\ Nazionale\\ di\\ Fisica\\ Nucleare,\\ Sezione\\ di\\ Pisa|Ospedale\\ Cisanello",
+  "identity": "(?<![^\\W\\d_])UniPi(?![^\\W\\d_])|Università[\\s‐-]+degli[\\s‐-]+Studi[\\s‐-]+di[\\s‐-]+Pisa|University[\\s‐-]+of[\\s‐-]+Pisa|Università[\\s‐-]+di[\\s‐-]+Pisa|Université[\\s‐-]+de[\\s‐-]+Pise|Universita[\\s‐-]+di[\\s‐-]+Pisa|Universität[\\s‐-]+Pisa|Pisa[\\s‐-]+University|Univ\\.[\\s‐-]+of[\\s‐-]+Pisa|Univ[\\s‐-]+Pisa",
+  "city": "Pisa",
+  "staff_catalog": null,
+  "mongo_db": "pauk_unipi",
+  "site_url": "https://www.unipi.it",
+  "unit_words": "department|dipartimento|unit",
+  "external_authors": false
+}

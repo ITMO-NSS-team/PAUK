@@ -25,7 +25,7 @@ class ReviewPageTest(unittest.TestCase):
         create_user(self.db, "guest", "hunter2", role="viewer")
         review.record_held(self.db, [
             held_pair("A1", "A2"),
-            held_pair("A3", "A4", because="only one person is ITMO-affiliated"),
+            held_pair("A3", "A4", because="only one person is a member"),
             held_group(),
         ])
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
@@ -198,7 +198,7 @@ class ReviewPageTest(unittest.TestCase):
         self.sign_in()
         body = self.client.get("/review", params={"tab": "open"}).text
         self.assertIn("одинаковое имя, ничем не подтверждено", body)
-        self.assertIn("только один из двоих в ИТМО", body)
+        self.assertIn("только один из двоих из университета", body)
         self.assertIn("разных значения поля ORCID", body)
 
 
@@ -334,7 +334,7 @@ class FactsInTheRowTest(unittest.TestCase):
         self.graph.add("Person", "A1", name_raw="Ivan Smirnov",
                        orcid="0000-0002-1825-0097", email="smirnov@itmo.ru")
         self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
-        self.graph.add("Department", "D1", name_ru="Физико-технический мегафакультет")
+        self.graph.add("Department", "D1", name_local="Физико-технический мегафакультет")
         self.graph.add("Publication", "W1")
         self.graph.relationships[("Person", "BELONGS_TO", "Department", "A1", "D1")] = {}
         self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
@@ -875,9 +875,9 @@ class SplitBackTest(unittest.TestCase):
         review.record_held(self.db, [held_pair("A1", "A2")])
         self.prepared = PreparedStore(self.db, "sample")
         self.prepared.write_models("persons", [
-            Person(id="A1", openalex_id="A1", name_raw="Ivan Smirnov", is_itmo=True,
+            Person(id="A1", openalex_id="A1", name_raw="Ivan Smirnov", is_member=True,
                    authored=[{"publication_id": "W1", "position": 1}]),
-            Person(id="A2", openalex_id="A2", name_raw="I. Smirnov", is_itmo=False,
+            Person(id="A2", openalex_id="A2", name_raw="I. Smirnov", is_member=False,
                    authored=[{"publication_id": "W2", "position": 1}]),
         ])
         self.prepared.write_models("publications", [

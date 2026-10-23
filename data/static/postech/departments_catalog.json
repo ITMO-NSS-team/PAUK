@@ -1,0 +1,215 @@
+[
+  {
+    "uid": "postech",
+    "name_en": "Pohang University of Science and Technology",
+    "name_local": "포항공과대학교",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04xysgw12",
+    "type": "university"
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering"
+    ]
+  },
+  {
+    "uid": "cheme",
+    "name_en": "Department of Chemical Engineering",
+    "name_local": "Department of Chemical Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "life",
+    "name_en": "Department of Life Sciences",
+    "name_local": "Department of Life Sciences",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Sciences"
+    ]
+  },
+  {
+    "uid": "cse",
+    "name_en": "Department of Computer Science and Engineering",
+    "name_local": "Department of Computer Science and Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Engineering"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "ime",
+    "name_en": "Department of Industrial and Management Engineering",
+    "name_local": "Department of Industrial and Management Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial and Management Engineering"
+    ]
+  },
+  {
+    "uid": "cite",
+    "name_en": "Department of Convergence IT Engineering",
+    "name_local": "Department of Convergence IT Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Convergence IT Engineering",
+      "Convergence IT Engineering"
+    ]
+  },
+  {
+    "uid": "battery",
+    "name_en": "Department of Battery Engineering",
+    "name_local": "Department of Battery Engineering",
+    "kind": "department",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Battery Engineering"
+    ]
+  },
+  {
+    "uid": "env",
+    "name_en": "Division of Environmental Science and Engineering",
+    "name_local": "Division of Environmental Science and Engineering",
+    "kind": "division",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Environmental Science and Engineering"
+    ]
+  },
+  {
+    "uid": "nuclear",
+    "name_en": "Division of Advanced Nuclear Engineering",
+    "name_local": "Division of Advanced Nuclear Engineering",
+    "kind": "division",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Advanced Nuclear Engineering"
+    ]
+  },
+  {
+    "uid": "ai",
+    "name_en": "Graduate School of Artificial Intelligence",
+    "name_local": "Graduate School of Artificial Intelligence",
+    "kind": "school",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Artificial Intelligence"
+    ]
+  },
+  {
+    "uid": "semi",
+    "name_en": "Graduate School of Semiconductor Technology",
+    "name_local": "Graduate School of Semiconductor Technology",
+    "kind": "school",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Semiconductor Technology"
+    ]
+  },
+  {
+    "uid": "gift",
+    "name_en": "Graduate Institute of Ferrous and Eco Materials Technology",
+    "name_local": "Graduate Institute of Ferrous and Eco Materials Technology",
+    "kind": "institute",
+    "parent": "postech",
+    "aliases": [
+      "Graduate Institute of Ferrous and Eco Materials Technology"
+    ],
+    "context_aliases": [
+      "GIFT",
+      "Graduate Institute of Ferrous & Eco Materials Technology"
+    ]
+  },
+  {
+    "uid": "mse-med",
+    "name_en": "School of Medical Science and Engineering",
+    "name_local": "School of Medical Science and Engineering",
+    "kind": "school",
+    "parent": "postech",
+    "aliases": [],
+    "context_aliases": [
+      "Medical Science and Engineering",
+      "School of Medical Science and Engineering"
+    ]
+  }
+]

@@ -1,0 +1,34 @@
+{
+  "key": "polytechnique",
+  "short_name": "École Polytechnique",
+  "short_name_local": "l'X",
+  "name_en": "École Polytechnique",
+  "name_local": "École Polytechnique",
+  "ror_id": "05hy3tk52",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "d"
+  ],
+  "email_domains": [
+    "polytechnique.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:EcolePolytechniqueX)(?![^\\W\\d_])",
+  "long_name": "[ÉEé]cole[\\s‐-]+[Pp]olytechnique(?![\\s‐-]+(?:F[ée]d[ée]rale|de[\\s‐-]+Montr|Montr|Universitaire|de[\\s‐-]+Tunisie|de[\\s‐-]+Bruxelles|de[\\s‐-]+Louvain|d['’][\\s]*Agadir|de[\\s‐-]+Thi[èe]s|[Ff]eminine|de[\\s‐-]+Tunis))",
+  "marker_replacement": "EcolePolytechniqueX",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|cedex|east|floor|france|gatan|katu|laan|north|palaiseau|paris|piazza|platz|plaza|plein|po|rd|road|room|route|rue|saclay|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Institut Polytechnique de Paris|IP Paris|CNRS|Sorbonne|Université Paris-Saclay|(?<![^\\W\\d_])CEA(?![^\\W\\d_])|Inserm|INSERM|Inria|(?<![^\\W\\d_])ENS(?![^\\W\\d_])|[ÉE]cole Normale|ENSTA|Observatoire de Paris|(?<![^\\W\\d_])PSL(?![^\\W\\d_])|(?<![^\\W\\d_])IPSL(?![^\\W\\d_])|T[ée]l[ée]com Paris|ENSAE|(?<![^\\W\\d_])IN2P3(?![^\\W\\d_])|Fédération\\ Francilienne\\ de\\ Mécanique\\ \\-\\ Matériaux,\\ Structures,\\ Procédés|Fédération\\ de\\ Recherche\\ sur\\ l'Energie\\ Solaire|Fédération\\ de\\ recherche\\ PLAS@PAR|Fédération\\ française\\ Matériaux\\ sous\\ hautes\\ vitesses\\ de\\ déformation\\.\\ Application\\ aux\\ matériaux\\ en\\ conditions\\ extrêmes,\\ Procédés\\ et\\ structures|GDR\\ NBODY\\ :\\ Problème\\ quantique\\ à\\ N\\ corps\\ en\\ chimie\\ et\\ physique|INFRANALYTICS|Microscopie\\ Fonctionnelle\\ du\\ Vivant",
+  "identity": "[ÉEé]cole[\\s‐-]+[Pp]olytechnique(?![\\s‐-]+(?:F[ée]d[ée]rale|de[\\s‐-]+Montr|Montr|Universitaire|de[\\s‐-]+Tunisie|de[\\s‐-]+Bruxelles|de[\\s‐-]+Louvain|d['’][\\s]*Agadir|de[\\s‐-]+Thi[èe]s|[Ff]eminine|de[\\s‐-]+Tunis))",
+  "city": "Palaiseau",
+  "staff_catalog": null,
+  "mongo_db": "pauk_polytechnique",
+  "site_url": "https://www.polytechnique.edu",
+  "unit_words": "laboratoire|laboratory|centre|center|department|département",
+  "external_authors": false
+}

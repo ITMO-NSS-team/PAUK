@@ -40,10 +40,10 @@ class PipelineRunner:
         client = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key)
         if on_stage is not None:
             on_stage("выгрузка из OpenAlex", 0, 0)
-        count = Collector(client, self.raw).collect(selector)
+        count = Collector(client, self.raw, self.config.institution).collect(selector)
         result = {"raw_works": count}
         if on_stage is not None:
             on_stage("разбор выгруженного", 0, 0)
-        result.update(OpenAlexNormalizer(self.raw, self.prepared).run())
+        result.update(OpenAlexNormalizer(self.raw, self.prepared, self.config.institution).run())
         result.update(Enricher(self.prepared, self.raw, self.config).run(on_stage=on_stage))
         return result

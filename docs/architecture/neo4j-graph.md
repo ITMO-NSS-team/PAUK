@@ -29,10 +29,10 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 | LinkCandidate | `id` (the URL itself) | `LinkCandidate` |
 
 ```text
-(:Person {is_itmo: true})  -[:BELONGS_TO]->     (:Department)
-(:Person {is_itmo: true})  -[:AUTHORED]->       (:Publication)
-(:Person {is_itmo: false}) -[:AUTHORED]->       (:Publication)
-(:Person {is_itmo: true})  -[:CONTRIBUTED_TO]-> (:Repository)
+(:Person {is_member: true})  -[:BELONGS_TO]->     (:Department)
+(:Person {is_member: true})  -[:AUTHORED]->       (:Publication)
+(:Person {is_member: false}) -[:AUTHORED]->       (:Publication)
+(:Person {is_member: true})  -[:CONTRIBUTED_TO]-> (:Repository)
 
 (:Department)  -[:PART_OF]->       (:Department | :Organization)
 
@@ -92,11 +92,11 @@ working data for matching and also real people's addresses; they stay in the
 prepared rows and in the `github_matches.jsonl` journal. Of the collected
 profile, only `company` goes into the graph.
 
-A person always has the single label `:Person`; ITMO membership is the
-boolean property `is_itmo`, not a label. The property is sticky: the same
-author can be ITMO in one group and external in another, but `is_itmo` only
-grows, and an external row never lowers an existing `is_itmo=true`
-(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` in
+A person always has the single label `:Person`; membership of the university is the
+boolean property `is_member`, not a label. The property is sticky: the same
+author can be a member in one group and external in another, but `is_member` only
+grows, and an external row never lowers an existing `is_member=true`
+(`n.is_member = coalesce(n.is_member, false) OR row.is_member` in
 `client.py::upsert_person_nodes_batch`). In cross-group dedup the same rule
 is applied by `BOOLEAN_MERGE_FIELDS["Person"]` in `_fold_nodes_batch`.
 

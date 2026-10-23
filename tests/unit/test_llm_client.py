@@ -148,6 +148,31 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertEqual(client.last_error, "HTTP 400")
         sleep.assert_not_called()
 
+    def test_a_reply_that_reconsiders_is_read_from_its_last_block(self):
+        client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
+        content = ('```json\n{"first_name": "F"}\n```\n\nWait, let me reconsider. The spellings '
+                   'spell the name out.\n\n```json\n{"first_name": "Francisco"}\n```')
+        client.session.post = MagicMock(return_value=self.response(
+            200, {"choices": [{"message": {"content": content}}]}))
+
+        self.assertEqual(client.chat_json("some prompt"), {"first_name": "Francisco"})
+
+    def test_a_bare_object_followed_by_prose_is_read(self):
+        # Seen with claude-haiku-5.5: the object, then a sentence after it.
+        client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
+        client.session.post = MagicMock(return_value=self.response(
+            200, {"choices": [{"message": {"content": '{"surname": "Silva"}\n\nNote: initials kept.'}}]}))
+
+        self.assertEqual(client.chat_json("some prompt"), {"surname": "Silva"})
+
+    def test_text_with_no_parsable_json_is_still_a_failure(self):
+        client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
+        client.session.post = MagicMock(return_value=self.response(
+            200, {"choices": [{"message": {"content": "I cannot answer.\n```json\n{broken\n```"}}]}))
+
+        self.assertIsNone(client.chat_json("some prompt"))
+        self.assertIn("JSONDecodeError", client.last_error)
+
     def test_a_non_object_response_envelope_is_a_failure_not_a_crash(self):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         client.session.post = MagicMock(return_value=self.response(200, []))

@@ -33,7 +33,7 @@ RESERVED_FIELDS = frozenset({"id", "created_at", "updated_at"})
 def _build_node_fields() -> dict[str, frozenset[str]]:
     """label -> the properties the loader publishes for it.
 
-    Person appears in the registry twice (ITMO and external) with the same
+    Person appears in the registry twice (member and external) with the same
     base label, so the two field lists are unioned.
     """
     fields: dict[str, set[str]] = {}
@@ -62,12 +62,12 @@ RELATIONSHIPS = _build_relationships()
 
 # What the search box looks at: explicit, since these go into Cypher.
 SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
-    "Person": ("name_en", "name_ru", "orcid"),
+    "Person": ("name_en", "name_local", "orcid"),
     "Publication": ("title", "doi"),
     "Repository": ("url", "name"),
     "GitHubProfile": ("login", "name"),
-    "Department": ("name_en", "name_ru"),
-    "Organization": ("name_en", "name_ru", "ror_id"),
+    "Department": ("name_en", "name_local"),
+    "Organization": ("name_en", "name_local", "ror_id"),
     "LinkCandidate": ("url", "host"),
 }
 

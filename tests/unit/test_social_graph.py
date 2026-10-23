@@ -9,7 +9,7 @@ import mongomock
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.social_graph import (
     SocialGraphStage,
-    itmo_organization_status,
+    member_organization_status,
 )
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -22,8 +22,13 @@ from pauk.storage.static import StaticStore
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+
+def batched(client):
+    """get_users on a test double, answering through its get_user so per-login setups and counts still apply."""
+    return lambda logins: {login: client.get_user(login) for login in logins}
+
 def person(pid, name, *, github=None, itmo=True):
-    return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, github=github)
+    return Person(id=pid, openalex_id=pid, is_member=itmo, name_raw=name, github=github)
 
 
 def profile(login, *, account_type="user", name=None, bio=None, company=None, location=None):
@@ -37,13 +42,13 @@ def repository(owner, name, *, contributors=()):
                       owner_login=owner, contributors=list(contributors), cited_urls=[url])
 
 
-class ItmoOrganizationStatusTest(unittest.TestCase):
+class MemberOrganizationStatusTest(unittest.TestCase):
     CATALOG = frozenset({"licaibeerlab", "ctlab"})
 
     def judge(self, login, catalog=CATALOG, **profile_kwargs):
         given = profile(login, account_type="organization", **profile_kwargs) \
             if profile_kwargs else None
-        return itmo_organization_status(login, given, catalog)
+        return member_organization_status(login, given, catalog)
 
     def test_a_catalogued_organization_is_confirmed(self):
         # Its profile says nothing and its login gives nothing away; the
@@ -73,8 +78,8 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
                          "живёт в Санкт-Петербурге", "из Санкт-Петербурга"):
             with self.subTest(location=location):
                 given = profile("some-lab", account_type="organization", location=location)
-                self.assertEqual(itmo_organization_status("some-lab", given, self.CATALOG),
-                                 ("possible", "petersburg"))
+                self.assertEqual(member_organization_status("some-lab", given, self.CATALOG),
+                                 ("possible", "city"))
 
     def test_description_and_company_are_strong_evidence(self):
         self.assertEqual(self.judge("lab", bio="Laboratory at ITMO University"), ("confirmed", "profile"))
@@ -91,7 +96,7 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
         self.assertEqual(self.judge("ritmo", name="RITMO, University of Oslo"), ("not_confirmed", ""))
 
     def test_an_unlisted_organization_without_a_profile_is_not_followed(self):
-        self.assertEqual(itmo_organization_status("some-lab", None, self.CATALOG),
+        self.assertEqual(member_organization_status("some-lab", None, self.CATALOG),
                          ("not_confirmed", ""))
 
     def test_cyrillic_substrings_do_not_confirm_an_organization(self):
@@ -102,28 +107,28 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
                     self.assertEqual(self.judge("lab", **{field: text}), ("not_confirmed", ""))
 
     def test_contributor_evidence_is_case_insensitive(self):
-        self.assertEqual(itmo_organization_status(
+        self.assertEqual(member_organization_status(
             "Some-Lab", None, self.CATALOG,
             repositories=[repository("some-LAB", "tool", contributors=["ipetrov"])],
             confirmed={"IPetrov"},
-        ), ("possible", "itmo_contributor"))
+        ), ("possible", "member_contributor"))
 
     def test_contributor_evidence_and_precedence(self):
         repos = [repository("google", "lib", contributors=["ipetrov"])]
         for given, catalog, expected in (
-            (None, self.CATALOG, ("possible", "itmo_contributor")),
-            (profile("google", name="Google"), self.CATALOG, ("possible", "itmo_contributor")),
-            (profile("google", location="St.Petersburg"), self.CATALOG, ("possible", "petersburg")),
+            (None, self.CATALOG, ("possible", "member_contributor")),
+            (profile("google", name="Google"), self.CATALOG, ("possible", "member_contributor")),
+            (profile("google", location="St.Petersburg"), self.CATALOG, ("possible", "city")),
             (profile("google", company="ITMO"), self.CATALOG, ("confirmed", "profile")),
             (None, frozenset({"google"}), ("confirmed", "catalog")),
         ):
             with self.subTest(expected=expected, profile=given):
-                self.assertEqual(itmo_organization_status(
+                self.assertEqual(member_organization_status(
                     "google", given, catalog, repositories=repos, confirmed={"ipetrov"},
                 ), expected)
         for login, confirmed in (("google", {"stranger"}), ("other", {"ipetrov"})):
             with self.subTest(login=login, confirmed=confirmed):
-                self.assertEqual(itmo_organization_status(
+                self.assertEqual(member_organization_status(
                     login, None, self.CATALOG, repositories=repos, confirmed=confirmed,
                 ), ("not_confirmed", ""))
 
@@ -158,7 +163,7 @@ class SocialGraphStageTest(unittest.TestCase):
             with self.subTest(profiles=profiles):
                 self.build([], [repository("LicAiBeerLab", "tool")], profiles)
                 self.config.static_dir.mkdir(parents=True, exist_ok=True)
-                (self.config.static_dir / "itmo_github_orgs.json").write_text(
+                (self.config.static_dir / "github_orgs.json").write_text(
                     json.dumps({"organizations": [{"login": "LicAiBeerLab"}]}), encoding="utf-8",
                 )
                 stage = SocialGraphStage(self.prepared, self.raw, self.config)
@@ -169,7 +174,7 @@ class SocialGraphStageTest(unittest.TestCase):
     def test_catalogue_does_not_override_a_personal_account_type(self):
         self.build([], [], [])
         self.config.static_dir.mkdir(parents=True, exist_ok=True)
-        (self.config.static_dir / "itmo_github_orgs.json").write_text(
+        (self.config.static_dir / "github_orgs.json").write_text(
             json.dumps({"organizations": [{"login": "LicAiBeerLab"}]}), encoding="utf-8",
         )
         given = profile("LicAiBeerLab")
@@ -239,6 +244,7 @@ class SocialGraphStageTest(unittest.TestCase):
         client.return_value.contributors.return_value = []
         client.return_value.commits.return_value = []
         client.return_value.get_user.return_value = {"login": "ipetrov"}
+        client.return_value.get_users.side_effect = batched(client.return_value)
         result = SocialGraphStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(result["social_repositories"], 1)
 
@@ -246,20 +252,22 @@ class SocialGraphStageTest(unittest.TestCase):
     def test_people_found_on_a_walked_repository_become_candidates(self, client):
         self.build([person("A1", "Ivan Petrov", github="ipetrov")],
                    [repository("ipetrov", "known")], [])
+        # The owner's repository list carries each repository's owner, as
+        # GitHub's /users/{login}/repos does, so no separate fetch is needed.
         client.return_value.user_repositories.return_value = [
-            {"html_url": "https://github.com/ipetrov/lab-tool"}]
-        client.return_value.get_repository.return_value = {
-            "owner": {"login": "ipetrov", "type": "User"}}
+            {"html_url": "https://github.com/ipetrov/lab-tool", "owner": {"login": "ipetrov", "type": "User"}}]
         client.return_value.contributors.return_value = [{"login": "colleague", "type": "User"}]
         client.return_value.commits.return_value = [
             {"author": {"login": "colleague"},
              "commit": {"author": {"email": "colleague@itmo.ru", "name": "Anna Sidorova"}}}]
         client.return_value.get_user.side_effect = lambda login: {"login": login, "name": "Anna Sidorova"}
+        client.return_value.get_users.side_effect = batched(client.return_value)
         result = SocialGraphStage(self.prepared, self.raw, self.config).run()
         profiles = {p.login: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertEqual(result["social_accounts"], 2)
         self.assertEqual(profiles["colleague"].emails, ["colleague@itmo.ru"])
         self.assertEqual(profiles["colleague"].repos, ["https://github.com/ipetrov/lab-tool"])
+        client.return_value.get_repository.assert_not_called()
 
     @patch("pauk.pipeline.stages.social_graph.GitHubClient")
     def test_repositories_walked_by_an_earlier_run_are_not_walked_again(self, client):
@@ -300,6 +308,7 @@ class SocialGraphStageTest(unittest.TestCase):
         client.return_value.contributors.return_value = [{"login": "colleague", "type": "User"}]
         client.return_value.commits.return_value = []
         client.return_value.get_user.return_value = {"login": "colleague"}
+        client.return_value.get_users.side_effect = batched(client.return_value)
         SocialGraphStage(self.prepared, self.raw, self.config).run()
         self.assertTrue(matcher.called, "github_match must run between rings")
 
@@ -337,26 +346,26 @@ class ItmoGithubOrgCatalogTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         if payload is not None:
-            (root / "itmo_github_orgs.json").write_text(
+            (root / "github_orgs.json").write_text(
                 json.dumps(payload), encoding="utf-8")
         return StaticStore(root)
 
     def test_logins_are_lowercased_for_matching(self):
-        catalog = self.store({"organizations": [{"login": "AlgoMathITMO"}]}).itmo_github_orgs
+        catalog = self.store({"organizations": [{"login": "AlgoMathITMO"}]}).github_orgs
         self.assertEqual(catalog, frozenset({"algomathitmo"}))
 
     def test_blank_and_missing_logins_are_skipped(self):
         catalog = self.store({"organizations": [
             {"login": "ctlab"}, {"login": "  "}, {"note": "no login at all"},
-        ]}).itmo_github_orgs
+        ]}).github_orgs
         self.assertEqual(catalog, frozenset({"ctlab"}))
 
     def test_a_missing_file_is_an_empty_catalogue_not_an_error(self):
         # The rules work without it; only the labs it names go unrecognised.
-        self.assertEqual(self.store().itmo_github_orgs, frozenset())
+        self.assertEqual(self.store().github_orgs, frozenset())
 
     def test_the_catalogue_shipped_with_the_repository_parses(self):
-        catalog = StaticStore(REPO_ROOT / "data" / "static").itmo_github_orgs
+        catalog = StaticStore(REPO_ROOT / "data" / "static" / "itmo").github_orgs
         self.assertIn("licaibeerlab", catalog)
         self.assertNotIn("google", catalog)
 

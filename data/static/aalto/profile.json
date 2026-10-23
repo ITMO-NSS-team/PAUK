@@ -1,0 +1,27 @@
+{
+  "key": "aalto",
+  "short_name": "Aalto",
+  "short_name_local": "Aalto-yliopisto",
+  "name_en": "Aalto University",
+  "name_local": "Aalto-yliopisto",
+  "ror_id": "020hwjq30",
+  "language": "Finnish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "aalto.fi"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:AaltoUniv)(?![^\\W\\d_])",
+  "long_name": "Aalto[\\s‐-]+Universitetet|Aalto[\\s‐-]+University|Aalto[\\s‐-]+Yliopisto|Aalto[\\s‐-]+yliopisto|Aalto[\\s‐-]+yliopisto|Aalto[\\s‐-]+Univ",
+  "marker_replacement": "AaltoUniv",
+  "place_words": "aalto|aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|ekonominaukio|espoo|fi|finland|floor|gatan|helsinki|katu|kemistintie|konemiehentie|laan|maarintie|north|otakaari|otaniemi|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|suomi|tie|tietotie|ul|uusimaa|vej|via|viale|vuorimiehentie|vägen|weg|west",
+  "other_organisations": "University of Helsinki|University of Turku|VTT|ELLIS Institute|Helsinki Institute of Physics|Finnish Meteorological Institute",
+  "identity": "Aalto[\\s‐-]+Universitetet|Aalto[\\s‐-]+University|Aalto[\\s‐-]+Yliopisto|Aalto[\\s‐-]+yliopisto|Aalto[\\s‐-]+yliopisto|Aalto[\\s‐-]+Univ",
+  "city": "Espoo",
+  "staff_catalog": null,
+  "mongo_db": "pauk_aalto",
+  "site_url": "https://www.aalto.fi",
+  "unit_words": "school|department|centre|center|lab|observatory",
+  "external_authors": false
+}

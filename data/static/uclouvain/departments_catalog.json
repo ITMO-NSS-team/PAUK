@@ -1,0 +1,252 @@
+[
+  {
+    "uid": "uclouvain",
+    "name_en": "UCLouvain",
+    "name_local": "Université catholique de Louvain",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02495e989",
+    "type": "university"
+  },
+  {
+    "uid": "eli",
+    "name_en": "Earth and Life Institute",
+    "name_local": "Earth and Life Institute",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Earth and Life Institute"
+    ]
+  },
+  {
+    "uid": "irec",
+    "name_en": "Institute of Experimental and Clinical Research",
+    "name_local": "Institut de Recherche Expérimentale et Clinique",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [
+      "Institut de Recherche Expérimentale et Clinique"
+    ],
+    "context_aliases": [
+      "IREC",
+      "Institute of Experimental and Clinical Research"
+    ]
+  },
+  {
+    "uid": "imcn",
+    "name_en": "Institute of Condensed Matter and Nanosciences",
+    "name_local": "Institute of Condensed Matter and Nanosciences",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "IMCN",
+      "Institute of Condensed Matter and Nanosciences"
+    ]
+  },
+  {
+    "uid": "ions",
+    "name_en": "Institute of Neuroscience",
+    "name_local": "Institute of Neuroscience",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Neuroscience",
+      "Institute of Neurosciences",
+      "IoNS"
+    ]
+  },
+  {
+    "uid": "immc",
+    "name_en": "Institute of Mechanics Materials and Civil Engineering",
+    "name_local": "Institute of Mechanics Materials and Civil Engineering",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Mechanics",
+      "Materials and Civil Engineering",
+      "iMMC"
+    ]
+  },
+  {
+    "uid": "deduve",
+    "name_en": "de Duve Institute",
+    "name_local": "de Duve Institute",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "de Duve Institute"
+    ]
+  },
+  {
+    "uid": "icteam",
+    "name_en": "Institute of Information and Communication Technologies Electronics and Applied Mathematics",
+    "name_local": "Institute of Information and Communication Technologies Electronics and Applied Mathematics",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Information and Communication Technologies",
+      "Electronics and Applied Mathematics",
+      "ICTEAM"
+    ]
+  },
+  {
+    "uid": "ldri",
+    "name_en": "Louvain Drug Research Institute",
+    "name_local": "Louvain Drug Research Institute",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [
+      "Louvain Drug Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "libst",
+    "name_en": "Louvain Institute of Biomolecular Science and Technology",
+    "name_local": "Louvain Institute of Biomolecular Science and Technology",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [
+      "Louvain Institute of Biomolecular Science and Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ipsy",
+    "name_en": "Psychological Sciences Research Institute",
+    "name_local": "Psychological Sciences Research Institute",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "IPSY",
+      "Psychological Sciences Research Institute"
+    ]
+  },
+  {
+    "uid": "irss",
+    "name_en": "Institute of Health and Society",
+    "name_local": "Institute of Health and Society",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Health and Society",
+      "IRSS"
+    ]
+  },
+  {
+    "uid": "irmp",
+    "name_en": "Institute for Research in Mathematics and Physics",
+    "name_local": "Institut de Recherche en Mathématique et Physique",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "IRMP",
+      "Institut de Recherche en Mathématique et Physique"
+    ]
+  },
+  {
+    "uid": "cp3",
+    "name_en": "Centre for Cosmology Particle Physics and Phenomenology",
+    "name_local": "Centre for Cosmology Particle Physics and Phenomenology",
+    "kind": "center",
+    "parent": "irmp",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Cosmology",
+      "Particle Physics and Phenomenology",
+      "CP3"
+    ]
+  },
+  {
+    "uid": "imcn-most",
+    "name_en": "Molecular Chemistry Materials and Catalysis",
+    "name_local": "Molecular Chemistry Materials and Catalysis",
+    "kind": "department",
+    "parent": "imcn",
+    "aliases": [],
+    "context_aliases": [
+      "Molecular Chemistry",
+      "Molecular Chemistry Materials and Catalysis"
+    ]
+  },
+  {
+    "uid": "wel",
+    "name_en": "WEL Research Institute",
+    "name_local": "WEL Research Institute",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "WEL Research Institute"
+    ]
+  },
+  {
+    "uid": "lris",
+    "name_en": "Louvain Research Institute in Management and Organizations",
+    "name_local": "Louvain Research Institute in Management and Organizations",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Louvain Research Institute in Management and Organizations",
+      "LouRIM"
+    ]
+  },
+  {
+    "uid": "lidam",
+    "name_en": "Louvain Institute of Data Analysis and Modeling",
+    "name_local": "Louvain Institute of Data Analysis and Modeling",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Louvain Institute of Data Analysis and Modeling",
+      "LIDAM"
+    ]
+  },
+  {
+    "uid": "card",
+    "name_en": "Pole of Cardiovascular Research",
+    "name_local": "Pole of Cardiovascular Research",
+    "kind": "department",
+    "parent": "irec",
+    "aliases": [],
+    "context_aliases": [
+      "Pôle de Recherche Cardiovasculaire",
+      "CARD",
+      "Pole of Cardiovascular Research"
+    ]
+  },
+  {
+    "uid": "fath",
+    "name_en": "Pole of Pharmacology and Therapeutics",
+    "name_local": "Pole of Pharmacology and Therapeutics",
+    "kind": "department",
+    "parent": "irec",
+    "aliases": [],
+    "context_aliases": [
+      "Pole of Pharmacology and Therapeutics",
+      "FATH"
+    ]
+  },
+  {
+    "uid": "landscape",
+    "name_en": "Louvain Research Institute for Landscape Architecture Built Environment and Territory",
+    "name_local": "Louvain Research Institute for Landscape Architecture Built Environment and Territory",
+    "kind": "institute",
+    "parent": "uclouvain",
+    "aliases": [],
+    "context_aliases": [
+      "Louvain Research Institute for Landscape"
+    ]
+  }
+]

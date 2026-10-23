@@ -65,14 +65,14 @@ class GraphDataBuilder:
         # dept_name falls back to the English name only so a department "exists"
         # (a filter in DepartmentAssigner.assign(), not for display);
         # dept_name_en is purely English and goes into the final table.
-        dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
+        dept_name = {row["id"]: (row["name_local"] or row["name_en"] or "") for row in db["departments"]}
         dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
 
         # Stage order matters: assign() needs authorship, and the assignment feeds
         # build_table(), layout and the node/edge builders below.
         authorship = build_authorship_index(db)
         # The snapshot holds every external person and all their authorship;
-        # only those with an ITMO coauthored publication make it into the graph.
+        # only those with a member coauthored publication make it into the graph.
         db = {
             **db,
             "persons": [

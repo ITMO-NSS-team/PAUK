@@ -1,0 +1,39 @@
+{
+  "key": "princeton",
+  "short_name": "Princeton",
+  "short_name_local": "Princeton",
+  "name_en": "Princeton University",
+  "name_local": "Princeton University",
+  "ror_id": "00hx57361",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "der",
+    "den",
+    "da",
+    "di",
+    "du",
+    "la",
+    "le",
+    "del",
+    "dos"
+  ],
+  "email_domains": [
+    "princeton.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])princetonuniv(?![^\\W\\d_])",
+  "long_name": "prince-?\\s*ton\\s+uni-?\\s*versity|princeton\\s+univ(?:\\.|(?![^\\W\\d_]))|princeton\\s+u(?![^\\W\\d_])|universidad\\s+de\\s+princeton|universit[ée]\\s+de\\s+princeton",
+  "marker_replacement": "PRINCETONUNIV",
+  "place_words": "princeton|new|jersey|nj|usa|us|united|states|america|of|the|08544|08540|08543|ivy|lane|ln|washington|road|rd|olden|street|st|chambers|prospect|avenue|ave|south|drive|dr|broadmead|junction|hall|peyton|jadwin|fine|guyot|nassau|quadrangle|1|4|11|20|22|35|41|59|119|162|171|304",
+  "other_organisations": "princeton\\s+plasma\\s+physics\\s+laboratory|(?<![^\\W\\d_])pppl(?![^\\W\\d_])|national\\s+spherical\\s+torus|institute\\s+for\\s+advanced\\s+study|flatiron\\s+institute|simons\\s+foundation|howard\\s+hughes\\s+medical\\s+institute|(?<![^\\W\\d_])hhmi(?![^\\W\\d_])|ludwig\\s+(?:institute\\s+for\\s+cancer\\s+research|princeton\\s+branch)|nec\\s+lab|(?<![^\\W\\d_])ets(?![^\\W\\d_])|educational\\s+testing\\s+service|(?<![^\\W\\d_])nber(?![^\\W\\d_])|princeton\\s+university\\s+press|geophysical\\s+fluid\\s+dynamics\\s+laboratory|(?<![^\\W\\d_])gfdl(?![^\\W\\d_])|(?<![^\\W\\d_])noaa(?![^\\W\\d_])|samaya\\s+ai|zetta\\s+ai|eyewire|smithsonian\\s+tropical\\s+research\\s+institute|cold\\s+spring\\s+harbor|center\\s+for\\s+discrete\\s+mathematics|(?<![^\\W\\d_])dimacs(?![^\\W\\d_])|rutgers|santa\\s+fe\\s+institute|lawrence\\s+(?:berkeley|livermore)\\s+national\\s+laboratory|(?<![^\\W\\d_])cnrs(?![^\\W\\d_])|google\\s+research|cornflower\\s+labs|meta\\s+superintelligence|vector\\s+institute|(?<![^\\W\\d_])mila(?![^\\W\\d_])|rothman\\s+orthopaedic|world\\s+resources\\s+institute|instituto\\s+igarap",
+  "identity": "(?<![^\\W\\d_])princeton(?:\\s+university)?(?![^\\W\\d_])",
+  "city": "princeton",
+  "staff_catalog": null,
+  "mongo_db": "pauk_princeton",
+  "site_url": "https://www.princeton.edu",
+  "unit_words": "institute|school|center|centre|laboratory|laboratories|initiative|program"
+}

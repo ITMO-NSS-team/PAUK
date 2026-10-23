@@ -21,9 +21,9 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
     def _sample_db():
         return {
             "persons": [
-                {"id": "A1", "first_name_ru": "Иван", "second_name_ru": None, "surname_ru": "Иванов",
+                {"id": "A1", "first_name_local": "Иван", "second_name_local": None, "surname_local": "Иванов",
                  "first_name_en": "Ivan", "second_name_en": None, "surname_en": "Ivanov",
-                 "name_ru": "Иванов Иван", "name_variants": [], "degree": "к.т.н.", "github": "ivanov", "orcid": None,
+                 "name_local": "Иванов Иван", "name_variants": [], "degree": "к.т.н.", "github": "ivanov", "orcid": None,
                  "openalex_id": "A123", "google_scholar": None, "email": "ivanov@itmo.ru",
                  "affiliations": '[{"name": "ITMO"}]',
                  "created_at": "2026-08-14T10:23:45.123Z", "updated_at": "2026-09-01T08:00:00.5Z"},
@@ -40,7 +40,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                 {"id": "R1", "name": "repo", "url": "https://x", "description": "Описание", "stars_num": 5,
                  "has_readme": True, "license": "MIT", "contributors": ["ivanov"], "owner_type": "user"},
             ],
-            "departments": [{"id": "d1", "name_ru": "Кафедра", "name_en": "Dept"}],
+            "departments": [{"id": "d1", "name_local": "Кафедра", "name_en": "Dept"}],
             "authorship": [{"pid": "P1", "per": "A1", "position": 2, "is_corresponding": True}],
             "person_depts": [{"per": "A1", "did": "d1"}],
             "pub_depts": [{"pid": "P1", "did": "d1"}],
@@ -52,7 +52,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
     def test_summary_has_no_personal_or_detail_fields(self):
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         author = summary["authors"][0]
-        self.assertEqual(set(author), {"key", "kind", "is_itmo", "dept", "label", "label_en", "pubs_count", "rank", "gx", "gy"})
+        self.assertEqual(set(author), {"key", "kind", "is_member", "dept", "label", "label_en", "pubs_count", "rank", "gx", "gy"})
 
     def test_detail_carries_the_fields_summary_does_not(self):
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()
@@ -77,14 +77,14 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
     def test_external_coauthor_of_an_itmo_publication_becomes_a_regular_author_node(self):
         db = self._sample_db()
-        db["persons"][0]["is_itmo"] = True
-        external = {**db["persons"][0], "id": "E1", "is_itmo": False, "surname_ru": "Смит", "email": None}
+        db["persons"][0]["is_member"] = True
+        external = {**db["persons"][0], "id": "E1", "is_member": False, "surname_local": "Смит", "email": None}
         stranger = {**external, "id": "E2"}
         db["persons"] += [external, stranger]
         db["publications"].append({**db["publications"][0], "id": "P2"})
         db["authorship"] += [
             {"pid": "P1", "per": "E1", "position": 1, "is_corresponding": False},
-            # E1 and E2 alone on P2 - no ITMO author, so neither P2 nor E2 is on the map.
+            # E1 and E2 alone on P2 - no member author, so neither P2 nor E2 is on the map.
             {"pid": "P2", "per": "E1", "position": 1, "is_corresponding": False},
             {"pid": "P2", "per": "E2", "position": 2, "is_corresponding": False},
         ]
@@ -92,8 +92,8 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
         authors = {a["key"]: a for a in summary["authors"]}
         self.assertEqual(set(authors), {"A1", "E1"})
-        self.assertFalse(authors["E1"]["is_itmo"])
-        self.assertTrue(authors["A1"]["is_itmo"])
+        self.assertFalse(authors["E1"]["is_member"])
+        self.assertTrue(authors["A1"]["is_member"])
         # Same department rule as everyone: the department of their latest publication.
         self.assertEqual(authors["E1"]["dept"], authors["A1"]["dept"])
         self.assertEqual(authors["E1"]["pubs_count"], 1)
@@ -113,7 +113,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
     def test_summary_label_en_falls_back_to_name_en_when_split_en_name_parts_are_missing(self):
         # The real snapshot has surname_en/first_name_en/second_name_en as None
         # for every person, so author_label() returns ""; without a name_en
-        # fallback label_en would equal label_ru for all authors regardless of
+        # fallback label_en would equal label_local for all authors regardless of
         # the UI language.
         db = self._sample_db()
         db["persons"][0]["surname_en"] = None
@@ -126,7 +126,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
     def test_author_detail_is_the_same_regardless_of_output_folder(self):
         # The full name is still available - via detail, not summary.
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()
-        self.assertEqual(detail["authors"][0]["name_ru"], "Иванов Иван")
+        self.assertEqual(detail["authors"][0]["name_local"], "Иванов Иван")
 
     def test_pub_detail_truncates_long_titles_and_parses_code_url(self):
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()

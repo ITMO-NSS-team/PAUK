@@ -1,0 +1,26 @@
+{
+  "key": "spbu",
+  "short_name": "SPbU",
+  "short_name_local": "СПбГУ",
+  "name_en": "Saint Petersburg State University",
+  "name_local": "Санкт-Петербургский государственный университет",
+  "ror_id": "023znxa73",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "spbu.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:SPbU|SPbSU|СПбГУ)(?![^\\W\\d_])",
+  "long_name": "(?:(?:saint|sankt|st)[\\s.\\-]*)?peters?burg\\s+(?:state\\s+)?university(?!\\s+of\\b)|санкт[\\s\\-]*петербургск\\w*\\s+государственн\\w*\\s+университет(?!\\s+(?:экономики|телекоммуникаций|аэрокосмического|промышленных|ветеринарной|путей|гражданской|технологи\\w*|кино\\w*|морского|информационных))",
+  "marker_replacement": "SPbU",
+  "place_words": "russia|rusia|russian|federation|rossiya|россия|российская|федерация|st|saint|sankt|petersburg|peterburg|санкт|петербург|peterhof|petergof|peterhoff|stary|universitetskaya|universitetskii|universitetskiy|universitetsky|universitetskij|universitetskyi|universitetckaya|nab|naberezhnaya|embankment|emb|pr|prospect|prospekt|ave|ulyanovskaya|str|ul|oblast|region|leningrad|leningradskaya|vasilievsky|ostrov|liniya|korp|университетская|наб|г",
+  "other_organisations": "Russian Academy of Sciences?|(?<![^\\W\\d_])RAS(?![^\\W\\d_])|ITMO|Alferov|Ioffe|Kurchatov|Petersburg Nuclear Physics Institute|PNPI|Joint Institute for Nuclear Research|JINR|Steklov|Pulkovo|ARRIAM|All-Russia Research Institute for Agricultural Microbiology|Almazov|Pavlov|Mechnikov|Bekhterev|Higher School of Economics|(?<![^\\W\\d_])HSE(?![^\\W\\d_])|MIPT|Moscow Institute of Physics and Technology|СПбПУ|Polytechnic|Komarov Botanical Institute|Zoological Institute|Institute of Experimental Medicine|Institute for Analytical Instrumentation|Grebenshchikov|Arctic and Antarctic Research Institute|Karpinsky|Sirius University|Ott Research Institute|MEDSI|Sechenov|Lomonosov|Kola Science Cent|Pacific Oceanological|Institute (?:for|of) Problems in Mechanical Engineering|Burnazyan|Botkin|Hydrometeorological|Mokhov Institute|Institute of Osteopathy|Fyodorov Eye Microsurgery|Agrophysical Research Institute|Donostia International Physics Center|Institute of Strength Physics|Institute of Psychology of the Russian Academy|Beijing Institute of Mathematical Sciences|China University of Petroleum|Institute of Urology and Human Reproductive Health|Moscow Healthcare Department|Research Institute of Ear|медико-социальный институт|Geological Institute",
+  "identity": "(?<![^\\W\\d_])(?:SPbU|SPbSU|СПбГУ)(?![^\\W\\d_])|(?:saint|st)[\\s.\\-]*petersburg\\s+(?:state\\s+)?university(?!\\s+of\\b)|санкт-петербургский государственный университет",
+  "city": "(?:saint|sankt|st)[\\s.\\-]*peters?burg|санкт[\\s\\-]*петербург|peterhof|petergof",
+  "staff_catalog": null,
+  "mongo_db": "pauk_spbu",
+  "site_url": "https://spbu.ru",
+  "unit_words": ""
+}

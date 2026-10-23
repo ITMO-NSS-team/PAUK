@@ -1,0 +1,27 @@
+{
+  "key": "keio",
+  "short_name": "Keio",
+  "short_name_local": "慶應義塾大学",
+  "name_en": "Keio University",
+  "name_local": "慶應義塾大学",
+  "ror_id": "02kn6nx58",
+  "language": "Japanese",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "keio.ac.jp"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:KeioUniv)(?![^\\W\\d_])",
+  "long_name": "Keio[\\s‐-]+Gijuku[\\s‐-]+University|Keiō[\\s‐-]+Gijuku[\\s‐-]+Daigaku|Keio[\\s‐-]+University|Keio[\\s‐-]+Univ|慶應義塾大学",
+  "marker_replacement": "KeioUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|floor|fujisawa|gatan|hiyoshi|japan|kanagawa|katu|kohoku|ku|laan|minato|mita|north|piazza|platz|plaza|plein|po|rd|road|room|rue|shinanomachi|shinjuku|south|st|str|straat|strasse|straße|street|tie|tokyo|tsuruoka|ul|vej|via|viale|vägen|weg|west|yagami|yamagata|yokohama",
+  "other_organisations": "Keio University Hospital|The University of Tokyo|RIKEN|National Cancer Center|Innovation\\ Medical\\ Research\\ Institute,\\ University\\ of\\ Tsukuba|Keio\\ University\\ Hospital",
+  "identity": "Keio[\\s‐-]+Gijuku[\\s‐-]+University|Keiō[\\s‐-]+Gijuku[\\s‐-]+Daigaku|Keio[\\s‐-]+University|Keio[\\s‐-]+Univ|慶應義塾大学",
+  "city": "Tokyo",
+  "staff_catalog": null,
+  "mongo_db": "pauk_keio",
+  "site_url": "https://www.keio.ac.jp",
+  "unit_words": "school|faculty|graduate|department|division|institute|center|centre",
+  "external_authors": false
+}

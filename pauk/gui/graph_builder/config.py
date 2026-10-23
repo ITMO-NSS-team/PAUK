@@ -20,7 +20,7 @@ class EdgeThresholds:
     pub_layout_top_k: int = 6
     """How many of a publication's strongest "shared author" edges to keep for layout (not for export)."""
     hyperauthor_pub_size: int = 50
-    """Above this many authors a publication only links its ITMO authors to everyone, not all pairs (see `layout.py::coauthor_pairs`)."""
+    """Above this many authors a publication only links its member authors to everyone, not all pairs (see `layout.py::coauthor_pairs`)."""
 
 
 EDGE_THRESHOLDS = EdgeThresholds()
@@ -84,9 +84,9 @@ class RepoEdges:
     w_pub: float = 3.0
     """Both implement the same publication."""
     w_person: float = 2.0
-    """The same ITMO person contributed to both."""
+    """The same member person contributed to both."""
     w_coauthor: float = 1.0
-    """Their publications share an ITMO author."""
+    """Their publications share an member author."""
     w_owner: float = 1.0
     """The same GitHub account owns both - a lab account holds both its flagship and its coursework."""
     group_cap: int = 60

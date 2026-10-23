@@ -465,9 +465,9 @@ class MergesSurviveAPublishTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.prepared = PreparedStore(self.db, "sample")
         self.prepared.write_models("persons", [
-            Person(id="A1", openalex_id="A1", name_raw="Ivan Smirnov", is_itmo=True,
+            Person(id="A1", openalex_id="A1", name_raw="Ivan Smirnov", is_member=True,
                    authored=[{"publication_id": "W1", "position": 1}]),
-            Person(id="A2", openalex_id="A2", name_raw="I. Smirnov", is_itmo=False,
+            Person(id="A2", openalex_id="A2", name_raw="I. Smirnov", is_member=False,
                    authored=[{"publication_id": "W2", "position": 1}]),
         ])
         self.prepared.write_models("publications", [
@@ -531,7 +531,7 @@ class PublishProgressTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.prepared.write_models("persons", [
             Person(id=f"A{index}", openalex_id=f"A{index}", name_raw=f"Person {index}",
-                   is_itmo=True, authored=[{"publication_id": "W1", "position": 1}])
+                   is_member=True, authored=[{"publication_id": "W1", "position": 1}])
             for index in range(3)])
         self.prepared.write_models("publications", [Publication(id="W1", title="W1")])
         self.graph = FakePanelGraph()

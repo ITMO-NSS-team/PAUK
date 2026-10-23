@@ -26,7 +26,7 @@ class JobsPageTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        self.graph.add("Person", "A1", name_local="Иван Петров")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
@@ -155,7 +155,7 @@ class GraphBusyBannerTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
         self.graph = FakePanelGraph()
-        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        self.graph.add("Person", "A1", name_local="Иван Петров")
         app = build(Settings(), self.db)
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
@@ -201,9 +201,9 @@ class GraphBusyBannerTest(unittest.TestCase):
         self.start()
         seen = self.graph.nodes[("Person", "A1")]["updated_at"]
         response = self.client.post("/nodes/Person/A1", data={
-            "csrf": self.csrf, "name_ru": "Пётр Иванов", "seen_at": seen})
+            "csrf": self.csrf, "name_local": "Пётр Иванов", "seen_at": seen})
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Пётр Иванов")
 
     def test_a_queue_that_cannot_be_read_costs_the_strip_not_the_page(self):
         from pymongo.errors import PyMongoError

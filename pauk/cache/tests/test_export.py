@@ -50,9 +50,9 @@ class SequentialFakeDriver:
 
 class CypherDictTest(unittest.TestCase):
     def test_returns_rows_as_column_keyed_dicts(self):
-        driver = SequentialFakeDriver([[{"id": "A1", "name_ru": "Ivanov"}]])
-        rows = cypher_dict(driver, "MATCH (p:Person) RETURN p.id AS id, p.name_ru AS name_ru")
-        self.assertEqual(rows, [{"id": "A1", "name_ru": "Ivanov"}])
+        driver = SequentialFakeDriver([[{"id": "A1", "name_local": "Ivanov"}]])
+        rows = cypher_dict(driver, "MATCH (p:Person) RETURN p.id AS id, p.name_local AS name_local")
+        self.assertEqual(rows, [{"id": "A1", "name_local": "Ivanov"}])
 
 
 class ExecuteRetryingTest(unittest.TestCase):
@@ -121,17 +121,17 @@ class LoadDbTest(unittest.TestCase):
         load_db(driver)
         combined = " ".join(driver.queries)
         self.assertNotIn(":Itmo", combined)
-        self.assertIn("{is_itmo: true}", combined)
+        self.assertIn("{is_member: true}", combined)
 
     def test_persons_and_authorship_include_external_authors(self):
         # External coauthors are on the map too (hidden by default), so both
-        # tables take every Person and carry is_itmo instead of filtering by it.
+        # tables take every Person and carry is_member instead of filtering by it.
         driver = SequentialFakeDriver([[] for _ in TABLE_ORDER])
         load_db(driver)
         persons_query = driver.queries[TABLE_ORDER.index("persons")]
         authorship_query = driver.queries[TABLE_ORDER.index("authorship")]
         self.assertIn("MATCH (p:Person) ", persons_query)
-        self.assertIn("AS is_itmo", persons_query)
+        self.assertIn("AS is_member", persons_query)
         self.assertIn("MATCH (p:Person)-[rel:AUTHORED]->", authorship_query)
 
 
@@ -174,7 +174,7 @@ class PartialExportTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = Settings(neo4j_password="x", data_dir=Path(self.tmp.name))
         self.cache_dir = self.config.cache_dir
-        self.cache_dir.mkdir()
+        self.cache_dir.mkdir(parents=True)
         self.base = {name: [{"from": "base", "table": name}] for name in TABLE_ORDER}
         self.base["repositories"] = [{"id": "R1"}, {"id": "R2"}]
         self.base_path = self.cache_dir / "graph_snapshot_01-09-2026.json"

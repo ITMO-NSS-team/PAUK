@@ -675,7 +675,7 @@ def _hard_veto(evidence: PairEvidence) -> str | None:
 def _incompatible_surnames(evidence: PairEvidence) -> bool:
     """Defer full-name conflicts even when the records share collaborators.
 
-    The comparison is order-independent because ITMO names appear both as
+    The comparison is order-independent because member names appear both as
     ``First Surname`` and ``Surname, First``. A matching long token is not
     enough when the remaining full tokens contradict each other.
     """

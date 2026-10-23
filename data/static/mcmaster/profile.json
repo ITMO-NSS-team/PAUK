@@ -1,0 +1,37 @@
+{
+  "key": "mcmaster",
+  "short_name": "McMaster",
+  "short_name_local": "McMaster",
+  "name_en": "McMaster University",
+  "name_local": "McMaster University",
+  "ror_id": "02fa3aq29",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "mcmaster.ca"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:McMasterUniv)(?![^\\W\\d_])",
+  "long_name": "McMaster[\\s‐-]+University|Mcmaster[\\s‐-]+Univ|McMaster[\\s‐-]+Univ",
+  "marker_replacement": "McMasterUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|can|canada|east|floor|gatan|hamilton|katu|l|laan|main|n|north|on|ont|ontario|piazza|platz|plaza|plein|po|rd|road|room|rue|s|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Hamilton Health Sciences|St\\.? Joseph[’']?s Healthcare|Population Health Research Institute|Juravinski|University of Toronto|McMaster Children[’']?s Hospital|Thrombosis and Atherosclerosis Research Institute|Firestone Institute|Canadian\\ Centre\\ for\\ Electron\\ Microscopy|Canadian\\ Research\\ Data\\ Centre\\ Network|GERAS\\ Centre\\ for\\ Aging\\ Research|Hamilton\\ General\\ Hospital|Hamilton\\ Health\\ Sciences|Juravinski\\ Cancer\\ Centre|Juravinski\\ Hospital|McMaster\\ Children's\\ Hospital|McMaster\\ Divinity\\ College|McMaster\\ University\\ Medical\\ Centre|Norfolk\\ General\\ Hospital|Ontario\\ Advanced\\ Manufacturing\\ Consortium|Ontario\\ Clinical\\ Oncology\\ Group|Population\\ Health\\ Research\\ Institute|St\\.\\ Joseph’s\\ Healthcare\\ Hamilton|St\\.\\ Peter's\\ Hospital",
+  "identity": "McMaster[\\s‐-]+University|Mcmaster[\\s‐-]+Univ|McMaster[\\s‐-]+Univ",
+  "city": "Hamilton",
+  "staff_catalog": null,
+  "mongo_db": "pauk_mcmaster",
+  "site_url": "https://www.mcmaster.ca",
+  "unit_words": "faculty|school|institute|centre|center",
+  "external_authors": false
+}

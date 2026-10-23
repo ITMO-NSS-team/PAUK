@@ -1,0 +1,27 @@
+{
+  "key": "innopolis",
+  "short_name": "Innopolis University",
+  "short_name_local": "Университет Иннополис",
+  "name_en": "Innopolis University",
+  "name_local": "Автономная некоммерческая организация высшего образования Университет Иннополис",
+  "ror_id": "02b7jh107",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "innopolis.university",
+    "innopolis.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:InnopolisUniv)(?![^\\W\\d_])",
+  "long_name": "(?:(?:АНО\\s*ВО\\s*)?[«\"“]?\\s*Университет\\w*\\s+Иннополис\\s*[»\"”]?|Иннополисск\\w+\\s+университет\\w*|Innopolis\\s+University|University\\s+of\\s+Innopolis|Universitet\\s+Innopolis)",
+  "marker_replacement": "InnopolisUniv",
+  "place_words": "innopolis|иннополис|г|tatarstan|татарстан|republic|республика|rt|рт|russia|россия|russian|российская|federation|федерация|fed|universitetskaya|университетская|street|str|st|ул|улица|1|420500|верхнеуслонский|verkhneuslonsky|district|район|kazan|казань",
+  "other_organisations": "(?<![^\\W\\d_])(?:MIPT|МФТИ|Moscow\\s+Institute\\s+of\\s+Physics\\s+and\\s+Technology|Phystech|AIRI|MIRAI|MIRIAI|Moscow\\s+Independent\\s+Research\\s+Institute\\s+of\\s+Artificial\\s+Intelligence|Artificial\\s+Intelligence\\s+Research\\s+Institute|ISP\\s+RAS|Ivannikov|Institute\\s+for\\s+System\\s+Programming|Russian\\s+Academy\\s+of\\s+Sciences|RAS|РАН|Kurchatov|Scientific\\s+Research\\s+Institute\\s+for\\s+System\\s+Analysis|IITP|HSE|Higher\\s+School\\s+of\\s+Economics|ITMO|LETI|ЛЭТИ|Skoltech|Skolkovo|Kazan\\s+Federal|KFU|КФУ|Sirius|Sber\\w*|SB\\s+AI\\s+Lab|Yandex|FusionBrain|dunnolab|BRAIn\\s+Lab|Basic\\s+Research\\s+of\\s+Artificial\\s+Intelligence\\s+Laboratory|Hydrometeorological|Lomonosov|JNU|JRCAI|Sobolev|Bakulev|National\\s+Medical\\s+Research\\s+Center|Small\\s+Innovative\\s+Enterprise|Institute\\s+of\\s+Computer\\s+Aided\\s+Design)(?![^\\W\\d_])",
+  "identity": "(?<![^\\W\\d_])(?:Innopolis\\s+University|University\\s+of\\s+Innopolis|Университет\\w*\\s+Иннополис|innopolis\\.university)(?![^\\W\\d_])",
+  "city": "Innopolis|Иннополис",
+  "staff_catalog": null,
+  "mongo_db": "pauk_innopolis",
+  "site_url": "https://innopolis.university",
+  "unit_words": ""
+}

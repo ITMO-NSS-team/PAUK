@@ -1,0 +1,34 @@
+{
+  "key": "uclouvain",
+  "short_name": "UCLouvain",
+  "short_name_local": "UCLouvain",
+  "name_en": "UCLouvain",
+  "name_local": "Université catholique de Louvain",
+  "ror_id": "02495e989",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "d"
+  ],
+  "email_domains": [
+    "uclouvain.be"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UCLouvainUniv|UCLouvain|UC\\ Louvain)(?![^\\W\\d_])",
+  "long_name": "Université[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Belgique|Université[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Louvain|Universite[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Louvain|Catholic[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Louvain|University[\\s‐-]+of[\\s‐-]+Louvain",
+  "marker_replacement": "UCLouvainUniv",
+  "place_words": "aleja|allee|av|ave|avenue|bd|belgie|belgique|belgium|belgië|bldg|boulevard|box|brussel|brussels|bruxelles|building|calle|campus|east|floor|gatan|katu|la|laan|lambert|louvain|mons|namur|neuve|north|ottignies|piazza|platz|plaza|plein|po|rd|road|room|rue|saint|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|wavre|weg|west|woluwe|yvoir",
+  "other_organisations": "KU Leuven|Cliniques [Uu]niversitaires Saint[\\s-]Luc|Saint-Luc University Hospital|CHU UCL Namur|CHU Dinant|Universit[ée] Libre de Bruxelles|(?<![^\\W\\d_])ULB(?![^\\W\\d_])|CNRS|WELBIO|Institut Roi Albert II|CHU\\ Dinant\\ Godinne\\ UCL\\ Namur|Cliniques\\ Universitaires\\ Saint\\-Luc",
+  "identity": "(?<![^\\W\\d_])UCLouvain(?![^\\W\\d_])|(?<![^\\W\\d_])UC\\ Louvain(?![^\\W\\d_])|Université[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Belgique|Université[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Louvain|Universite[\\s‐-]+catholique[\\s‐-]+de[\\s‐-]+Louvain|Catholic[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Louvain|University[\\s‐-]+of[\\s‐-]+Louvain",
+  "city": "Louvain\\-la\\-Neuve",
+  "staff_catalog": null,
+  "mongo_db": "pauk_uclouvain",
+  "site_url": "https://uclouvain.be",
+  "unit_words": "institute|institut|school|faculty|faculté|centre|center|pôle|pole",
+  "external_authors": false
+}

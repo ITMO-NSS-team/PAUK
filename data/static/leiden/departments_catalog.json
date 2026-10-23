@@ -1,0 +1,238 @@
+[
+  {
+    "uid": "leiden",
+    "name_en": "Leiden University",
+    "name_local": "Universiteit Leiden",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/027bh9e22",
+    "type": "university"
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "fsoc",
+    "name_en": "Faculty of Social and Behavioural Sciences",
+    "name_local": "Faculty of Social and Behavioural Sciences",
+    "kind": "faculty",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Social and Behavioural Sciences"
+    ]
+  },
+  {
+    "uid": "farch",
+    "name_en": "Faculty of Archaeology",
+    "name_local": "Faculty of Archaeology",
+    "kind": "faculty",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Archaeology"
+    ]
+  },
+  {
+    "uid": "fhum",
+    "name_en": "Faculty of Humanities",
+    "name_local": "Faculty of Humanities",
+    "kind": "faculty",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities"
+    ]
+  },
+  {
+    "uid": "flaw",
+    "name_en": "Leiden Law School",
+    "name_local": "Leiden Law School",
+    "kind": "faculty",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Leiden Law School"
+    ]
+  },
+  {
+    "uid": "obs",
+    "name_en": "Leiden Observatory",
+    "name_local": "Leiden Observatory",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Leiden Observatory"
+    ]
+  },
+  {
+    "uid": "lic",
+    "name_en": "Leiden Institute of Chemistry",
+    "name_local": "Leiden Institute of Chemistry",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Leiden Institute of Chemistry"
+    ]
+  },
+  {
+    "uid": "lacdr",
+    "name_en": "Leiden Academic Centre for Drug Research",
+    "name_local": "Leiden Academic Centre for Drug Research",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "LACDR",
+      "Leiden Academic Centre for Drug Research"
+    ]
+  },
+  {
+    "uid": "ibl",
+    "name_en": "Institute of Biology Leiden",
+    "name_local": "Institute of Biology Leiden",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biology",
+      "Institute of Biology Leiden"
+    ]
+  },
+  {
+    "uid": "cml",
+    "name_en": "Institute of Environmental Sciences",
+    "name_local": "Institute of Environmental Sciences",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Environmental Sciences",
+      "CML"
+    ]
+  },
+  {
+    "uid": "liacs",
+    "name_en": "Leiden Institute of Advanced Computer Science",
+    "name_local": "Leiden Institute of Advanced Computer Science",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Leiden Institute of Advanced Computer Science",
+      "LIACS"
+    ]
+  },
+  {
+    "uid": "lion",
+    "name_en": "Leiden Institute of Physics",
+    "name_local": "Leiden Institute of Physics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [
+      "Leiden Institute of Physics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mi",
+    "name_en": "Mathematical Institute",
+    "name_local": "Mathematical Institute",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Mathematical Institute"
+    ]
+  },
+  {
+    "uid": "hko",
+    "name_en": "Huygens-Kamerlingh Onnes Laboratory",
+    "name_local": "Huygens-Kamerlingh Onnes Laboratory",
+    "kind": "lab",
+    "parent": "lion",
+    "aliases": [
+      "Huygens-Kamerlingh Onnes Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "medchem",
+    "name_en": "Division of Medicinal Chemistry",
+    "name_local": "Division of Medicinal Chemistry",
+    "kind": "division",
+    "parent": "lacdr",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Medicinal Chemistry"
+    ]
+  },
+  {
+    "uid": "csds",
+    "name_en": "Division of Cell Systems and Drug Safety",
+    "name_local": "Division of Cell Systems and Drug Safety",
+    "kind": "division",
+    "parent": "lacdr",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Cell Systems and Drug Safety"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "Institute of Psychology",
+    "name_local": "Institute of Psychology",
+    "kind": "institute",
+    "parent": "fsoc",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Psychology",
+      "Department of Clinical Psychology"
+    ]
+  },
+  {
+    "uid": "libc",
+    "name_en": "Leiden Institute for Brain and Cognition",
+    "name_local": "Leiden Institute for Brain and Cognition",
+    "kind": "institute",
+    "parent": "leiden",
+    "aliases": [],
+    "context_aliases": [
+      "Leiden Institute for Brain and Cognition"
+    ]
+  },
+  {
+    "uid": "lucid",
+    "name_en": "Leiden University Center for Infectious Diseases",
+    "name_local": "Leiden University Center for Infectious Diseases",
+    "kind": "center",
+    "parent": "leiden",
+    "aliases": [
+      "Leiden University Center for Infectious Diseases"
+    ],
+    "context_aliases": [
+      "LUCID"
+    ]
+  },
+  {
+    "uid": "delta",
+    "name_en": "Delta Institute for Theoretical Physics",
+    "name_local": "Delta Institute for Theoretical Physics",
+    "kind": "institute",
+    "parent": "lion",
+    "aliases": [
+      "Delta Institute for Theoretical Physics"
+    ],
+    "context_aliases": []
+  }
+]

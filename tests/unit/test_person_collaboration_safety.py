@@ -113,8 +113,8 @@ class CollaborationSafetyTest(unittest.TestCase):
 
     def test_malformed_pair_does_not_call_models_or_merge_in_either_planner(self):
         people = [
-            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_itmo=True, orcid="same"),
-            Person(id="b", name_raw="Anna Sidorova", is_itmo=True, orcid="same"),
+            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_member=True, orcid="same"),
+            Person(id="b", name_raw="Anna Sidorova", is_member=True, orcid="same"),
         ]
         models = FakeModels(ModelVerdict(True, 1), ModelVerdict(True, 1))
         groups, report = plan_person_merges_resolved(people, {"a": "same", "b": "same"}, models=models)
@@ -127,8 +127,8 @@ class CollaborationSafetyTest(unittest.TestCase):
 
     def test_stale_manual_same_cannot_merge_a_malformed_record(self):
         people = [
-            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_itmo=True),
-            Person(id="b", name_raw="Anna Sidorova", is_itmo=True),
+            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_member=True),
+            Person(id="b", name_raw="Anna Sidorova", is_member=True),
         ]
         groups, report = plan_person_merges_resolved(people, {}, decisions={frozenset(("a", "b")): "same"})
         self.assertEqual(groups, [])
@@ -139,13 +139,13 @@ class CollaborationSafetyTest(unittest.TestCase):
             Person(
                 id="a",
                 name_raw="Ivan Petrov",
-                is_itmo=True,
+                is_member=True,
                 authored=[{"publication_id": "w1"}, {"publication_id": "joint"}],
             ),
             Person(
                 id="b",
                 name_raw="I. Petrov",
-                is_itmo=True,
+                is_member=True,
                 authored=[{"publication_id": "w2"}, {"publication_id": "joint"}],
             ),
         ]
@@ -153,12 +153,12 @@ class CollaborationSafetyTest(unittest.TestCase):
             Person(
                 id=f"x{i}",
                 name_raw=f"Other Family{i}",
-                is_itmo=True,
+                is_member=True,
                 authored=[{"publication_id": "w1"}, {"publication_id": "w2"}],
             )
             for i in range(60)
         )
-        people.append(Person(id="c", name_raw="Jane Smith", is_itmo=True, authored=[{"publication_id": "joint"}]))
+        people.append(Person(id="c", name_raw="Jane Smith", is_member=True, authored=[{"publication_id": "joint"}]))
         models = FakeModels(ModelVerdict(False, 0.8), ModelVerdict(False, 0.8))
         plan_person_merges_resolved(people, {}, models=models, logreg_model=ConstantModel(0.5))
         pair_id, pair = next((i, e) for i, e in models.first_calls if {e.person_a, e.person_b} == {"a", "b"})

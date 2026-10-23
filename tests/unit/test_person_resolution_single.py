@@ -134,8 +134,8 @@ class SingleResolutionTest(unittest.TestCase):
 
     def test_planner_uses_one_judge_and_persists_review_verdict(self):
         people = [
-            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True),
-            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True),
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_member=True),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_member=True),
         ]
         for action in (Decision.MERGE, Decision.SEPARATE, Decision.REVIEW):
             with self.subTest(action=action):
@@ -156,8 +156,8 @@ class SingleResolutionTest(unittest.TestCase):
 
     def test_unavailable_single_model_leaves_review_not_a_fake_vote(self):
         people = [
-            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True),
-            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True),
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_member=True),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_member=True),
         ]
         groups, report = plan_person_merges_resolved(people, {}, models=SingleModels(None))
         self.assertEqual(groups, [])
@@ -166,8 +166,8 @@ class SingleResolutionTest(unittest.TestCase):
 
     def test_high_probability_namesake_uses_judge_and_waits_if_unavailable(self):
         people = [
-            Person(id="A1", name_raw="Sergey Makarov", is_itmo=True),
-            Person(id="A2", name_raw="Sergey Makarov", is_itmo=True),
+            Person(id="A1", name_raw="Sergey Makarov", is_member=True),
+            Person(id="A2", name_raw="Sergey Makarov", is_member=True),
         ]
         models = SingleModels(None)
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
@@ -181,9 +181,9 @@ class SingleResolutionTest(unittest.TestCase):
 
     def test_joint_work_only_reaches_judge_and_waits_if_unavailable(self):
         people = [
-            Person(id="A1", name_raw="Huadong Wang", is_itmo=True, authored=[{"publication_id": "W1"}]),
-            Person(id="A2", name_raw="Huadong Wang", is_itmo=True, authored=[{"publication_id": "W1"}]),
-            Person(id="A3", name_raw="Jane Smith", is_itmo=True, authored=[{"publication_id": "W1"}]),
+            Person(id="A1", name_raw="Huadong Wang", is_member=True, authored=[{"publication_id": "W1"}]),
+            Person(id="A2", name_raw="Huadong Wang", is_member=True, authored=[{"publication_id": "W1"}]),
+            Person(id="A3", name_raw="Jane Smith", is_member=True, authored=[{"publication_id": "W1"}]),
         ]
         models = SingleModels(None)
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
@@ -228,8 +228,8 @@ class SingleResolutionTest(unittest.TestCase):
                 prepared.write_models(
                     "persons",
                     [
-                        Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True),
-                        Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True),
+                        Person(id="A1", name_raw="Nikolay O. Nikitin", is_member=True),
+                        Person(id="A2", name_raw="Nikolay Nikitin", is_member=True),
                     ],
                 )
                 config = Settings(

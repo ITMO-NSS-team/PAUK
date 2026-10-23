@@ -1,0 +1,26 @@
+{
+  "key": "skoltech",
+  "short_name": "Skoltech",
+  "short_name_local": "Сколтех",
+  "name_en": "Skolkovo Institute of Science and Technology",
+  "name_local": "Сколковский институт науки и технологий",
+  "ror_id": "03f9nc143",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "skoltech.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:skoltech|сколтех)(?![^\\W\\d_])",
+  "long_name": "skolkovo\\s+institute\\s+(?:of|for)\\s+sciences?(?:\\s+and\\s+technol-?\\s*og(?:y|ies))?|сколковск\\w*\\s+институт\\w*\\s+науки\\s+и\\s+технологий",
+  "marker_replacement": "Skoltech",
+  "place_words": "moscow|москва|russia|россия|russian|federation|российская|федерация|skolkovo|сколково|bolshoy|bolshoi|bol’shoy|bol'shoy|bul’var|bulvar|boulevard|blvd|blv|blrd|b-r|bld|bldg|build|building|стр|novaya|st|str|street|nobel|nobelya|territory|of|the|innovation|center|centre|region|oblast|odintsovo|c\\.i\\.s|cis|\\d+|\\d+/\\d+|\\d+s\\d+",
+  "other_organisations": "airi|artificial\\s+intelligence\\s+research\\s+institute|mipt|moscow\\s+institute\\s+of\\s+physics|(?<![^\\W\\d_])hse(?![^\\W\\d_])|higher\\s+school\\s+of\\s+economics|misis|russian\\s+academy\\s+of\\s+sciences?|(?<![^\\W\\d_])ras(?![^\\W\\d_])|sber|ligand\\s+pro|digital\\s+materials\\s+llc|lift\\s+center|life\\s+improvement\\s+by\\s+future\\s+technolog|lebedev\\s+physical|belozersky|russian\\s+quantum\\s+center|landau\\s+institute|steklov|emanuel\\s+institute|vavilov\\s+institute|shemyakin|engelhardt|kulakov|monisensa|teder\\s+llc|(?<![^\\W\\d_])mai(?![^\\W\\d_])|moscow\\s+aviation\\s+institute|marchuk\\s+institute|federal\\s+research\\s+center\\s+of\\s+problems\\s+of\\s+chemical\\s+physics|kotelnikov\\s+institute|institute\\s+of\\s+electrophysics|institute\\s+of\\s+biomedical\\s+problems|institute\\s+of\\s+applied\\s+physics|hefei\\s+national\\s+laborator|igor\\s+krichever\\s+center|bimai",
+  "identity": "(?<![^\\W\\d_])skoltech(?![^\\W\\d_])|skolkovo\\s+institute\\s+of\\s+science\\s+and\\s+technology",
+  "city": "skolkovo|moscow|сколково|москва",
+  "staff_catalog": null,
+  "mongo_db": "pauk_skoltech",
+  "site_url": "https://www.skoltech.ru",
+  "unit_words": ""
+}

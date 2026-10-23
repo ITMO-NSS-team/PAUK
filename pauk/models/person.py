@@ -28,12 +28,12 @@ class Person(BaseModel):
     id: str
     openalex_id: str | None = None
     orcid: str | None = None
-    is_itmo: bool
+    is_member: bool
     name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
-    first_name_ru: str | None = None
-    second_name_ru: str | None = None
-    surname_ru: str | None = None
+    first_name_local: str | None = None
+    second_name_local: str | None = None
+    surname_local: str | None = None
     first_name_en: str | None = None
     second_name_en: str | None = None
     surname_en: str | None = None
@@ -54,7 +54,7 @@ class Person(BaseModel):
     scopus_id: str | None = None
     researcher_id: str | None = None
     dblp_id: str | None = None
-    name_ru: str | None = None
+    name_local: str | None = None
     name_en: str | None = None
     other_names: list[str] = Field(default_factory=list)
     biography: str | None = None

@@ -22,8 +22,8 @@ export interface Department {
 export interface AuthorNode {
   key: string;
   kind: "author";
-  // false: external co-author. Missing in older data, where everyone is ITMO.
-  is_itmo?: boolean;
+  // false: external co-author. Missing in older data, where everyone is a member.
+  is_member?: boolean;
   dept: number;
   label: string;
   label_en: string;
@@ -45,7 +45,7 @@ export interface Affiliation {
 export interface AuthorDetail {
   key: string;
   openalex_id: string;
-  name_ru: string;
+  name_local: string;
   name_en: string;
   // Spellings other than the ones already shown as the title.
   name_variants: { openalex: string[]; orcid: string[] };

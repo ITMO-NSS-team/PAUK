@@ -1,0 +1,714 @@
+[
+  {
+    "uid": "hse",
+    "name_en": "National Research University Higher School of Economics",
+    "name_local": "Национальный исследовательский университет «Высшая школа экономики»",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/055f7t516",
+    "type": "university"
+  },
+  {
+    "uid": "hse-spb",
+    "name_en": "HSE University – St. Petersburg",
+    "name_local": "НИУ ВШЭ – Санкт-Петербург",
+    "kind": "campus",
+    "parent": "hse",
+    "aliases": [
+      "Higher School of Economics — St. Petersburg",
+      "Higher School of Economics – St. Petersburg",
+      "Higher School of Economics - St. Petersburg",
+      "Высшая школа экономики» – Санкт-Петербург",
+      "HSE St. Petersburg",
+      "HSE Saint Petersburg",
+      "HSE University St. Petersburg",
+      "HSE University Saint Petersburg"
+    ],
+    "context_aliases": [
+      "St. Petersburg branch"
+    ]
+  },
+  {
+    "uid": "hse-nn",
+    "name_en": "HSE University – Nizhny Novgorod",
+    "name_local": "НИУ ВШЭ – Нижний Новгород",
+    "kind": "campus",
+    "parent": "hse",
+    "aliases": [
+      "Higher School of Economics in Nizhny Novgorod",
+      "Higher School of Economis Nizhnij Novgorod",
+      "HSE Nizhny Novgorod",
+      "HSE University Nizhny Novgorod"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hse-perm",
+    "name_en": "HSE University – Perm",
+    "name_local": "НИУ ВШЭ – Пермь",
+    "kind": "campus",
+    "parent": "hse",
+    "aliases": [
+      "HSE Perm",
+      "HSE University Perm",
+      "Higher School of Economics Perm"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fcs",
+    "name_en": "Faculty of Computer Science",
+    "name_local": "Факультет компьютерных наук",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "HSE Faculty of Computer Science"
+    ],
+    "context_aliases": [
+      "Faculty of Computer Science",
+      "Факультет компьютерных наук",
+      "School of Computer Science",
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "aidig",
+    "name_en": "Institute of Artificial Intelligence and Digital Sciences",
+    "name_local": "Институт искусственного интеллекта и цифровых наук",
+    "kind": "institute",
+    "parent": "fcs",
+    "aliases": [
+      "Institute of Artificial Intelligence and Digital Sciences",
+      "Institute of Artificial Intellegence and Digital Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lambda",
+    "name_en": "Laboratory of Methods for Big Data Analysis",
+    "name_local": "Лаборатория методов анализа больших данных",
+    "kind": "lab",
+    "parent": "fcs",
+    "aliases": [
+      "Laboratory of Methods for Big Data Analysis",
+      "HSE LAMBDA"
+    ],
+    "context_aliases": [
+      "LAMBDA"
+    ]
+  },
+  {
+    "uid": "bioinf-lab",
+    "name_en": "International Laboratory of Bioinformatics",
+    "name_local": "Международная лаборатория биоинформатики",
+    "kind": "lab",
+    "parent": "fcs",
+    "aliases": [
+      "International Laboratory of Bioinformatics",
+      "International Bioinformatics Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "biochemoinf-lab",
+    "name_en": "Laboratory of Bio- and Chemoinformatics",
+    "name_local": "Лаборатория био- и хемоинформатики",
+    "kind": "lab",
+    "parent": "fcs",
+    "aliases": [
+      "Laboratory of Bio- and Chemoinformatics",
+      "Laboratory for Bio and Chemoinformatics",
+      "Laboratory of Bio- and Cheminformatics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cluster-geometry",
+    "name_en": "International Laboratory of Cluster Geometry",
+    "name_local": "Международная лаборатория кластерной геометрии",
+    "kind": "lab",
+    "parent": "fcs",
+    "aliases": [
+      "International Laboratory of Cluster Geometry"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fes",
+    "name_en": "Faculty of Economic Sciences",
+    "name_local": "Факультет экономических наук",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economic Sciences",
+      "Факультет экономических наук",
+      "Faculty of Economics",
+      "Department of Economics",
+      "Department of Applied Economics",
+      "School of Finance",
+      "Department of Finance"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Faculty of Mathematics",
+    "name_local": "Факультет математики",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "HSE Faculty of Mathematics"
+    ],
+    "context_aliases": [
+      "Faculty of Mathematics",
+      "Факультет математики",
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Faculty of Physics",
+    "name_local": "Факультет физики",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Physics",
+      "Факультет физики",
+      "Department of Physics",
+      "Physics Department"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Faculty of Chemistry",
+    "name_local": "Факультет химии",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Chemistry",
+      "Факультет химии",
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "biology",
+    "name_en": "Faculty of Biology and Biotechnology",
+    "name_local": "Факультет биологии и биотехнологии",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "Faculty of Biology and Biotechnology"
+    ],
+    "context_aliases": [
+      "Department of Biology and Biotechnology"
+    ]
+  },
+  {
+    "uid": "geography",
+    "name_en": "Faculty of Geography and Geoinformation Technology",
+    "name_local": "Факультет географии и геоинформационных технологий",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "Faculty of Geography and Geoinformation Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fss",
+    "name_en": "Faculty of Social Sciences",
+    "name_local": "Факультет социальных наук",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "HSE University Faculty of Social Sciences"
+    ],
+    "context_aliases": [
+      "Faculty of Social Sciences",
+      "Факультет социальных наук"
+    ]
+  },
+  {
+    "uid": "psychology",
+    "name_en": "School of Psychology",
+    "name_local": "Департамент психологии",
+    "kind": "school",
+    "parent": "fss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychology",
+      "Department of Psychology",
+      "Департамент психологии"
+    ]
+  },
+  {
+    "uid": "sociology",
+    "name_en": "School of Sociology",
+    "name_local": "Департамент социологии",
+    "kind": "school",
+    "parent": "fss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Sociology",
+      "Департамент социологии"
+    ]
+  },
+  {
+    "uid": "politics",
+    "name_en": "School of Politics and Governance",
+    "name_local": "Департамент политики и управления",
+    "kind": "school",
+    "parent": "fss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Politics and Governance"
+    ]
+  },
+  {
+    "uid": "lcsr",
+    "name_en": "Laboratory for Comparative Social Research",
+    "name_local": "Лаборатория сравнительных социальных исследований",
+    "kind": "lab",
+    "parent": "fss",
+    "aliases": [
+      "Laboratory for Comparative Social Research"
+    ],
+    "context_aliases": [
+      "LCSR"
+    ]
+  },
+  {
+    "uid": "ccsps",
+    "name_en": "Center for Comprehensive Social Policy Studies",
+    "name_local": "Центр комплексных исследований социальной политики",
+    "kind": "center",
+    "parent": "fss",
+    "aliases": [
+      "Center for Comprehensive Social Policy Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "wea",
+    "name_en": "Faculty of World Economy and International Affairs",
+    "name_local": "Факультет мировой экономики и мировой политики",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [
+      "Faculty of World Economy and International Affairs"
+    ],
+    "context_aliases": [
+      "School of International Affairs"
+    ]
+  },
+  {
+    "uid": "humanities",
+    "name_en": "Faculty of Humanities",
+    "name_local": "Факультет гуманитарных наук",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities",
+      "Факультет гуманитарных наук"
+    ]
+  },
+  {
+    "uid": "iocs",
+    "name_en": "Institute for Oriental and Classical Studies",
+    "name_local": "Институт классического Востока и античности",
+    "kind": "institute",
+    "parent": "humanities",
+    "aliases": [
+      "Institute for Oriental and Classical Studies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "foreign-languages",
+    "name_en": "School of Foreign Languages",
+    "name_local": "Школа иностранных языков",
+    "kind": "school",
+    "parent": "humanities",
+    "aliases": [],
+    "context_aliases": [
+      "School of Foreign Languages",
+      "Школа иностранных языков"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Факультет права",
+    "kind": "faculty",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law",
+      "Факультет права"
+    ]
+  },
+  {
+    "uid": "gsb",
+    "name_en": "Graduate School of Business",
+    "name_local": "Высшая школа бизнеса",
+    "kind": "school",
+    "parent": "hse",
+    "aliases": [
+      "HSE Graduate School of Business"
+    ],
+    "context_aliases": [
+      "Graduate School of Business",
+      "Высшая школа бизнеса",
+      "School of Business",
+      "Department of Management",
+      "Management Department",
+      "Marketing department"
+    ]
+  },
+  {
+    "uid": "corporate-finance-center",
+    "name_en": "Corporate Finance Center",
+    "name_local": "Центр корпоративных финансов",
+    "kind": "center",
+    "parent": "gsb",
+    "aliases": [],
+    "context_aliases": [
+      "Corporate Finance Center"
+    ]
+  },
+  {
+    "uid": "miem",
+    "name_en": "Tikhonov Moscow Institute of Electronics and Mathematics",
+    "name_local": "Московский институт электроники и математики им. А.Н. Тихонова",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [
+      "Tikhonov Moscow Institute of Electronics and Mathematics",
+      "Moscow Institute of Electronics and Mathematics",
+      "HSE MIEM"
+    ],
+    "context_aliases": [
+      "MIEM"
+    ]
+  },
+  {
+    "uid": "miem-ce",
+    "name_en": "School of Computer Engineering",
+    "name_local": "Департамент компьютерной инженерии",
+    "kind": "department",
+    "parent": "miem",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Engineering",
+      "Department of Computer Engineering"
+    ]
+  },
+  {
+    "uid": "miem-ee",
+    "name_en": "Department of Electronic Engineering",
+    "name_local": "Департамент электронной инженерии",
+    "kind": "department",
+    "parent": "miem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronic Engineering"
+    ]
+  },
+  {
+    "uid": "miem-am",
+    "name_en": "School of Applied Mathematics",
+    "name_local": "Департамент прикладной математики",
+    "kind": "department",
+    "parent": "miem",
+    "aliases": [],
+    "context_aliases": [
+      "School of Applied Mathematics"
+    ]
+  },
+  {
+    "uid": "comp-physics-lab",
+    "name_en": "Laboratory of Computational Physics",
+    "name_local": "Лаборатория вычислительной физики",
+    "kind": "lab",
+    "parent": "miem",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Computational Physics"
+    ]
+  },
+  {
+    "uid": "supercomp-lab",
+    "name_en": "International Laboratory for Supercomputer Atomistic Modelling and Multiscale Analysis",
+    "name_local": "Международная лаборатория суперкомпьютерного атомистического моделирования и многомасштабного анализа",
+    "kind": "lab",
+    "parent": "miem",
+    "aliases": [
+      "International Laboratory for Supercomputer Atomistic Modelling and Multiscale Analysis"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "condensed-matter-lab",
+    "name_en": "Laboratory for Condensed Matter Physics",
+    "name_local": "Лаборатория физики конденсированного состояния",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory for Condensed Matter Physics"
+    ]
+  },
+  {
+    "uid": "ioe",
+    "name_en": "Institute of Education",
+    "name_local": "Институт образования",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [
+      "HSE Institute of Education",
+      "Institute of Education of Higher School of Economics"
+    ],
+    "context_aliases": [
+      "Institute of Education",
+      "Институт образования"
+    ]
+  },
+  {
+    "uid": "issek",
+    "name_en": "Institute for Statistical Studies and Economics of Knowledge",
+    "name_local": "Институт статистических исследований и экономики знаний",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [
+      "Institute for Statistical Studies and Economics of Knowledge"
+    ],
+    "context_aliases": [
+      "ISSEK"
+    ]
+  },
+  {
+    "uid": "icef",
+    "name_en": "International College of Economics and Finance",
+    "name_local": "Международный институт экономики и финансов",
+    "kind": "college",
+    "parent": "hse",
+    "aliases": [
+      "International College of Economics and Finance"
+    ],
+    "context_aliases": [
+      "ICEF"
+    ]
+  },
+  {
+    "uid": "ipag",
+    "name_en": "Institute for Public Administration and Governance",
+    "name_local": "Институт государственного и муниципального управления",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Public Administration and Governance",
+      "Институт государственного и муниципального управления"
+    ]
+  },
+  {
+    "uid": "expert-institute",
+    "name_en": "Expert Institute",
+    "name_local": "Экспертный институт",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Expert Institute",
+      "Экспертный институт"
+    ]
+  },
+  {
+    "uid": "icn",
+    "name_en": "Institute for Cognitive Neuroscience",
+    "name_local": "Институт когнитивных нейронаук",
+    "kind": "institute",
+    "parent": "hse",
+    "aliases": [
+      "Institute for Cognitive Neuroscience"
+    ],
+    "context_aliases": [
+      "Institute of Cognitive Neuroscience"
+    ]
+  },
+  {
+    "uid": "ccdm",
+    "name_en": "Centre for Cognition and Decision Making",
+    "name_local": "Центр нейроэкономики и когнитивных исследований",
+    "kind": "center",
+    "parent": "icn",
+    "aliases": [
+      "Centre for Cognition and Decision Making",
+      "Center for Cognition and Decision Making",
+      "Centre for Cognition and Decision-Making"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "language-brain",
+    "name_en": "Center for Language and Brain",
+    "name_local": "Центр языка и мозга",
+    "kind": "center",
+    "parent": "icn",
+    "aliases": [
+      "Center for Language and Brain",
+      "Centre for Language and Brain"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "bioelectric-interfaces",
+    "name_en": "Centre for Bioelectric Interfaces",
+    "name_local": "Центр биоэлектрических интерфейсов",
+    "kind": "center",
+    "parent": "icn",
+    "aliases": [
+      "Centre for Bioelectric Interfaces",
+      "Center for Bioelectric Interfaces"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "social-neurobiology",
+    "name_en": "International Laboratory of Social Neurobiology",
+    "name_local": "Международная лаборатория социальной нейробиологии",
+    "kind": "lab",
+    "parent": "icn",
+    "aliases": [
+      "International Laboratory of Social Neurobiology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chi-centre",
+    "name_en": "Cognitive Health and Intelligence Centre",
+    "name_local": "Центр когнитивного здоровья и интеллекта",
+    "kind": "center",
+    "parent": "icn",
+    "aliases": [
+      "Cognitive Health and Intelligence Centre"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "decan",
+    "name_en": "International Centre of Decision Choice and Analysis",
+    "name_local": "Международный центр анализа и выбора решений",
+    "kind": "center",
+    "parent": "hse",
+    "aliases": [
+      "International Centre of Decision Choice and Analysis"
+    ],
+    "context_aliases": [
+      "DeCAn"
+    ]
+  },
+  {
+    "uid": "sociocultural",
+    "name_en": "Centre for Sociocultural Research",
+    "name_local": "Центр социокультурных исследований",
+    "kind": "center",
+    "parent": "hse",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Sociocultural Research",
+      "Center for Sociocultural Research"
+    ]
+  },
+  {
+    "uid": "spb-sem",
+    "name_en": "School of Economics and Management (St. Petersburg)",
+    "name_local": "Санкт-Петербургская школа экономики и менеджмента",
+    "kind": "school",
+    "parent": "hse-spb",
+    "aliases": [],
+    "context_aliases": [
+      "School of Economics and Management"
+    ]
+  },
+  {
+    "uid": "quantum-optoelectronics",
+    "name_en": "International Laboratory of Quantum Optoelectronics",
+    "name_local": "Международная лаборатория квантовой оптоэлектроники",
+    "kind": "lab",
+    "parent": "hse-spb",
+    "aliases": [
+      "International Laboratory of Quantum Optoelectronics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "social-cognitive-informatics",
+    "name_en": "Laboratory for Social and Cognitive Informatics",
+    "name_local": "Лаборатория социальной и когнитивной информатики",
+    "kind": "lab",
+    "parent": "hse-spb",
+    "aliases": [
+      "Laboratory for Social and Cognitive Informatics",
+      "Social and Cognitive Informatics Lab",
+      "Social & Cognitive Informatics Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "leya",
+    "name_en": "LEYA Lab for NLP",
+    "name_local": "Лаборатория LEYA",
+    "kind": "lab",
+    "parent": "hse-spb",
+    "aliases": [
+      "LEYA Lab for NLP",
+      "LEYA Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nn-imcs",
+    "name_en": "Faculty of Informatics Mathematics and Computer Science (Nizhny Novgorod)",
+    "name_local": "Факультет информатики математики и компьютерных наук",
+    "kind": "faculty",
+    "parent": "hse-nn",
+    "aliases": [
+      "Faculty of Informatics Mathematics and Computer Science"
+    ],
+    "context_aliases": [
+      "Faculty of Informatics",
+      "Mathematics and Computer Science",
+      "Факультет информатики математики и компьютерных наук"
+    ]
+  },
+  {
+    "uid": "latna",
+    "name_en": "Laboratory of Algorithms and Technologies for Network Analysis",
+    "name_local": "Лаборатория алгоритмов и технологий анализа сетевых структур",
+    "kind": "lab",
+    "parent": "hse-nn",
+    "aliases": [
+      "Laboratory of Algorithms and Technologies for Network Analysis"
+    ],
+    "context_aliases": [
+      "LATNA"
+    ]
+  },
+  {
+    "uid": "idlab",
+    "name_en": "International Laboratory of Intangible-driven Economy",
+    "name_local": "Международная лаборатория экономики нематериальных активов",
+    "kind": "lab",
+    "parent": "hse-perm",
+    "aliases": [
+      "International Laboratory of Intangible-driven Economy"
+    ],
+    "context_aliases": [
+      "IDLab"
+    ]
+  }
+]

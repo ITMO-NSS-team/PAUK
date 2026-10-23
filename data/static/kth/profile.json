@@ -1,0 +1,31 @@
+{
+  "key": "kth",
+  "short_name": "KTH",
+  "short_name_local": "KTH",
+  "name_en": "KTH Royal Institute of Technology",
+  "name_local": "Kungliga Tekniska högskolan",
+  "ror_id": "026vcq606",
+  "language": "Swedish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "af",
+    "von",
+    "de"
+  ],
+  "email_domains": [
+    "kth.se"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:KTHRoyalInst|KTH)(?![^\\W\\d_])",
+  "long_name": "Kuninkaallinen[\\s‐-]+teknillinen[\\s‐-]+korkeakoulu|KTH[\\s‐-]+Royal[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Technology|Royal[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Technology|Kungliga[\\s‐-]+Tekniska[\\s‐-]+högskolan|Kungliga[\\s‐-]+Tekniska[\\s‐-]+Hogskolan",
+  "marker_replacement": "KTHRoyalInst",
+  "place_words": "albanova|aleja|alfvéns|allee|av|ave|avenue|bd|bldg|boulevard|box|brinellvägen|building|calle|campus|east|floor|gatan|hannes|katu|kista|laan|malvanis|north|piazza|platz|plaza|plein|po|rd|road|room|roslagstullsbacken|rue|se|solna|south|st|stockholm|str|straat|strasse|straße|street|sverige|sweden|tie|ul|vag|vej|via|viale|väg|vägen|weg|west",
+  "other_organisations": "Stockholm University|Karolinska|Uppsala University|Nordita|Science for Life Laboratory|SciLifeLab|National\\ Bioinformatics\\ Infrastructure\\ Sweden|National\\ Microscopy\\ Infrastructure|Swedish\\ Biodiversity\\ Data\\ Infrastructure|Swedish\\ National\\ Data\\ Service",
+  "identity": "(?<![^\\W\\d_])KTH(?![^\\W\\d_])|Kuninkaallinen[\\s‐-]+teknillinen[\\s‐-]+korkeakoulu|KTH[\\s‐-]+Royal[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Technology|Royal[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Technology|Kungliga[\\s‐-]+Tekniska[\\s‐-]+högskolan|Kungliga[\\s‐-]+Tekniska[\\s‐-]+Hogskolan",
+  "city": "Stockholm",
+  "staff_catalog": null,
+  "mongo_db": "pauk_kth",
+  "site_url": "https://www.kth.se",
+  "unit_words": "school|department|division|centre|center",
+  "external_authors": false
+}

@@ -5,17 +5,17 @@ import logging
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from pauk.institution import Institution
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
+from pauk.settings import settings
 from pauk.storage import RawStore
 
 logger = logging.getLogger(__name__)
 
-ITMO_ROR_ID = "04txgxn49"
-
 # OpenAlex serves at most this many authorships on the list endpoint (large
 # consortium papers have hundreds), without any marker field; the single-work
 # endpoint serves the complete list. A list payload carrying exactly the cap
-# is treated as truncated, since the ITMO participant is often beyond it.
+# is treated as truncated, since the university's participant is often beyond it.
 AUTHORSHIP_TRUNCATION_LIMIT = 100
 
 # Request marker on envelopes whose payload came from the single-work
@@ -30,14 +30,17 @@ def _authors_truncated(work: dict) -> bool:
 
 
 class Collector:
-    def __init__(self, client, raw: RawStore) -> None:
+    def __init__(self, client, raw: RawStore, institution: Institution | None = None) -> None:
         """Initializes the collector.
 
         Args:
             client: An open OpenAlexClient (or a compatible double).
+            institution: Whose works a period selector collects; the
+                configured one by default.
         """
         self.client = client
         self.raw = raw
+        self.institution = institution or settings.institution
         self._progress: tqdm | None = None
 
     def collect(self, selector: WorkSelector | PeriodSelector | WorksFileSelector) -> int:
@@ -122,7 +125,7 @@ class Collector:
                 self._report_saved()
             return count
         count = 0
-        for work in self.client.iter_works(ITMO_ROR_ID, selector.date_from, selector.date_to):
+        for work in self.client.iter_works(self.institution.ror_id, selector.date_from, selector.date_to):
             work_id = (work.get("id") or "").rstrip("/").split("/")[-1].upper()
             if work_id in known_ids:
                 continue

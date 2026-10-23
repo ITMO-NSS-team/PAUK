@@ -38,6 +38,10 @@ from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
 
+def batched(client):
+    """get_users on a test double, answering through its get_user so per-login setups and counts still apply."""
+    return lambda logins: {login: client.get_user(login) for login in logins}
+
 def _make_pdf_bytes(pages_text: list[str]) -> bytes:
     """A tiny real PDF, built in-memory, so tests don't need a network call or a binary fixture file."""
     doc = fitz.open()
@@ -77,7 +81,8 @@ class StagesTest(unittest.TestCase):
         valid_pdf = _make_pdf_bytes(["https://github.com/org/repo"])
         http_client.return_value.get_bytes.return_value = valid_pdf
         CodeLinksStage(prepared, RawStore(self.db, "sample"), config=config).run()
-        http_client.return_value.get_bytes.assert_called_once_with("https://example.org/paper.pdf")
+        http_client.return_value.get_bytes.assert_called_once_with(
+            "https://example.org/paper.pdf", retries=1, deadline=300, max_wait=120)
         self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), valid_pdf)
 
     def setUp(self):
@@ -893,7 +898,7 @@ class StagesTest(unittest.TestCase):
     def test_code_links_falls_back_to_crawler_when_no_pdf_urls(self, http_client):
         pdf_bytes = _make_pdf_bytes(["From the crawler: https://github.com/org/repo"])
 
-        def get_bytes(url, retries=3, timeout=None):
+        def get_bytes(url, retries=3, timeout=None, deadline=None, max_wait=None):
             self.assertTrue(url.startswith("http://crawler.local/api/v1/"))
             if url.endswith("/health"):
                 return b"ok"
@@ -956,6 +961,7 @@ class HarvestAccountsTest(unittest.TestCase):
         github_client.return_value.contributors.return_value = list(contributors)
         github_client.return_value.commits.return_value = list(commits)
         github_client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        github_client.return_value.get_users.side_effect = batched(github_client.return_value)
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         raw = RawStore(db, "sample")
@@ -1040,6 +1046,7 @@ class HarvestAccountsTest(unittest.TestCase):
             client.return_value.commits.side_effect = lambda owner, name, pages: [
                 self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
             client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepositoriesStage(prepared, raw).run()
             RepoPeopleStage(prepared, raw).run()
         profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
@@ -1102,6 +1109,7 @@ class AccountTypeSpellingTest(unittest.TestCase):
         client.contributors.return_value = []
         client.commits.return_value = []
         client.get_user.return_value = {"login": "alice", "type": "User"}
+        client.get_users.side_effect = batched(client)
         # The type is read off the stored profile rather than passed in.
         profiles = {"github_alice": GitHubProfile(id="github_alice", login="alice",
                                                   type="user")}
@@ -1125,6 +1133,7 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
         github_client.return_value.contributors.return_value = []
         github_client.return_value.commits.return_value = []
         github_client.return_value.get_user.return_value = user_payload or {}
+        github_client.return_value.get_users.side_effect = batched(github_client.return_value)
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         prepared.write_models("repo_links", [
@@ -1191,12 +1200,14 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.get_repository.return_value = self.PAYLOAD
             client.return_value.has_readme.return_value = True
             client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepositoriesStage(self.prepared, self.raw).run()
         with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
             client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepoPeopleStage(self.prepared, self.raw).run()
             calls = client.return_value.get_user.call_count
         return calls, {p.login: p
@@ -1231,6 +1242,7 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.get_repository.return_value = self.PAYLOAD
             client.return_value.has_readme.return_value = True
             client.return_value.get_user.return_value = {}
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepositoriesStage(self.prepared, self.raw).run()
         with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
             client.return_value.contributors.return_value = [
@@ -1239,6 +1251,7 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
                 {"author": {"login": "alice"},
                  "commit": {"author": {"name": "Alice", "email": "alice@example.org"}}}]
             client.return_value.get_user.side_effect = RuntimeError("502")
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepoPeopleStage(self.prepared, self.raw).run()
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
@@ -1252,6 +1265,7 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
             client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepoPeopleStage(self.prepared, self.raw).run()
             client.return_value.get_user.assert_called_once_with("alice")
         profiles = {p.login: p
@@ -1282,6 +1296,7 @@ class CanonicalRekeyAliasTest(unittest.TestCase):
             client.return_value.get_repository.return_value = self.CANON
             client.return_value.has_readme.return_value = True
             client.return_value.get_user.return_value = {}
+            client.return_value.get_users.side_effect = batched(client.return_value)
             RepositoriesStage(self.prepared, self.raw).run()
         return list(self.prepared.read_models("repositories", Repository))
 
@@ -1439,6 +1454,10 @@ class GithubUrlRegexTest(unittest.TestCase):
         found = _occurrences_in_text("see mygithub.com/org/repo and sub.github.com/org/repo", None)
         self.assertEqual(found, {})
 
+    def test_long_owner_without_repo_does_not_backtrack(self):
+        # Took hours before the wrap inside a segment became required.
+        self.assertEqual(_occurrences_in_text("github.com/" + "a" * 5000 + " end", None), {})
+
     def test_truncates_a_deep_path_to_owner_repo(self):
         found = _occurrences_in_text("full path: https://github.com/org/repo/blob/main/README.md", None)
         self.assertEqual(list(found), ["https://github.com/org/repo"])
@@ -1526,6 +1545,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         github_client.return_value.commits.return_value = []
         # The owner in PAYLOAD is an organization, which the stage fetches.
         github_client.return_value.get_user.return_value = {}
+        github_client.return_value.get_users.side_effect = batched(github_client.return_value)
         return github_client
 
     def _row(self):
@@ -1721,6 +1741,7 @@ class RepoPeopleStageTest(unittest.TestCase):
         client.return_value.contributors.return_value = [{"login": "bob", "type": "User"}]
         client.return_value.commits.return_value = []
         client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        client.return_value.get_users.side_effect = batched(client.return_value)
         return client
 
     def _profiles(self):
@@ -1921,6 +1942,22 @@ class StageProgressTest(unittest.TestCase):
     def test_a_stage_nobody_is_watching_runs_as_before(self):
         stage = CountingStage(self.prepared, self.raw, Settings())
         self.assertEqual(stage.run(), {"seen": 5})
+
+    def test_a_bar_driven_by_hand_says_how_far_it_has_got(self):
+        # repositories and dedup call update() themselves; with stderr sent to
+        # a file tqdm is off, and they used to say nothing until they ended.
+        stage = self.stage()
+        stage.REPORT_SECONDS = 0
+        with stage.progress_bar(total=2, label="repos") as bar:
+            bar.update()
+            bar.set_description_str("repos: owners")
+            bar.update()
+        self.assertEqual(self.told, [("repos", 1, 2), ("repos: owners", 2, 2)])
+
+    def test_a_bar_with_nobody_watching_still_counts(self):
+        stage = CountingStage(self.prepared, self.raw, Settings())
+        with stage.progress_bar(total=1) as bar:
+            bar.update()
 
 
 class StageProgressReachesThePageTest(unittest.TestCase):

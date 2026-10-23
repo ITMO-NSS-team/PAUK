@@ -1,0 +1,37 @@
+{
+  "key": "wur",
+  "short_name": "WUR",
+  "short_name_local": "WUR",
+  "name_en": "Wageningen University & Research",
+  "name_local": "Wageningen University & Research",
+  "ror_id": "04qw24q55",
+  "language": "Dutch",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "de",
+    "der",
+    "den",
+    "ten",
+    "ter",
+    "het",
+    "in",
+    "t"
+  ],
+  "email_domains": [
+    "wur.nl"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:WageningenUnivResearch|WUR)(?![^\\W\\d_])",
+  "long_name": "Wageningen[\\s‐-]+Universiteit[\\s‐-]+en[\\s‐-]+Researchcentrum|Wageningen[\\s‐-]+University[\\s‐-]+and[\\s‐-]+Research[\\s‐-]+Centre|Wageningen[\\s‐-]+University[\\s‐-]+\\&[\\s‐-]+Research[\\s‐-]+centre|Wageningen[\\s‐-]+University[\\s‐-]+and[\\s‐-]+Research|Wageningen[\\s‐-]+University[\\s‐-]+\\&[\\s‐-]+Research|Wageningen[\\s‐-]+Universiteit|Wageningen[\\s‐-]+University|Wageningen[\\s‐-]+Univ|Wageningen[\\s‐-]+UR",
+  "marker_replacement": "WageningenUnivResearch",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|bornse|boulevard|box|building|calle|campus|droevendaalsesteeg|east|elst|floor|gatan|holland|hollandseweg|katu|laan|lelystad|nederland|netherlands|north|o|p|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|stippeneng|str|straat|strasse|straße|street|the|tie|ul|vej|via|viale|vägen|wageningen|weg|weilanden|west",
+  "other_organisations": "Utrecht University|University of Amsterdam|Netherlands Institute of Ecology|(?<![^\\W\\d_])NIOO(?![^\\W\\d_])|4TU|Soehngen\\ Institute\\ of\\ Anaerobic\\ Microbiology",
+  "identity": "(?<![^\\W\\d_])WUR(?![^\\W\\d_])|Wageningen[\\s‐-]+Universiteit[\\s‐-]+en[\\s‐-]+Researchcentrum|Wageningen[\\s‐-]+University[\\s‐-]+and[\\s‐-]+Research[\\s‐-]+Centre|Wageningen[\\s‐-]+University[\\s‐-]+\\&[\\s‐-]+Research[\\s‐-]+centre|Wageningen[\\s‐-]+University[\\s‐-]+and[\\s‐-]+Research|Wageningen[\\s‐-]+University[\\s‐-]+\\&[\\s‐-]+Research|Wageningen[\\s‐-]+Universiteit|Wageningen[\\s‐-]+University|Wageningen[\\s‐-]+Univ|Wageningen[\\s‐-]+UR",
+  "city": "Wageningen",
+  "staff_catalog": null,
+  "mongo_db": "pauk_wur",
+  "site_url": "https://www.wur.nl",
+  "unit_words": "laboratory|group|department|division|centre|center|research|chair",
+  "external_authors": false
+}

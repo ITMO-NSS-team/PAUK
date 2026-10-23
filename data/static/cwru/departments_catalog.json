@@ -1,0 +1,356 @@
+[
+  {
+    "uid": "cwru",
+    "name_en": "Case Western Reserve University",
+    "name_local": "Case Western Reserve University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/051fd9666",
+    "type": "university"
+  },
+  {
+    "uid": "som",
+    "name_en": "Case Western Reserve University School of Medicine",
+    "name_local": "Case Western Reserve University School of Medicine",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [
+      "Case Western Reserve University School of Medicine"
+    ],
+    "context_aliases": [
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "nursing",
+    "name_en": "Frances Payne Bolton School of Nursing",
+    "name_local": "Frances Payne Bolton School of Nursing",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [
+      "Frances Payne Bolton School of Nursing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cse",
+    "name_en": "Case School of Engineering",
+    "name_local": "Case School of Engineering",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [
+      "Case School of Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cas",
+    "name_en": "College of Arts and Sciences",
+    "name_local": "College of Arts and Sciences",
+    "kind": "college",
+    "parent": "cwru",
+    "aliases": [],
+    "context_aliases": [
+      "College of Arts and Sciences"
+    ]
+  },
+  {
+    "uid": "weatherhead",
+    "name_en": "Weatherhead School of Management",
+    "name_local": "Weatherhead School of Management",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [],
+    "context_aliases": [
+      "Weatherhead School of Management"
+    ]
+  },
+  {
+    "uid": "dental",
+    "name_en": "School of Dental Medicine",
+    "name_local": "School of Dental Medicine",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [],
+    "context_aliases": [
+      "School of Dental Medicine"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "School of Law",
+    "name_local": "School of Law",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [],
+    "context_aliases": [
+      "School of Law"
+    ]
+  },
+  {
+    "uid": "msass",
+    "name_en": "Jack Joseph and Morton Mandel School of Applied Social Sciences",
+    "name_local": "Jack Joseph and Morton Mandel School of Applied Social Sciences",
+    "kind": "school",
+    "parent": "cwru",
+    "aliases": [],
+    "context_aliases": [
+      "Mandel School of Applied Social Sciences"
+    ]
+  },
+  {
+    "uid": "dmed",
+    "name_en": "Department of Medicine",
+    "name_local": "Department of Medicine",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine",
+      "Department of Internal Medicine"
+    ]
+  },
+  {
+    "uid": "pqhs",
+    "name_en": "Department of Population and Quantitative Health Sciences",
+    "name_local": "Department of Population and Quantitative Health Sciences",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Population and Quantitative Health Sciences"
+    ]
+  },
+  {
+    "uid": "path",
+    "name_en": "Department of Pathology",
+    "name_local": "Department of Pathology",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "ggs",
+    "name_en": "Department of Genetics and Genome Sciences",
+    "name_local": "Department of Genetics and Genome Sciences",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Genetics and Genome Sciences"
+    ]
+  },
+  {
+    "uid": "surg",
+    "name_en": "Department of Surgery",
+    "name_local": "Department of Surgery",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "neurosci",
+    "name_en": "Department of Neurosciences",
+    "name_local": "Department of Neurosciences",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosciences"
+    ]
+  },
+  {
+    "uid": "peds",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Department of Pediatrics",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Department of Pharmacology",
+    "name_local": "Department of Pharmacology",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology"
+    ]
+  },
+  {
+    "uid": "molmed",
+    "name_en": "Department of Molecular Medicine",
+    "name_local": "Department of Molecular Medicine",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Medicine"
+    ]
+  },
+  {
+    "uid": "derm",
+    "name_en": "Department of Dermatology",
+    "name_local": "Department of Dermatology",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Dermatology"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "Department of Biochemistry",
+    "name_local": "Department of Biochemistry",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry"
+    ]
+  },
+  {
+    "uid": "psych",
+    "name_en": "Department of Psychiatry",
+    "name_local": "Department of Psychiatry",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry"
+    ]
+  },
+  {
+    "uid": "radio",
+    "name_en": "Department of Radiology",
+    "name_local": "Department of Radiology",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiology"
+    ]
+  },
+  {
+    "uid": "radonc",
+    "name_en": "Department of Radiation Oncology",
+    "name_local": "Department of Radiation Oncology",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiation Oncology"
+    ]
+  },
+  {
+    "uid": "ortho",
+    "name_en": "Department of Orthopaedic Surgery",
+    "name_local": "Department of Orthopaedic Surgery",
+    "kind": "department",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedic Surgery"
+    ]
+  },
+  {
+    "uid": "bme",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "mae",
+    "name_en": "Department of Mechanical and Aerospace Engineering",
+    "name_local": "Department of Mechanical and Aerospace Engineering",
+    "kind": "department",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical and Aerospace Engineering"
+    ]
+  },
+  {
+    "uid": "ecse",
+    "name_en": "Department of Electrical Computer and Systems Engineering",
+    "name_local": "Department of Electrical Computer and Systems Engineering",
+    "kind": "department",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical",
+      "Computer and Systems Engineering"
+    ]
+  },
+  {
+    "uid": "cds",
+    "name_en": "Department of Computer and Data Sciences",
+    "name_local": "Department of Computer and Data Sciences",
+    "kind": "department",
+    "parent": "cse",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer and Data Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "cas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "cas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "cas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "cccc",
+    "name_en": "Case Comprehensive Cancer Center",
+    "name_local": "Case Comprehensive Cancer Center",
+    "kind": "center",
+    "parent": "som",
+    "aliases": [],
+    "context_aliases": [
+      "Case Comprehensive Cancer Center"
+    ]
+  }
+]

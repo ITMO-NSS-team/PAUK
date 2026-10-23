@@ -1,4 +1,6 @@
+import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -39,6 +41,7 @@ class _FakeSession:
         self.headers: dict[str, str] = {}
 
     def request(self, method: str, url: str, **kwargs) -> _Resp:
+        self.kwargs = kwargs
         self.calls += 1
         item = self._responses.pop(0)
         if isinstance(item, Exception):
@@ -90,6 +93,94 @@ class GetTextTest(unittest.TestCase):
         message = str(ctx.exception)
         self.assertNotIn("SECRET123", message)
         self.assertIn("REDACTED", message)  # url-encoded as %5BREDACTED%5D by redact_url
+
+
+class _Socket:
+    def __init__(self) -> None:
+        self.down = threading.Event()
+
+    def shutdown(self, how: int) -> None:
+        self.down.set()
+
+
+class _Stalled(_Resp):
+    """A body whose read blocks inside one chunk until the socket is shut down."""
+
+    def __init__(self, chunks: int = 0, stall: bool = True) -> None:
+        super().__init__(200)
+        self.chunks, self.stall, self.closed = chunks, stall, False
+        self.raw = types.SimpleNamespace(connection=types.SimpleNamespace(sock=_Socket()))
+
+    def iter_content(self, size: int):
+        yield from (b"x" for _ in range(self.chunks))
+        if self.stall:
+            # The real read sits in recv(); only the shutdown wakes it.
+            if not self.raw.connection.sock.down.wait(5):
+                raise AssertionError("the deadline never shut the socket down")
+            raise requests.ConnectionError("connection reset")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class GetBytesDeadlineTest(unittest.TestCase):
+    def _client(self, response: _Resp) -> HttpClient:
+        client = HttpClient(timeout=5)
+        client.session = _FakeSession([response])
+        return client
+
+    def test_body_within_deadline_is_returned_streamed(self):
+        client = self._client(_Stalled(3, stall=False))
+        self.assertEqual(client.get_bytes("https://example.org/a.pdf", deadline=60), b"xxx")
+        self.assertTrue(client.session.kwargs["stream"])
+
+    def test_read_stalled_inside_a_chunk_is_cut_at_the_deadline(self):
+        response = _Stalled(2)
+        client = self._client(response)
+        started = time.monotonic()
+        with self.assertRaises(HttpRequestError) as ctx:
+            client.get_bytes("https://example.org/a.pdf?token=SECRET", deadline=0.2)
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertIn("not received in 0s", str(ctx.exception))
+        self.assertNotIn("SECRET", str(ctx.exception))
+        self.assertTrue(response.closed)
+
+    def test_reader_socket_is_used_when_the_connection_let_go_of_it(self):
+        # http.client hands the socket over to the response on Connection: close.
+        response = _Stalled()
+        sock = response.raw.connection.sock
+        reader = types.SimpleNamespace(raw=types.SimpleNamespace(_sock=sock))
+        response.raw = types.SimpleNamespace(connection=None, _fp=types.SimpleNamespace(fp=reader))
+        client = self._client(response)
+        with (mock.patch.object(_Stalled, "iter_content", lambda self, size: _wait_on(sock)),
+              self.assertRaises(HttpRequestError)):
+            client.get_bytes("https://example.org/a.pdf", deadline=0.2)
+        self.assertTrue(sock.down.is_set())
+
+
+def _wait_on(sock: _Socket):
+    if not sock.down.wait(5):
+        raise AssertionError("the deadline never shut the socket down")
+    raise requests.ConnectionError("connection reset")
+    yield b""
+
+
+class MaxWaitTest(unittest.TestCase):
+    @mock.patch("pauk.sources.base.time.sleep")
+    def test_longer_retry_after_fails_without_waiting(self, sleep):
+        client = HttpClient(timeout=5)
+        client.session = _FakeSession([_Resp(503, headers={"Retry-After": "3600"})])
+        with self.assertRaises(HttpRequestError) as ctx:
+            client.get_bytes("https://example.org/a.pdf", max_wait=120)
+        self.assertEqual(ctx.exception.status_code, 503)
+        sleep.assert_not_called()
+
+    @mock.patch("pauk.sources.base.time.sleep")
+    def test_shorter_retry_after_is_still_honoured(self, sleep):
+        client = HttpClient(timeout=5)
+        client.session = _FakeSession([_Resp(503, headers={"Retry-After": "30"}), _Resp(200, text="pdf")])
+        self.assertEqual(client.get_bytes("https://example.org/a.pdf", max_wait=120), b"pdf")
+        sleep.assert_called_once_with(30.0)
 
 
 class WaitLogTest(unittest.TestCase):
@@ -181,3 +272,29 @@ class WaitLogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GitHubBatchUsersTest(unittest.TestCase):
+    def test_profiles_come_in_one_graphql_query_shaped_like_rest(self):
+        client = GitHubClient(5, token="t")
+        reply = {"data": {
+            "u0": {"__typename": "User", "login": "ana", "url": "https://github.com/ana", "name": "Ana Silva",
+                   "email": "", "bio": "UFJF", "location": "Juiz de Fora", "company": None},
+            "u1": {"__typename": "Organization", "login": "lab", "url": "https://github.com/lab", "name": "Lab",
+                   "email": "lab@ufjf.br", "description": "A lab", "location": None},
+            "u2": None,
+        }}
+        with mock.patch.object(client, "request_json", return_value=reply) as request:
+            users = client.get_users(["ana", "lab", "ghost", "ana"])
+        request.assert_called_once()
+        self.assertEqual(users["ana"]["type"], "User")
+        self.assertIsNone(users["ana"]["email"])
+        self.assertEqual(users["lab"]["bio"], "A lab")
+        self.assertEqual(users["lab"]["email"], "lab@ufjf.br")
+        self.assertEqual(users["ghost"], {})
+
+    def test_without_a_token_each_profile_is_one_rest_request(self):
+        client = GitHubClient(5)
+        with mock.patch.object(client, "get_user", side_effect=lambda login: {"login": login}) as get_user:
+            self.assertEqual(client.get_users(["a", "b"]), {"a": {"login": "a"}, "b": {"login": "b"}})
+        self.assertEqual(get_user.call_count, 2)

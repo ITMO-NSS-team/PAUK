@@ -1,0 +1,343 @@
+[
+  {
+    "uid": "tudarmstadt",
+    "name_en": "Technische Universität Darmstadt",
+    "name_local": "Technische Universität Darmstadt",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/05n911h24",
+    "type": "university"
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Fachbereich Informatik"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering",
+      "Fachbereich Maschinenbau"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Fachbereich Physik"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "mat",
+    "name_en": "Department of Materials and Earth Sciences",
+    "name_local": "Department of Materials and Earth Sciences",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials and Earth Sciences",
+      "Department of Materials and Geosciences"
+    ]
+  },
+  {
+    "uid": "etit",
+    "name_en": "Department of Electrical Engineering and Information Technology",
+    "name_local": "Department of Electrical Engineering and Information Technology",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering and Information Technology"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "civ",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "law-econ",
+    "name_en": "Department of Law and Economics",
+    "name_local": "Department of Law and Economics",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Law and Economics"
+    ]
+  },
+  {
+    "uid": "hum",
+    "name_en": "Department of Human Sciences",
+    "name_local": "Department of Human Sciences",
+    "kind": "department",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Human Sciences",
+      "Institute of Psychology"
+    ]
+  },
+  {
+    "uid": "ikp",
+    "name_en": "Institute for Nuclear Physics",
+    "name_local": "Institute for Nuclear Physics",
+    "kind": "institute",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Institut für Kernphysik",
+      "Institute for Nuclear Physics"
+    ]
+  },
+  {
+    "uid": "ifp",
+    "name_en": "Institute for Condensed Matter Physics",
+    "name_local": "Institute for Condensed Matter Physics",
+    "kind": "institute",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Condensed Matter Physics"
+    ]
+  },
+  {
+    "uid": "mawi",
+    "name_en": "Institute of Materials Science",
+    "name_local": "Institute of Materials Science",
+    "kind": "institute",
+    "parent": "mat",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Materials Science"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Institute of Applied Geosciences",
+    "name_local": "Institute of Applied Geosciences",
+    "kind": "institute",
+    "parent": "mat",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Applied Geosciences"
+    ]
+  },
+  {
+    "uid": "surface",
+    "name_en": "Surface Science Laboratory",
+    "name_local": "Surface Science Laboratory",
+    "kind": "lab",
+    "parent": "mat",
+    "aliases": [],
+    "context_aliases": [
+      "Surface Science Laboratory"
+    ]
+  },
+  {
+    "uid": "ocb",
+    "name_en": "Institute for Organic Chemistry and Biochemistry",
+    "name_local": "Institute for Organic Chemistry and Biochemistry",
+    "kind": "institute",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Organic Chemistry and Biochemistry"
+    ]
+  },
+  {
+    "uid": "rsm",
+    "name_en": "Reactive Flows and Diagnostics",
+    "name_local": "Reactive Flows and Diagnostics",
+    "kind": "institute",
+    "parent": "mech",
+    "aliases": [],
+    "context_aliases": [
+      "Reactive Flows and Diagnostics"
+    ]
+  },
+  {
+    "uid": "ptw",
+    "name_en": "Institute of Production Management Technology and Machine Tools",
+    "name_local": "Institute of Production Management Technology and Machine Tools",
+    "kind": "institute",
+    "parent": "mech",
+    "aliases": [],
+    "context_aliases": [
+      "Technology and Machine Tools",
+      "Institute for Production Management",
+      "PTW"
+    ]
+  },
+  {
+    "uid": "ttd",
+    "name_en": "Institute for Technical Thermodynamics",
+    "name_local": "Institute for Technical Thermodynamics",
+    "kind": "institute",
+    "parent": "mech",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Technical Thermodynamics"
+    ]
+  },
+  {
+    "uid": "ptu",
+    "name_en": "Institute for Production Engineering and Forming Machines",
+    "name_local": "Institute for Production Engineering and Forming Machines",
+    "kind": "institute",
+    "parent": "mech",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Production Engineering and Forming Machines"
+    ]
+  },
+  {
+    "uid": "plm",
+    "name_en": "Product Life Cycle Management",
+    "name_local": "Product Life Cycle Management",
+    "kind": "institute",
+    "parent": "mech",
+    "aliases": [],
+    "context_aliases": [
+      "Product Life Cycle Management"
+    ]
+  },
+  {
+    "uid": "mechanics",
+    "name_en": "Institute for Mechanics",
+    "name_local": "Institute for Mechanics",
+    "kind": "institute",
+    "parent": "civ",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Mechanics",
+      "Institute of Structural Mechanics and Design"
+    ]
+  },
+  {
+    "uid": "iwar",
+    "name_en": "Institute IWAR",
+    "name_local": "Institute IWAR",
+    "kind": "institute",
+    "parent": "civ",
+    "aliases": [
+      "Institute IWAR"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ukp",
+    "name_en": "Ubiquitous Knowledge Processing Lab",
+    "name_local": "Ubiquitous Knowledge Processing Lab",
+    "kind": "lab",
+    "parent": "cs",
+    "aliases": [
+      "Ubiquitous Knowledge Processing Lab",
+      "UKP Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "peasec",
+    "name_en": "Science and Technology for Peace and Security",
+    "name_local": "Science and Technology for Peace and Security",
+    "kind": "lab",
+    "parent": "cs",
+    "aliases": [],
+    "context_aliases": [
+      "Science and Technology for Peace and Security",
+      "PEASEC"
+    ]
+  },
+  {
+    "uid": "csb",
+    "name_en": "Centre for Synthetic Biology",
+    "name_local": "Centre for Synthetic Biology",
+    "kind": "center",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Synthetic Biology"
+    ]
+  },
+  {
+    "uid": "cogsci",
+    "name_en": "Centre for Cognitive Science",
+    "name_local": "Centre for Cognitive Science",
+    "kind": "center",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Cognitive Science",
+      "Center for Mind"
+    ]
+  },
+  {
+    "uid": "hessianai",
+    "name_en": "Hessian Center for Artificial Intelligence",
+    "name_local": "Hessian Center for Artificial Intelligence",
+    "kind": "center",
+    "parent": "tudarmstadt",
+    "aliases": [],
+    "context_aliases": [
+      "Hessian Center for Artificial Intelligence",
+      "hessian.AI"
+    ]
+  }
+]

@@ -166,7 +166,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
 
         for index in (1, 2, 3):
             _client.upsert_person_nodes_batch([(f"A{index}", {
-                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0001",
+                "name_raw": "Ivan Petrov", "is_member": True, "orcid": "0000-0001",
                 "emails": [f"a{index}@example.org"], "other_names": [f"Alias {index}"],
                 "affiliations": json.dumps([{"name": f"Institute {index}", "source": "openalex"}]),
                 "biography": f"Profile {index}",
@@ -182,7 +182,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         from pauk.graph.dedup import dedup_graph_persons
 
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_member=True, name_raw="Ivan Petrov", orcid="same-orcid",
             emails=[f"p{i}@example.org"], other_names=[f"Alias {i}"],
             affiliations=[{"name": f"University {i}", "source": "openalex"}],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -270,7 +270,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
     def _undo_fixture(self, flags):
         db = mongomock.MongoClient().dedup_test
         people = [Person(
-            id=f"A{i}", is_itmo=True, other_names=[f"alias{i}"],
+            id=f"A{i}", is_member=True, other_names=[f"alias{i}"],
             authored=[{"publication_id": "W1", "is_corresponding": flag}],
         ) for i, flag in enumerate(flags, 1)]
         PreparedStore(db, "test").write_models("persons", people)
@@ -326,7 +326,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         db = mongomock.MongoClient().dedup_test
         prepared = PreparedStore(db, "test")
         people = [
-            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="same",
+            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_member=True, orcid="same",
                    emails=[f"person{i}@example.org"],
                    authored=[{"publication_id": "W1", "is_corresponding": i == 2}])
             for i in (1, 2)

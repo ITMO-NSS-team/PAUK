@@ -1,0 +1,199 @@
+[
+  {
+    "uid": "innopolis",
+    "name_en": "Innopolis University",
+    "name_local": "Автономная некоммерческая организация высшего образования Университет Иннополис",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02b7jh107",
+    "type": "university"
+  },
+  {
+    "uid": "fcse",
+    "name_en": "Faculty of Computer Science and Engineering",
+    "name_local": "Факультет компьютерных и инженерных наук",
+    "kind": "faculty",
+    "parent": "innopolis",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Computer Science and Engineering",
+      "Faculty of Computer and Engineering Sciences",
+      "Факультет компьютерных и инженерных наук",
+      "Faculty of Computer Science"
+    ]
+  },
+  {
+    "uid": "ai-institute",
+    "name_en": "Institute of Artificial Intelligence",
+    "name_local": "Институт искусственного интеллекта",
+    "kind": "institute",
+    "parent": "innopolis",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Artificial Intelligence",
+      "Artificial Intelligence Institute",
+      "Институт искусственного интеллекта"
+    ]
+  },
+  {
+    "uid": "ai-research-center",
+    "name_en": "Research Center of the Artificial Intelligence Institute",
+    "name_local": "Исследовательский центр в сфере искусственного интеллекта",
+    "kind": "center",
+    "parent": "ai-institute",
+    "aliases": [
+      "Research Center of the AI Institute"
+    ],
+    "context_aliases": [
+      "Research Center for Artificial Intelligence",
+      "Center for Artificial Intelligence",
+      "Center of Artificial Intelligence",
+      "Исследовательский центр в сфере искусственного интеллекта",
+      "Research Center of the Artificial Intelligence Institute"
+    ]
+  },
+  {
+    "uid": "top-ai-programs-center",
+    "name_en": "Center for Top-Level Educational Programs in AI",
+    "name_local": "Центр образовательных программ топ-уровня в области искусственного интеллекта",
+    "kind": "center",
+    "parent": "innopolis",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Top-Level Educational Programs in AI",
+      "The Center for Top-Level Educational Programs in AI",
+      "Center for top-educational programs in AI",
+      "Center for Top-Level Educational Programs in the Field of Artificial Intelligence"
+    ]
+  },
+  {
+    "uid": "isde",
+    "name_en": "Institute of Software Development and Engineering",
+    "name_local": "Институт разработки программного обеспечения и программной инженерии",
+    "kind": "institute",
+    "parent": "innopolis",
+    "aliases": [
+      "Institute of Software Development and Engineering"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sse-lab",
+    "name_en": "Software and Service Engineering Laboratory",
+    "name_local": "Лаборатория программной и сервисной инженерии",
+    "kind": "lab",
+    "parent": "isde",
+    "aliases": [],
+    "context_aliases": [
+      "Software and Service Engineering Laboratory"
+    ]
+  },
+  {
+    "uid": "pl-compilers-lab",
+    "name_en": "Laboratory of Programming Languages and Compilers Construction",
+    "name_local": "Лаборатория языков программирования и компиляторов",
+    "kind": "lab",
+    "parent": "isde",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Programming Languages and Compilers Construction",
+      "Laboratory of Programming Languages and Compilers"
+    ]
+  },
+  {
+    "uid": "quantum-computing-lab",
+    "name_en": "Laboratory of Quantum Computing",
+    "name_local": "Лаборатория квантовых вычислений",
+    "kind": "lab",
+    "parent": "innopolis",
+    "aliases": [
+      "Laboratory of Quantum Computing Innopolis University"
+    ],
+    "context_aliases": [
+      "Laboratory of Quantum Computing",
+      "Лаборатория квантовых вычислений"
+    ]
+  },
+  {
+    "uid": "infosec-institute",
+    "name_en": "Institute of Information Security",
+    "name_local": "Институт информационной безопасности",
+    "kind": "institute",
+    "parent": "innopolis",
+    "aliases": [
+      "Institute of Information Security Innopolis University"
+    ],
+    "context_aliases": [
+      "Institute of Information Security",
+      "Институт информационной безопасности"
+    ]
+  },
+  {
+    "uid": "sne",
+    "name_en": "Department of Security and Network Engineering",
+    "name_local": "Кафедра безопасности и сетевой инженерии",
+    "kind": "department",
+    "parent": "infosec-institute",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Security and Network Engineering",
+      "Security and Network Engineering"
+    ]
+  },
+  {
+    "uid": "data-science-ai-institute",
+    "name_en": "Institute of Data Science and Artificial Intelligence",
+    "name_local": "Институт анализа данных и искусственного интеллекта",
+    "kind": "institute",
+    "parent": "innopolis",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Data Science and Artificial Intelligence"
+    ]
+  },
+  {
+    "uid": "intelligent-devices-institute",
+    "name_en": "Intelligent Devices Institute",
+    "name_local": "Институт интеллектуальных устройств",
+    "kind": "institute",
+    "parent": "innopolis",
+    "aliases": [],
+    "context_aliases": [
+      "Intelligent Devices Institute",
+      "Institute of Intelligent Devices"
+    ]
+  },
+  {
+    "uid": "industrial-ai-lab",
+    "name_en": "Industrial AI Lab",
+    "name_local": "Лаборатория промышленного искусственного интеллекта",
+    "kind": "lab",
+    "parent": "ai-institute",
+    "aliases": [],
+    "context_aliases": [
+      "Industrial AI Lab"
+    ]
+  },
+  {
+    "uid": "video-content-lab",
+    "name_en": "Laboratory of Innovative Technologies for Processing Video Content",
+    "name_local": "Лаборатория инновационных технологий обработки видеоконтента",
+    "kind": "lab",
+    "parent": "innopolis",
+    "aliases": [
+      "Laboratory of Innovative Technologies for Processing Video Content"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "mb3r-lab",
+    "name_en": "MB3R Lab",
+    "name_local": "Лаборатория MB3R",
+    "kind": "lab",
+    "parent": "innopolis",
+    "aliases": [
+      "MB3R Lab"
+    ],
+    "context_aliases": []
+  }
+]

@@ -98,6 +98,12 @@ class MockGitHubClient:
     def get_user(self, login: str) -> dict:
         return {}
 
+    def get_users(self, logins) -> dict:
+        return {login: self.get_user(login) for login in logins}
+
+    def prefetch_repositories(self, pairs) -> None:
+        """The real client loads metadata through GraphQL; here get_repository answers directly."""
+
 
 class MockCrossrefClient:
     def __init__(self, universe: dict) -> None:
@@ -194,15 +200,15 @@ class MockOpenRouterClient:
     def chat_json(self, prompt: str) -> dict | None:
         match = self._RAW_NAME_RE.search(prompt)
         name_raw = match.group(1).strip() if match else ""
-        row = self._catalog.match(Person(id="_mock", is_itmo=True, name_raw=name_raw))
+        row = self._catalog.match(Person(id="_mock", is_member=True, name_raw=name_raw))
         if row is not None:
-            surname_ru = (row.get("surname") or "").strip() or None
+            surname_local = (row.get("surname") or "").strip() or None
             first_ru = (row.get("name") or "").strip() or None
             second_ru = (row.get("patronymic") or "").strip() or None
             first_en, surname_en = self._split_name(self._to_latin(name_raw) or "")
             return self._reply({
                 "matched_candidate": 0,
-                "surname_ru": surname_ru, "first_name_ru": first_ru, "second_name_ru": second_ru,
+                "surname_local": surname_local, "first_name_local": first_ru, "second_name_local": second_ru,
                 "surname_en": surname_en,
                 "first_name_en": first_en,
                 "second_name_en": self._to_latin(second_ru),
@@ -210,13 +216,13 @@ class MockOpenRouterClient:
             })
         latin_name = self._to_latin(name_raw) or ""
         russian_name = to_cyrillic(self._without_diacritics(name_raw))
-        first_ru, surname_ru = self._split_name(russian_name)
+        first_ru, surname_local = self._split_name(russian_name)
         first_en, surname_en = self._split_name(latin_name)
         return self._reply({
             "matched_candidate": None,
-            "surname_ru": surname_ru,
-            "first_name_ru": first_ru,
-            "second_name_ru": None,
+            "surname_local": surname_local,
+            "first_name_local": first_ru,
+            "second_name_local": None,
             "surname_en": surname_en,
             "first_name_en": first_en,
             "second_name_en": None,
@@ -243,7 +249,7 @@ class MockPdfHttpClient:
 class RecordingNeo4jClient:
     """In-memory double of Neo4jClient with just enough MERGE semantics.
 
-    Nodes are stored per primary label; persons follow the sticky is_itmo
+    Nodes are stored per primary label; persons follow the sticky is_member
     property rule of upsert_person_nodes_batch. Relationships resolve their
     endpoints the way the Cypher MATCH would; anything unresolvable is
     recorded in `unresolved` so tests can assert it never happens.
@@ -275,7 +281,7 @@ class RecordingNeo4jClient:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
             clean = _preserve_merged_person_lists(existing, clean)
-            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
+            clean["is_member"] = bool(existing.get("is_member")) or bool(clean.get("is_member"))
             self.nodes["Person"].setdefault(node_id, {}).update(clean)
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -423,7 +429,7 @@ class RecordingNeo4jClient:
                 **{field: props.get(field) for field in (
                     "openalex_id", "name_raw", "name_variants", "orcid", "email",
                     "github", "google_scholar", "merged_ids")},
-                "is_itmo": bool(props.get("is_itmo")),
+                "is_member": bool(props.get("is_member")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
                     if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id

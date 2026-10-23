@@ -1,0 +1,27 @@
+{
+  "key": "uwashington",
+  "short_name": "UW",
+  "short_name_local": "UW",
+  "name_en": "University of Washington",
+  "name_local": "University of Washington",
+  "ror_id": "00cvxb145",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "washington.edu",
+    "uw.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UWashington|UW[- ]Seattle|UW[- ]Medicine)(?![^\\W\\d_])",
+  "long_name": "(?:(?:University|Univ\\.?|Univeristy)\\s+of\\s+Washington(?:\\s*[-–]\\s*Seattle)?|Universidad\\s+de\\s+Washington|Universit[ée]\\s+de\\s+Washington)(?![\\s,–-]*(?:Tacoma|Bothell))",
+  "marker_replacement": "UWashington",
+  "place_words": "seattle|washington|wa|wash|usa|us|united|states|america|of|the|ne|nw|pacific|st|street|ave|avenue|box|mailstop|ninth|15th|98195|98105|98109|98104|98101|98122",
+  "other_organisations": "Fred[\\s-]+Hutch\\w*|Seattle\\s+Children|Harborview\\s+Medical|VA\\s+Puget\\s+Sound|Veterans\\s+Affairs|Pacific\\s+Northwest\\s+National\\s+Laboratory|PNNL|Howard\\s+Hughes|HHMI|Benaroya|Kaiser\\s+Permanente|Institute\\s+for\\s+Systems\\s+Biology|Allen\\s+Institute|Brotman\\s+Baty|Northwest\\s+Kidney\\s+Centers|Washington\\s+State\\s+University|WSU|Woods\\s+Hole|Kenyatta|Bloodworks|MIRECC|Seattle\\s+Hub\\s+for\\s+Synthetic\\s+Biology|NExSS|Virtual\\s+Planetary\\s+Laboratory|Georgia\\s+Institute\\s+of\\s+Technology",
+  "identity": "University\\s+of\\s+Washington|(?<![^\\W\\d_])UWashington(?![^\\W\\d_])|uw\\.edu|washington\\.edu",
+  "city": "Seattle",
+  "staff_catalog": null,
+  "mongo_db": "pauk_uwashington",
+  "site_url": "https://www.washington.edu",
+  "unit_words": "college|museum"
+}

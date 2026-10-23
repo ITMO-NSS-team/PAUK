@@ -187,7 +187,7 @@ class QueueTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         review.record_held(self.db, [
             held_pair("A1", "A2"),
-            held_pair("A3", "A4", because="only one person is ITMO-affiliated"),
+            held_pair("A3", "A4", because="only one person is a member"),
             held_group(),
         ])
 
@@ -207,7 +207,7 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(review.reasons(self.db), [
             "group spans 2 distinct ORCID values",
             "identical name with nothing corroborating it",
-            "only one person is ITMO-affiliated",
+            "only one person is a member",
         ])
 
     def test_paging_neither_repeats_nor_skips(self):
@@ -232,7 +232,7 @@ class PressingTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         review.record_held(self.db, [
             held_pair("A1", "A2"),
-            held_pair("A3", "A4", because="only one person is ITMO-affiliated"),
+            held_pair("A3", "A4", because="only one person is a member"),
             held_pair("A5", "A6", because="name is given as initials"),
             held_group(),
         ])

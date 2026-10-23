@@ -1,0 +1,37 @@
+{
+  "key": "warwick",
+  "short_name": "Warwick",
+  "short_name_local": "Warwick",
+  "name_en": "University of Warwick",
+  "name_local": "University of Warwick",
+  "ror_id": "01a77tt86",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "warwick.ac.uk"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivWarwick)(?![^\\W\\d_])",
+  "long_name": "University[\\s‐-]+of[\\s‐-]+Warwick|Warwick[\\s‐-]+University|Prifysgol[\\s‐-]+Warwick|Univ\\.[\\s‐-]+of[\\s‐-]+Warwick|Univ[\\s‐-]+Warwick",
+  "marker_replacement": "UnivWarwick",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|britain|building|calle|campus|coventry|cv|east|england|floor|gatan|gb|gibbet|great|hill|katu|kingdom|laan|midlands|north|piazza|platz|plaza|plein|po|rd|road|room|rue|scotland|south|st|str|straat|strasse|straße|street|tie|uk|ul|united|vej|via|viale|vägen|wales|warwick|warwickshire|weg|west",
+  "other_organisations": "University Hospitals? Coventry|Coventry University|University of Birmingham|University of Oxford|George Eliot Hospital|Warwick Hospital|Faraday Institution|Harwell|George\\ Eliot\\ Hospital|University\\ Hospital\\ Coventry|Warwick\\ Hospital",
+  "identity": "University[\\s‐-]+of[\\s‐-]+Warwick|Warwick[\\s‐-]+University|Prifysgol[\\s‐-]+Warwick|Univ\\.[\\s‐-]+of[\\s‐-]+Warwick|Univ[\\s‐-]+Warwick",
+  "city": "Coventry",
+  "staff_catalog": null,
+  "mongo_db": "pauk_warwick",
+  "site_url": "https://warwick.ac.uk",
+  "unit_words": "school|department|institute|centre|center|unit|group|division",
+  "external_authors": false
+}

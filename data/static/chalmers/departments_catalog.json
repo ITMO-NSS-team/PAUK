@@ -1,0 +1,226 @@
+[
+  {
+    "uid": "chalmers",
+    "name_en": "Chalmers University of Technology",
+    "name_local": "Chalmers tekniska högskola",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/040wg7k59",
+    "type": "university"
+  },
+  {
+    "uid": "see",
+    "name_en": "Department of Space Earth and Environment",
+    "name_local": "Department of Space Earth and Environment",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Space",
+      "Earth and Environment",
+      "Earth & Environment"
+    ]
+  },
+  {
+    "uid": "e2",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "k",
+    "name_en": "Department of Chemistry and Chemical Engineering",
+    "name_local": "Department of Chemistry and Chemical Engineering",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Chemical Engineering",
+      "Chemistry and Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "life",
+    "name_en": "Department of Life Sciences",
+    "name_local": "Department of Life Sciences",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Sciences"
+    ]
+  },
+  {
+    "uid": "m2",
+    "name_en": "Department of Mechanics and Maritime Sciences",
+    "name_local": "Department of Mechanics and Maritime Sciences",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanics and Maritime Sciences"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Department of Physics and Astronomy"
+    ]
+  },
+  {
+    "uid": "mc2",
+    "name_en": "Department of Microtechnology and Nanoscience",
+    "name_local": "Department of Microtechnology and Nanoscience",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microtechnology and Nanoscience",
+      "MC2"
+    ]
+  },
+  {
+    "uid": "cse",
+    "name_en": "Department of Computer Science and Engineering",
+    "name_local": "Department of Computer Science and Engineering",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science and Engineering",
+      "Computer Science and Engineering"
+    ]
+  },
+  {
+    "uid": "ace",
+    "name_en": "Department of Architecture and Civil Engineering",
+    "name_local": "Department of Architecture and Civil Engineering",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture and Civil Engineering"
+    ]
+  },
+  {
+    "uid": "ims",
+    "name_en": "Department of Industrial and Materials Science",
+    "name_local": "Department of Industrial and Materials Science",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial and Materials Science"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematical Sciences",
+    "name_local": "Department of Mathematical Sciences",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "tme",
+    "name_en": "Department of Technology Management and Economics",
+    "name_local": "Department of Technology Management and Economics",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Technology Management and Economics"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "chalmers",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "oso",
+    "name_en": "Onsala Space Observatory",
+    "name_local": "Onsala Space Observatory",
+    "kind": "center",
+    "parent": "see",
+    "aliases": [
+      "Onsala Space Observatory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "energy",
+    "name_en": "Division of Energy Technology",
+    "name_local": "Division of Energy Technology",
+    "kind": "division",
+    "parent": "see",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Energy Technology"
+    ]
+  },
+  {
+    "uid": "indbio",
+    "name_en": "Division of Industrial Biotechnology",
+    "name_local": "Division of Industrial Biotechnology",
+    "kind": "division",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Industrial Biotechnology"
+    ]
+  },
+  {
+    "uid": "sysbio",
+    "name_en": "Division of Systems and Synthetic Biology",
+    "name_local": "Division of Systems and Synthetic Biology",
+    "kind": "division",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Systems and Synthetic Biology"
+    ]
+  },
+  {
+    "uid": "chembio",
+    "name_en": "Division of Chemical Biology",
+    "name_local": "Division of Chemical Biology",
+    "kind": "division",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Chemical Biology"
+    ]
+  },
+  {
+    "uid": "kcc",
+    "name_en": "Competence Centre for Catalysis",
+    "name_local": "Competence Centre for Catalysis",
+    "kind": "center",
+    "parent": "k",
+    "aliases": [
+      "Competence Centre for Catalysis"
+    ],
+    "context_aliases": []
+  }
+]

@@ -1,0 +1,1749 @@
+[
+  {
+    "uid": "tum",
+    "name_en": "Technical University of Munich",
+    "name_local": "Technische Universität München",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02kkvpp62",
+    "type": "university"
+  },
+  {
+    "uid": "school-cit",
+    "name_en": "TUM School of Computation Information and Technology",
+    "name_local": "TUM School of Computation Information and Technology",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Computation",
+      "TUM School of CIT"
+    ],
+    "context_aliases": [
+      "School of Computation",
+      "School of CIT",
+      "Information and Technology",
+      "Information and Technology (CIT)"
+    ]
+  },
+  {
+    "uid": "cit-cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Department of Informatics"
+    ]
+  },
+  {
+    "uid": "cit-ce",
+    "name_en": "Department of Computer Engineering",
+    "name_local": "Department of Computer Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Engineering"
+    ]
+  },
+  {
+    "uid": "cit-ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Department of Electrical Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "cit-math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "camp",
+    "name_en": "Chair for Computer Aided Medical Procedures",
+    "name_local": "Lehrstuhl für Informatikanwendungen in der Medizin",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair for Computer Aided Medical Procedures",
+      "Computer Aided Medical Procedures"
+    ],
+    "context_aliases": [
+      "CAMP",
+      "Lehrstuhl für Informatikanwendungen in der Medizin"
+    ]
+  },
+  {
+    "uid": "chair-robotics",
+    "name_en": "Chair of Robotics",
+    "name_local": "Lehrstuhl für Robotik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Robotics",
+      "Lehrstuhl für Robotik"
+    ]
+  },
+  {
+    "uid": "lsy",
+    "name_en": "Learning Systems and Robotics Lab",
+    "name_local": "Learning Systems and Robotics Lab",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Learning Systems and Robotics Lab"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chair-caps",
+    "name_en": "Chair of Computer Architecture and Parallel Systems",
+    "name_local": "Lehrstuhl für Rechnerarchitektur und Parallele Systeme",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Computer Architecture and Parallel Systems"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Rechnerarchitektur und Parallele Systeme"
+    ]
+  },
+  {
+    "uid": "chair-design-automation",
+    "name_en": "Chair for Design Automation",
+    "name_local": "Lehrstuhl für Design Automation",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair for Design Automation",
+      "Lehrstuhl für Design Automation"
+    ]
+  },
+  {
+    "uid": "chair-media-tech",
+    "name_en": "Chair of Media Technology",
+    "name_local": "Lehrstuhl für Medientechnik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Media Technology",
+      "Lehrstuhl für Medientechnik"
+    ]
+  },
+  {
+    "uid": "chair-ai-processor",
+    "name_en": "Chair of AI Processor Design",
+    "name_local": "Lehrstuhl für AI Processor Design",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of AI Processor Design"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "chair-lti",
+    "name_en": "Chair of Theoretical Information Technology",
+    "name_local": "Lehrstuhl für Theoretische Informationstechnik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Lehrstuhl für Theoretische Informationstechnik",
+      "Chair of Theoretical Information Technology"
+    ]
+  },
+  {
+    "uid": "school-ed",
+    "name_en": "TUM School of Engineering and Design",
+    "name_local": "TUM School of Engineering and Design",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Engineering and Design",
+      "TUM School of Engineering & Design"
+    ],
+    "context_aliases": [
+      "School of Engineering and Design",
+      "School of Engineering & Design"
+    ]
+  },
+  {
+    "uid": "ed-aero-geo",
+    "name_en": "Department of Aerospace and Geodesy",
+    "name_local": "Department of Aerospace and Geodesy",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Aerospace and Geodesy"
+    ]
+  },
+  {
+    "uid": "ed-arch",
+    "name_en": "Department of Architecture",
+    "name_local": "Department of Architecture",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "ed-cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "ed-epe",
+    "name_en": "Department of Energy and Process Engineering",
+    "name_local": "Department of Energy and Process Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy and Process Engineering"
+    ]
+  },
+  {
+    "uid": "ed-epc",
+    "name_en": "Department of Engineering Physics and Computation",
+    "name_local": "Department of Engineering Physics and Computation",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Engineering Physics and Computation"
+    ]
+  },
+  {
+    "uid": "ed-mat",
+    "name_en": "Department of Materials Engineering",
+    "name_local": "Department of Materials Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Engineering"
+    ]
+  },
+  {
+    "uid": "ed-me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ed-mse",
+    "name_en": "Department of Mobility Systems Engineering",
+    "name_local": "Department of Mobility Systems Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mobility Systems Engineering"
+    ]
+  },
+  {
+    "uid": "ftm",
+    "name_en": "Institute of Automotive Technology",
+    "name_local": "Lehrstuhl für Fahrzeugtechnik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Automotive Technology",
+      "Lehrstuhl für Fahrzeugtechnik"
+    ]
+  },
+  {
+    "uid": "avs",
+    "name_en": "Professorship of Autonomous Vehicle Systems",
+    "name_local": "Professur für Autonome Fahrzeugsysteme",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Professorship of Autonomous Vehicle Systems"
+    ],
+    "context_aliases": [
+      "Professur für Autonome Fahrzeugsysteme"
+    ]
+  },
+  {
+    "uid": "vib",
+    "name_en": "Chair of Vibroacoustics of Vehicles and Machines",
+    "name_local": "Lehrstuhl für Akustik mobiler Systeme",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Vibroacoustics of Vehicles and Machines"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Akustik mobiler Systeme"
+    ]
+  },
+  {
+    "uid": "fsd",
+    "name_en": "Institute of Flight System Dynamics",
+    "name_local": "Lehrstuhl für Flugsystemdynamik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Flight System Dynamics",
+      "Lehrstuhl für Flugsystemdynamik"
+    ]
+  },
+  {
+    "uid": "geodesy-eng",
+    "name_en": "Chair of Engineering Geodesy",
+    "name_local": "Lehrstuhl für Ingenieurgeodäsie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Engineering Geodesy",
+      "Lehrstuhl für Ingenieurgeodäsie"
+    ]
+  },
+  {
+    "uid": "iapg",
+    "name_en": "Institute of Astronomical and Physical Geodesy",
+    "name_local": "Institut für Astronomische und Physikalische Geodäsie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Astronomical and Physical Geodesy",
+      "Institut für Astronomische und Physikalische Geodäsie"
+    ]
+  },
+  {
+    "uid": "cartography",
+    "name_en": "Chair of Cartography and Visual Analytics",
+    "name_local": "Lehrstuhl für Kartographie und visuelle Analytik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Cartography and Visual Analytics"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Kartographie und visuelle Analytik"
+    ]
+  },
+  {
+    "uid": "dgfi",
+    "name_en": "Deutsches Geodätisches Forschungsinstitut",
+    "name_local": "Deutsches Geodätisches Forschungsinstitut",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "DGFI-TUM"
+    ],
+    "context_aliases": [
+      "Deutsches Geodätisches Forschungsinstitut"
+    ]
+  },
+  {
+    "uid": "aer",
+    "name_en": "Chair of Aerodynamics and Fluid Mechanics",
+    "name_local": "Lehrstuhl für Aerodynamik und Strömungsmechanik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Aerodynamics and Fluid Mechanics",
+      "Lehrstuhl für Aerodynamik und Strömungsmechanik"
+    ]
+  },
+  {
+    "uid": "thermodynamics",
+    "name_en": "Institute of Thermodynamics",
+    "name_local": "Lehrstuhl für Thermodynamik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Thermodynamics",
+      "Lehrstuhl für Thermodynamik"
+    ]
+  },
+  {
+    "uid": "lnm",
+    "name_en": "Institute for Computational Mechanics",
+    "name_local": "Lehrstuhl für Numerische Mechanik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Computational Mechanics",
+      "Lehrstuhl für Numerische Mechanik"
+    ]
+  },
+  {
+    "uid": "statik",
+    "name_en": "Chair of Structural Analysis",
+    "name_local": "Lehrstuhl für Statik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Lehrstuhl für Statik",
+      "Chair of Structural Analysis"
+    ]
+  },
+  {
+    "uid": "cms",
+    "name_en": "Chair of Computing in Civil and Building Engineering",
+    "name_local": "Lehrstuhl für Computergestützte Modellierung und Simulation",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Computing in Civil and Building Engineering"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Computergestützte Modellierung und Simulation"
+    ]
+  },
+  {
+    "uid": "landslide",
+    "name_en": "Chair of Landslide Research",
+    "name_local": "Lehrstuhl für Hangbewegungen",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Landslide Research",
+      "Lehrstuhl für Hangbewegungen"
+    ]
+  },
+  {
+    "uid": "metal-structures",
+    "name_en": "Chair of Metal Structures",
+    "name_local": "Lehrstuhl für Metallbau",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Metal Structures",
+      "Lehrstuhl für Metallbau"
+    ]
+  },
+  {
+    "uid": "geothermal",
+    "name_en": "Professorship of Geothermal Technologies",
+    "name_local": "Professur für Geothermische Technologien",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Professorship of Geothermal Technologies",
+      "Professur für Geothermische Technologien"
+    ]
+  },
+  {
+    "uid": "ensdb",
+    "name_en": "Chair of Energy Efficient and Sustainable Design and Building",
+    "name_local": "Lehrstuhl für energieeffizientes und nachhaltiges Planen und Bauen",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Energy Efficient and Sustainable Design and Building"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für energieeffizientes und nachhaltiges Planen und Bauen"
+    ]
+  },
+  {
+    "uid": "ees",
+    "name_en": "Chair of Electrical Energy Storage Technology",
+    "name_local": "Lehrstuhl für Elektrische Energiespeichertechnik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Electrical Energy Storage Technology",
+      "Lehrstuhl für Elektrische Energiespeichertechnik"
+    ]
+  },
+  {
+    "uid": "bioseparation",
+    "name_en": "Chair of Bioseparation Engineering",
+    "name_local": "Lehrstuhl für Bioverfahrenstechnik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Bioseparation Engineering",
+      "Lehrstuhl für Bioverfahrenstechnik"
+    ]
+  },
+  {
+    "uid": "plant-process",
+    "name_en": "Institute of Plant and Process Technology",
+    "name_local": "Lehrstuhl für Anlagen- und Prozesstechnik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Plant and Process Technology",
+      "Lehrstuhl für Anlagen- und Prozesstechnik"
+    ]
+  },
+  {
+    "uid": "nuclear-tech",
+    "name_en": "Chair of Nuclear Technology",
+    "name_local": "Lehrstuhl für Nukleartechnik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Nuclear Technology",
+      "Lehrstuhl für Nukleartechnik"
+    ]
+  },
+  {
+    "uid": "wind-energy",
+    "name_en": "Wind Energy Institute",
+    "name_local": "Lehrstuhl für Windenergie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Wind Energy Institute",
+      "Lehrstuhl für Windenergie"
+    ]
+  },
+  {
+    "uid": "iwb",
+    "name_en": "Institute for Machine Tools and Industrial Management",
+    "name_local": "Institut für Werkzeugmaschinen und Betriebswissenschaften",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Institute for Machine Tools and Industrial Management"
+    ],
+    "context_aliases": [
+      "iwb",
+      "Institut für Werkzeugmaschinen und Betriebswissenschaften"
+    ]
+  },
+  {
+    "uid": "mimed",
+    "name_en": "Institute of Micro Technology and Medical Device Technology",
+    "name_local": "Lehrstuhl für Mikrotechnik und Medizingerätetechnik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Lehrstuhl für Mikrotechnik und Medizingerätetechnik"
+    ],
+    "context_aliases": [
+      "Institute of Micro Technology and Medical Device Technology",
+      "MiMed"
+    ]
+  },
+  {
+    "uid": "ergonomics",
+    "name_en": "Chair of Ergonomics",
+    "name_local": "Lehrstuhl für Ergonomie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Ergonomics",
+      "Lehrstuhl für Ergonomie"
+    ]
+  },
+  {
+    "uid": "fzg",
+    "name_en": "Gear Research Center",
+    "name_local": "Forschungsstelle für Zahnräder und Getriebesysteme",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "Gear Research Center (FZG)"
+    ],
+    "context_aliases": [
+      "Gear Research Center",
+      "FZG",
+      "Forschungsstelle für Zahnräder und Getriebesysteme"
+    ]
+  },
+  {
+    "uid": "utg",
+    "name_en": "Chair of Metal Forming and Casting",
+    "name_local": "Lehrstuhl für Umformtechnik und Gießereiwesen",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Metal Forming and Casting",
+      "Lehrstuhl für Umformtechnik und Gießereiwesen"
+    ]
+  },
+  {
+    "uid": "mam",
+    "name_en": "Chair of Materials Engineering of Additive Manufacturing",
+    "name_local": "Lehrstuhl für Werkstofftechnik der Additiven Fertigung",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Materials Engineering of Additive Manufacturing"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Werkstofftechnik der Additiven Fertigung"
+    ]
+  },
+  {
+    "uid": "school-nat",
+    "name_en": "TUM School of Natural Sciences",
+    "name_local": "TUM School of Natural Sciences",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Natural Sciences"
+    ],
+    "context_aliases": [
+      "School of Natural Sciences"
+    ]
+  },
+  {
+    "uid": "nat-phys",
+    "name_en": "Department of Physics",
+    "name_local": "Physik-Department",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department",
+      "Physik Department",
+      "Physik-Department"
+    ]
+  },
+  {
+    "uid": "nat-chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department Chemie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Department Chemie"
+    ]
+  },
+  {
+    "uid": "nat-bio",
+    "name_en": "Department of Bioscience",
+    "name_local": "Department of Bioscience",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Bioscience",
+      "Department of Biosciences"
+    ]
+  },
+  {
+    "uid": "chair-inorg",
+    "name_en": "Chair of Inorganic and Metal-Organic Chemistry",
+    "name_local": "Lehrstuhl für Anorganische und Metallorganische Chemie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Inorganic and Metal-Organic Chemistry"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Anorganische und Metallorganische Chemie"
+    ]
+  },
+  {
+    "uid": "chair-medchem",
+    "name_en": "Chair of Medicinal and Bioinorganic Chemistry",
+    "name_local": "Lehrstuhl für Medizinische und Bioanorganische Chemie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Medicinal and Bioinorganic Chemistry"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Medizinische und Bioanorganische Chemie"
+    ]
+  },
+  {
+    "uid": "chair-anal-water",
+    "name_en": "Chair of Analytical Chemistry and Water Chemistry",
+    "name_local": "Lehrstuhl für Analytische Chemie und Wasserchemie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Analytical Chemistry and Water Chemistry"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Analytische Chemie und Wasserchemie"
+    ]
+  },
+  {
+    "uid": "school-ls",
+    "name_en": "TUM School of Life Sciences",
+    "name_local": "TUM School of Life Sciences",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Life Sciences",
+      "TUM School of Life Sciences Weihenstephan",
+      "School of Life Sciences Weihenstephan"
+    ],
+    "context_aliases": [
+      "School of Life Sciences",
+      "School of Life Science"
+    ]
+  },
+  {
+    "uid": "ls-lss",
+    "name_en": "Department of Life Science Systems",
+    "name_local": "Department of Life Science Systems",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Science Systems",
+      "Department for Life Science Systems",
+      "Life Science Systems"
+    ]
+  },
+  {
+    "uid": "ls-lse",
+    "name_en": "Department of Life Science Engineering",
+    "name_local": "Department of Life Science Engineering",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Life Science Engineering"
+    ]
+  },
+  {
+    "uid": "ls-mls",
+    "name_en": "Department of Molecular Life Sciences",
+    "name_local": "Department of Molecular Life Sciences",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Molecular Life Sciences"
+    ]
+  },
+  {
+    "uid": "chair-proteomics",
+    "name_en": "Chair of Proteomics and Bioanalytics",
+    "name_local": "Lehrstuhl für Proteomik und Bioanalytik",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Proteomics and Bioanalytics"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Proteomik und Bioanalytik"
+    ]
+  },
+  {
+    "uid": "chair-food-chem",
+    "name_en": "Chair of Analytical Food Chemistry",
+    "name_local": "Lehrstuhl für Analytische Lebensmittelchemie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Analytical Food Chemistry"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Analytische Lebensmittelchemie"
+    ]
+  },
+  {
+    "uid": "chair-phytopath",
+    "name_en": "Chair of Phytopathology",
+    "name_local": "Lehrstuhl für Phytopathologie",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Phytopathology",
+      "Lehrstuhl für Phytopathologie"
+    ]
+  },
+  {
+    "uid": "chair-landscape",
+    "name_en": "Chair for Strategic Landscape Planning and Management",
+    "name_local": "Lehrstuhl für Strategie und Management der Landschaftsentwicklung",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair for Strategic Landscape Planning and Management"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Strategie und Management der Landschaftsentwicklung"
+    ]
+  },
+  {
+    "uid": "brewing-center",
+    "name_en": "Research Center Weihenstephan for Brewing and Food Quality",
+    "name_local": "Forschungszentrum Weihenstephan für Brau- und Lebensmittelqualität",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "Research Center Weihenstephan for Brewing and Food Quality",
+      "Research Center Weihenstephan Brewing and Food Quality",
+      "Forschungszentrum Weihenstephan für Brau- und Lebensmittelqualität"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ziel",
+    "name_en": "ZIEL - Institute for Food & Health",
+    "name_local": "ZIEL - Institute for Food & Health",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "ZIEL - Institute for Food & Health",
+      "ZIEL – Institute for Food & Health",
+      "ZIEL Institute for Food & Health"
+    ]
+  },
+  {
+    "uid": "ekfz",
+    "name_en": "Else Kröner Fresenius Center for Nutritional Medicine",
+    "name_local": "Else Kröner Fresenius Zentrum für Ernährungsmedizin",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "Else Kröner Fresenius Center for Nutritional Medicine",
+      "Else Kröner Fresenius Zentrum für Ernährungsmedizin",
+      "Else Kröner-Fresenius-Zentrum für Ernährungsmedizin"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "school-mh",
+    "name_en": "TUM School of Medicine and Health",
+    "name_local": "TUM School of Medicine and Health",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Medicine and Health",
+      "TUM School of Medicine & Health",
+      "TUM School of Medicine"
+    ],
+    "context_aliases": [
+      "School of Medicine and Health",
+      "School of Medicine & Health",
+      "School of Medicine",
+      "Faculty of Medicine"
+    ]
+  },
+  {
+    "uid": "mh-clinical",
+    "name_en": "Department Clinical Medicine",
+    "name_local": "Department Clinical Medicine",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department Clinical Medicine",
+      "Department of Clinical Medicine"
+    ]
+  },
+  {
+    "uid": "mh-preclinical",
+    "name_en": "Department of Preclinical Medicine",
+    "name_local": "Department of Preclinical Medicine",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Preclinical Medicine",
+      "Department Preclinical Medicine"
+    ]
+  },
+  {
+    "uid": "mh-sport",
+    "name_en": "Department Health and Sport Sciences",
+    "name_local": "Department Health and Sport Sciences",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department Health and Sport Sciences",
+      "Department of Health and Sport Sciences"
+    ]
+  },
+  {
+    "uid": "prev-sports-med",
+    "name_en": "Department for Preventive Sports Medicine and Sports Cardiology",
+    "name_local": "Lehrstuhl für Präventive Sportmedizin und Sportkardiologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [
+      "Department for Preventive Sports Medicine and Sports Cardiology"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Präventive Sportmedizin und Sportkardiologie"
+    ]
+  },
+  {
+    "uid": "prev-pediatrics",
+    "name_en": "Institute of Preventive Pediatrics",
+    "name_local": "Lehrstuhl für Präventive Pädiatrie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Preventive Pediatrics",
+      "Lehrstuhl für Präventive Pädiatrie"
+    ]
+  },
+  {
+    "uid": "inst-virology",
+    "name_en": "Institute of Virology",
+    "name_local": "Institut für Virologie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Virology",
+      "Institut für Virologie"
+    ]
+  },
+  {
+    "uid": "inst-pharmacology",
+    "name_en": "Institute of Pharmacology and Toxicology",
+    "name_local": "Institut für Pharmakologie und Toxikologie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pharmacology and Toxicology",
+      "Institut für Pharmakologie und Toxikologie"
+    ]
+  },
+  {
+    "uid": "inst-neuroscience",
+    "name_en": "Institute of Neuroscience",
+    "name_local": "Institut für Neurowissenschaften",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Institute of Neuroscience and Munich Cluster for Systems Neurology"
+    ],
+    "context_aliases": [
+      "Institute of Neuroscience",
+      "Institut für Neurowissenschaften"
+    ]
+  },
+  {
+    "uid": "inst-human-genetics",
+    "name_en": "Institute of Human Genetics",
+    "name_local": "Institut für Humangenetik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Human Genetics",
+      "Institut für Humangenetik"
+    ]
+  },
+  {
+    "uid": "inst-pathology",
+    "name_en": "Institute of Pathology",
+    "name_local": "Institut für Pathologie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pathology",
+      "Institut für Pathologie"
+    ]
+  },
+  {
+    "uid": "inst-lab-med",
+    "name_en": "Institute of Laboratory Medicine",
+    "name_local": "Institut für Laboratoriumsmedizin",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Laboratory Medicine",
+      "Institut für Laboratoriumsmedizin"
+    ]
+  },
+  {
+    "uid": "inst-microbiology",
+    "name_en": "Institute for Medical Microbiology Immunology and Hygiene",
+    "name_local": "Institut für Medizinische Mikrobiologie Immunologie und Hygiene",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Medical Microbiology",
+      "Immunology and Hygiene",
+      "Institute for Medical Microbiology Immunology and Hygiene",
+      "Institut für Medizinische Mikrobiologie Immunologie und Hygiene"
+    ]
+  },
+  {
+    "uid": "inst-neuronal-cell-bio",
+    "name_en": "Institute of Neuronal Cell Biology",
+    "name_local": "Institut für Neuronale Zellbiologie",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Neuronal Cell Biology",
+      "Institut für Neuronale Zellbiologie"
+    ]
+  },
+  {
+    "uid": "inst-mol-vasc",
+    "name_en": "Institute of Molecular Vascular Medicine",
+    "name_local": "Institut für Molekulare Gefäßmedizin",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Vascular Medicine",
+      "Institut für Molekulare Gefäßmedizin"
+    ]
+  },
+  {
+    "uid": "inst-molonc",
+    "name_en": "Institute of Molecular Oncology and Functional Genomics",
+    "name_local": "Institut für Molekulare Onkologie und Funktionelle Genomik",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Institute of Molecular Oncology and Functional Genomics"
+    ],
+    "context_aliases": [
+      "Institut für Molekulare Onkologie und Funktionelle Genomik"
+    ]
+  },
+  {
+    "uid": "inst-history-ethics",
+    "name_en": "Institute of History and Ethics in Medicine",
+    "name_local": "Institut für Geschichte und Ethik der Medizin",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of History and Ethics in Medicine",
+      "Institut für Geschichte und Ethik der Medizin"
+    ]
+  },
+  {
+    "uid": "chair-ai-med",
+    "name_en": "Chair for AI in Healthcare and Medicine",
+    "name_local": "Lehrstuhl für Künstliche Intelligenz in der Medizin",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair for AI in Healthcare and Medicine"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Künstliche Intelligenz in der Medizin"
+    ]
+  },
+  {
+    "uid": "chair-health-informatics",
+    "name_en": "Chair of Health Informatics",
+    "name_local": "Lehrstuhl für Health Informatics",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "CHI – Chair of Health Informatics"
+    ],
+    "context_aliases": [
+      "Chair of Health Informatics",
+      "Lehrstuhl für Health Informatics"
+    ]
+  },
+  {
+    "uid": "chair-bio-imaging",
+    "name_en": "Chair of Biological Imaging",
+    "name_local": "Lehrstuhl für Biologische Bildgebung",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Biological Imaging",
+      "Lehrstuhl für Biologische Bildgebung"
+    ]
+  },
+  {
+    "uid": "clin-cardiology",
+    "name_en": "Department of Cardiology",
+    "name_local": "Klinik für Kardiologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cardiology",
+      "Department of Cardiovascular Diseases",
+      "Department of Electrophysiology",
+      "Klinik für Kardiologie"
+    ]
+  },
+  {
+    "uid": "clin-im1",
+    "name_en": "Clinic and Policlinic for Internal Medicine I",
+    "name_local": "Klinik und Poliklinik für Innere Medizin I",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Clinic and Policlinic for Internal Medicine I",
+      "Department of Internal Medicine I",
+      "Klinik und Poliklinik für Innere Medizin I"
+    ]
+  },
+  {
+    "uid": "clin-im2",
+    "name_en": "Clinical Department for Internal Medicine II",
+    "name_local": "Klinik und Poliklinik für Innere Medizin II",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Internal Medicine II",
+      "Clinical Department for Internal Medicine II",
+      "Department of Clinical Medicine - Clinical Department for Internal Medicine II",
+      "Department of Clinical Medicine – Clinical Department for Internal Medicine II",
+      "Klinik und Poliklinik für Innere Medizin II"
+    ]
+  },
+  {
+    "uid": "clin-im3",
+    "name_en": "Department of Internal Medicine III",
+    "name_local": "Klinik und Poliklinik für Innere Medizin III",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Internal Medicine III",
+      "Department of Medicine III",
+      "III Medical Department",
+      "Department of Hematology and Oncology",
+      "Klinik und Poliklinik für Innere Medizin III"
+    ]
+  },
+  {
+    "uid": "clin-nephrology",
+    "name_en": "Department of Nephrology",
+    "name_local": "Abteilung für Nephrologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nephrology",
+      "Abteilung für Nephrologie"
+    ]
+  },
+  {
+    "uid": "clin-neuroradiology",
+    "name_en": "Department of Diagnostic and Interventional Neuroradiology",
+    "name_local": "Abteilung für Diagnostische und Interventionelle Neuroradiologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Diagnostic and Interventional Neuroradiology",
+      "Department of Neuroradiology",
+      "Institute for Neuroradiology",
+      "Abteilung für Diagnostische und Interventionelle Neuroradiologie"
+    ]
+  },
+  {
+    "uid": "clin-radiology",
+    "name_en": "Institute for Diagnostic and Interventional Radiology",
+    "name_local": "Institut für Diagnostische und Interventionelle Radiologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Diagnostic and Interventional Radiology",
+      "Department of Diagnostic and Interventional Radiology",
+      "Department of Radiology",
+      "Institut für Diagnostische und Interventionelle Radiologie"
+    ]
+  },
+  {
+    "uid": "clin-nuclear-med",
+    "name_en": "Department of Nuclear Medicine",
+    "name_local": "Klinik und Poliklinik für Nuklearmedizin",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Medicine",
+      "Klinik und Poliklinik für Nuklearmedizin"
+    ]
+  },
+  {
+    "uid": "clin-radiation-oncology",
+    "name_en": "Department of Radiation Oncology",
+    "name_local": "Klinik und Poliklinik für RadioOnkologie und Strahlentherapie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radiation Oncology",
+      "Klinik und Poliklinik für RadioOnkologie und Strahlentherapie"
+    ]
+  },
+  {
+    "uid": "clin-psychiatry",
+    "name_en": "Department of Psychiatry and Psychotherapy",
+    "name_local": "Klinik und Poliklinik für Psychiatrie und Psychotherapie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry and Psychotherapy",
+      "Klinik und Poliklinik für Psychiatrie und Psychotherapie"
+    ]
+  },
+  {
+    "uid": "clin-psychosomatic",
+    "name_en": "Department of Psychosomatic Medicine and Psychotherapy",
+    "name_local": "Klinik und Poliklinik für Psychosomatische Medizin und Psychotherapie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychosomatic Medicine and Psychotherapy",
+      "Klinik und Poliklinik für Psychosomatische Medizin und Psychotherapie"
+    ]
+  },
+  {
+    "uid": "clin-neurology",
+    "name_en": "Department of Neurology",
+    "name_local": "Klinik und Poliklinik für Neurologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurology",
+      "Klinik und Poliklinik für Neurologie"
+    ]
+  },
+  {
+    "uid": "clin-neurosurgery",
+    "name_en": "Department of Neurosurgery",
+    "name_local": "Klinik und Poliklinik für Neurochirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neurosurgery",
+      "Klinik und Poliklinik für Neurochirurgie"
+    ]
+  },
+  {
+    "uid": "clin-surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "Klinik und Poliklinik für Chirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery",
+      "Klinik und Poliklinik für Chirurgie"
+    ]
+  },
+  {
+    "uid": "clin-plastic",
+    "name_en": "Department of Plastic Surgery and Hand Surgery",
+    "name_local": "Klinik und Poliklinik für Plastische Chirurgie und Handchirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Plastic Surgery and Hand Surgery",
+      "Division of Plastic Surgery",
+      "Klinik und Poliklinik für Plastische Chirurgie und Handchirurgie"
+    ]
+  },
+  {
+    "uid": "clin-vascular",
+    "name_en": "Department for Vascular and Endovascular Surgery",
+    "name_local": "Klinik und Poliklinik für Vaskuläre und Endovaskuläre Chirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department for Vascular and Endovascular Surgery",
+      "Klinik und Poliklinik für Vaskuläre und Endovaskuläre Chirurgie"
+    ]
+  },
+  {
+    "uid": "clin-trauma",
+    "name_en": "Department of Trauma Surgery",
+    "name_local": "Klinik und Poliklinik für Unfallchirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Trauma Surgery",
+      "Klinik und Poliklinik für Unfallchirurgie"
+    ]
+  },
+  {
+    "uid": "clin-orthopaedics",
+    "name_en": "Department of Orthopaedics and Sports Orthopaedics",
+    "name_local": "Klinik und Poliklinik für Orthopädie und Sportorthopädie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedics and Sports Orthopaedics",
+      "Department of Sports Orthopaedics",
+      "Department of Sports Orthopedics",
+      "Klinik und Poliklinik für Orthopädie und Sportorthopädie"
+    ]
+  },
+  {
+    "uid": "clin-ent",
+    "name_en": "Department of Otorhinolaryngology",
+    "name_local": "Klinik und Poliklinik für Hals-Nasen-Ohrenheilkunde",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Otorhinolaryngology",
+      "Department of Otolaryngology Head and Neck Surgery",
+      "Klinik und Poliklinik für Hals-Nasen-Ohrenheilkunde"
+    ]
+  },
+  {
+    "uid": "clin-dermatology",
+    "name_en": "Department of Dermatology and Allergology",
+    "name_local": "Klinik und Poliklinik für Dermatologie und Allergologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Dermatology and Allergology",
+      "Department of Dermatology and Allergy",
+      "Klinik und Poliklinik für Dermatologie und Allergologie"
+    ]
+  },
+  {
+    "uid": "clin-gynecology",
+    "name_en": "Department of Obstetrics and Gynecology",
+    "name_local": "Klinik und Poliklinik für Frauenheilkunde und Geburtshilfe",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynecology",
+      "Department of Gynecology and Obstetrics",
+      "Klinik und Poliklinik für Frauenheilkunde",
+      "Klinik und Poliklinik für Frauenheilkunde und Geburtshilfe"
+    ]
+  },
+  {
+    "uid": "clin-urology",
+    "name_en": "Department of Urology",
+    "name_local": "Klinik und Poliklinik für Urologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Urology",
+      "Klinik und Poliklinik für Urologie"
+    ]
+  },
+  {
+    "uid": "clin-pediatrics",
+    "name_en": "Department of Pediatrics",
+    "name_local": "Kinderklinik und Poliklinik",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pediatrics",
+      "Center for Pediatric and Adolescent Medicine",
+      "Kinderklinik und Poliklinik"
+    ]
+  },
+  {
+    "uid": "mcfc",
+    "name_en": "MRI Chronic Fatigue Center for Young People",
+    "name_local": "MRI Chronic Fatigue Center for Young People",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "MRI Chronic Fatigue Center for Young People"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "clin-anesthesiology",
+    "name_en": "Department of Anesthesiology and Intensive Care",
+    "name_local": "Klinik für Anästhesiologie und Intensivmedizin",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anesthesiology and Intensive Care",
+      "Klinik für Anästhesiologie und Intensivmedizin"
+    ]
+  },
+  {
+    "uid": "clin-ophthalmology",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "Klinik und Poliklinik für Augenheilkunde",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology",
+      "Klinik und Poliklinik für Augenheilkunde"
+    ]
+  },
+  {
+    "uid": "clin-omfs",
+    "name_en": "Department of Oral and Maxillofacial Surgery",
+    "name_local": "Klinik und Poliklinik für Mund-Kiefer-Gesichtschirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Oral and Maxillofacial Surgery",
+      "Klinik und Poliklinik für Mund-Kiefer-Gesichtschirurgie"
+    ]
+  },
+  {
+    "uid": "clin-cardiac-surgery",
+    "name_en": "Department of Cardiovascular Surgery",
+    "name_local": "Klinik für Herz- und Gefäßchirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cardiovascular Surgery",
+      "Department of Cardiac Surgery",
+      "Klinik für Herz- und Gefäßchirurgie"
+    ]
+  },
+  {
+    "uid": "clin-congenital-surgery",
+    "name_en": "Department of Congenital and Pediatric Heart Surgery",
+    "name_local": "Klinik für Chirurgie angeborener Herzfehler und Kinderherzchirurgie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Congenital and Pediatric Heart Surgery",
+      "Department of Congenital and Paediatric Heart Surgery",
+      "Division of Congenital and Pediatric Heart Surgery",
+      "Klinik für Chirurgie angeborener Herzfehler und Kinderherzchirurgie"
+    ]
+  },
+  {
+    "uid": "clin-pediatric-cardiology",
+    "name_en": "Department of Congenital Heart Disease and Pediatric Cardiology",
+    "name_local": "Klinik für Angeborene Herzfehler und Kinderkardiologie",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Congenital Heart Disease and Pediatric Cardiology",
+      "Department of Congenital Heart Disease and Paediatric Cardiology",
+      "Department of Congenital Heart Defects Pediatric Cardiology",
+      "Klinik für Angeborene Herzfehler und Kinderkardiologie"
+    ]
+  },
+  {
+    "uid": "tum-nic",
+    "name_en": "TUM-Neuroimaging Center",
+    "name_local": "TUM-Neuroimaging Center",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "TUM-Neuroimaging Center",
+      "TUM Neuroimaging Center",
+      "TUM-NIC"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "pancreatic-center",
+    "name_en": "Translational Pancreatic Cancer Research Center",
+    "name_local": "Translational Pancreatic Cancer Research Center",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Translational Pancreatic Cancer Research Center"
+    ]
+  },
+  {
+    "uid": "global-health",
+    "name_en": "Center for Global Health",
+    "name_local": "Center for Global Health",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "TUM Center for Global Health"
+    ],
+    "context_aliases": [
+      "Center for Global Health"
+    ]
+  },
+  {
+    "uid": "school-mgt",
+    "name_en": "TUM School of Management",
+    "name_local": "TUM School of Management",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Management"
+    ],
+    "context_aliases": [
+      "School of Management"
+    ]
+  },
+  {
+    "uid": "school-sot",
+    "name_en": "TUM School of Social Sciences and Technology",
+    "name_local": "TUM School of Social Sciences and Technology",
+    "kind": "school",
+    "parent": "tum",
+    "aliases": [
+      "TUM School of Social Sciences and Technology",
+      "TUM School of Social Science and Technology"
+    ],
+    "context_aliases": [
+      "School of Social Sciences and Technology",
+      "School of Social Science and Technology"
+    ]
+  },
+  {
+    "uid": "sot-edu",
+    "name_en": "Department of Educational Sciences",
+    "name_local": "Department of Educational Sciences",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Educational Sciences"
+    ]
+  },
+  {
+    "uid": "chair-htl",
+    "name_en": "Chair for Human-Centered Technologies for Learning",
+    "name_local": "Lehrstuhl für Human-Centered Technologies for Learning",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair for Human-Centered Technologies for Learning"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sot-gov",
+    "name_en": "Department of Governance",
+    "name_local": "Department of Governance",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Governance"
+    ]
+  },
+  {
+    "uid": "sot-sts",
+    "name_en": "Department of Science Technology and Society",
+    "name_local": "Department of Science Technology and Society",
+    "kind": "department",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Science",
+      "Technology and Society (STS)",
+      "Department of Science Technology and Society"
+    ]
+  },
+  {
+    "uid": "campus-straubing",
+    "name_en": "TUM Campus Straubing for Biotechnology and Sustainability",
+    "name_local": "TUM Campus Straubing für Biotechnologie und Nachhaltigkeit",
+    "kind": "campus",
+    "parent": "tum",
+    "aliases": [
+      "Campus Straubing for Biotechnology and Sustainability",
+      "TUM Campus Straubing"
+    ],
+    "context_aliases": [
+      "Campus Straubing"
+    ]
+  },
+  {
+    "uid": "chair-biogenic",
+    "name_en": "Chair of Chemistry of Biogenic Resources",
+    "name_local": "Lehrstuhl für Chemie Biogener Rohstoffe",
+    "kind": "lab",
+    "parent": "tum",
+    "aliases": [
+      "Chair of Chemistry of Biogenic Resources"
+    ],
+    "context_aliases": [
+      "Lehrstuhl für Chemie Biogener Rohstoffe"
+    ]
+  },
+  {
+    "uid": "campus-heilbronn",
+    "name_en": "TUM Campus Heilbronn",
+    "name_local": "TUM Campus Heilbronn",
+    "kind": "campus",
+    "parent": "tum",
+    "aliases": [
+      "TUM Campus Heilbronn"
+    ],
+    "context_aliases": [
+      "Campus Heilbronn"
+    ]
+  },
+  {
+    "uid": "mdsi",
+    "name_en": "Munich Data Science Institute",
+    "name_local": "Munich Data Science Institute",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Munich Data Science Institute"
+    ],
+    "context_aliases": [
+      "MDSI"
+    ]
+  },
+  {
+    "uid": "mirmi",
+    "name_en": "Munich Institute of Robotics and Machine Intelligence",
+    "name_local": "Munich Institute of Robotics and Machine Intelligence",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "MIRMI",
+      "Munich Institute of Robotics and Machine Intelligence"
+    ]
+  },
+  {
+    "uid": "mibe",
+    "name_en": "Munich Institute of Biomedical Engineering",
+    "name_local": "Munich Institute of Biomedical Engineering",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Munich Institute of Biomedical Engineering"
+    ],
+    "context_aliases": [
+      "MIBE"
+    ]
+  },
+  {
+    "uid": "ias",
+    "name_en": "TUM Institute for Advanced Study",
+    "name_local": "TUM Institute for Advanced Study",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "TUM Institute for Advanced Study",
+      "TUM-IAS"
+    ],
+    "context_aliases": [
+      "Institute for Advanced Study"
+    ]
+  },
+  {
+    "uid": "translatum",
+    "name_en": "Center for Translational Cancer Research (TranslaTUM)",
+    "name_local": "Zentralinstitut für translationale Krebsforschung",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "TranslaTUM",
+      "Central Institute for Translational Cancer Research"
+    ],
+    "context_aliases": [
+      "Center for Translational Cancer Research",
+      "Zentralinstitut für translationale Krebsforschung"
+    ]
+  },
+  {
+    "uid": "crc",
+    "name_en": "Catalysis Research Center",
+    "name_local": "Zentralinstitut für Katalyseforschung",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [
+      "Catalysis Research Center"
+    ],
+    "context_aliases": [
+      "Zentralinstitut für Katalyseforschung"
+    ]
+  },
+  {
+    "uid": "wsi",
+    "name_en": "Walter Schottky Institute",
+    "name_local": "Walter Schottky Institut",
+    "kind": "institute",
+    "parent": "tum",
+    "aliases": [],
+    "context_aliases": [
+      "Walter Schottky Institute",
+      "Walter Schottky Institut"
+    ]
+  },
+  {
+    "uid": "cpa",
+    "name_en": "Center for Functional Protein Assemblies",
+    "name_local": "Center for Functional Protein Assemblies",
+    "kind": "center",
+    "parent": "tum",
+    "aliases": [
+      "Center for Functional Protein Assemblies"
+    ],
+    "context_aliases": []
+  }
+]

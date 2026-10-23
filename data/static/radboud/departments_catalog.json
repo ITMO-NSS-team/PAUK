@@ -1,0 +1,162 @@
+[
+  {
+    "uid": "radboud",
+    "name_en": "Radboud University Nijmegen",
+    "name_local": "Radboud Universiteit",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/016xsfp80",
+    "type": "university"
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "radboud",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "fsoc",
+    "name_en": "Faculty of Social Sciences",
+    "name_local": "Faculty of Social Sciences",
+    "kind": "faculty",
+    "parent": "radboud",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Social Sciences"
+    ]
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medical Sciences",
+    "name_local": "Faculty of Medical Sciences",
+    "kind": "faculty",
+    "parent": "radboud",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medical Sciences"
+    ]
+  },
+  {
+    "uid": "donders",
+    "name_en": "Donders Institute for Brain Cognition and Behaviour",
+    "name_local": "Donders Institute for Brain Cognition and Behaviour",
+    "kind": "institute",
+    "parent": "radboud",
+    "aliases": [],
+    "context_aliases": [
+      "Cognition and Behaviour",
+      "Cognition and Behavior",
+      "Donders Institute for Brain Cognition and Behaviour",
+      "Donders Institute for Brain",
+      "Donders Institute"
+    ]
+  },
+  {
+    "uid": "imm",
+    "name_en": "Institute for Molecules and Materials",
+    "name_local": "Institute for Molecules and Materials",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Molecules and Materials"
+    ]
+  },
+  {
+    "uid": "ribes",
+    "name_en": "Radboud Institute for Biological and Environmental Sciences",
+    "name_local": "Radboud Institute for Biological and Environmental Sciences",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Radboud Institute for Biological and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "imapp",
+    "name_en": "Institute for Mathematics Astrophysics and Particle Physics",
+    "name_local": "Institute for Mathematics Astrophysics and Particle Physics",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Astrophysics",
+      "IMAPP"
+    ]
+  },
+  {
+    "uid": "icis",
+    "name_en": "Institute for Computing and Information Sciences",
+    "name_local": "Institute for Computing and Information Sciences",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Computing and Information Sciences",
+      "iCIS"
+    ]
+  },
+  {
+    "uid": "bsi",
+    "name_en": "Behavioural Science Institute",
+    "name_local": "Behavioural Science Institute",
+    "kind": "institute",
+    "parent": "fsoc",
+    "aliases": [
+      "Behavioral Science Institute"
+    ],
+    "context_aliases": [
+      "Behavioural Science Institute"
+    ]
+  },
+  {
+    "uid": "imr",
+    "name_en": "Institute for Management Research",
+    "name_local": "Institute for Management Research",
+    "kind": "institute",
+    "parent": "radboud",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Management Research"
+    ]
+  },
+  {
+    "uid": "ecology",
+    "name_en": "Department of Ecology",
+    "name_local": "Department of Ecology",
+    "kind": "department",
+    "parent": "ribes",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ecology"
+    ]
+  },
+  {
+    "uid": "envsci",
+    "name_en": "Department of Environmental Science",
+    "name_local": "Department of Environmental Science",
+    "kind": "department",
+    "parent": "ribes",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Science"
+    ]
+  },
+  {
+    "uid": "micro",
+    "name_en": "Department of Microbiology",
+    "name_local": "Department of Microbiology",
+    "kind": "department",
+    "parent": "ribes",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology"
+    ]
+  }
+]

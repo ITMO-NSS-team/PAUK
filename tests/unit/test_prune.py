@@ -29,7 +29,7 @@ GROUP = "sample"
 
 
 def person(pid, name, works=(), **fields):
-    return Person(id=pid, openalex_id=pid, name_raw=name, is_itmo=True,
+    return Person(id=pid, openalex_id=pid, name_raw=name, is_member=True,
                   authored=[{"publication_id": work, "position": 1} for work in works],
                   **fields)
 
@@ -140,8 +140,8 @@ class HandMadeTest(PruneTest):
         self.publish()
 
     def test_a_record_somebody_claimed_is_kept(self):
-        self.graph.add("Person", "A9", name_ru="Заведён вручную")
-        record_override(self.db, "Person", "A9", "create", {"name_ru": "Заведён вручную"},
+        self.graph.add("Person", "A9", name_local="Заведён вручную")
+        record_override(self.db, "Person", "A9", "create", {"name_local": "Заведён вручную"},
                         actor="user:roman")
         plan = self.plan()
         self.assertEqual(plan.nodes, {})
@@ -149,7 +149,7 @@ class HandMadeTest(PruneTest):
 
     def test_the_same_record_unclaimed_is_a_leftover(self):
         # The claim is doing the work, not the shape of the record.
-        self.graph.add("Person", "A9", name_ru="Ниоткуда")
+        self.graph.add("Person", "A9", name_local="Ниоткуда")
         self.assertEqual(self.plan().nodes, {"Person": ["A9"]})
 
     def test_a_link_somebody_claimed_is_kept(self):
@@ -168,8 +168,8 @@ class HandMadeTest(PruneTest):
     def test_an_edited_record_is_kept_too(self):
         # Editing a field of a record no row explains says the same thing
         # about it as creating it did.
-        self.graph.add("Person", "A9", name_ru="Правленый")
-        record_override(self.db, "Person", "A9", "set", {"name_ru": "Правленый"},
+        self.graph.add("Person", "A9", name_local="Правленый")
+        record_override(self.db, "Person", "A9", "set", {"name_local": "Правленый"},
                         actor="user:roman")
         self.assertEqual(self.plan().nodes, {})
 

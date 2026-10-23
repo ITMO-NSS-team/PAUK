@@ -1,0 +1,37 @@
+{
+  "key": "brown",
+  "short_name": "Brown",
+  "short_name_local": "Brown",
+  "name_en": "Brown University",
+  "name_local": "Brown University",
+  "ror_id": "05gq02987",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "brown.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:BrownUnivProvidence)(?![^\\W\\d_])",
+  "long_name": "Brown[\\s‐-]+University(?![\\s‐-]+Health)|Universidad[\\s‐-]+Brown|Brown[\\s‐-]+Univ",
+  "marker_replacement": "BrownUnivProvidence",
+  "place_words": "aleja|allee|america|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|island|katu|laan|north|piazza|platz|plaza|plein|po|providence|rd|rhode|ri|road|room|rue|south|st|states|str|straat|strasse|straße|street|tie|ul|united|us|usa|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Brown University Health|Rhode Island Hospital|Miriam Hospital|Butler Hospital|Bradley Hospital|Hasbro Children|Women & Infants|Memorial Hospital of Rhode Island|VA Providence|Lifespan|Care New England|Bradley\\ Hospital|Butler\\ Hospital|Hasbro\\ Children's\\ Hospital|John\\ Carter\\ Brown\\ Library|Memorial\\ Hospital\\ of\\ Rhode\\ Island|Miriam\\ Hospital|Morton\\ Hospital|Providence\\ VA\\ Medical\\ Center|Rhode\\ Island\\ Hospital|Women\\ \\&\\ Infants\\ Hospital\\ of\\ Rhode\\ Island",
+  "identity": "Brown[\\s‐-]+University(?![\\s‐-]+Health)|Universidad[\\s‐-]+Brown|Brown[\\s‐-]+Univ",
+  "city": "Providence",
+  "staff_catalog": null,
+  "mongo_db": "pauk_brown",
+  "site_url": "https://www.brown.edu",
+  "unit_words": "school|department|division|institute|center|centre|college",
+  "external_authors": false
+}

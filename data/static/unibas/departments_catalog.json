@@ -1,0 +1,263 @@
+[
+  {
+    "uid": "unibas",
+    "name_en": "University of Basel",
+    "name_local": "Universität Basel",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02s6k3f65",
+    "type": "university"
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Medical Faculty",
+      "Medizinische Fakultät"
+    ]
+  },
+  {
+    "uid": "fsci",
+    "name_en": "Faculty of Science",
+    "name_local": "Faculty of Science",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Science",
+      "Philosophisch-Naturwissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "fpsy",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Faculty of Psychology",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology"
+    ]
+  },
+  {
+    "uid": "fbe",
+    "name_en": "Faculty of Business and Economics",
+    "name_local": "Faculty of Business and Economics",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Business and Economics"
+    ]
+  },
+  {
+    "uid": "flaw",
+    "name_en": "Faculty of Law",
+    "name_local": "Faculty of Law",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "fhum",
+    "name_en": "Faculty of Humanities and Social Sciences",
+    "name_local": "Faculty of Humanities and Social Sciences",
+    "kind": "faculty",
+    "parent": "unibas",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities and Social Sciences",
+      "Philosophisch-Historische Fakultät"
+    ]
+  },
+  {
+    "uid": "biozentrum",
+    "name_en": "Biozentrum",
+    "name_local": "Biozentrum",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Biozentrum"
+    ]
+  },
+  {
+    "uid": "biomed",
+    "name_en": "Department of Biomedicine",
+    "name_local": "Department of Biomedicine",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedicine",
+      "Departments of Biomedicine and Clinical Research"
+    ]
+  },
+  {
+    "uid": "clinres",
+    "name_en": "Department of Clinical Research",
+    "name_local": "Department of Clinical Research",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Research"
+    ]
+  },
+  {
+    "uid": "dbe",
+    "name_en": "Department of Biomedical Engineering",
+    "name_local": "Department of Biomedical Engineering",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "sport",
+    "name_en": "Department of Sport Exercise and Health",
+    "name_local": "Department of Sport Exercise and Health",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sport",
+      "Exercise and Health",
+      "Division of Sport and Exercise Medicine"
+    ]
+  },
+  {
+    "uid": "pubhealth",
+    "name_en": "Department of Public Health",
+    "name_local": "Department of Public Health",
+    "kind": "department",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Public Health"
+    ]
+  },
+  {
+    "uid": "ibmb",
+    "name_en": "Institute for Biomedical Ethics",
+    "name_local": "Institute for Biomedical Ethics",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Biomedical Ethics"
+    ]
+  },
+  {
+    "uid": "uzb",
+    "name_en": "University Center for Dental Medicine Basel",
+    "name_local": "University Center for Dental Medicine Basel",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "University Center for Dental Medicine Basel",
+      "UZB"
+    ]
+  },
+  {
+    "uid": "crib",
+    "name_en": "Cardiovascular Research Institute Basel",
+    "name_local": "Cardiovascular Research Institute Basel",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "CRIB",
+      "Cardiovascular Research Institute Basel"
+    ]
+  },
+  {
+    "uid": "rc2nb",
+    "name_en": "Research Center for Clinical Neuroimmunology and Neuroscience Basel",
+    "name_local": "Research Center for Clinical Neuroimmunology and Neuroscience Basel",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "RC2NB",
+      "Research Center for Clinical Neuroimmunology and Neuroscience Basel"
+    ]
+  },
+  {
+    "uid": "envsci",
+    "name_en": "Department of Environmental Sciences",
+    "name_local": "Department of Environmental Sciences",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "Department of Pharmaceutical Sciences",
+    "name_local": "Department of Pharmaceutical Sciences",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "dmi",
+    "name_en": "Department of Mathematics and Computer Science",
+    "name_local": "Department of Mathematics and Computer Science",
+    "kind": "department",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics and Computer Science"
+    ]
+  },
+  {
+    "uid": "sni",
+    "name_en": "Swiss Nanoscience Institute",
+    "name_local": "Swiss Nanoscience Institute",
+    "kind": "institute",
+    "parent": "fsci",
+    "aliases": [],
+    "context_aliases": [
+      "Swiss Nanoscience Institute"
+    ]
+  }
+]

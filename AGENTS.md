@@ -6,9 +6,13 @@ lives in `docs/`, not duplicated here.
 
 ## What this project is
 
-PAUK collects ITMO's publications from OpenAlex, enriches them (Crossref,
-ORCID, GitHub), finds code links in them, and loads the result
-into Neo4j. `pauk/gui/` renders an interactive map of that graph.
+PAUK collects a university's publications from OpenAlex, enriches them
+(Crossref, ORCID, GitHub), finds code links in them, and loads the result
+into Neo4j. `pauk/gui/` renders an interactive map of that graph. The
+university is a profile chosen by `PAUK_INSTITUTION`: ITMO (default) or UFJF
+(Universidade Federal de Juiz de Fora), see
+[`docs/architecture/institutions.md`](docs/architecture/institutions.md).
+Nothing outside `pauk/institution.py` names a university.
 
 One Python package, `pauk/`. Full architecture starts at
 [`docs/architecture/overview.md`](docs/architecture/overview.md).

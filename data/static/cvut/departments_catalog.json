@@ -1,0 +1,326 @@
+[
+  {
+    "uid": "cvut",
+    "name_en": "Czech Technical University in Prague",
+    "name_local": "České vysoké učení technické v Praze",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03kqpb082",
+    "type": "university"
+  },
+  {
+    "uid": "fsv",
+    "name_en": "Faculty of Civil Engineering",
+    "name_local": "Faculty of Civil Engineering",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Civil Engineering"
+    ]
+  },
+  {
+    "uid": "fs",
+    "name_en": "Faculty of Mechanical Engineering",
+    "name_local": "Faculty of Mechanical Engineering",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "fel",
+    "name_en": "Faculty of Electrical Engineering",
+    "name_local": "Faculty of Electrical Engineering",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "fjfi",
+    "name_en": "Faculty of Nuclear Sciences and Physical Engineering",
+    "name_local": "Faculty of Nuclear Sciences and Physical Engineering",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Nuclear Sciences and Physical Engineering",
+      "Faculty of Nuclear Science and Physical Engineering",
+      "FNSPE"
+    ]
+  },
+  {
+    "uid": "fa",
+    "name_en": "Faculty of Architecture",
+    "name_local": "Faculty of Architecture",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Architecture"
+    ]
+  },
+  {
+    "uid": "fd",
+    "name_en": "Faculty of Transportation Sciences",
+    "name_local": "Faculty of Transportation Sciences",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Transportation Sciences"
+    ]
+  },
+  {
+    "uid": "fbmi",
+    "name_en": "Faculty of Biomedical Engineering",
+    "name_local": "Faculty of Biomedical Engineering",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "fit",
+    "name_en": "Faculty of Information Technology",
+    "name_local": "Faculty of Information Technology",
+    "kind": "faculty",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Information Technology"
+    ]
+  },
+  {
+    "uid": "ciirc",
+    "name_en": "Czech Institute of Informatics Robotics and Cybernetics",
+    "name_local": "Czech Institute of Informatics Robotics and Cybernetics",
+    "kind": "institute",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Robotics and Cybernetics",
+      "CIIRC",
+      "Czech Institute of Informatics"
+    ]
+  },
+  {
+    "uid": "utef",
+    "name_en": "Institute of Experimental and Applied Physics",
+    "name_local": "Institute of Experimental and Applied Physics",
+    "kind": "institute",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Experimental and Applied Physics"
+    ]
+  },
+  {
+    "uid": "uceeb",
+    "name_en": "University Centre for Energy Efficient Buildings",
+    "name_local": "University Centre for Energy Efficient Buildings",
+    "kind": "center",
+    "parent": "cvut",
+    "aliases": [],
+    "context_aliases": [
+      "UCEEB",
+      "University Centre for Energy Efficient Buildings"
+    ]
+  },
+  {
+    "uid": "klokner",
+    "name_en": "Klokner Institute",
+    "name_local": "Klokner Institute",
+    "kind": "institute",
+    "parent": "cvut",
+    "aliases": [
+      "Klokner Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cyber",
+    "name_en": "Department of Cybernetics",
+    "name_local": "Department of Cybernetics",
+    "kind": "department",
+    "parent": "fel",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cybernetics"
+    ]
+  },
+  {
+    "uid": "control",
+    "name_en": "Department of Control Engineering",
+    "name_local": "Department of Control Engineering",
+    "kind": "department",
+    "parent": "fel",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Control Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "fel",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "etech",
+    "name_en": "Department of Electrotechnology",
+    "name_local": "Department of Electrotechnology",
+    "kind": "department",
+    "parent": "fel",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrotechnology"
+    ]
+  },
+  {
+    "uid": "physfel",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "fel",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "Department of Mechanics Biomechanics and Mechatronics",
+    "name_local": "Department of Mechanics Biomechanics and Mechatronics",
+    "kind": "department",
+    "parent": "fs",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanics",
+      "Biomechanics and Mechatronics"
+    ]
+  },
+  {
+    "uid": "mat",
+    "name_en": "Department of Materials Engineering and Chemistry",
+    "name_local": "Department of Materials Engineering and Chemistry",
+    "kind": "department",
+    "parent": "fsv",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Engineering and Chemistry"
+    ]
+  },
+  {
+    "uid": "geomatics",
+    "name_en": "Department of Geomatics",
+    "name_local": "Department of Geomatics",
+    "kind": "department",
+    "parent": "fsv",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geomatics"
+    ]
+  },
+  {
+    "uid": "arch-eng",
+    "name_en": "Department of Architectural Engineering",
+    "name_local": "Department of Architectural Engineering",
+    "kind": "department",
+    "parent": "fsv",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architectural Engineering"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "fjfi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "reactors",
+    "name_en": "Department of Nuclear Reactors",
+    "name_local": "Department of Nuclear Reactors",
+    "kind": "department",
+    "parent": "fjfi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear Reactors"
+    ]
+  },
+  {
+    "uid": "materials",
+    "name_en": "Department of Materials",
+    "name_local": "Department of Materials",
+    "kind": "department",
+    "parent": "fjfi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Engineering",
+      "Department of Materials"
+    ]
+  },
+  {
+    "uid": "air",
+    "name_en": "Department of Air Transport",
+    "name_local": "Department of Air Transport",
+    "kind": "department",
+    "parent": "fd",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Air Transport"
+    ]
+  },
+  {
+    "uid": "telematics",
+    "name_en": "Department of Transport Telematics",
+    "name_local": "Department of Transport Telematics",
+    "kind": "department",
+    "parent": "fd",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Transport Telematics"
+    ]
+  },
+  {
+    "uid": "biomedtech",
+    "name_en": "Department of Biomedical Technology",
+    "name_local": "Department of Biomedical Technology",
+    "kind": "department",
+    "parent": "fbmi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biomedical Technology"
+    ]
+  },
+  {
+    "uid": "healthcare",
+    "name_en": "Department of Health Care and Population Protection",
+    "name_local": "Department of Health Care and Population Protection",
+    "kind": "department",
+    "parent": "fbmi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Health Care and Population Protection"
+    ]
+  }
+]

@@ -107,14 +107,17 @@ class RepoPeopleStage(EnrichmentStage):
                 roles.setdefault(login, "contributor")
 
         repo.contributors = sorted(roles)
+        due = [login for login in sorted(roles)
+               if self.force or not _is_filled(profiles.get(f"github_{login.lower()}"))]
+        fetched_profiles = client.get_users(due) if due else {}
         for login in sorted(roles):
             profile_id = f"github_{login.lower()}"
             emails, commit_names = identities.get(login, (set(), set()))
             known = profiles.get(profile_id)
             payload: dict = {}
             fetched = known.profile_fetched if known else False
-            if self.force or not _is_filled(known):
-                payload = client.get_user(login)
+            if login in fetched_profiles:
+                payload = fetched_profiles[login]
                 fetched = True
                 self.raw.append("github_user", payload, {"login": login})
             profile_email = (payload.get("email") or "").strip().lower()

@@ -23,8 +23,8 @@ from tests.unit.test_admin_nodes import FakePanelGraph
 GROUP = "sample"
 
 
-def person(pid, name, works=(), *, is_itmo=False, **fields):
-    return Person(id=pid, openalex_id=pid, name_raw=name, is_itmo=is_itmo,
+def person(pid, name, works=(), *, is_member=False, **fields):
+    return Person(id=pid, openalex_id=pid, name_raw=name, is_member=is_member,
                   authored=[{"publication_id": work, "position": 1} for work in works],
                   **fields)
 
@@ -57,7 +57,7 @@ class UnmergeTest(unittest.TestCase):
 class WhatComesBackTest(UnmergeTest):
     def setUp(self):
         super().setUp()
-        self.publish(person("A1", "Ivan Smirnov", works=["W1"], is_itmo=True),
+        self.publish(person("A1", "Ivan Smirnov", works=["W1"], is_member=True),
                      person("A2", "I. Smirnov", works=["W2"], orcid="0000-0002"))
         self.fold()
 
@@ -98,9 +98,9 @@ class WhatComesBackTest(UnmergeTest):
         self.assertEqual(self.graph.nodes[("Person", "A2")]["orcid"], "0000-0002")
 
     def test_a_field_of_its_own_is_left_alone(self):
-        # is_itmo is the survivor's, not something the fold brought in.
+        # is_member is the survivor's, not something the fold brought in.
         split_person(self.graph, self.db, ["A1", "A2"])
-        self.assertTrue(self.graph.nodes[("Person", "A1")]["is_itmo"])
+        self.assertTrue(self.graph.nodes[("Person", "A1")]["is_member"])
 
     def test_a_publish_finds_nothing_left_to_repair(self):
         # An undo has to leave the graph in the state a publish would build

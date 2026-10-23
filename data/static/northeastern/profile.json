@@ -1,0 +1,37 @@
+{
+  "key": "northeastern",
+  "short_name": "Northeastern",
+  "short_name_local": "Northeastern",
+  "name_en": "Northeastern University",
+  "name_local": "Northeastern University",
+  "ror_id": "04t5xt781",
+  "language": "English",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "von",
+    "de",
+    "da",
+    "del",
+    "der",
+    "di",
+    "la",
+    "le"
+  ],
+  "email_domains": [
+    "northeastern.edu"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:NortheasternUnivBoston)(?![^\\W\\d_])",
+  "long_name": "Northeastern[\\s‐-]+University|Northeastern[\\s‐-]+Univ",
+  "marker_replacement": "NortheasternUnivBoston",
+  "place_words": "aleja|allee|america|arlington|av|ave|avenue|bd|bldg|boston|boulevard|box|building|burlington|calle|campus|east|floor|gatan|huntington|jose|katu|laan|ma|massachusetts|nahant|north|oakland|piazza|platz|plaza|plein|po|portland|rd|road|room|rue|san|seattle|south|st|states|str|straat|strasse|straße|street|tie|ul|united|us|usa|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Shenyang|Qinhuangdao|Northeastern University at Qinhuangdao|Ministry of Education|Northeastern University London|Harvard|(?<![^\\W\\d_])MIT(?![^\\W\\d_])|Massachusetts General|Massachusetts\\ Green\\ High\\ Performance\\ Computing\\ Center|Plum\\ Island\\ Ecosystems\\ Long\\ Term\\ Ecological\\ Research|School\\ of\\ the\\ Museum\\ of\\ Fine\\ Arts",
+  "identity": "Northeastern[\\s‐-]+University|Northeastern[\\s‐-]+Univ",
+  "city": "Boston",
+  "staff_catalog": null,
+  "mongo_db": "pauk_northeastern",
+  "site_url": "https://www.northeastern.edu",
+  "unit_words": "college|school|department|institute|center|centre",
+  "external_authors": false
+}

@@ -1,0 +1,931 @@
+[
+  {
+    "uid": "msu",
+    "name_en": "Lomonosov Moscow State University",
+    "name_local": "Московский государственный университет имени М.В. Ломоносова",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/010pmpe69",
+    "type": "university"
+  },
+  {
+    "uid": "mechmath",
+    "name_en": "Faculty of Mechanics and Mathematics",
+    "name_local": "Механико-математический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "мехмат МГУ"
+    ],
+    "context_aliases": [
+      "Faculty of Mechanics and Mathematics",
+      "Механико-математический факультет",
+      "Department of Mechanics and Mathematics",
+      "мехмат"
+    ]
+  },
+  {
+    "uid": "mechmath-amc",
+    "name_en": "Chair of Applied Mechanics and Control",
+    "name_local": "Кафедра прикладной механики и управления",
+    "kind": "department",
+    "parent": "mechmath",
+    "aliases": [],
+    "context_aliases": [
+      "Chair of Applied Mechanics and Control",
+      "Department of Applied Mechanics and Control",
+      "Кафедра прикладной механики и управления"
+    ]
+  },
+  {
+    "uid": "mechmath-plasticity",
+    "name_en": "Department of Plasticity",
+    "name_local": "Кафедра теории пластичности",
+    "kind": "department",
+    "parent": "mechmath",
+    "aliases": [
+      "Department of Plasticity Lomonosov Moscow State University"
+    ],
+    "context_aliases": [
+      "Department of Plasticity",
+      "Department of Plasticity Theory",
+      "Department of Theory of Plasticity",
+      "Кафедра теории пластичности"
+    ]
+  },
+  {
+    "uid": "cmc",
+    "name_en": "Faculty of Computational Mathematics and Cybernetics",
+    "name_local": "Факультет вычислительной математики и кибернетики",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "ВМК МГУ"
+    ],
+    "context_aliases": [
+      "Faculty of Computational Mathematics and Cybernetics",
+      "Факультет вычислительной математики и кибернетики",
+      "Department of Computational Mathematics and Cybernetics",
+      "ВМК"
+    ]
+  },
+  {
+    "uid": "cmc-graphics",
+    "name_en": "Graphics and Media Lab",
+    "name_local": "Лаборатория компьютерной графики и мультимедиа",
+    "kind": "lab",
+    "parent": "cmc",
+    "aliases": [],
+    "context_aliases": [
+      "Graphics and Media Lab",
+      "Graphics and Media Laboratory",
+      "Лаборатория компьютерной графики и мультимедиа"
+    ]
+  },
+  {
+    "uid": "physics",
+    "name_en": "Faculty of Physics",
+    "name_local": "Физический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "Faculty of Physics Lomonosov Moscow State University",
+      "физический факультет МГУ"
+    ],
+    "context_aliases": [
+      "Faculty of Physics",
+      "Физический факультет",
+      "Department of Physics",
+      "Physics Department",
+      "Physical Faculty",
+      "Physics Faculty",
+      "Physical Department"
+    ]
+  },
+  {
+    "uid": "physics-qtc",
+    "name_en": "Quantum Technology Centre",
+    "name_local": "Центр квантовых технологий",
+    "kind": "center",
+    "parent": "physics",
+    "aliases": [
+      "Quantum Technology Centre Faculty of Physics M. V. Lomonosov Moscow State University"
+    ],
+    "context_aliases": [
+      "Quantum Technology Centre",
+      "Quantum Technology Center",
+      "Центр квантовых технологий"
+    ]
+  },
+  {
+    "uid": "physics-qe",
+    "name_en": "Department of Quantum Electronics",
+    "name_local": "Кафедра квантовой электроники",
+    "kind": "department",
+    "parent": "physics",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Quantum Electronics",
+      "Кафедра квантовой электроники"
+    ]
+  },
+  {
+    "uid": "chemistry",
+    "name_en": "Faculty of Chemistry",
+    "name_local": "Химический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "Department of Chemistry Lomonosov Moscow State University",
+      "Department of Chemistry M. V. Lomonosov Moscow State University",
+      "Department of Chemistry M.V. Lomonosov Moscow State University",
+      "Chemistry Department M.V.Lomonosov Moscow State University",
+      "Chemistry Faculty of M.V. Lomonosov Moscow State University",
+      "химический факультет МГУ"
+    ],
+    "context_aliases": [
+      "Faculty of Chemistry",
+      "Химический факультет",
+      "Department of Chemistry",
+      "Chemistry Department",
+      "Chemical Department",
+      "Chemistry Faculty",
+      "Chemical Faculty",
+      "Department of Chemisty",
+      "Chemistry Department MSU"
+    ]
+  },
+  {
+    "uid": "chem-radiochem",
+    "name_en": "Radiochemistry Division",
+    "name_local": "Кафедра радиохимии",
+    "kind": "department",
+    "parent": "chemistry",
+    "aliases": [],
+    "context_aliases": [
+      "Radiochemistry Division",
+      "Department of Radiochemistry",
+      "Кафедра радиохимии"
+    ]
+  },
+  {
+    "uid": "chem-analytical",
+    "name_en": "Analytical Chemistry Division",
+    "name_local": "Кафедра аналитической химии",
+    "kind": "department",
+    "parent": "chemistry",
+    "aliases": [
+      "Chemistry Department Analytical Chemistry Division of Lomonosov Moscow State University"
+    ],
+    "context_aliases": [
+      "Analytical Chemistry Division",
+      "Department of Analytical Chemistry",
+      "Кафедра аналитической химии"
+    ]
+  },
+  {
+    "uid": "materials",
+    "name_en": "Faculty of Materials Science",
+    "name_local": "Факультет наук о материалах",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Materials Science",
+      "Факультет наук о материалах",
+      "Department of Materials Science"
+    ]
+  },
+  {
+    "uid": "biology",
+    "name_en": "Faculty of Biology",
+    "name_local": "Биологический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "биологический факультет МГУ"
+    ],
+    "context_aliases": [
+      "Faculty of Biology",
+      "Биологический факультет",
+      "Biological Faculty",
+      "Department of Biology",
+      "Biology Department",
+      "School of Biology"
+    ]
+  },
+  {
+    "uid": "bio-vertzool",
+    "name_en": "Department of Vertebrate Zoology",
+    "name_local": "Кафедра зоологии позвоночных",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Vertebrate Zoology",
+      "Кафедра зоологии позвоночных"
+    ]
+  },
+  {
+    "uid": "bio-invertzool",
+    "name_en": "Department of Invertebrate Zoology",
+    "name_local": "Кафедра зоологии беспозвоночных",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Invertebrate Zoology",
+      "Кафедра зоологии беспозвоночных"
+    ]
+  },
+  {
+    "uid": "bio-higherplants",
+    "name_en": "Department of Higher Plants",
+    "name_local": "Кафедра высших растений",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Higher Plants",
+      "Кафедра высших растений"
+    ]
+  },
+  {
+    "uid": "bio-entomology",
+    "name_en": "Department of Entomology",
+    "name_local": "Кафедра энтомологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Entomology",
+      "Кафедра энтомологии"
+    ]
+  },
+  {
+    "uid": "bio-ecohydro",
+    "name_en": "Department of General Ecology and Hydrobiology",
+    "name_local": "Кафедра общей экологии и гидробиологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of General Ecology and Hydrobiology",
+      "Кафедра общей экологии и гидробиологии"
+    ]
+  },
+  {
+    "uid": "bio-physiology",
+    "name_en": "Department of Human and Animal Physiology",
+    "name_local": "Кафедра физиологии человека и животных",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Human and Animal Physiology",
+      "Кафедра физиологии человека и животных"
+    ]
+  },
+  {
+    "uid": "bio-hna",
+    "name_en": "Department of Higher Nervous Activity",
+    "name_local": "Кафедра высшей нервной деятельности",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Higher Nervous Activity",
+      "Кафедра высшей нервной деятельности"
+    ]
+  },
+  {
+    "uid": "bio-evolution",
+    "name_en": "Department of Biological Evolution",
+    "name_local": "Кафедра биологической эволюции",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biological Evolution",
+      "Кафедра биологической эволюции"
+    ]
+  },
+  {
+    "uid": "bio-virology",
+    "name_en": "Department of Virology",
+    "name_local": "Кафедра вирусологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Virology",
+      "Кафедра вирусологии"
+    ]
+  },
+  {
+    "uid": "bio-microbiology",
+    "name_en": "Department of Microbiology",
+    "name_local": "Кафедра микробиологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology",
+      "Кафедра микробиологии"
+    ]
+  },
+  {
+    "uid": "bio-biophysics",
+    "name_en": "Department of Biophysics",
+    "name_local": "Кафедра биофизики",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biophysics",
+      "Кафедра биофизики"
+    ]
+  },
+  {
+    "uid": "bio-cellbio",
+    "name_en": "Department of Cell Biology and Histology",
+    "name_local": "Кафедра клеточной биологии и гистологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Cell Biology and Histology",
+      "Кафедра клеточной биологии и гистологии"
+    ]
+  },
+  {
+    "uid": "bio-biochemistry",
+    "name_en": "Department of Biochemistry",
+    "name_local": "Кафедра биохимии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry",
+      "Кафедра биохимии"
+    ]
+  },
+  {
+    "uid": "bio-anthropology",
+    "name_en": "Department of Anthropology",
+    "name_local": "Кафедра антропологии",
+    "kind": "department",
+    "parent": "biology",
+    "aliases": [
+      "Department of Anthropology Lomonosov State University"
+    ],
+    "context_aliases": [
+      "Department of Anthropology",
+      "Кафедра антропологии"
+    ]
+  },
+  {
+    "uid": "fbb",
+    "name_en": "Faculty of Bioengineering and Bioinformatics",
+    "name_local": "Факультет биоинженерии и биоинформатики",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Bioengineering and Bioinformatics",
+      "Факультет биоинженерии и биоинформатики"
+    ]
+  },
+  {
+    "uid": "soil",
+    "name_en": "Faculty of Soil Science",
+    "name_local": "Факультет почвоведения",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Soil Science",
+      "Факультет почвоведения",
+      "Department of Soil Science",
+      "Soil Science Faculty",
+      "Soil Science Department"
+    ]
+  },
+  {
+    "uid": "soil-ecfs",
+    "name_en": "Eurasian Center for Food Security",
+    "name_local": "Евразийский центр по продовольственной безопасности",
+    "kind": "center",
+    "parent": "soil",
+    "aliases": [
+      "Eurasian Center for Food Security",
+      "Евразийский центр по продовольственной безопасности"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "geology",
+    "name_en": "Faculty of Geology",
+    "name_local": "Геологический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Geology",
+      "Геологический факультет",
+      "Geological Faculty",
+      "Geological Department",
+      "Department of Geology"
+    ]
+  },
+  {
+    "uid": "geography",
+    "name_en": "Faculty of Geography",
+    "name_local": "Географический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Geography",
+      "Географический факультет",
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "medicine",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Факультет фундаментальной медицины",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Faculty of Fundamental Medicine",
+      "Факультет фундаментальной медицины",
+      "Медицинский факультет"
+    ]
+  },
+  {
+    "uid": "med-urology",
+    "name_en": "Department of Urology and Andrology",
+    "name_local": "Кафедра урологии и андрологии",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Urology and Andrology",
+      "Кафедра урологии и андрологии"
+    ]
+  },
+  {
+    "uid": "med-biochem-regen",
+    "name_en": "Department of Biochemistry and Regenerative Biomedicine",
+    "name_local": "Кафедра биохимии и регенеративной биомедицины",
+    "kind": "department",
+    "parent": "medicine",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biochemistry and Regenerative Biomedicine",
+      "Кафедра биохимии и регенеративной биомедицины"
+    ]
+  },
+  {
+    "uid": "mnoi",
+    "name_en": "Medical Research and Educational Institute",
+    "name_local": "Медицинский научно-образовательный институт",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "Medical Research and Education Center of the Lomonosov Moscow State University",
+      "Lomonosov Moscow State University Medical Research and Educational Center"
+    ],
+    "context_aliases": [
+      "Medical Research and Educational Institute",
+      "Medical Scientific and Educational Institute",
+      "Medical Research and Education Institute",
+      "Medical Research and Educational Center",
+      "Medical Research and Education Center",
+      "Медицинский научно-образовательный институт",
+      "Медицинский научно-образовательный центр",
+      "University Clinic"
+    ]
+  },
+  {
+    "uid": "psychology",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Факультет психологии",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology",
+      "Факультет психологии"
+    ]
+  },
+  {
+    "uid": "economics",
+    "name_en": "Faculty of Economics",
+    "name_local": "Экономический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Economics",
+      "Экономический факультет"
+    ]
+  },
+  {
+    "uid": "space",
+    "name_en": "Faculty of Space Research",
+    "name_local": "Факультет космических исследований",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Space Research",
+      "Факультет космических исследований"
+    ]
+  },
+  {
+    "uid": "ffhi",
+    "name_en": "Faculty of Fundamental Physical and Chemical Engineering",
+    "name_local": "Факультет фундаментальной физико-химической инженерии",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Fundamental Physical and Chemical Engineering",
+      "Факультет фундаментальной физико-химической инженерии"
+    ]
+  },
+  {
+    "uid": "law",
+    "name_en": "Faculty of Law",
+    "name_local": "Юридический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [
+      "Law Faculty of the Lomonosov Moscow State University"
+    ],
+    "context_aliases": [
+      "Faculty of Law",
+      "Law Faculty",
+      "Юридический факультет"
+    ]
+  },
+  {
+    "uid": "law-entrepreneurial",
+    "name_en": "Department of Entrepreneurial Law",
+    "name_local": "Кафедра предпринимательского права",
+    "kind": "department",
+    "parent": "law",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Entrepreneurial Law",
+      "Кафедра предпринимательского права"
+    ]
+  },
+  {
+    "uid": "history",
+    "name_en": "Faculty of History",
+    "name_local": "Исторический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of History",
+      "Исторический факультет"
+    ]
+  },
+  {
+    "uid": "philology",
+    "name_en": "Faculty of Philology",
+    "name_local": "Филологический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Philology",
+      "Филологический факультет"
+    ]
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "Faculty of Philosophy",
+    "name_local": "Философский факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Philosophy",
+      "Философский факультет"
+    ]
+  },
+  {
+    "uid": "journalism",
+    "name_en": "Faculty of Journalism",
+    "name_local": "Факультет журналистики",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Journalism",
+      "Факультет журналистики"
+    ]
+  },
+  {
+    "uid": "sociology",
+    "name_en": "Faculty of Sociology",
+    "name_local": "Социологический факультет",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Sociology",
+      "Социологический факультет"
+    ]
+  },
+  {
+    "uid": "polsci",
+    "name_en": "Faculty of Political Science",
+    "name_local": "Факультет политологии",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Political Science",
+      "Факультет политологии"
+    ]
+  },
+  {
+    "uid": "publicadmin",
+    "name_en": "School of Public Administration",
+    "name_local": "Факультет государственного управления",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Administration",
+      "Faculty of Public Administration",
+      "Факультет государственного управления"
+    ]
+  },
+  {
+    "uid": "worldpolitics",
+    "name_en": "Faculty of World Politics",
+    "name_local": "Факультет мировой политики",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of World Politics",
+      "Факультет мировой политики"
+    ]
+  },
+  {
+    "uid": "globalstudies",
+    "name_en": "Faculty of Global Studies",
+    "name_local": "Факультет глобальных процессов",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Global Studies",
+      "Faculty of Global Processes",
+      "Факультет глобальных процессов"
+    ]
+  },
+  {
+    "uid": "ffl",
+    "name_en": "Faculty of Foreign Languages and Area Studies",
+    "name_local": "Факультет иностранных языков и регионоведения",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Foreign Languages and Area Studies",
+      "Факультет иностранных языков и регионоведения"
+    ]
+  },
+  {
+    "uid": "iaas",
+    "name_en": "Institute of Asian and African Studies",
+    "name_local": "Институт стран Азии и Африки",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Asian and African Studies",
+      "Институт стран Азии и Африки"
+    ]
+  },
+  {
+    "uid": "arts",
+    "name_en": "Faculty of Arts",
+    "name_local": "Факультет искусств",
+    "kind": "faculty",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Arts",
+      "Факультет искусств"
+    ]
+  },
+  {
+    "uid": "culturalpolicy",
+    "name_en": "Higher School of Cultural Policy and Management in the Humanitarian Sphere",
+    "name_local": "Высшая школа культурной политики и управления в гуманитарной сфере",
+    "kind": "school",
+    "parent": "msu",
+    "aliases": [
+      "Higher School of Cultural Policy and Management in the Humanitarian Sphere",
+      "Высшая школа культурной политики и управления в гуманитарной сфере"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "hsb",
+    "name_en": "Graduate School of Business",
+    "name_local": "Высшая школа бизнеса",
+    "kind": "school",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Graduate School of Business",
+      "Higher School of Business",
+      "Высшая школа бизнеса"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Moscow School of Economics",
+    "name_local": "Московская школа экономики",
+    "kind": "school",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Moscow School of Economics",
+      "Московская школа экономики"
+    ]
+  },
+  {
+    "uid": "sinp",
+    "name_en": "Skobeltsyn Institute of Nuclear Physics",
+    "name_local": "Научно-исследовательский институт ядерной физики имени Д.В. Скобельцына",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "Skobeltsyn Istitute",
+      "Skobeltsyn Research Institute",
+      "Skobeltsyn Scientific Research Institute",
+      "НИИЯФ МГУ",
+      "институт ядерной физики имени Д.В. Скобельцына"
+    ],
+    "context_aliases": [
+      "НИИЯФ",
+      "Skobeltsyn Institute of Nuclear Physics",
+      "Skobeltsyn Institute",
+      "SINP MSU"
+    ]
+  },
+  {
+    "uid": "sai",
+    "name_en": "Sternberg Astronomical Institute",
+    "name_local": "Государственный астрономический институт имени П.К. Штернберга",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "ГАИШ МГУ",
+      "астрономический институт имени П.К. Штернберга"
+    ],
+    "context_aliases": [
+      "ГАИШ",
+      "Sternberg Astronomical Institute",
+      "Sternberg Astronomical Institut",
+      "SAI MSU"
+    ]
+  },
+  {
+    "uid": "belozersky",
+    "name_en": "Belozersky Institute of Physico-Chemical Biology",
+    "name_local": "НИИ физико-химической биологии имени А.Н. Белозерского",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "Belozersky Institute",
+      "физико-химической биологии имени А.Н. Белозерского"
+    ],
+    "context_aliases": [
+      "Belozersky Research Institute"
+    ]
+  },
+  {
+    "uid": "mechanics",
+    "name_en": "Institute of Mechanics",
+    "name_local": "НИИ механики",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "НИИ механики МГУ"
+    ],
+    "context_aliases": [
+      "Institute of Mechanics",
+      "Research Institute of Mechanics",
+      "НИИ механики"
+    ]
+  },
+  {
+    "uid": "itmp",
+    "name_en": "Institute for Theoretical and Mathematical Physics",
+    "name_local": "Институт теоретической и математической физики",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Theoretical and Mathematical Physics",
+      "Институт теоретической и математической физики"
+    ]
+  },
+  {
+    "uid": "rcc",
+    "name_en": "Research Computing Center",
+    "name_local": "Научно-исследовательский вычислительный центр",
+    "kind": "center",
+    "parent": "msu",
+    "aliases": [
+      "Lomonosov Moscow State University Research Computational Center",
+      "НИВЦ МГУ"
+    ],
+    "context_aliases": [
+      "Research Computing Center",
+      "Research Computational Center",
+      "Научно-исследовательский вычислительный центр"
+    ]
+  },
+  {
+    "uid": "anthropology-museum",
+    "name_en": "Anuchin Research Institute and Museum of Anthropology",
+    "name_local": "НИИ и Музей антропологии имени Д.Н. Анучина",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [
+      "Anuchin Research Institute and Museum of Anthropology"
+    ],
+    "context_aliases": [
+      "Research Institute and Museum of Anthropology"
+    ]
+  },
+  {
+    "uid": "zoomuseum",
+    "name_en": "Zoological Museum",
+    "name_local": "Зоологический музей",
+    "kind": "center",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Zoological Museum",
+      "Зоологический музей"
+    ]
+  },
+  {
+    "uid": "botanical-garden",
+    "name_en": "Botanical Garden",
+    "name_local": "Ботанический сад",
+    "kind": "center",
+    "parent": "msu",
+    "aliases": [
+      "Botanical Garden of Peter I of Lomonosov Moscow State University"
+    ],
+    "context_aliases": [
+      "Botanical Garden",
+      "Ботанический сад"
+    ]
+  },
+  {
+    "uid": "iai",
+    "name_en": "Institute for Artificial Intelligence",
+    "name_local": "Институт искусственного интеллекта",
+    "kind": "institute",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Artificial Intelligence",
+      "Institute of Artificial Intelligence",
+      "Институт искусственного интеллекта",
+      "MSU Institute for Artificial Intelligence"
+    ]
+  },
+  {
+    "uid": "mcfam",
+    "name_en": "Moscow Center for Fundamental and Applied Mathematics",
+    "name_local": "Московский центр фундаментальной и прикладной математики",
+    "kind": "center",
+    "parent": "msu",
+    "aliases": [],
+    "context_aliases": [
+      "Moscow Center for Fundamental and Applied Mathematics",
+      "Moscow Center of Fundamental and Applied Mathematics",
+      "Московский центр фундаментальной и прикладной математики"
+    ]
+  }
+]

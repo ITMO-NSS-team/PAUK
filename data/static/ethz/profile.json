@@ -1,0 +1,42 @@
+{
+  "key": "ethz",
+  "short_name": "ETH Zurich",
+  "short_name_local": "ETH Zürich",
+  "name_en": "Swiss Federal Institute of Technology in Zurich",
+  "name_local": "Eidgenössische Technische Hochschule Zürich",
+  "ror_id": "05a28rw58",
+  "language": "German",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "von",
+    "van",
+    "de",
+    "der",
+    "den",
+    "di",
+    "da",
+    "du",
+    "del",
+    "della",
+    "zu",
+    "ten",
+    "ter",
+    "le",
+    "la"
+  ],
+  "email_domains": [
+    "ethz.ch"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:ETHZ|ETH)(?![^\\W\\d_])",
+  "long_name": "Eidgen(?:ö|oe|o)ssische\\s+Technische\\s+Hochschule\\s*(?:\\(\\s*ETHZ?\\s*\\)\\s*)?Z(?:ü|ue|u)rich|Eidgen(?:ö|oe|o)ssische\\s+Technische\\s+Hochschule\\s*\\(\\s*ETHZ?\\s*\\)|(?:Swiss\\s+)?Federal\\s+Institute\\s+of\\s+Technology\\s*(?:\\(\\s*ETHZ?\\s*\\)\\s*)?(?:in\\s+)?Z(?:ü|ue|u)rich|Swiss\\s+Federal\\s+Institute\\s+of\\s+Technology\\s*\\(\\s*ETHZ?\\s*\\)|Swiss\\s+Federal\\s+Institute\\s+of\\s+Technology\\s+ETH|ETH[\\s-]+Z(?:ü|ue|u)rich|(?:É|E)cole\\s+Polytechnique\\s+F(?:é|e)d(?:é|e)rale\\s+de\\s+Zurich|Politecnico\\s+Federale\\s+di\\s+Zurigo|ETH\\s+di\\s+Zurigo",
+  "marker_replacement": "ETHZ",
+  "place_words": "zurich|zürich|zuerich|zurigo|switzerland|schweiz|suisse|svizzera|ch|hönggerberg|honggerberg|campus|zentrum|basel|lausanne|dübendorf|birmensdorf|villigen|davos|dorf|sion|schwerzenbach|lindau|st|gallen|rämistrasse|universitätstrasse|universitaetstrasse|universitätsstrasse|sonneggstrasse|sonnegstrasse|leonhardstrasse|leonhardstr|clausiusstrasse|schmelzbergstrasse|gloriastrasse|forchstrasse|klingelbergstrasse|mattenstrasse|lerchenfeldstrasse|zürichbergstrasse|zürcherstrasse|forschungsstrasse|limmatquai|otto|stern|weg|vladimir|prelog|wolfgang|pauli|str|strasse|stefano|franscini|platz|laura|hezner",
+  "other_organisations": "University\\s+of\\s+Z(?:ü|ue|u)rich|Universit(?:ä|ae|a)t\\s+Z(?:ü|ue|u)rich|(?<![^\\W\\d_])(?:UZH|PSI|EPFL|Empa|Eawag|WSL|SLF|SIB|USZ|CNRS|MeteoSwiss|Agroscope|PMOD|IOB)(?![^\\W\\d_])|Paul\\s+Scherrer\\s+Institut|Swiss\\s+Federal\\s+Laboratories\\s+for\\s+Materials|Swiss\\s+Federal\\s+Institute\\s+of\\s+Aquatic|Swiss\\s+Federal\\s+(?:Research\\s+)?Institute\\s+(?:for\\s+)?Forest|Swiss\\s+Federal\\s+Institute\\s+of\\s+Technology\\s+(?:in\\s+)?Lausanne|Snow\\s+and\\s+Landscape\\s+Research|Swiss\\s+Institute\\s+of\\s+Bioinformatics|Balgrist|Federal\\s+Office\\s+of\\s+Meteorology|Max\\s+Planck|Ubique\\s+Innovation|AO\\s+Research\\s+Institute|Physikalisch-Meteorologisches\\s+Observatorium",
+  "identity": "(?<![^\\W\\d_])ETHZ(?![^\\W\\d_])|ETH[\\s-]+Z(?:ü|ue|u)rich|Eidgen(?:ö|oe|o)ssische\\s+Technische\\s+Hochschule\\s+Z(?:ü|ue|u)rich|Swiss\\s+Federal\\s+Institute\\s+of\\s+Technology\\s+(?:in\\s+)?Z(?:ü|ue|u)rich",
+  "city": "Z(?:ü|ue|u)rich|Zurigo",
+  "staff_catalog": null,
+  "mongo_db": "pauk_ethz",
+  "site_url": "https://ethz.ch",
+  "unit_words": ""
+}

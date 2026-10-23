@@ -6,7 +6,7 @@ from pauk.models.person import Person
 
 PERSON_ROW = {
     "id": "p1",
-    "is_itmo": True,
+    "is_member": True,
     "name_raw": "Ivan Petrov",
     "email": "ivan@itmo.ru",
     "department_ids": ["d1", "d2"],
@@ -50,13 +50,13 @@ PUBLICATION_ROW = {
 
 class ExtractNodeTest(unittest.TestCase):
     def test_person_node_drops_stray_fields(self):
-        labels, (node_id, props) = extract_node(PERSON_ROW, NODE_REGISTRY["itmo_person"])
+        labels, (node_id, props) = extract_node(PERSON_ROW, NODE_REGISTRY["member_person"])
         self.assertEqual(labels, "Person")
         self.assertEqual(node_id, "p1")
         self.assertEqual(props.get("name_raw"), "Ivan Petrov")
         self.assertEqual(props.get("email"), "ivan@itmo.ru")
         self.assertEqual(props.get("orcid"), "0000-0000")
-        self.assertIs(props.get("is_itmo"), True)
+        self.assertIs(props.get("is_member"), True)
         for stray in (
             "affiliation",
             "email_candidates",
@@ -96,7 +96,7 @@ class ExtractNodeTest(unittest.TestCase):
 
 class ExtractRelationshipsTest(unittest.TestCase):
     def test_person_relationships(self):
-        rels = extract_relationships(PERSON_ROW, NODE_REGISTRY["itmo_person"])
+        rels = extract_relationships(PERSON_ROW, NODE_REGISTRY["member_person"])
 
         belongs = rels[("Person", "Department", "BELONGS_TO", "id")]
         self.assertEqual(sorted(belongs), [("p1", "d1", {}), ("p1", "d2", {})])
@@ -155,7 +155,7 @@ class GraphFieldCoverageTest(unittest.TestCase):
     }
 
     def test_every_person_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
-        covered = set(NODE_REGISTRY["itmo_person"].prop_fields) | set(
+        covered = set(NODE_REGISTRY["member_person"].prop_fields) | set(
             NODE_REGISTRY["external_person"].prop_fields
         )
         for field in Person.model_fields:
@@ -164,7 +164,7 @@ class GraphFieldCoverageTest(unittest.TestCase):
             self.assertIn(
                 field, covered,
                 f"Person.{field} reaches no graph node's prop_fields and has no exclusion "
-                "reason - add it to itmo_person/external_person prop_fields or to "
+                "reason - add it to member_person/external_person prop_fields or to "
                 "PERSON_EXCLUDED above",
             )
 

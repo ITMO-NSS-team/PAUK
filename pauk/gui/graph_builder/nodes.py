@@ -94,11 +94,11 @@ def author_label(
     return surname
 
 
-def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[str]]:
+def author_variants(row: dict, label_local: str, label_en: str) -> dict[str, list[str]]:
     """Other spellings of this person's name, minus whatever is already the card title.
 
     The private card's title (`pauk/gui/web/src/features/panels.ts`) is the
-    truncated label until detail has merged in, then the full `name_ru`/`name_en`.
+    truncated label until detail has merged in, then the full `name_local`/`name_en`.
     Those are excluded here so the same name does not show twice. Sources are
     kept separate: `name_variants` is what OpenAlex saw across publications,
     `other_names` is the ORCID credit name plus self-registered variants (see
@@ -106,9 +106,9 @@ def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[s
     `pauk/gui/web/src/core/i18n.ts`).
     """
     shown = {
-        label_ru.casefold(),
+        label_local.casefold(),
         label_en.casefold(),
-        (row.get("name_ru") or "").casefold(),
+        (row.get("name_local") or "").casefold(),
         (row.get("name_en") or "").casefold(),
     }
 
@@ -169,24 +169,24 @@ class AuthorNodeBuilder:
             pid_ = row["id"]  # "id", not "key": the snapshot column name
             x, y = self.pos[pid_]
             # Full surname + initials, see build()'s docstring.
-            label_ru = author_label(row.get("surname_ru"), row.get("first_name_ru"), row.get("second_name_ru"), public=False) or row.get("name_ru") or ""
+            label_local = author_label(row.get("surname_local"), row.get("first_name_local"), row.get("second_name_local"), public=False) or row.get("name_local") or ""
             # The *_en name parts are not populated by any pipeline stage, but
             # name_en (free-text transliteration) is. Falling back to it, not
-            # to label_ru, keeps the EN interface from showing Russian names.
+            # to label_local, keeps the EN interface from showing Russian names.
             # It is not run through author_label(): there is no reliable
             # surname/given-name split for free text.
             label_en = (
                 author_label(row.get("surname_en"), row.get("first_name_en"), row.get("second_name_en"), public=False)
                 or row.get("name_en")
-                or label_ru
+                or label_local
             )
             summary.append(
                 {
                     "key": pid_,
                     "kind": "author",
-                    "is_itmo": pid_ not in self.authorship.external_ids,
+                    "is_member": pid_ not in self.authorship.external_ids,
                     "dept": self.table.g(self.assignment.author_dept[pid_]),
-                    "label": label_ru,
+                    "label": label_local,
                     "label_en": label_en,
                     "pubs_count": pubs_count[pid_],
                     "rank": rank_a[pid_],
@@ -198,9 +198,9 @@ class AuthorNodeBuilder:
                 {
                     "key": pid_,
                     "openalex_id": row.get("openalex_id") or "",
-                    "name_ru": row.get("name_ru") or "",
+                    "name_local": row.get("name_local") or "",
                     "name_en": row.get("name_en") or "",
-                    "name_variants": author_variants(row, label_ru, label_en),
+                    "name_variants": author_variants(row, label_local, label_en),
                     "degree": row.get("degree") or "",
                     "github": row.get("github") or "",
                     "orcid": row.get("orcid") or "",

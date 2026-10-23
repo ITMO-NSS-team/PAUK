@@ -1,0 +1,26 @@
+{
+  "key": "urfu",
+  "short_name": "UrFU",
+  "short_name_local": "УрФУ",
+  "name_en": "Ural Federal University named after the first President of Russia B. N. Yeltsin",
+  "name_local": "Уральский федеральный университет имени первого Президента России Б. Н. Ельцина",
+  "ror_id": "00hs7dr46",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "urfu.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UrFU|УрФУ)(?![^\\W\\d_])",
+  "long_name": "(?:(?:the\\s+)?fi\\s*rs?r?t\\s+President\\s+of\\s+Russia\\s+(?:B\\.?\\s*N\\.?\\s*|Boris\\s+)?Yel\\s*-?\\s*t\\s*-?\\s*sin\\s+)?Urals?\\s+Federal\\s+University(?:\\s+(?:named\\s+(?:after\\s+)?|n\\.\\s*a\\.\\s+|of\\s+)(?:the\\s+)?fi\\s*rs?r?t\\s+President\\s+of\\s+Russia(?:\\s+(?:B\\.?\\s*N\\.?\\s*|Boris\\s+|N\\.\\s*|B\\.\\s*)?(?:Yel\\s*-?\\s*t\\s*-?\\s*sin|Yeltisen|Eltsyn))?|\\s+named\\s+after\\s+B\\.?\\s*N\\.?\\s*Yeltsin)?|(?:B\\.?\\s*N\\.?\\s*)?Yeltsin\\s+Ural\\s+Federal\\s+University|named\\s+after\\s+the\\s+fi\\s*rs?r?t\\s+President\\s+of\\s+Russia\\s+(?:B\\.?\\s*N\\.?\\s*)?(?:Yel\\s*-?\\s*t\\s*-?\\s*sin|Eltsyn|Yeltisen)|Ural'?ski[ij]\\s+federal'?ny[ij]\\s+universitet(?:\\s+im(?:eni|\\.)\\s+pervogo\\s+Prezidenta\\s+Rossii\\s+B\\.?\\s*N\\.?\\s*El'?(?:tsina|cina))?|Уральск(?:ий|ого)\\s+федеральн(?:ый|ого)\\s+университета?(?:\\s+им(?:ени|\\.)\\s+(?:первого\\s+Президента\\s+России\\s+)?Б\\.\\s*Н\\.\\s*Ельцина)?",
+  "marker_replacement": "UrFU",
+  "place_words": "russia|russian|federation|the|yekaterinburg|ekaterinburg|ekaterinberg|ekateriburg|yekaterinbug|eka|terinburg|екатеринбург|г|россия|российская|федерация|sverdlovsk|oblast|region|свердловская|область|mira|mir|мира|st|str|street|ul|ulitsa|ул|улица|lenin|lenina|ленина|ave|avenue|av|pr|prospekt|пр|kovalevskoi|kovalevskoy|kovalevskaya|s|akademicheskaya|kuibysheva|kuybysheva|bld|p|o|box",
+  "other_organisations": "Ural\\s+(?:Branch|Division)\\s+of\\s+(?:the\\s+)?(?:Russian\\s+Academy\\s+of\\s+Sciences?|RAS)|(?<![^\\W\\d_])(?:UB\\s+RAS|UrB\\s+of\\s+RAS|RAS|УрО\\s+РАН|РАН)(?![^\\W\\d_])|Russian\\s+Academy\\s+of\\s+Sciences?|Institute\\s+of\\s+Metal\\s+Physics|Mi(?:k)?heev|Institute\\s+of\\s+Organic\\s+Synthesis|Postovsk|Institute\\s+of\\s+High[\\s-]+Temperature\\s+Electrochemistry|Krasovsk|Institute\\s+of\\s+Mathematics\\s+and\\s+Mechanics|Institute\\s+of\\s+Electrophysics|Institute\\s+of\\s+Immunology\\s+and\\s+Physiology|Institute\\s+of\\s+Plant\\s+and\\s+Animal\\s+Ecology|Institute\\s+of\\s+Industrial\\s+Ecology|Institute\\s+of\\s+History\\s+and\\s+Archaeology|Institute\\s+of\\s+Solid\\s+State\\s+Chemistry|Institute\\s+of\\s+Engineering\\s+Science|Vatolin|Institute\\s+of\\s+Metallurgy|Институт\\s+химии\\s+твердого\\s+тела|Гиредмет|Giredmet|TOREX|Russian\\s+Quantum\\s+Center|Sirius|SIMATS|Saveetha|Chitkara|Nuclear\\s+Materials\\s+Authority|Xinjiang\\s+Astronomical\\s+Observatory|Уральский\\s+государственный\\s+лесотехнический",
+  "identity": "(?<![^\\W\\d_])(?:UrFU|УрФУ)(?![^\\W\\d_])|Ural\\s+Federal\\s+University|Уральский\\s+федеральный\\s+университет",
+  "city": "Yekaterinburg|Ekaterinburg|Екатеринбург",
+  "staff_catalog": null,
+  "mongo_db": "pauk_urfu",
+  "site_url": "https://urfu.ru",
+  "unit_words": ""
+}

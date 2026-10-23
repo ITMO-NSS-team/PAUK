@@ -18,9 +18,9 @@ class MockOpenRouterClientTest(unittest.TestCase):
         reply = self.reply_for("Oleg Ivanov")
 
         self.assertEqual(reply["matched_candidate"], 0)
-        self.assertEqual(reply["surname_ru"], "Иванов")
-        self.assertEqual(reply["first_name_ru"], "Олег")
-        self.assertEqual(reply["second_name_ru"], "Петрович")
+        self.assertEqual(reply["surname_local"], "Иванов")
+        self.assertEqual(reply["first_name_local"], "Олег")
+        self.assertEqual(reply["second_name_local"], "Петрович")
         self.assertEqual(reply["surname_en"], "Ivanov")
         self.assertEqual(reply["first_name_en"], "Oleg")
         self.assertEqual(reply["second_name_en"], "Petrovich")

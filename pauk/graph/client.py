@@ -12,7 +12,7 @@ CHUNK_SIZE = 2000
 # false and [] are meaningful values rather than missing data. Keep this
 # explicit per graph label so newly added fields do not acquire lossy behaviour.
 BOOLEAN_MERGE_FIELDS = {
-    "Person": {"is_itmo"},
+    "Person": {"is_member"},
     "Publication": {"has_code"},
     "Repository": {"has_readme"},
 }
@@ -231,17 +231,17 @@ class Neo4jClient:
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         """Create or update Person nodes, retaining lists from graph folds.
 
-        is_itmo is a sticky boolean property, not a label: at least one ITMO
-        affiliation anywhere makes the person ITMO, so a row that arrives
-        with is_itmo=False never downgrades a node that is already ITMO. It
+        is_member is a sticky boolean property, not a label: one affiliation
+        with the university anywhere makes the person a member, so a row that
+        arrives with is_member=False never downgrades a node that is already one. It
         is excluded from the blind `n += row.properties` merge and set
         separately via coalesce/OR so the merge can't clobber a True with a
         later False.
 
         Args:
             nodes: List of (node_id, properties) tuples. Each properties
-                dict is expected to carry "is_itmo" (see
-                pauk/graph/extract.py's itmo_person/external_person specs).
+                dict is expected to carry "is_member" (see
+                pauk/graph/extract.py's member_person/external_person specs).
         """
         if not nodes:
             return
@@ -250,12 +250,12 @@ class Neo4jClient:
         for node_id, properties in nodes:
             props_clean = {
                 k: v for k, v in properties.items()
-                if k not in ("id", "created_at", "updated_at", "is_itmo")
+                if k not in ("id", "created_at", "updated_at", "is_member")
             }
             batch.append({
                 "node_id": node_id,
                 "properties": props_clean,
-                "is_itmo": bool(properties.get("is_itmo", False)),
+                "is_member": bool(properties.get("is_member", False)),
             })
 
         query = cast(
@@ -265,7 +265,7 @@ class Neo4jClient:
             MERGE (n:Person {id: row.node_id})
             ON CREATE SET n += row.properties, n.created_at = datetime(), n.updated_at = datetime()
             ON MATCH SET  n += row.properties, n.updated_at = datetime()
-            SET n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo
+            SET n.is_member = coalesce(n.is_member, false) OR row.is_member
             """,
         )
 
@@ -504,12 +504,12 @@ class Neo4jClient:
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.other_names AS other_names,
-                   p.surname_ru AS surname_ru, p.surname_en AS surname_en,
-                   p.first_name_ru AS first_name_ru, p.first_name_en AS first_name_en,
+                   p.surname_local AS surname_local, p.surname_en AS surname_en,
+                   p.first_name_local AS first_name_local, p.first_name_en AS first_name_en,
                    p.orcid AS orcid, p.email AS email,
                    p.github AS github,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
-                   coalesce(p.is_itmo, false) AS is_itmo,
+                   coalesce(p.is_member, false) AS is_member,
                    collect(DISTINCT w.id) AS publication_ids,
                    collect(DISTINCT d.id) AS department_ids
         """
@@ -642,7 +642,7 @@ class Neo4jClient:
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
             RETURN p.id AS id, p.orcid AS orcid, p.email AS email,
-                   head(collect(DISTINCT coalesce(d.name_ru, d.name_en))) AS department,
+                   head(collect(DISTINCT coalesce(d.name_local, d.name_en))) AS department,
                    count(DISTINCT w) AS works
             """,
         )

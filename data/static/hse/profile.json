@@ -1,0 +1,26 @@
+{
+  "key": "hse",
+  "short_name": "HSE University",
+  "short_name_local": "НИУ ВШЭ",
+  "name_en": "National Research University Higher School of Economics",
+  "name_local": "Национальный исследовательский университет «Высшая школа экономики»",
+  "ror_id": "055f7t516",
+  "language": "Russian",
+  "local_script": "cyrillic",
+  "has_patronymic": true,
+  "surname_particles": [],
+  "email_domains": [
+    "hse.ru"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:HSE|NRU\\s*HSE|НИУ\\s*ВШЭ|ВШЭ)(?![^\\W\\d_])",
+  "long_name": "(?:national\\s+research\\s+university\\s*[-–—]*\\s*[«\"“„]?\\s*)?higher\\s+school\\s+of\\s+econom\\w*(?:\\s*[-–—]+\\s*st\\.?\\s*petersburg)?[»\"”]?(?:\\s+(?:national\\s+research\\s+)?university)?|(?:национальн\\w+\\s+исследовательск\\w+\\s+университет\\w*\\s*[-–—]*\\s*[«\"“„]?\\s*)?высш\\w+\\s+школ\\w+\\s+экономики[»\"”]?|vys[sš]aja\\s+[sš]kola\\s+[eè]konomiki",
+  "marker_replacement": "HSE",
+  "place_words": "moscow|moskva|москва|г|russia|russian|federation|россия|российская|федерация|saint|st|petersburg|санкт|петербург|nizhny|nizhniy|nizhnij|novgorod|нижний|новгород|perm|пермь|myasnitskaya|miasnitskaya|pokrovsky|pokrovskiy|pokrovksy|pokrovski|boulevard|bulvar|boulvard|bvld|blvd|ulitsa|ul|street|str|krivokolenny|krivokolennyj|pereulok|per|kantemirovskaya|liniya|vasilievsky|ostrov|bolshaya|pecherskaya|shabolovka|tallinskaya|usacheva|griboyedova|emb|basmannaja|malaya|ordynka|korp|building|bldg|gsp|\\d+[a-z]?|\\d+/\\d+",
+  "other_organisations": "russian\\s+academy\\s+of\\s+sciences|(?<![^\\W\\d_])(?:RAS|РАН|MIPT|MSU|SPbU|MISIS|MEPhI|RUDN|MGIMO|INEOS|IITP|AIRI|Skoltech|ITMO|FCTAS|JINR|DIPC|RSUH)(?![^\\W\\d_])|lomonosov|steklov|kurnakov|landau|lebedev|nesmeyanov|shemyakin|topchiev|osipyan|prokhorov|krestov|kurchatov|lobachevsky|plekhanov|blokhin|donostia|gnosis|skolkovo|financial\\s+university|institute\\s+of\\s+physics\\s+and\\s+technology|joint\\s+institute\\s+for\\s+(?:high\\s+temperatures|nuclear\\s+research)|space\\s+research\\s+institute|institute\\s+for\\s+information\\s+transmission|institute\\s+of\\s+applied\\s+physics|gaponov|russian\\s+quantum\\s+center|moscow\\s+center\\s+of\\s+fundamental\\s+and\\s+applied\\s+mathematics|moscow\\s+center\\s+for\\s+continuous\\s+mathematical\\s+education|eurasian\\s+center\\s+for\\s+big\\s+history|institute\\s+of\\s+oriental\\s+studies|institute\\s+of\\s+geography|institute\\s+of\\s+sociology|research\\s+institute\\s+for\\s+systems\\s+biology|telecommunications\\s+r(?:&|esearch\\s+and\\s+)d|sber|yandex|t-technologies|bank\\s+of\\s+russia",
+  "identity": "(?<![^\\W\\d_])(?:HSE|НИУ\\s*ВШЭ|ВШЭ)(?![^\\W\\d_])|higher\\s+school\\s+of\\s+economics|высшая\\s+школа\\s+экономики",
+  "city": "moscow|moskva|москва",
+  "staff_catalog": null,
+  "mongo_db": "pauk_hse",
+  "site_url": "https://www.hse.ru",
+  "unit_words": "college"
+}

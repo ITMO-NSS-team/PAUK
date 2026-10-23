@@ -1,0 +1,26 @@
+{
+  "key": "ustc",
+  "short_name": "USTC",
+  "short_name_local": "中国科大",
+  "name_en": "University of Science and Technology of China",
+  "name_local": "中国科学技术大学",
+  "ror_id": "04c4dkn09",
+  "language": "Chinese",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "ustc.edu.cn"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:USTC|中国科大|中科大)(?![^\\W\\d_])",
+  "long_name": "(?:Univ(?:ersity|\\.)?|Uni-\\s*versity)\\s+of\\s+Sciences?\\s*(?:and|&|of)\\s*Technology\\s+of\\s+China|中国科学技术大学",
+  "marker_replacement": "USTC",
+  "place_words": "hefei|anhui|china|prc|pr|p|r|people's|people’s|peoples|republic|of|province|city|district|baohe|shushan|jinzhai|jin|zhai|road|rd|wenhua|huangshan|no|suzhou|jiangsu|shenyang|liaoning|changchun|jilin|guangzhou|guangdong|tianhe|ganzhou|jiangxi|ruoshui|renmin|street|合肥|安徽|中国|安徽省|合肥市",
+  "other_organisations": "Chinese\\s+Academy\\s+of\\s+Sciences?|University\\s+of\\s+Chinese\\s+Academy\\s+of\\s+Sciences|UCAS|Hefei\\s+National\\s+Laboratory(?!\\s+for\\s+Physical)|Hefei\\s+Institutes?\\s+of\\s+Physical\\s+Science|HFIPS|Institute\\s+of\\s+Metal\\s+Research|Shenyang\\s+National\\s+Laboratory\\s+for\\s+Materials\\s+Science|Changchun\\s+Institute\\s+of\\s+Applied\\s+Chemistry|Suzhou\\s+Institute\\s+of\\s+Nano-?\\s*Tech|SINANO|Guangzhou\\s+Institute\\s+of\\s+Energy\\s+Conversion|Ganjiang\\s+Innovation\\s+Academy|Anhui\\s+Institute\\s+of\\s+Optics\\s+and\\s+Fine\\s+Mechanics|Institute\\s+of\\s+Solid\\s+State\\s+Physics|Institute\\s+of\\s+Plasma\\s+Physics|Institute\\s+of\\s+Intelligent\\s+Machines|Institute\\s+of\\s+Nuclear\\s+Energy\\s+Safety\\s+Technology|Institute\\s+of\\s+Health\\s+and\\s+Medical\\s+Technology|High\\s+Magnetic\\s+Field\\s+Laboratory|Purple\\s+Mountain\\s+Observatory|Hefei\\s+Comprehensive\\s+National\\s+Science\\s+Center|Institute\\s+of\\s+Health\\s+and\\s+Medicine|IHM|Shanghai\\s+Research\\s+Center\\s+for\\s+Quantum\\s+Science|Shanghai\\s+(?:AI|Artificial\\s+Intelligence)\\s+Laboratory|Deep\\s+Space\\s+Exploration\\s+Laboratory|QuantumCTek|iFLYTEK|Eastern\\s+Institute\\s+(?:of\\s+Technology|for\\s+Advanced\\s+Study)|Ningbo\\s+Institute\\s+of\\s+Digital\\s+Twin|First\\s+Affiliated\\s+Hospital|Anhui\\s+Provincial\\s+(?:Cancer\\s+)?Hospital|Hefei\\s+Cancer\\s+Hospital|Suzhou\\s+Institute\\s+of\\s+Biomedical\\s+Engineering\\s+and\\s+Technology|Jinan\\s+Institute\\s+of\\s+Quantum\\s+Technology|Anhui\\s+University|Anhui\\s+Medical\\s+University|Hefei\\s+University\\s+of\\s+Technology",
+  "identity": "(?<![^\\W\\d_])USTC(?![^\\W\\d_])|University\\s+of\\s+Science\\s+and\\s+Technology\\s+of\\s+China|中国科学技术大学",
+  "city": "Hefei|合肥",
+  "staff_catalog": null,
+  "mongo_db": "pauk_ustc",
+  "site_url": "https://www.ustc.edu.cn",
+  "unit_words": "school|division"
+}

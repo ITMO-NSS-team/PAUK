@@ -17,7 +17,7 @@ CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 
 
 def person(pid, name, *, variants=(), degree=None, itmo=True):
-    return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name,
+    return Person(id=pid, openalex_id=pid, is_member=itmo, name_raw=name,
                   name_variants=list(variants), degree=degree)
 
 
@@ -86,14 +86,14 @@ class AuthorNamesStageTest(unittest.TestCase):
             self.run_stage(
                 [person("A1", "Nikolay Nikitin"), person("A2", "Ivan Petrov")], [],
                 replies=[
-                    {"matched_candidate": None, "surname_ru": "Никитин", "first_name_ru": "Николай",
+                    {"matched_candidate": None, "surname_local": "Никитин", "first_name_local": "Николай",
                      "surname_en": "Nikitin", "first_name_en": "Nikolay", "reason": ""},
                     RuntimeError("unexpected shape"),
                 ],
             )
         saved = {p.id: p for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(saved["A1"].processing["author_names"].status, "completed")
-        self.assertEqual(saved["A1"].surname_ru, "Никитин")
+        self.assertEqual(saved["A1"].surname_local, "Никитин")
         self.assertNotIn("author_names", saved["A2"].processing)
 
     def test_empty_name_raw_is_completed_empty_without_an_llm_call(self):
@@ -110,14 +110,14 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Frank Niessen", itmo=False)], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Ниссен", "first_name_ru": "Франк",
+                "surname_local": "Ниссен", "first_name_local": "Франк",
                 "surname_en": "Niessen", "first_name_en": "Frank",
                 "reason": "",
             }],
         )
         self.assertEqual(result["author_names"], 1)
         row = people["A1"]
-        self.assertEqual((row.surname_ru, row.first_name_ru), ("Ниссен", "Франк"))
+        self.assertEqual((row.surname_local, row.first_name_local), ("Ниссен", "Франк"))
         self.assertEqual(row.processing["author_names"].status, "completed")
 
     def test_llm_reply_fills_all_six_parts_and_composes_name_ru_and_name_en(self):
@@ -126,7 +126,7 @@ class AuthorNamesStageTest(unittest.TestCase):
             ["Никитин Николай Олегович,Никитин,Николай,Олегович,к.т.н."],
             replies=[{
                 "matched_candidate": 0,
-                "surname_ru": "Никитин", "first_name_ru": "Николай", "second_name_ru": "Олегович",
+                "surname_local": "Никитин", "first_name_local": "Николай", "second_name_local": "Олегович",
                 "surname_en": "Nikitin", "first_name_en": "Nikolay", "second_name_en": "Olegovich",
                 "reason": "exact catalog match",
             }],
@@ -134,11 +134,11 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual(result["author_names"], 1)
         self.assertEqual(result["names_matched_candidate"], 1)
         row = people["A1"]
-        self.assertEqual((row.surname_ru, row.first_name_ru, row.second_name_ru),
+        self.assertEqual((row.surname_local, row.first_name_local, row.second_name_local),
                          ("Никитин", "Николай", "Олегович"))
         self.assertEqual((row.surname_en, row.first_name_en, row.second_name_en),
                          ("Nikitin", "Nikolay", "Olegovich"))
-        self.assertEqual(row.name_ru, "Никитин Николай Олегович")
+        self.assertEqual(row.name_local, "Никитин Николай Олегович")
         self.assertEqual(row.name_en, "Nikitin Nikolay Olegovich")
         # degree comes from the free deterministic catalog lookup, not the LLM.
         self.assertEqual(row.degree, "к.т.н.")
@@ -148,8 +148,8 @@ class AuthorNamesStageTest(unittest.TestCase):
         _, people = self.run_stage(
             [person("A1", "Nikolay O. Nikitin", degree="PhD")],
             ["Никитин Николай Олегович,Никитин,Николай,Олегович,к.т.н."],
-            replies=[{"matched_candidate": 0, "surname_ru": "Никитин", "first_name_ru": "Николай",
-                      "second_name_ru": "Олегович", "surname_en": "Nikitin", "first_name_en": "Nikolay",
+            replies=[{"matched_candidate": 0, "surname_local": "Никитин", "first_name_local": "Николай",
+                      "second_name_local": "Олегович", "surname_en": "Nikitin", "first_name_en": "Nikolay",
                       "second_name_en": "Olegovich", "reason": ""}],
         )
         self.assertEqual(people["A1"].degree, "PhD")
@@ -158,23 +158,23 @@ class AuthorNamesStageTest(unittest.TestCase):
         result, people = self.run_stage([person("A1", "Pavel V. Zhukov")], [], replies=[None])
         self.assertEqual(result["names_failed"], 1)
         row = people["A1"]
-        self.assertEqual(row.name_ru, to_cyrillic("Pavel V. Zhukov"))
+        self.assertEqual(row.name_local, to_cyrillic("Pavel V. Zhukov"))
         self.assertEqual(row.name_en, "Pavel V. Zhukov")  # name_raw is already Latin
-        self.assertIsNone(row.surname_ru)  # parts are never guessed on failure
+        self.assertIsNone(row.surname_local)  # parts are never guessed on failure
         self.assertEqual(row.processing["author_names"].status, "failed")
 
     def test_a_failed_llm_call_does_not_erase_a_name_ru_an_earlier_run_wrote(self):
         first = person("A1", "Pavel V. Zhukov")
-        first.name_ru = "Павел Жуков"
+        first.name_local = "Павел Жуков"
         first.name_en = "Pavel Zhukov"
         _, people = self.run_stage([first], [], replies=[None])
-        self.assertEqual(people["A1"].name_ru, "Павел Жуков")
+        self.assertEqual(people["A1"].name_local, "Павел Жуков")
         self.assertEqual(people["A1"].name_en, "Pavel Zhukov")
 
     def test_an_incomplete_reply_is_failed_and_retried_on_the_next_run(self):
         incomplete = {
             "matched_candidate": None,
-            "first_name_ru": "Павел",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "reason": "fields accidentally omitted",
         }
@@ -185,15 +185,15 @@ class AuthorNamesStageTest(unittest.TestCase):
         row = people["A1"]
         self.assertEqual(result["names_failed"], 1)
         self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
-        self.assertIn("surname_ru", row.processing["author_names"].error)
+        self.assertIn("surname_local", row.processing["author_names"].error)
         self.assertIn("first_name_en", row.processing["author_names"].error)
-        self.assertIsNone(row.surname_ru)
+        self.assertIsNone(row.surname_local)
         self.assertIsNone(row.first_name_en)
 
         complete = {
             "matched_candidate": None,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": "Pavel",
             "reason": "complete split",
@@ -207,14 +207,14 @@ class AuthorNamesStageTest(unittest.TestCase):
         saved = next(self.prepared.read_models("persons", Person))
         self.assertEqual(again["author_names"], 1)
         self.assertEqual(saved.processing["author_names"].status, ProcessingStatus.COMPLETED)
-        self.assertEqual(saved.surname_ru, "Жуков")
+        self.assertEqual(saved.surname_local, "Жуков")
         self.assertEqual(saved.first_name_en, "Pavel")
 
     def test_a_semantic_retry_can_recover_an_incomplete_reply_immediately(self):
         incomplete = {
             "matched_candidate": None,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": None,
             "reason": "incomplete",
@@ -238,8 +238,8 @@ class AuthorNamesStageTest(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 reply = {
                     "matched_candidate": None,
-                    "surname_ru": "Жуков",
-                    "first_name_ru": "Павел",
+                    "surname_local": "Жуков",
+                    "first_name_local": "Павел",
                     "surname_en": "Zhukov",
                     "first_name_en": invalid,
                     "reason": "invalid first name",
@@ -256,8 +256,8 @@ class AuthorNamesStageTest(unittest.TestCase):
     def test_required_fields_are_checked_even_for_a_matched_candidate(self):
         incomplete = {
             "matched_candidate": 0,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": None,
             "reason": "candidate match but incomplete response",
@@ -273,8 +273,8 @@ class AuthorNamesStageTest(unittest.TestCase):
     def test_an_invalid_candidate_index_is_not_trusted(self):
         reply = {
             "matched_candidate": 7,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": "Pavel",
             "reason": "bad index",
@@ -287,19 +287,19 @@ class AuthorNamesStageTest(unittest.TestCase):
 
     def test_an_invalid_reply_does_not_erase_a_previous_complete_split(self):
         existing = person("A1", "Pavel Zhukov")
-        existing.surname_ru = "Жуков"
-        existing.first_name_ru = "Павел"
+        existing.surname_local = "Жуков"
+        existing.first_name_local = "Павел"
         existing.surname_en = "Zhukov"
         existing.first_name_en = "Pavel"
-        existing.name_ru = "Жуков Павел"
+        existing.name_local = "Жуков Павел"
         existing.name_en = "Zhukov Pavel"
         existing.processing["author_names"] = ProcessingState(
             status=ProcessingStatus.COMPLETED, attempts=1, result_count=1
         )
         incomplete = {
             "matched_candidate": None,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": None,
             "reason": "incomplete forced response",
@@ -312,24 +312,24 @@ class AuthorNamesStageTest(unittest.TestCase):
         row = people["A1"]
         self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
         self.assertEqual(
-            (row.surname_ru, row.first_name_ru, row.surname_en, row.first_name_en),
+            (row.surname_local, row.first_name_local, row.surname_en, row.first_name_en),
             ("Жуков", "Павел", "Zhukov", "Pavel"),
         )
-        self.assertEqual((row.name_ru, row.name_en), ("Жуков Павел", "Zhukov Pavel"))
+        self.assertEqual((row.name_local, row.name_en), ("Жуков Павел", "Zhukov Pavel"))
 
     def test_a_malformed_reply_fails_one_person_without_stopping_the_batch(self):
         malformed = {
             "matched_candidate": None,
-            "surname_ru": "Жуков",
-            "first_name_ru": "Павел",
+            "surname_local": "Жуков",
+            "first_name_local": "Павел",
             "surname_en": "Zhukov",
             "first_name_en": ["Pavel"],
             "reason": "wrong type",
         }
         valid = {
             "matched_candidate": None,
-            "surname_ru": "Петров",
-            "first_name_ru": "Иван",
+            "surname_local": "Петров",
+            "first_name_local": "Иван",
             "surname_en": "Petrov",
             "first_name_en": "Ivan",
             "reason": "valid",
@@ -351,16 +351,16 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Valentine G. Nenajdenko")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Ненайденко", "first_name_ru": "Валентин", "second_name_ru": "Геннадьевич",
+                "surname_local": "Ненайденко", "first_name_local": "Валентин", "second_name_local": "Геннадьевич",
                 "surname_en": "Nenajdenko", "first_name_en": "Valentine", "second_name_en": "Gennadievich",
                 "reason": "standard expansion of G.",
             }],
         )
         self.assertEqual(result["names_second_name_corrected"], 1)
         row = people["A1"]
-        self.assertIsNone(row.second_name_ru)
+        self.assertIsNone(row.second_name_local)
         self.assertIsNone(row.second_name_en)
-        self.assertEqual(row.surname_ru, "Ненайденко")  # the rest of the reply is kept
+        self.assertEqual(row.surname_local, "Ненайденко")  # the rest of the reply is kept
 
     def test_an_invented_patronymic_sharing_a_short_prefix_is_still_dropped(self):
         # "Fedorenko" shares its first 5 folded characters with the real
@@ -371,14 +371,14 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Ivan Fedorov")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Федоров", "first_name_ru": "Иван", "second_name_ru": "Федоренко",
+                "surname_local": "Федоров", "first_name_local": "Иван", "second_name_local": "Федоренко",
                 "surname_en": "Fedorov", "first_name_en": "Ivan", "second_name_en": "Fedorenko",
                 "reason": "invented, coincidentally shares a prefix with the surname",
             }],
         )
         self.assertEqual(result["names_second_name_corrected"], 1)
         row = people["A1"]
-        self.assertIsNone(row.second_name_ru)
+        self.assertIsNone(row.second_name_local)
         self.assertIsNone(row.second_name_en)
 
     def test_a_patronymic_spelled_out_in_a_variant_is_kept(self):
@@ -386,7 +386,7 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "I. Ivanova", variants=["Irina Anatolievna Ivanova"])], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Иванова", "first_name_ru": "Ирина", "second_name_ru": "Анатольевна",
+                "surname_local": "Иванова", "first_name_local": "Ирина", "second_name_local": "Анатольевна",
                 "surname_en": "Ivanova", "first_name_en": "Irina", "second_name_en": "Anatolievna",
                 "reason": "spelled out in a known variant",
             }],
@@ -400,7 +400,7 @@ class AuthorNamesStageTest(unittest.TestCase):
             ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
             replies=[{
                 "matched_candidate": 0,
-                "surname_ru": "Дорогов", "first_name_ru": "Максим", "second_name_ru": "Владимирович",
+                "surname_local": "Дорогов", "first_name_local": "Максим", "second_name_local": "Владимирович",
                 "surname_en": "Dorogov", "first_name_en": "Maxim", "second_name_en": "Vladimirovich",
                 "reason": "initials match the directory record",
             }],
@@ -416,13 +416,13 @@ class AuthorNamesStageTest(unittest.TestCase):
             ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Дорогов", "first_name_ru": "Максим", "second_name_ru": "Владимирович",
+                "surname_local": "Дорогов", "first_name_local": "Максим", "second_name_local": "Владимирович",
                 "surname_en": "Dorogov", "first_name_en": "Maxim", "second_name_en": "Vladimirovich",
                 "reason": "matches the directory record",
             }],
         )
         self.assertEqual(result["names_second_name_corrected"], 0)
-        self.assertEqual(people["A1"].second_name_ru, "Владимирович")
+        self.assertEqual(people["A1"].second_name_local, "Владимирович")
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_bare_initial_second_name_survives_the_guard(self):
@@ -430,12 +430,12 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "A. I. Marchenko")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Марченко", "first_name_ru": "А", "second_name_ru": "И",
+                "surname_local": "Марченко", "first_name_local": "А", "second_name_local": "И",
                 "surname_en": "Marchenko", "first_name_en": "A", "second_name_en": "I",
                 "reason": "only initials given",
             }],
         )
-        self.assertEqual(people["A1"].second_name_ru, "И")
+        self.assertEqual(people["A1"].second_name_local, "И")
         self.assertEqual(people["A1"].second_name_en, "I")
 
     def test_a_second_given_name_is_folded_back_out_of_the_patronymic_slot(self):
@@ -446,13 +446,13 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Pedro Luis Gonzalez")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Гонзалез", "first_name_ru": "Педро", "second_name_ru": "Луис",
+                "surname_local": "Гонзалез", "first_name_local": "Педро", "second_name_local": "Луис",
                 "surname_en": "Gonzalez", "first_name_en": "Pedro", "second_name_en": "Luis",
                 "reason": "extracted three name-position words",
             }],
         )
         row = people["A1"]
-        self.assertEqual((row.first_name_ru, row.second_name_ru), ("Педро Луис", None))
+        self.assertEqual((row.first_name_local, row.second_name_local), ("Педро Луис", None))
         self.assertEqual((row.first_name_en, row.second_name_en), ("Pedro Luis", None))
 
     def test_a_second_name_that_carries_a_period_is_still_recognised_as_an_initial(self):
@@ -464,12 +464,12 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Mikhailov N.N.")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Михайлов", "first_name_ru": "Н.", "second_name_ru": "Н.",
+                "surname_local": "Михайлов", "first_name_local": "Н.", "second_name_local": "Н.",
                 "surname_en": "Mikhailov", "first_name_en": "N.", "second_name_en": "N.",
                 "reason": "only initials given",
             }],
         )
-        self.assertEqual(people["A1"].second_name_ru, "Н.")
+        self.assertEqual(people["A1"].second_name_local, "Н.")
         self.assertEqual(people["A1"].second_name_en, "N.")
 
     def test_a_real_patronymic_survives_the_shape_guard(self):
@@ -477,12 +477,12 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Ivan Petrovich Sidorov")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Сидоров", "first_name_ru": "Иван", "second_name_ru": "Петрович",
+                "surname_local": "Сидоров", "first_name_local": "Иван", "second_name_local": "Петрович",
                 "surname_en": "Sidorov", "first_name_en": "Ivan", "second_name_en": "Petrovich",
                 "reason": "spelled out in full",
             }],
         )
-        self.assertEqual(people["A1"].second_name_ru, "Петрович")
+        self.assertEqual(people["A1"].second_name_local, "Петрович")
         self.assertEqual(people["A1"].second_name_en, "Petrovich")
 
     def test_a_broken_partial_transliteration_is_dropped(self):
@@ -492,14 +492,14 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "Małgorzata Konopka")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Конопка", "first_name_ru": "Маłgorzata", "second_name_ru": None,
+                "surname_local": "Конопка", "first_name_local": "Маłgorzata", "second_name_local": None,
                 "surname_en": "Konopka", "first_name_en": "Małgorzata", "second_name_en": None,
                 "reason": "transcribed to Russian conventionally",
             }],
         )
         row = people["A1"]
-        self.assertIsNone(row.first_name_ru)
-        self.assertIsNone(row.surname_ru)  # an invalid reply is not applied partially
+        self.assertIsNone(row.first_name_local)
+        self.assertIsNone(row.surname_local)  # an invalid reply is not applied partially
         self.assertIsNone(row.first_name_en)
         self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
 
@@ -508,19 +508,19 @@ class AuthorNamesStageTest(unittest.TestCase):
             [person("A1", "I. А. Zelinskaya")], [],
             replies=[{
                 "matched_candidate": None,
-                "surname_ru": "Зелинская", "first_name_ru": "I", "second_name_ru": "A",
+                "surname_local": "Зелинская", "first_name_local": "I", "second_name_local": "A",
                 "surname_en": "Zelinskaya", "first_name_en": "I", "second_name_en": "A",
                 "reason": "only initials given",
             }],
         )
-        self.assertEqual(people["A1"].first_name_ru, "И")
-        self.assertEqual(people["A1"].second_name_ru, "А")
+        self.assertEqual(people["A1"].first_name_local, "И")
+        self.assertEqual(people["A1"].second_name_local, "А")
 
     def test_second_run_is_a_no_op(self):
         self.run_stage(
             [person("A1", "Pavel Zhukov")], [],
-            replies=[{"matched_candidate": None, "surname_ru": "Жуков", "first_name_ru": "Павел",
-                      "second_name_ru": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
+            replies=[{"matched_candidate": None, "surname_local": "Жуков", "first_name_local": "Павел",
+                      "second_name_local": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
                       "second_name_en": None, "reason": ""}],
         )
         with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
@@ -721,7 +721,7 @@ class _ThreadedFakeClient:
             if latin in prompt:
                 return {
                     "matched_candidate": None,
-                    "surname_ru": cyrillic, "first_name_ru": "Иван",
+                    "surname_local": cyrillic, "first_name_local": "Иван",
                     "surname_en": latin, "first_name_en": "Ivan",
                     "reason": "",
                 }
@@ -751,10 +751,10 @@ class ParallelAuthorNamesTest(unittest.TestCase):
         result, rows = self.run_stage(people, concurrency=4)
 
         self.assertEqual(result["author_names"], 4)
-        self.assertEqual(rows["A1"].surname_ru, "Петров")
-        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
-        self.assertEqual(rows["A3"].surname_ru, "Смирнов")
-        self.assertEqual(rows["A4"].surname_ru, "Волков")
+        self.assertEqual(rows["A1"].surname_local, "Петров")
+        self.assertEqual(rows["A2"].surname_local, "Сидоров")
+        self.assertEqual(rows["A3"].surname_local, "Смирнов")
+        self.assertEqual(rows["A4"].surname_local, "Волков")
         self.assertGreater(len(_ThreadedFakeClient.threads), 1)
 
     def test_one_worker_is_the_same_stage(self):
@@ -762,8 +762,8 @@ class ParallelAuthorNamesTest(unittest.TestCase):
             [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov")], concurrency=1)
 
         self.assertEqual(result["author_names"], 2)
-        self.assertEqual(rows["A1"].surname_ru, "Петров")
-        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
+        self.assertEqual(rows["A1"].surname_local, "Петров")
+        self.assertEqual(rows["A2"].surname_local, "Сидоров")
         self.assertEqual(len(_ThreadedFakeClient.threads), 1)
 
 

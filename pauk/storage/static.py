@@ -43,7 +43,7 @@ class StaticStore:
                 Department(
                     id=uid,
                     name_en=name_en,
-                    name_ru=(entry.get("name_ru") or "").strip() or None,
+                    name_local=(entry.get("name_local") or "").strip() or None,
                     name_variants=entry.get("aliases") or [],
                     context_aliases=entry.get("context_aliases") or [],
                     parent_id=parent_id,
@@ -75,7 +75,7 @@ class StaticStore:
                 Organization(
                     id=uid,
                     name_en=name_en,
-                    name_ru=(entry.get("name_ru") or "").strip() or None,
+                    name_local=(entry.get("name_local") or "").strip() or None,
                     ror_id=(entry.get("ror_id") or "").strip() or None,
                     country=(entry.get("country") or "").strip() or None,
                     type=(entry.get("type") or "").strip() or None,
@@ -84,16 +84,16 @@ class StaticStore:
         return organizations
 
     @cached_property
-    def itmo_github_orgs(self) -> frozenset[str]:
-        """Logins of ITMO's GitHub organizations, lowercased.
+    def github_orgs(self) -> frozenset[str]:
+        """Logins of the university's GitHub organizations, lowercased.
 
         Only for the ones whose own profile gives nothing to recognise them by;
-        an organization that names ITMO is matched without being listed.
+        an organization that names the university is matched without being listed.
 
         A missing file means an empty list, not an error: the catalogue is an aid,
         and the rules work without it.
         """
-        path = self.root / "itmo_github_orgs.json"
+        path = self.root / "github_orgs.json"
         if not path.exists():
             return frozenset()
         payload = json.loads(path.read_text(encoding="utf-8-sig"))

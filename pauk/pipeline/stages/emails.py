@@ -23,8 +23,10 @@ import re
 import unicodedata
 from datetime import UTC, datetime
 
+from pauk.institution import Institution
 from pauk.models import Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.settings import settings
 from pauk.sources.base import HttpClient
 
 from .base import EnrichmentStage
@@ -35,7 +37,7 @@ logger = logging.getLogger(__name__)
 # "et al.2020@" and file names out; the negative lookahead stops the match
 # from eating the first letters of the next word.
 TLD = (r"(?:ru|com|org|net|edu|gov|io|info|biz|name|eu|de|fr|uk|us|cn|jp|kr"
-       r"|in|it|es|nl|se|fi|no|ch|at|cz|pl|by|kz|ua)")
+       r"|in|it|es|nl|se|fi|no|ch|at|cz|pl|by|kz|ua|br|pt|ar|cl|mx)")
 EMAIL_RE = re.compile(rf"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+?\.{TLD}(?![A-Za-z])", re.I)
 # "{first, second}@domain": several authors sharing one institutional host.
 BRACE_RE = re.compile(rf"\{{([^{{}}@]+)\}}@([A-Za-z0-9.\-]+?\.{TLD})(?![A-Za-z])", re.I)
@@ -60,23 +62,21 @@ MAX_PAGES_PER_PERSON = 3
 
 PAGE_TIMEOUT = 12
 
-# An address at the university identifies an employee better than a personal
-# one, whichever source either came from.
-INSTITUTIONAL_DOMAINS = ("@itmo.ru", "@ifmo.ru")
 
-
-def pick_email(addresses: set[str]) -> str | None:
+def pick_email(addresses: set[str], institution: Institution | None = None) -> str | None:
     """The address that best identifies an employee, among those on offer.
 
-    A university address wins outright; otherwise the shortest, which is a
-    stable choice and tends to be the plain `name@host` rather than a
-    numbered alias.
+    An address at the university (the configured one by default) identifies
+    an employee better than a personal one, whichever source either came
+    from, so it wins outright; otherwise the shortest, which is a stable
+    choice and tends to be the plain `name@host` rather than a numbered alias.
     """
+    institution = institution or settings.institution
     usable = sorted(email for email in addresses
                     if "@" in email and "noreply" not in email)
     if not usable:
         return None
-    institutional = [email for email in usable if email.endswith(INSTITUTIONAL_DOMAINS)]
+    institutional = [email for email in usable if institution.is_institutional_email(email)]
     return institutional[0] if institutional else min(usable, key=len)
 
 
@@ -172,11 +172,11 @@ class EmailsStage(EnrichmentStage):
         people = list(self.prepared.read_models("persons", Person))
         by_id = {person.id: person for person in people}
 
-        # Only ITMO authors are worth resolving, and only those with a
+        # Only member authors are worth resolving, and only those with a
         # surname long enough to be found inside a local part.
         authors_of: dict[str, list[tuple[str, set[str]]]] = {}
         for person in people:
-            if not person.is_itmo:
+            if not person.is_member:
                 continue
             surnames = author_surnames(person)
             if not surnames:
@@ -212,7 +212,7 @@ class EmailsStage(EnrichmentStage):
         # The page an author linked from ORCID, read only for those still
         # without an address: everyone else already has a better one.
         for person in people:
-            if not person.is_itmo or person.email or not person.homepage:
+            if not person.is_member or person.email or not person.homepage:
                 continue
             if not self.selected("persons", person.id):
                 continue
@@ -233,7 +233,7 @@ class EmailsStage(EnrichmentStage):
             person.emails = sorted(set(person.emails) | addresses)
             if person.email:
                 continue
-            person.email = pick_email(addresses)
+            person.email = pick_email(addresses, self.config.institution)
             if person.email:
                 filled += 1
 

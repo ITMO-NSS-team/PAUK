@@ -1,0 +1,226 @@
+[
+  {
+    "uid": "tau",
+    "name_en": "Tel Aviv University",
+    "name_local": "Tel Aviv University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04mhzgx49",
+    "type": "university"
+  },
+  {
+    "uid": "med",
+    "name_en": "Gray Faculty of Medical and Health Sciences",
+    "name_local": "Gray Faculty of Medical and Health Sciences",
+    "kind": "faculty",
+    "parent": "tau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Faculty of Medical and Health Sciences",
+      "Faculty of Medical & Health Sciences",
+      "School of Medicine",
+      "Gray Faculty of Medical and Health Sciences",
+      "Gray Faculty of Medical & Health Sciences",
+      "Gray Faculty of Medicine and Health Sciences",
+      "Gray Faculty of Medicine",
+      "Gray School of Medicine",
+      "Sackler Faculty of Medicine"
+    ]
+  },
+  {
+    "uid": "life",
+    "name_en": "George S. Wise Faculty of Life Sciences",
+    "name_local": "George S. Wise Faculty of Life Sciences",
+    "kind": "faculty",
+    "parent": "tau",
+    "aliases": [
+      "George S. Wise Faculty of Life Sciences"
+    ],
+    "context_aliases": [
+      "Faculty of Life Sciences"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "Fleischman Faculty of Engineering",
+    "name_local": "Fleischman Faculty of Engineering",
+    "kind": "faculty",
+    "parent": "tau",
+    "aliases": [
+      "Fleischman Faculty of Engineering"
+    ],
+    "context_aliases": [
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "exact",
+    "name_en": "Raymond and Beverly Sackler Faculty of Exact Sciences",
+    "name_local": "Raymond and Beverly Sackler Faculty of Exact Sciences",
+    "kind": "faculty",
+    "parent": "tau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Exact Sciences"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "Gershon H. Gordon Faculty of Social Sciences",
+    "name_local": "Gershon H. Gordon Faculty of Social Sciences",
+    "kind": "faculty",
+    "parent": "tau",
+    "aliases": [
+      "Gershon H. Gordon Faculty of Social Sciences"
+    ],
+    "context_aliases": [
+      "Faculty of Social Sciences"
+    ]
+  },
+  {
+    "uid": "coller",
+    "name_en": "Coller School of Management",
+    "name_local": "Coller School of Management",
+    "kind": "school",
+    "parent": "tau",
+    "aliases": [
+      "Coller School of Management"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sph",
+    "name_en": "School of Public Health",
+    "name_local": "School of Public Health",
+    "kind": "school",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health"
+    ]
+  },
+  {
+    "uid": "sagol",
+    "name_en": "Sagol School of Neuroscience",
+    "name_local": "Sagol School of Neuroscience",
+    "kind": "school",
+    "parent": "tau",
+    "aliases": [],
+    "context_aliases": [
+      "Sagol School of Neuroscience"
+    ]
+  },
+  {
+    "uid": "mech",
+    "name_en": "School of Mechanical Engineering",
+    "name_local": "School of Mechanical Engineering",
+    "kind": "school",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "ee",
+    "name_en": "School of Electrical Engineering",
+    "name_local": "School of Electrical Engineering",
+    "kind": "school",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "School of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "School of Physics and Astronomy",
+    "name_local": "School of Physics and Astronomy",
+    "kind": "school",
+    "parent": "exact",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physics and Astronomy"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "School of Chemistry",
+    "name_local": "School of Chemistry",
+    "kind": "school",
+    "parent": "exact",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemistry"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Blavatnik School of Computer Science and AI",
+    "name_local": "Blavatnik School of Computer Science and AI",
+    "kind": "school",
+    "parent": "exact",
+    "aliases": [
+      "Blavatnik School of Computer Science"
+    ],
+    "context_aliases": [
+      "School of Computer Science"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "School of Mathematical Sciences",
+    "name_local": "School of Mathematical Sciences",
+    "kind": "school",
+    "parent": "exact",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematical Sciences"
+    ]
+  },
+  {
+    "uid": "zoo",
+    "name_en": "School of Zoology",
+    "name_local": "School of Zoology",
+    "kind": "school",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "School of Zoology"
+    ]
+  },
+  {
+    "uid": "plant",
+    "name_en": "School of Plant Sciences and Food Security",
+    "name_local": "School of Plant Sciences and Food Security",
+    "kind": "school",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "School of Plant Sciences and Food Security"
+    ]
+  },
+  {
+    "uid": "shmunis",
+    "name_en": "Shmunis School of Biomedicine and Cancer Research",
+    "name_local": "Shmunis School of Biomedicine and Cancer Research",
+    "kind": "school",
+    "parent": "life",
+    "aliases": [],
+    "context_aliases": [
+      "Shmunis School of Biomedicine and Cancer Research"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "School of Psychological Sciences",
+    "name_local": "School of Psychological Sciences",
+    "kind": "school",
+    "parent": "soc",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychological Sciences"
+    ]
+  }
+]

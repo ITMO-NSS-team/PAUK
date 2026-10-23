@@ -3,15 +3,21 @@
 The full cycle: collect -> enrich -> graph -> web. Do the first run on a copy
 of the databases; touch production only after the copy checks out (section 7).
 
+The commands below are for ITMO. For another university set
+`PAUK_INSTITUTION` (for example `ufjf`) in every shell and `.env` the run uses,
+give it its own MongoDB database (empty `MONGO_DB` picks `pauk_ufjf`) and its
+own Neo4j, and skip the staff directory if the university has none (UFJF
+does not); see [architecture/institutions.md](architecture/institutions.md).
+
 ## Requirements
 
 - Docker and `uv` installed.
 - A clone of the repository with dependencies: `git clone <repo> pauk && cd pauk && uv sync`.
 - SSH access to `<server>`.
-- The file `data/static/russian_names.csv` (the staff directory; it contains
+- The file `data/static/itmo/russian_names.csv` (the staff directory; it contains
   personal data and is not stored in the repository). The `author_names` stage
-  needs it, and a full enrich fails without it. Put it in `data/static/` or set
-  its path in `PAUK_RUSSIAN_NAMES_FILE`.
+  needs it, and a full enrich fails without it. Put it in `data/static/itmo/` or set
+  its path in `PAUK_STAFF_CATALOG_FILE`.
 
 ## 0. Pre-flight
 
@@ -137,6 +143,8 @@ the confident pairs itself, and the LLM (`PAUK_PERSON_RESOLUTION_MODEL`)
 decides the rest. That is why the stage needs `OPENROUTER_API_KEY`; with
 `PAUK_PERSON_RESOLUTION_ENABLED=false` it runs on the old rules, without an
 LLM.
+A batch above `PAUK_PERSON_RESOLUTION_MAX_PAIRS` (20000) skips the LLM and
+leaves its pairs unmerged; see [dedup](architecture/pipeline/dedup.md).
 
 On the 2020-2026 corpus the resolver takes 5-6 hours on 32 threads and uses
 about 60% of all tokens of the run; names take an hour on 16 threads; the
@@ -157,12 +165,12 @@ uv run pauk dedup graph                         # whole graph
 `dedup graph` on the full graph takes about an hour with a filled verdict
 cache and hours with an empty one; resolver progress is in the log (`person
 resolution qwen_first: N/M`). Merges it held back and deferred pairs go to
-`data/cache/dedup_candidates_graph.jsonl`.
+`data/cache/<institution>/dedup_candidates_graph.jsonl`.
 
 ## 4. Update the web
 
 ```bash
-uv run pauk cache export                        # -> data/cache/graph_snapshot_<date>.json
+uv run pauk cache export                        # -> data/cache/<institution>/graph_snapshot_<date>.json
 uv run pauk gui build                           # -> data/gui/{public,private}/*.json
 cd pauk/gui/web && npm install && npm run dev   # locally
 ./scripts/deploy.sh                             # to the server, port 8501

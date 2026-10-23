@@ -1,0 +1,37 @@
+{
+  "key": "tue",
+  "short_name": "TU/e",
+  "short_name_local": "TU/e",
+  "name_en": "Eindhoven University of Technology",
+  "name_local": "Technische Universiteit Eindhoven",
+  "ror_id": "02c2kyt77",
+  "language": "Dutch",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "van",
+    "de",
+    "der",
+    "den",
+    "ten",
+    "ter",
+    "het",
+    "in",
+    "t"
+  ],
+  "email_domains": [
+    "tue.nl"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:EindhovenUnivTech|TU/e|TU\\ Eindhoven)(?![^\\W\\d_])",
+  "long_name": "Eindhoven[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technische[\\s‐-]+Universiteit[\\s‐-]+Eindhoven|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Eindhoven|Technische[\\s‐-]+Hogeschool[\\s‐-]+Eindhoven|Technical[\\s‐-]+University[\\s‐-]+Eindhoven|Technische[\\s‐-]+Univ\\.[\\s‐-]+Eindhoven",
+  "marker_replacement": "EindhovenUnivTech",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|brabant|building|calle|campus|den|dolech|east|eindhoven|floor|gatan|groene|holland|katu|laan|loper|nederland|netherlands|noord|north|o|p|piazza|platz|plaza|plein|po|rd|road|room|rue|south|st|str|straat|strasse|straße|street|the|tie|ul|vej|veldhoven|via|viale|vägen|weg|west|zaale",
+  "other_organisations": "Catharina|Máxima Medisch|Philips|(?<![^\\W\\d_])ASML(?![^\\W\\d_])|Fontys|Amsterdam|4TU|Máxima\\ Medisch\\ Centrum|TIAS\\ School\\ for\\ Business\\ and\\ Society",
+  "identity": "(?<![^\\W\\d_])TU/e(?![^\\W\\d_])|(?<![^\\W\\d_])TU\\ Eindhoven(?![^\\W\\d_])|Eindhoven[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Technology|Technische[\\s‐-]+Universiteit[\\s‐-]+Eindhoven|Technical[\\s‐-]+University[\\s‐-]+of[\\s‐-]+Eindhoven|Technische[\\s‐-]+Hogeschool[\\s‐-]+Eindhoven|Technical[\\s‐-]+University[\\s‐-]+Eindhoven|Technische[\\s‐-]+Univ\\.[\\s‐-]+Eindhoven",
+  "city": "Eindhoven",
+  "staff_catalog": null,
+  "mongo_db": "pauk_tue",
+  "site_url": "https://www.tue.nl",
+  "unit_words": "department|institute|laboratory|section|group|centre|center",
+  "external_authors": false
+}

@@ -1,0 +1,307 @@
+[
+  {
+    "uid": "tudresden",
+    "name_en": "Technische Universität Dresden",
+    "name_local": "Technische Universität Dresden",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/042aqky30",
+    "type": "university"
+  },
+  {
+    "uid": "fmed",
+    "name_en": "Faculty of Medicine Carl Gustav Carus",
+    "name_local": "Faculty of Medicine Carl Gustav Carus",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Medical Faculty",
+      "Faculty of Medicine Carl Gustav Carus",
+      "Medical Faculty Carl Gustav Carus",
+      "Medizinische Fakultät Carl Gustav Carus"
+    ]
+  },
+  {
+    "uid": "fpsy",
+    "name_en": "Faculty of Psychology",
+    "name_local": "Faculty of Psychology",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Psychology"
+    ]
+  },
+  {
+    "uid": "fchem",
+    "name_en": "Faculty of Chemistry and Food Chemistry",
+    "name_local": "Faculty of Chemistry and Food Chemistry",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Chemistry and Food Chemistry"
+    ]
+  },
+  {
+    "uid": "fmw",
+    "name_en": "Faculty of Mechanical Science and Engineering",
+    "name_local": "Faculty of Mechanical Science and Engineering",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mechanical Science and Engineering"
+    ]
+  },
+  {
+    "uid": "fenv",
+    "name_en": "Faculty of Environmental Sciences",
+    "name_local": "Faculty of Environmental Sciences",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "fcs",
+    "name_en": "Faculty of Computer Science",
+    "name_local": "Faculty of Computer Science",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Computer Science"
+    ]
+  },
+  {
+    "uid": "fece",
+    "name_en": "Faculty of Electrical and Computer Engineering",
+    "name_local": "Faculty of Electrical and Computer Engineering",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Electrical and Computer Engineering"
+    ]
+  },
+  {
+    "uid": "fphys",
+    "name_en": "Faculty of Physics",
+    "name_local": "Faculty of Physics",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Physics"
+    ]
+  },
+  {
+    "uid": "fmath",
+    "name_en": "Faculty of Mathematics",
+    "name_local": "Faculty of Mathematics",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Mathematics"
+    ]
+  },
+  {
+    "uid": "fbio",
+    "name_en": "Faculty of Biology",
+    "name_local": "Faculty of Biology",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Biology"
+    ]
+  },
+  {
+    "uid": "fciv",
+    "name_en": "Faculty of Civil Engineering",
+    "name_local": "Faculty of Civil Engineering",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Civil Engineering"
+    ]
+  },
+  {
+    "uid": "fbus",
+    "name_en": "Faculty of Business and Economics",
+    "name_local": "Faculty of Business and Economics",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Business and Economics"
+    ]
+  },
+  {
+    "uid": "ftrans",
+    "name_en": "Friedrich List Faculty of Transport and Traffic Sciences",
+    "name_local": "Friedrich List Faculty of Transport and Traffic Sciences",
+    "kind": "faculty",
+    "parent": "tudresden",
+    "aliases": [
+      "Friedrich List Faculty of Transport and Traffic Sciences"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ekfz",
+    "name_en": "Else Kröner Fresenius Center for Digital Health",
+    "name_local": "Else Kröner Fresenius Center for Digital Health",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Else Kröner Fresenius Center for Digital Health",
+      "Else Kroener Fresenius Center for Digital Health"
+    ]
+  },
+  {
+    "uid": "oncoray",
+    "name_en": "OncoRay National Center for Radiation Research in Oncology",
+    "name_local": "OncoRay National Center for Radiation Research in Oncology",
+    "kind": "center",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "OncoRay National Center for Radiation Research in Oncology",
+      "OncoRay"
+    ]
+  },
+  {
+    "uid": "imib",
+    "name_en": "Institute for Medical Informatics and Biometry",
+    "name_local": "Institute for Medical Informatics and Biometry",
+    "kind": "institute",
+    "parent": "fmed",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Medical Informatics and Biometry"
+    ]
+  },
+  {
+    "uid": "crtd",
+    "name_en": "Center for Regenerative Therapies Dresden",
+    "name_local": "Center for Regenerative Therapies Dresden",
+    "kind": "center",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "CRTD",
+      "Center for Regenerative Therapies Dresden"
+    ]
+  },
+  {
+    "uid": "pol",
+    "name_en": "Cluster of Excellence Physics of Life",
+    "name_local": "Cluster of Excellence Physics of Life",
+    "kind": "center",
+    "parent": "tudresden",
+    "aliases": [
+      "Cluster of Excellence Physics of Life"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "care",
+    "name_en": "Cluster of Excellence CARE",
+    "name_local": "Cluster of Excellence CARE",
+    "kind": "center",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "Cluster of Excellence CARE"
+    ]
+  },
+  {
+    "uid": "ceti",
+    "name_en": "Centre for Tactile Internet with Human-in-the-Loop",
+    "name_local": "Centre for Tactile Internet with Human-in-the-Loop",
+    "kind": "center",
+    "parent": "tudresden",
+    "aliases": [
+      "Centre for Tactile Internet with Human-in-the-Loop"
+    ],
+    "context_aliases": [
+      "CeTI"
+    ]
+  },
+  {
+    "uid": "cfaed",
+    "name_en": "Center for Advancing Electronics Dresden",
+    "name_local": "Center for Advancing Electronics Dresden",
+    "kind": "center",
+    "parent": "tudresden",
+    "aliases": [],
+    "context_aliases": [
+      "cfaed",
+      "Center for Advancing Electronics Dresden"
+    ]
+  },
+  {
+    "uid": "telekom",
+    "name_en": "Deutsche Telekom Chair of Communication Networks",
+    "name_local": "Deutsche Telekom Chair of Communication Networks",
+    "kind": "lab",
+    "parent": "fece",
+    "aliases": [],
+    "context_aliases": [
+      "Deutsche Telekom Chair of Communication Networks"
+    ]
+  },
+  {
+    "uid": "eet",
+    "name_en": "Chair for Emerging Electronic Technologies",
+    "name_local": "Chair for Emerging Electronic Technologies",
+    "kind": "lab",
+    "parent": "fece",
+    "aliases": [],
+    "context_aliases": [
+      "Chair for Emerging Electronic Technologies"
+    ]
+  },
+  {
+    "uid": "concrete",
+    "name_en": "Institute of Concrete Structures",
+    "name_local": "Institute of Concrete Structures",
+    "kind": "institute",
+    "parent": "fciv",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Concrete Structures"
+    ]
+  },
+  {
+    "uid": "constmat",
+    "name_en": "Institute of Construction Materials",
+    "name_local": "Institute of Construction Materials",
+    "kind": "institute",
+    "parent": "fciv",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Construction Materials"
+    ]
+  },
+  {
+    "uid": "natmat",
+    "name_en": "Institute of Natural Materials Technology",
+    "name_local": "Institute of Natural Materials Technology",
+    "kind": "institute",
+    "parent": "fmw",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Natural Materials Technology"
+    ]
+  }
+]

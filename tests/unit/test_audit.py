@@ -353,7 +353,7 @@ class MongoAuditSinkTest(unittest.TestCase):
             "timestamp": "2026-08-14T10:00:00+00:00", "actor": "user:petrov",
             "source": "admin-ui", "operation": "upsert_nodes",
             "entity_type": "Person", "entity_id": "A1",
-            "change_kind": "updated", "diff": {"name_ru": ("Ivanov I.", "Иванов И. И.")},
+            "change_kind": "updated", "diff": {"name_local": ("Ivanov I.", "Иванов И. И.")},
         }
         return AuditEntry(**{**fields, **overrides})
 
@@ -363,7 +363,7 @@ class MongoAuditSinkTest(unittest.TestCase):
         self.assertEqual(row["actor"], "user:petrov")
         self.assertEqual(row["entity_id"], "A1")
         # BSON has no tuple: readers get [old, new], same as from JSONL.
-        self.assertEqual(row["diff"]["name_ru"], ["Ivanov I.", "Иванов И. И."])
+        self.assertEqual(row["diff"]["name_local"], ["Ivanov I.", "Иванов И. И."])
 
     def test_nothing_is_written_for_an_empty_batch(self):
         self.sink.write([])
@@ -465,10 +465,11 @@ class SinkAssemblyTest(unittest.TestCase):
     def test_with_a_database_both_sinks_receive_the_entry(self):
         db = mongomock.MongoClient()["pauk_test"]
         with tempfile.TemporaryDirectory() as tmp:
-            sink = build_audit_sink(Settings(data_dir=Path(tmp)), db)
+            config = Settings(data_dir=Path(tmp))
+            sink = build_audit_sink(config, db)
             sink.write([MongoAuditSinkTest.entry()])
             self.assertEqual(db.audit.count_documents({}), 1)
-            written = (Path(tmp) / "audit" / "audit.jsonl")
+            written = config.audit_dir / "audit.jsonl"
             self.assertTrue(written.exists() and written.read_text(encoding="utf-8").strip())
 
 

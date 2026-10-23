@@ -151,9 +151,9 @@ def person_name_forms(people: list[Person]) -> dict[str, set[NameForm]]:
     terminal_counts: Counter[str] = Counter()
     token_counts: Counter[str] = Counter()
     for person in people:
-        surnames = tuple(value for value in (person.surname_ru, person.surname_en) if value)
+        surnames = tuple(value for value in (person.surname_local, person.surname_en) if value)
         raw = parse_name(person.name_raw, surnames)
-        given_fields = tuple(value for value in (person.first_name_ru, person.first_name_en) if value)
+        given_fields = tuple(value for value in (person.first_name_local, person.first_name_en) if value)
         # Parsed fields remain usable even if the raw display name is absent.
         for surname in surnames:
             surname_key = "".join(name_tokens(surname)).replace("-", "")
@@ -237,7 +237,7 @@ def conflicting_initials(first: Person, second: Person) -> bool:
     """
     forms = []
     for person in (first, second):
-        surnames = tuple(value for value in (person.surname_ru, person.surname_en) if value)
+        surnames = tuple(value for value in (person.surname_local, person.surname_en) if value)
         forms.append(parse_name(person.name_raw, surnames))
     comparable = [
         (a, b)

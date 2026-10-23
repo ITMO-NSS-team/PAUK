@@ -35,7 +35,7 @@ def person(person_id: str, name: str, *, orcid: str | None = None) -> Person:
     return Person(
         id=person_id,
         openalex_id=person_id,
-        is_itmo=True,
+        is_member=True,
         name_raw=name,
         orcid=orcid,
     )
@@ -640,6 +640,27 @@ class ResolverBatchingTest(unittest.TestCase):
         self.assertEqual(sorted(verdicts), [number for number, _ in items])
         self.assertEqual(sorted(seen), [number for number, _ in items])
         self.assertTrue(all(verdict.duplicate for verdict in verdicts.values()))
+
+    def test_too_many_pairs_are_not_sent_at_all(self):
+        # Korean names put 238k pairs in front of the model on POSTECH: half a
+        # day and ~$60 for answers that were mostly "review".
+        config = Settings(openrouter_api_key="test-key", person_resolution_max_pairs=5)
+        models = OpenRouterResolutionModels(config, mongomock.MongoClient()["pauk_test"], "sample")
+        items = [(number, self.evidence(number)) for number in range(6)]
+        sent = []
+
+        def invoke(request):
+            sent.append(request.pair_id)
+            return _Result(request, ModelVerdict(True, 0.9, "same"), None, None, None, None, False)
+
+        with (
+            patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False),
+            self.assertLogs("pauk.pipeline.person_resolution", "WARNING"),
+        ):
+            self.assertEqual(models.first_many(items), {})
+            self.assertEqual(len(models.first_many(items[:5])), 5)
+
+        self.assertEqual(len(sent), 5)
 
 
 if __name__ == "__main__":

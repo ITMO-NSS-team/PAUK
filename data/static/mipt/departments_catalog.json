@@ -1,0 +1,251 @@
+[
+  {
+    "uid": "mipt",
+    "name_en": "Moscow Institute of Physics and Technology (National Research University)",
+    "name_local": "Московский физико-технический институт (национальный исследовательский университет)",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00v0z9322",
+    "type": "university"
+  },
+  {
+    "uid": "fpmi",
+    "name_en": "Phystech School of Applied Mathematics and Computer Science",
+    "name_local": "Физтех-школа прикладной математики и информатики",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [
+      "Phystech School of Applied Mathematics and Informatics",
+      "Physics and Technology School of Applied Mathematics and Informatics"
+    ],
+    "context_aliases": [
+      "School of Applied Mathematics and Computer Science",
+      "School of Applied Mathematics and Informatics",
+      "ФПМИ"
+    ]
+  },
+  {
+    "uid": "fbmf",
+    "name_en": "Phystech School of Biological and Medical Physics",
+    "name_local": "Физтех-школа биологической и медицинской физики",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological and Medical Physics",
+      "Department of Biological and Medical Physics",
+      "Faculty of Biological and Medical Physics",
+      "ФБМФ"
+    ]
+  },
+  {
+    "uid": "fefm",
+    "name_en": "Phystech School of Electronics Photonics and Molecular Physics",
+    "name_local": "Физтех-школа электроники фотоники и молекулярной физики",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [
+      "Phystech School of Electronics"
+    ],
+    "context_aliases": [
+      "ФЭФМ"
+    ]
+  },
+  {
+    "uid": "fakt",
+    "name_en": "Phystech School of Aerospace Technology",
+    "name_local": "Физтех-школа аэрокосмических технологий",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "School of Aerospace Technology"
+    ]
+  },
+  {
+    "uid": "lfi",
+    "name_en": "Landau Phystech School of Physics and Research",
+    "name_local": "Физтех-школа физики и исследований им. Ландау",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [
+      "Landau School of Physics and Research"
+    ],
+    "context_aliases": [
+      "ЛФИ"
+    ]
+  },
+  {
+    "uid": "frkt",
+    "name_en": "Phystech School of Radio Engineering and Computer Technology",
+    "name_local": "Физтех-школа радиотехники и компьютерных технологий",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "School of Radio Engineering and Computer Technology",
+      "ФРКТ"
+    ]
+  },
+  {
+    "uid": "hsmm",
+    "name_en": "Higher School of Modern Mathematics",
+    "name_local": "Высшая школа современной математики",
+    "kind": "school",
+    "parent": "mipt",
+    "aliases": [
+      "Higher School of Modern Mathematics MIPT"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dept-theor-phys",
+    "name_en": "Department of Theoretical Physics",
+    "name_local": "Кафедра теоретической физики",
+    "kind": "department",
+    "parent": "lfi",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Theoretical Physics",
+      "Кафедра теоретической физики"
+    ]
+  },
+  {
+    "uid": "photonics-2d",
+    "name_en": "Center for Photonics and 2D Materials",
+    "name_local": "Центр фотоники и двумерных материалов",
+    "kind": "center",
+    "parent": "mipt",
+    "aliases": [
+      "Centre for Photonics and 2D Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-2d-optoelectronics",
+    "name_en": "Laboratory of 2D Materials for Optoelectronics",
+    "name_local": "Лаборатория двумерных материалов для оптоэлектроники",
+    "kind": "lab",
+    "parent": "photonics-2d",
+    "aliases": [
+      "Laboratory of 2D Materials for Optoelectonics"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "aging-center",
+    "name_en": "Research Center for Molecular Mechanisms of Aging and Age-Related Diseases",
+    "name_local": "Центр исследований молекулярных механизмов старения и возрастных заболеваний",
+    "kind": "center",
+    "parent": "mipt",
+    "aliases": [
+      "Research Center for Molecular Mechanisms of Aging and Age‐Related Diseases",
+      "Research Сenter for Molecular Mechanisms of Aging and Age‐Related Diseases",
+      "Research Сenter for Molecular Mechanisms of Aging and Age-Related Diseases"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "abrikosov-center",
+    "name_en": "Abrikosov Center for Theoretical Physics",
+    "name_local": "Центр теоретической физики имени А. А. Абрикосова",
+    "kind": "center",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Abrikosov Center for Theoretical Physics",
+      "Abrikosov Centre for Theoretical Physics"
+    ]
+  },
+  {
+    "uid": "future-biophysics",
+    "name_en": "Institute of Future Biophysics",
+    "name_local": "Институт будущей биофизики",
+    "kind": "institute",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Future Biophysics",
+      "Институт будущей биофизики"
+    ]
+  },
+  {
+    "uid": "lab-func-materials-nanoelectronics",
+    "name_en": "Laboratory of Functional Materials and Devices for Nanoelectronics",
+    "name_local": "Лаборатория функциональных материалов и устройств для наноэлектроники",
+    "kind": "lab",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Lab of Functional Materials and Devices for Nanoelectronics"
+    ]
+  },
+  {
+    "uid": "lab-neurobiomorphic",
+    "name_en": "Laboratory of Neurobiomorphic Technologies",
+    "name_local": "Лаборатория нейробиоморфных технологий",
+    "kind": "lab",
+    "parent": "mipt",
+    "aliases": [
+      "Laboratory of Neurobiomorphic Technology",
+      "Laboratry of Neurobiomorphic Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-artificial-quantum",
+    "name_en": "Laboratory of Artificial Quantum Systems",
+    "name_local": "Лаборатория искусственных квантовых систем",
+    "kind": "lab",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Artificial Quantum Systems"
+    ]
+  },
+  {
+    "uid": "lab-terahertz",
+    "name_en": "Laboratory of Terahertz Spectroscopy",
+    "name_local": "Лаборатория терагерцовой спектроскопии",
+    "kind": "lab",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Terahertz Spectroscopy"
+    ]
+  },
+  {
+    "uid": "cognitive-modeling",
+    "name_en": "Center for Cognitive Modeling",
+    "name_local": "Центр когнитивного моделирования",
+    "kind": "center",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Center for Cognitive Modeling",
+      "Laboratory of Cognitive Modeling and Neurorobotics"
+    ]
+  },
+  {
+    "uid": "lab-hep",
+    "name_en": "Laboratory of High Energy Physics",
+    "name_local": "Лаборатория физики высоких энергий",
+    "kind": "lab",
+    "parent": "mipt",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of High Energy Physics"
+    ]
+  },
+  {
+    "uid": "mesoscience-centre",
+    "name_en": "Advanced Mesoscience and Nanotechnology Centre",
+    "name_local": "Центр перспективных исследований мезоскопики и нанотехнологий",
+    "kind": "center",
+    "parent": "mipt",
+    "aliases": [
+      "Advanced Mesoscience and Nanotechnology Center"
+    ],
+    "context_aliases": []
+  }
+]

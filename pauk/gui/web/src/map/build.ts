@@ -57,7 +57,7 @@ export function isolatedAuthors(data: GraphData, withExternal: boolean): Set<str
   if (cached) return cached;
 
   const counted = new Set(
-    data.authors.filter((a) => withExternal || a.is_itmo !== false).map((a) => a.key),
+    data.authors.filter((a) => withExternal || a.is_member !== false).map((a) => a.key),
   );
   const withRepo = new Set(data.repo_author_edges.map((edge) => edge.t));
   const pubAuthors = new Map<string, string[]>();
@@ -86,7 +86,7 @@ export function isolatedAuthors(data: GraphData, withExternal: boolean): Set<str
 
 /** Shared by the map, the tab list and search. */
 export function isAuthorShown(data: GraphData, author: AuthorNode, filters: Filters): boolean {
-  if (author.is_itmo === false && !filters.showExternalAuthors) return false;
+  if (author.is_member === false && !filters.showExternalAuthors) return false;
   return (
     filters.showIsolatedAuthors ||
     !isolatedAuthors(data, filters.showExternalAuthors).has(author.key)

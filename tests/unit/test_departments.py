@@ -24,7 +24,7 @@ def _prepare(db, persons, publications) -> PreparedStore:
 
 
 def _run(root: Path, departments, persons, publications):
-    static = root / "static"
+    static = root / "static" / "itmo"
     static.mkdir(parents=True, exist_ok=True)
     (static / "departments.jsonl").write_text("\n".join(d.model_dump_json() for d in departments), encoding="utf-8")
     db = mongomock.MongoClient()["pauk_test"]
@@ -37,7 +37,7 @@ def _run(root: Path, departments, persons, publications):
 
 
 def _run_catalog(root: Path, catalog: list[dict], persons, publications) -> PreparedStore:
-    static = root / "static"
+    static = root / "static" / "itmo"
     static.mkdir(parents=True, exist_ok=True)
     (static / "departments_catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
     db = mongomock.MongoClient()["pauk_test"]
@@ -52,7 +52,7 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="Faculty of Physics, ITMO University"),
                 ],
@@ -74,7 +74,7 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="1Some Institute, 2School of Physics and Engineering"),
                 ],
@@ -95,7 +95,7 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="School of\nPhysics,  ITMO   University"),
                 ],
@@ -113,14 +113,14 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="Физический факультет, Университет ИТМО"),
                 ],
             )
             persons, _ = _run(
                 root,
-                [Department(id="d1", name_en="Faculty of Physics", name_ru="Физический факультет")],
+                [Department(id="d1", name_en="Faculty of Physics", name_local="Физический факультет")],
                 [person],
                 [Publication(id="W1", title="t")],
             )
@@ -131,7 +131,7 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="FBIT, ITMO University"),
                 ],
@@ -149,7 +149,7 @@ class DepartmentsStageTest(unittest.TestCase):
             people = [
                 Person(
                     id=f"P{n}",
-                    is_itmo=True,
+                    is_member=True,
                     authored=[Authorship(publication_id="W1", affiliation=affiliation)],
                 )
                 for n, affiliation in enumerate(["JSC MorFBITs, Saint Petersburg", "ITMO University; FBITs Group"])
@@ -166,7 +166,7 @@ class DepartmentsStageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="Институт ИИТ, Университет ИТМО")],
             )
             persons, _ = _run(
@@ -182,12 +182,12 @@ class DepartmentsStageTest(unittest.TestCase):
             people = [
                 Person(
                     id="P1",
-                    is_itmo=True,
+                    is_member=True,
                     authored=[Authorship(publication_id="W1", affiliation="2SCAMT Institute, ITMO University")],
                 ),
                 Person(
                     id="P2",
-                    is_itmo=True,
+                    is_member=True,
                     authored=[Authorship(publication_id="W1", affiliation="Robotics (BE2R) Lab, ITMO University")],
                 ),
             ]
@@ -207,7 +207,7 @@ class DepartmentsStageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="Megafaculty of Photonics, ITMO University")],
             )
             persons, _ = _run(
@@ -227,7 +227,7 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def _matched(self, departments: list[Department], affiliations: list[str]) -> list[list[str]]:
         people = [
-            Person(id=f"P{n}", is_itmo=True, authored=[Authorship(publication_id="W1", affiliation=affiliation)])
+            Person(id=f"P{n}", is_member=True, authored=[Authorship(publication_id="W1", affiliation=affiliation)])
             for n, affiliation in enumerate(affiliations)
         ]
         with tempfile.TemporaryDirectory() as tmp:
@@ -270,7 +270,7 @@ class DepartmentsStageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(
                         publication_id="W1",
@@ -291,7 +291,7 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="Some Foreign University, UK")],
             )
             persons, _ = _run(
@@ -314,7 +314,7 @@ class DepartmentsStageTest(unittest.TestCase):
                 {
                     "uid": "fac-sit",
                     "name_en": "Faculty of Secure Information Technologies",
-                    "name_ru": "",
+                    "name_local": "",
                     "kind": "faculty",
                     "parent": None,
                     "aliases": ["FBIT"],
@@ -322,7 +322,7 @@ class DepartmentsStageTest(unittest.TestCase):
             ]
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="FBIT, ITMO University")],
             )
             prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
@@ -342,21 +342,21 @@ class DepartmentHierarchyTest(unittest.TestCase):
                 {
                     "uid": "itmo",
                     "name_en": "ITMO University",
-                    "name_ru": "Университет ИТМО",
+                    "name_local": "Университет ИТМО",
                     "kind": "organization",
                     "parent": None,
                 },
                 {
                     "uid": "school-x",
                     "name_en": "School of X",
-                    "name_ru": "Школа X",
+                    "name_local": "Школа X",
                     "kind": "megafaculty",
                     "parent": "itmo",
                 },
                 {
                     "uid": "faculty-y",
                     "name_en": "Faculty of Y",
-                    "name_ru": "Факультет Y",
+                    "name_local": "Факультет Y",
                     "kind": "faculty",
                     "parent": "school-x",
                 },
@@ -383,28 +383,28 @@ class DepartmentHierarchyTest(unittest.TestCase):
                 {
                     "uid": "itmo",
                     "name_en": "ITMO University",
-                    "name_ru": "Университет ИТМО",
+                    "name_local": "Университет ИТМО",
                     "kind": "organization",
                     "parent": None,
                 },
                 {
                     "uid": "school-x",
                     "name_en": "School of X",
-                    "name_ru": "Школа X",
+                    "name_local": "Школа X",
                     "kind": "megafaculty",
                     "parent": "itmo",
                 },
                 {
                     "uid": "faculty-y",
                     "name_en": "Faculty of Y",
-                    "name_ru": "Факультет Y",
+                    "name_local": "Факультет Y",
                     "kind": "faculty",
                     "parent": "school-x",
                 },
                 {
                     "uid": "dept-z",
                     "name_en": "Department of Z",
-                    "name_ru": "Кафедра Z",
+                    "name_local": "Кафедра Z",
                     "kind": "department",
                     "parent": "faculty-y",
                 },
@@ -420,7 +420,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
         # A parent uid that names no entry is a catalogue typo - fail loudly rather
         # than silently orphan the unit (its PART_OF edge would just drop at load).
         with tempfile.TemporaryDirectory() as tmp:
-            static = Path(tmp) / "static"
+            static = Path(tmp) / "static" / "itmo"
             static.mkdir(parents=True)
             (static / "departments_catalog.json").write_text(
                 json.dumps(
@@ -438,7 +438,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
         # Cross the seam static.py -> extract.py: a 3-level catalogue chain must
         # yield the matching PART_OF edges (Department->Department, Department->Organization).
         with tempfile.TemporaryDirectory() as tmp:
-            static = Path(tmp) / "static"
+            static = Path(tmp) / "static" / "itmo"
             static.mkdir(parents=True)
             (static / "departments_catalog.json").write_text(
                 json.dumps(
@@ -466,7 +466,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
                 {
                     "uid": "itmo",
                     "name_en": "ITMO University",
-                    "name_ru": "Университет ИТМО",
+                    "name_local": "Университет ИТМО",
                     "kind": "organization",
                     "parent": None,
                     "ror_id": "https://ror.org/04txgxn49",
@@ -476,14 +476,14 @@ class DepartmentHierarchyTest(unittest.TestCase):
                 {
                     "uid": "faculty-y",
                     "name_en": "Faculty of Y",
-                    "name_ru": "Факультет Y",
+                    "name_local": "Факультет Y",
                     "kind": "faculty",
                     "parent": "itmo",
                 },
             ]
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="ITMO University, Saint Petersburg")],
             )
             prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
@@ -502,7 +502,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
     def _person(self, affiliation: str) -> Person:
         return Person(
             id="P1",
-            is_itmo=True,
+            is_member=True,
             authored=[Authorship(publication_id="W1", affiliation=affiliation)],
         )
 
@@ -531,7 +531,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
             self._person("Steklov Institute of Mathematics, Saint Petersburg"),
             Person(
                 id="P2",
-                is_itmo=True,
+                is_member=True,
                 authored=[Authorship(publication_id="W1", affiliation="Institute of Mathematics, ITMO University")],
             ),
         ]
@@ -564,7 +564,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
             root = Path(tmp)
             person = Person(
                 id="P1",
-                is_itmo=True,
+                is_member=True,
                 authored=[
                     Authorship(publication_id="W1", affiliation="Department of Physics, University of Oxford"),
                     Authorship(publication_id="W2", affiliation="ITMO University, Saint Petersburg"),
@@ -606,7 +606,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
                 {
                     "uid": "fac-phys",
                     "name_en": "Faculty of Physics",
-                    "name_ru": "Факультет физики",
+                    "name_local": "Факультет физики",
                     "kind": "faculty",
                     "parent": None,
                     "aliases": [],
@@ -962,14 +962,14 @@ class CoverageLogTest(unittest.TestCase):
     LOGGER = "pauk.pipeline.stages.departments"
 
     def _stage(self, root: Path, *, selection=None, prepared=None):
-        static = root / "static"
+        static = root / "static" / "itmo"
         static.mkdir(parents=True, exist_ok=True)
         (static / "departments.jsonl").write_text(
             Department(id="d1", name_en="Faculty of Physics").model_dump_json(), encoding="utf-8")
         db = mongomock.MongoClient()["pauk_test"]
         if prepared is None:
             persons = [
-                Person(id=f"P{n}", is_itmo=True,
+                Person(id=f"P{n}", is_member=True,
                        authored=[Authorship(publication_id="W1",
                                             affiliation="Faculty of Physics, ITMO University")])
                 for n in (1, 2)
@@ -984,7 +984,7 @@ class CoverageLogTest(unittest.TestCase):
             with self.assertLogs(self.LOGGER, level="INFO") as logs:
                 stage.run()
             self.assertTrue(any("Matched 1 of 1 catalogue departments" in line for line in logs.output))
-            self.assertTrue(any("Matched 2 of 2 ITMO authors to a department" in line for line in logs.output))
+            self.assertTrue(any("Matched 2 of 2 member authors to a department" in line for line in logs.output))
 
     def test_author_coverage_counts_only_itmo_persons(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -993,15 +993,15 @@ class CoverageLogTest(unittest.TestCase):
             persons = [
                 Person(
                     id="P1",
-                    is_itmo=True,
+                    is_member=True,
                     authored=[Authorship(publication_id="W1", affiliation="Faculty of Physics, ITMO University")],
                 ),
                 Person(
-                    id="P2", is_itmo=True, authored=[Authorship(publication_id="W1", affiliation="ITMO University")]
+                    id="P2", is_member=True, authored=[Authorship(publication_id="W1", affiliation="ITMO University")]
                 ),
                 Person(
                     id="P3",
-                    is_itmo=False,
+                    is_member=False,
                     authored=[Authorship(publication_id="W1", affiliation="Faculty of Physics, ITMO University")],
                 ),
             ]
@@ -1009,7 +1009,7 @@ class CoverageLogTest(unittest.TestCase):
             _, stage = self._stage(root, prepared=prepared)
             with self.assertLogs(self.LOGGER, level="INFO") as logs:
                 stage.run()
-            self.assertTrue(any("Matched 1 of 2 ITMO authors to a department" in line for line in logs.output))
+            self.assertTrue(any("Matched 1 of 2 member authors to a department" in line for line in logs.output))
 
     def test_scoped_pass_stays_quiet(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1031,7 +1031,7 @@ class CoverageLogTest(unittest.TestCase):
 class CatalogueVariantsTest(unittest.TestCase):
     """Invariants of the committed catalogue."""
 
-    CATALOGUE = Path(__file__).resolve().parents[2] / "data" / "static" / "departments_catalog.json"
+    CATALOGUE = Path(__file__).resolve().parents[2] / "data" / "static" / "itmo" / "departments_catalog.json"
 
     def setUp(self):
         self.entries = json.loads(self.CATALOGUE.read_text(encoding="utf-8-sig"))
@@ -1048,7 +1048,7 @@ class CatalogueVariantsTest(unittest.TestCase):
     def test_no_name_shared_by_two_units(self):
         owners: dict[str, set[str]] = {}
         for e in self.entries:
-            for v in [e.get("name_en"), e.get("name_ru"), *e.get("aliases", []), *e.get("context_aliases", [])]:
+            for v in [e.get("name_en"), e.get("name_local"), *e.get("aliases", []), *e.get("context_aliases", [])]:
                 if v:
                     owners.setdefault(_normalize(v), set()).add(e["uid"])
         self.assertEqual({v: u for v, u in owners.items() if len(u) > 1}, {})
@@ -1062,7 +1062,7 @@ class CatalogueVariantsTest(unittest.TestCase):
                 uid = parent.get(uid)
 
         names = {
-            e["uid"]: {_normalize(v) for v in [e.get("name_en"), e.get("name_ru"), *e.get("aliases", [])] if v}
+            e["uid"]: {_normalize(v) for v in [e.get("name_en"), e.get("name_local"), *e.get("aliases", [])] if v}
             for e in self.entries
             if e.get("kind") != "organization"
         }

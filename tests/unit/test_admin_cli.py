@@ -67,9 +67,9 @@ class RunTest(unittest.TestCase):
         self.graph.close = lambda: None
 
     def test_setting_a_field_reaches_the_graph(self):
-        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=Иванов"),
                       self.config, None)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов")
 
     def test_an_unknown_field_stops_with_a_message_not_a_traceback(self):
         # The person at the keyboard should read what went wrong.
@@ -99,13 +99,13 @@ class RunTest(unittest.TestCase):
 
         self.graph.upsert_nodes_batch = spy
         with patch("getpass.getuser", return_value="petrov"):
-            admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
+            admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=Иванов"),
                           self.config, None)
         self.assertEqual((seen["actor"], seen["source"]), ("user:petrov", "admin-cli"))
 
     def test_an_explicit_actor_wins(self):
         args = parse("--actor", "user:ivanova", "node", "set", "Person", "A1",
-                     "--set", "name_ru=Иванова")
+                     "--set", "name_local=Иванова")
         self.assertEqual(args.actor, "user:ivanova")
 
     def test_merging_asks_before_doing_something_irreversible(self):
@@ -129,19 +129,19 @@ class RunTest(unittest.TestCase):
 
     def test_an_edit_leaves_an_override_so_a_publish_cannot_undo_it(self):
         db = mongomock.MongoClient()["pauk_test"]
-        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов И. И.",
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=Иванов И. И.",
                             "--note", "сверено с приказом"), self.config, db)
         (stored,) = active_overrides(db)
-        self.assertEqual(stored["fields"], {"name_ru": "Иванов И. И."})
+        self.assertEqual(stored["fields"], {"name_local": "Иванов И. И."})
         self.assertEqual(stored["note"], "сверено с приказом")
         # What the pipeline had, for the conflict screen later.
-        self.assertEqual(stored["auto_value"], {"name_ru": None})
+        self.assertEqual(stored["auto_value"], {"name_local": None})
 
     def test_once_edits_the_graph_without_recording_a_decision(self):
         db = mongomock.MongoClient()["pauk_test"]
-        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=разово", "--once"),
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=разово", "--once"),
                       self.config, db)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "разово")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "разово")
         self.assertEqual(active_overrides(db), [])
 
     def test_deleting_leaves_a_tombstone(self):
@@ -156,11 +156,11 @@ class RunTest(unittest.TestCase):
 
     def test_overrides_can_be_reapplied_from_the_shell(self):
         db = mongomock.MongoClient()["pauk_test"]
-        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=Иванов"),
                       self.config, db)
-        self.graph.upsert_nodes_batch("Person", [("A1", {"name_ru": "Ivanov I."})])  # publish
+        self.graph.upsert_nodes_batch("Person", [("A1", {"name_local": "Ivanov I."})])  # publish
         admin_cli.run(parse("overrides", "apply"), self.config, db)
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "Иванов")
 
     def test_a_refused_edit_leaves_no_decision_behind(self):
         # Recording the decision before the write would apply it on the next
@@ -168,12 +168,12 @@ class RunTest(unittest.TestCase):
         # rejected.
         db = mongomock.MongoClient()["pauk_test"]
         stale = self.graph.nodes[("Person", "A1")]["updated_at"]
-        self.graph.upsert_nodes_batch("Person", [("A1", {"name_ru": "чужая правка"})])
+        self.graph.upsert_nodes_batch("Person", [("A1", {"name_local": "чужая правка"})])
         with self.assertRaises(SystemExit):
-            admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=моя правка",
+            admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=моя правка",
                                 "--expect-updated-at", stale), self.config, db)
         self.assertEqual(active_overrides(db), [])
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "чужая правка")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_local"], "чужая правка")
 
     def test_a_refused_deletion_leaves_no_tombstone(self):
         db = mongomock.MongoClient()["pauk_test"]
@@ -285,7 +285,7 @@ class PrintingCommandsTest(unittest.TestCase):
 
     def test_listing_shows_both_kinds_of_decision(self):
         self.graph.add("Publication", "W1", title="paper")
-        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_local=Иванов"),
                       self.config, self.db)
         admin_cli.run(parse("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1"),
                       self.config, self.db)
@@ -319,19 +319,19 @@ class DeleteSnapshotTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.graph = FakeGraph()
-        self.graph.add("Person", "A1", name_ru="Иван Петров", name_en="Ivan Petrov")
+        self.graph.add("Person", "A1", name_local="Иван Петров", name_en="Ivan Petrov")
         self.args = argparse.Namespace(label="Person", id="A1", cascade=False,
                                        once=False, note="")
 
     def test_the_decision_carries_the_fields(self):
         admin_cli._delete(self.args, self.graph, self.db, "user:roman")
         row = self.db[COLLECTION].find_one({"op": "delete"})
-        self.assertEqual(row["snapshot"], {"name_ru": "Иван Петров", "name_en": "Ivan Petrov"})
+        self.assertEqual(row["snapshot"], {"name_local": "Иван Петров", "name_en": "Ivan Petrov"})
 
     def test_the_record_can_be_restored_from_it(self):
         admin_cli._delete(self.args, self.graph, self.db, "user:roman")
         self.assertEqual(decisions.deleted_fields(self.db, "Person", "A1"),
-                         {"name_ru": "Иван Петров", "name_en": "Ivan Petrov"})
+                         {"name_local": "Иван Петров", "name_en": "Ivan Petrov"})
 
     def test_nothing_is_recorded_with_once(self):
         self.args.once = True

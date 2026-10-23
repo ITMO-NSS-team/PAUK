@@ -1,0 +1,285 @@
+[
+  {
+    "uid": "aalto",
+    "name_en": "Aalto University",
+    "name_local": "Aalto-yliopisto",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/020hwjq30",
+    "type": "university"
+  },
+  {
+    "uid": "sci",
+    "name_en": "School of Science",
+    "name_local": "School of Science",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [
+      "Aalto University School of Science"
+    ],
+    "context_aliases": [
+      "School of Science"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "School of Chemical Engineering",
+    "name_local": "School of Chemical Engineering",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemical Engineering"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [
+      "Aalto University School of Engineering"
+    ],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "elec",
+    "name_en": "School of Electrical Engineering",
+    "name_local": "School of Electrical Engineering",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [],
+    "context_aliases": [
+      "School of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "biz",
+    "name_en": "School of Business",
+    "name_local": "School of Business",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [
+      "Aalto University School of Business"
+    ],
+    "context_aliases": [
+      "School of Business"
+    ]
+  },
+  {
+    "uid": "arts",
+    "name_en": "School of Arts Design and Architecture",
+    "name_local": "School of Arts Design and Architecture",
+    "kind": "school",
+    "parent": "aalto",
+    "aliases": [],
+    "context_aliases": [
+      "School of Arts",
+      "Design and Architecture"
+    ]
+  },
+  {
+    "uid": "applphys",
+    "name_en": "Department of Applied Physics",
+    "name_local": "Department of Applied Physics",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Applied Physics"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "nbe",
+    "name_en": "Department of Neuroscience and Biomedical Engineering",
+    "name_local": "Department of Neuroscience and Biomedical Engineering",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Neuroscience and Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics and Systems Analysis",
+    "name_local": "Department of Mathematics and Systems Analysis",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics and Systems Analysis"
+    ]
+  },
+  {
+    "uid": "indeng",
+    "name_en": "Department of Industrial Engineering and Management",
+    "name_local": "Department of Industrial Engineering and Management",
+    "kind": "department",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Industrial Engineering and Management"
+    ]
+  },
+  {
+    "uid": "bio2",
+    "name_en": "Department of Bioproducts and Biosystems",
+    "name_local": "Department of Bioproducts and Biosystems",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Bioproducts and Biosystems"
+    ]
+  },
+  {
+    "uid": "cms",
+    "name_en": "Department of Chemistry and Materials Science",
+    "name_local": "Department of Chemistry and Materials Science",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Materials Science"
+    ]
+  },
+  {
+    "uid": "cme",
+    "name_en": "Department of Chemical and Metallurgical Engineering",
+    "name_local": "Department of Chemical and Metallurgical Engineering",
+    "kind": "department",
+    "parent": "chem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Metallurgical Engineering"
+    ]
+  },
+  {
+    "uid": "emech",
+    "name_en": "Department of Energy and Mechanical Engineering",
+    "name_local": "Department of Energy and Mechanical Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Energy and Mechanical Engineering",
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "built",
+    "name_en": "Department of Built Environment",
+    "name_local": "Department of Built Environment",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Built Environment"
+    ]
+  },
+  {
+    "uid": "civil",
+    "name_en": "Department of Civil Engineering",
+    "name_local": "Department of Civil Engineering",
+    "kind": "department",
+    "parent": "eng",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering",
+      "Water and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "ene",
+    "name_en": "Department of Electronics and Nanoengineering",
+    "name_local": "Department of Electronics and Nanoengineering",
+    "kind": "department",
+    "parent": "elec",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electronics and Nanoengineering"
+    ]
+  },
+  {
+    "uid": "eea",
+    "name_en": "Department of Electrical Engineering and Automation",
+    "name_local": "Department of Electrical Engineering and Automation",
+    "kind": "department",
+    "parent": "elec",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering and Automation"
+    ]
+  },
+  {
+    "uid": "comms",
+    "name_en": "Department of Information and Communications Engineering",
+    "name_local": "Department of Information and Communications Engineering",
+    "kind": "department",
+    "parent": "elec",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Information and Communications Engineering"
+    ]
+  },
+  {
+    "uid": "metsahovi",
+    "name_en": "Metsähovi Radio Observatory",
+    "name_local": "Metsähovi Radio Observatory",
+    "kind": "center",
+    "parent": "elec",
+    "aliases": [
+      "Metsähovi Radio Observatory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "design",
+    "name_en": "Department of Design",
+    "name_local": "Department of Design",
+    "kind": "department",
+    "parent": "arts",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Design"
+    ]
+  },
+  {
+    "uid": "qtf",
+    "name_en": "QTF Centre of Excellence",
+    "name_local": "QTF Centre of Excellence",
+    "kind": "center",
+    "parent": "sci",
+    "aliases": [],
+    "context_aliases": [
+      "QTF Centre of Excellence"
+    ]
+  },
+  {
+    "uid": "hiit",
+    "name_en": "Helsinki Institute for Information Technology",
+    "name_local": "Helsinki Institute for Information Technology",
+    "kind": "institute",
+    "parent": "aalto",
+    "aliases": [],
+    "context_aliases": [
+      "Helsinki Institute for Information Technology",
+      "HIIT"
+    ]
+  }
+]

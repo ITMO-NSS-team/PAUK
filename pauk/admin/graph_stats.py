@@ -14,6 +14,8 @@ import logging
 from datetime import UTC, date, datetime
 from datetime import time as _time
 
+from pauk.settings import settings
+
 from .checks import BY_ID, CHECKS, GROUP_EN
 
 logger = logging.getLogger(__name__)
@@ -46,12 +48,12 @@ def _jsonable(v):
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
-    # Not a label: the loader writes one :Person and carries ITMO membership
+    # Not a label: the loader writes one :Person and carries membership
     # as a sticky property (see checks.py).
-    ("— сотрудники ИТМО", "— ITMO staff",
-     "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"),
+    (f"— сотрудники {settings.institution.short_name_local}", f"— {settings.institution.short_name} staff",
+     "MATCH (p:Person) WHERE p.is_member RETURN count(p)"),
     ("— внешние соавторы", "— external co-authors",
-     "MATCH (p:Person) WHERE NOT coalesce(p.is_itmo, false) RETURN count(p)"),
+     "MATCH (p:Person) WHERE NOT coalesce(p.is_member, false) RETURN count(p)"),
     ("Департаменты", "Departments", "MATCH (d:Department) RETURN count(d)"),
     ("Репозитории", "Repositories", "MATCH (r:Repository) RETURN count(r)"),
     ("GitHub-профили", "GitHub profiles", "MATCH (g:GitHubProfile) RETURN count(g)"),
@@ -102,16 +104,16 @@ def status_for(n, denom, warn, fail):
     return "ok"
 
 
-#: Publications with at least one ITMO author: the only ones that reach the map.
-ON_MAP = ("MATCH (p:Publication) WHERE EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } "
+#: Publications with at least one member author: the only ones that reach the map.
+ON_MAP = ("MATCH (p:Publication) WHERE EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_member } "
           "RETURN count(p)")
 
 YEARS = """MATCH (p:Publication) WHERE p.year IS NOT NULL
            RETURN p.year AS year, count(*) AS n ORDER BY year"""
 
-TOP_DEPTS = """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person) WHERE p.is_itmo
+TOP_DEPTS = """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person) WHERE p.is_member
                WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
-               RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n"""
+               RETURN coalesce(d.name_local, d.name_en) AS name, d.name_en AS name_en, n"""
 
 #: Every query besides the checks, as a list so a test can walk it like CHECKS.
 QUERIES = [cypher for _label, _label_en, cypher in NODE_COUNTS] + [ON_MAP, YEARS, TOP_DEPTS]

@@ -1,0 +1,799 @@
+[
+  {
+    "uid": "princeton",
+    "name_en": "Princeton University",
+    "name_local": "Princeton University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00hx57361",
+    "type": "university"
+  },
+  {
+    "uid": "seas",
+    "name_en": "School of Engineering and Applied Science",
+    "name_local": "School of Engineering and Applied Science",
+    "kind": "school",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University School of Engineering and Applied Science",
+      "Princeton SEAS"
+    ],
+    "context_aliases": [
+      "School of Engineering and Applied Science",
+      "School of Engineering and Applied Sciences",
+      "SEAS"
+    ]
+  },
+  {
+    "uid": "spia",
+    "name_en": "Princeton School of Public and International Affairs",
+    "name_local": "Princeton School of Public and International Affairs",
+    "kind": "school",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton School of Public and International Affairs",
+      "Princeton University School of Public and International Affairs",
+      "Woodrow Wilson School of Public and International Affairs"
+    ],
+    "context_aliases": [
+      "School of Public and International Affairs",
+      "SPIA"
+    ]
+  },
+  {
+    "uid": "soa",
+    "name_en": "School of Architecture",
+    "name_local": "School of Architecture",
+    "kind": "school",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton School of Architecture"
+    ],
+    "context_aliases": [
+      "School of Architecture"
+    ]
+  },
+  {
+    "uid": "gradschool",
+    "name_en": "Graduate School",
+    "name_local": "Graduate School",
+    "kind": "school",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Graduate School"
+    ],
+    "context_aliases": [
+      "Graduate School"
+    ]
+  },
+  {
+    "uid": "molbio",
+    "name_en": "Department of Molecular Biology",
+    "name_local": "Department of Molecular Biology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University Department of Molecular Biology"
+    ],
+    "context_aliases": [
+      "Department of Molecular Biology",
+      "Molecular Biology Department",
+      "Dept. of Molecular Biology"
+    ]
+  },
+  {
+    "uid": "astro",
+    "name_en": "Department of Astrophysical Sciences",
+    "name_local": "Department of Astrophysical Sciences",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University Department of Astrophysical Sciences",
+      "Princeton University Observatory"
+    ],
+    "context_aliases": [
+      "Department of Astrophysical Sciences",
+      "Astrophysical Sciences",
+      "Astrophys. Sci. Dept",
+      "Dept. of Astrophysical Sciences",
+      "Department of Astrophysics"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "Department of Chemistry",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Frick Chemistry Laboratory"
+    ],
+    "context_aliases": [
+      "Department of Chemistry",
+      "Chemistry Department",
+      "Dept. of Chemistry"
+    ]
+  },
+  {
+    "uid": "merck-catalysis",
+    "name_en": "Merck Center for Catalysis at Princeton University",
+    "name_local": "Merck Center for Catalysis at Princeton University",
+    "kind": "center",
+    "parent": "chem",
+    "aliases": [
+      "Merck Center for Catalysis"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "physics",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Joseph Henry Laboratories of Physics",
+      "Joseph Henry Laboratories",
+      "Joseph Henry Laboratory",
+      "Princeton University Department of Physics"
+    ],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department",
+      "Dept. of Physics"
+    ]
+  },
+  {
+    "uid": "tqm-lab",
+    "name_en": "Laboratory for Topological Quantum Matter and Advanced Spectroscopy",
+    "name_local": "Laboratory for Topological Quantum Matter and Advanced Spectroscopy",
+    "kind": "lab",
+    "parent": "physics",
+    "aliases": [
+      "Laboratory for Topological Quantum Matter and Advanced Spectroscopy"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics",
+      "Mathematics Department",
+      "Dept. of Mathematics"
+    ]
+  },
+  {
+    "uid": "geo",
+    "name_en": "Department of Geosciences",
+    "name_local": "Department of Geosciences",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geosciences",
+      "Geosciences Department",
+      "Dept. of Geosciences"
+    ]
+  },
+  {
+    "uid": "eeb",
+    "name_en": "Department of Ecology and Evolutionary Biology",
+    "name_local": "Department of Ecology and Evolutionary Biology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ecology and Evolutionary Biology",
+      "Department of Ecology & Evolutionary Biology",
+      "Ecology and Evolutionary Biology Department",
+      "Department of Ecology and Evolutionary",
+      "Ecology and Evolutionary Biology"
+    ]
+  },
+  {
+    "uid": "psych",
+    "name_en": "Department of Psychology",
+    "name_local": "Department of Psychology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology",
+      "Psychology Department",
+      "Dept. of Psychology"
+    ]
+  },
+  {
+    "uid": "econ",
+    "name_en": "Department of Economics",
+    "name_local": "Department of Economics",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University Department of Economics"
+    ],
+    "context_aliases": [
+      "Department of Economics",
+      "Economics Department"
+    ]
+  },
+  {
+    "uid": "etc",
+    "name_en": "William S. Dietrich II Economic Theory Center",
+    "name_local": "William S. Dietrich II Economic Theory Center",
+    "kind": "center",
+    "parent": "econ",
+    "aliases": [
+      "William S. Dietrich II Economic Theory Center",
+      "Dietrich Economic Theory Center"
+    ],
+    "context_aliases": [
+      "Economic Theory Center"
+    ]
+  },
+  {
+    "uid": "soc",
+    "name_en": "Department of Sociology",
+    "name_local": "Department of Sociology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University Department of Sociology"
+    ],
+    "context_aliases": [
+      "Department of Sociology",
+      "Sociology Department"
+    ]
+  },
+  {
+    "uid": "politics",
+    "name_en": "Department of Politics",
+    "name_local": "Department of Politics",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Politics",
+      "Politics Department"
+    ]
+  },
+  {
+    "uid": "philosophy",
+    "name_en": "Department of Philosophy",
+    "name_local": "Department of Philosophy",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Philosophy"
+    ]
+  },
+  {
+    "uid": "english",
+    "name_en": "Department of English",
+    "name_local": "Department of English",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of English"
+    ]
+  },
+  {
+    "uid": "anthro",
+    "name_en": "Department of Anthropology",
+    "name_local": "Department of Anthropology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anthropology"
+    ]
+  },
+  {
+    "uid": "history",
+    "name_en": "Department of History",
+    "name_local": "Department of History",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of History"
+    ]
+  },
+  {
+    "uid": "religion",
+    "name_en": "Department of Religion",
+    "name_local": "Department of Religion",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Religion"
+    ]
+  },
+  {
+    "uid": "classics",
+    "name_en": "Department of Classics",
+    "name_local": "Department of Classics",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Classics"
+    ]
+  },
+  {
+    "uid": "art-arch",
+    "name_en": "Department of Art and Archaeology",
+    "name_local": "Department of Art and Archaeology",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Art and Archaeology"
+    ]
+  },
+  {
+    "uid": "music",
+    "name_en": "Department of Music",
+    "name_local": "Department of Music",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Music"
+    ]
+  },
+  {
+    "uid": "eas",
+    "name_en": "Department of East Asian Studies",
+    "name_local": "Department of East Asian Studies",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of East Asian Studies",
+      "East Asian Studies Department"
+    ]
+  },
+  {
+    "uid": "nes",
+    "name_en": "Department of Near Eastern Studies",
+    "name_local": "Department of Near Eastern Studies",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Near Eastern Studies"
+    ]
+  },
+  {
+    "uid": "aas",
+    "name_en": "Department of African American Studies",
+    "name_local": "Department of African American Studies",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of African American Studies"
+    ]
+  },
+  {
+    "uid": "complit",
+    "name_en": "Department of Comparative Literature",
+    "name_local": "Department of Comparative Literature",
+    "kind": "department",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Comparative Literature"
+    ]
+  },
+  {
+    "uid": "cbe",
+    "name_en": "Department of Chemical and Biological Engineering",
+    "name_local": "Department of Chemical and Biological Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biological Engineering",
+      "Department of Chemical & Biological Engineering",
+      "Chemical and Biological Engineering"
+    ]
+  },
+  {
+    "uid": "cee",
+    "name_en": "Department of Civil and Environmental Engineering",
+    "name_local": "Department of Civil and Environmental Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil and Environmental Engineering",
+      "Department of Civil & Environmental Engineering",
+      "Dept. of Civil and Environmental Engineering",
+      "Civil and Environmental Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [
+      "Princeton University Department of Computer Science"
+    ],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Computer Science Department",
+      "Dept. of Computer Science",
+      "Computer Science"
+    ]
+  },
+  {
+    "uid": "ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "Department of Electrical and Computer Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering",
+      "Electrical and Computer Engineering",
+      "Electrical & Computer Engineering",
+      "Department of Electrical Engineering",
+      "ECE Dept"
+    ]
+  },
+  {
+    "uid": "mae",
+    "name_en": "Department of Mechanical and Aerospace Engineering",
+    "name_local": "Department of Mechanical and Aerospace Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical and Aerospace Engineering",
+      "Department of Mechanical & Aerospace Engineering",
+      "Mechanical and Aerospace Engineering"
+    ]
+  },
+  {
+    "uid": "orfe",
+    "name_en": "Department of Operations Research and Financial Engineering",
+    "name_local": "Department of Operations Research and Financial Engineering",
+    "kind": "department",
+    "parent": "seas",
+    "aliases": [
+      "Department of Operations Research and Financial Engineering"
+    ],
+    "context_aliases": [
+      "Operations Research and Financial Engineering",
+      "ORFE Department",
+      "ORFE"
+    ]
+  },
+  {
+    "uid": "andlinger",
+    "name_en": "Andlinger Center for Energy and the Environment",
+    "name_local": "Andlinger Center for Energy and the Environment",
+    "kind": "center",
+    "parent": "seas",
+    "aliases": [
+      "Andlinger Center for Energy and the Environment",
+      "Andlinger Center"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "odbi",
+    "name_en": "Omenn-Darling Bioengineering Institute",
+    "name_local": "Omenn-Darling Bioengineering Institute",
+    "kind": "institute",
+    "parent": "seas",
+    "aliases": [],
+    "context_aliases": [
+      "Omenn-Darling Bioengineering Institute",
+      "Omenn Darling Bioengineering Institute"
+    ]
+  },
+  {
+    "uid": "pmi",
+    "name_en": "Princeton Materials Institute",
+    "name_local": "Princeton Materials Institute",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Materials Institute",
+      "Princeton Institute for the Science and Technology of Materials"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "citp",
+    "name_en": "Center for Information Technology Policy",
+    "name_local": "Center for Information Technology Policy",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton University Center for Information Technology Policy"
+    ],
+    "context_aliases": [
+      "Center for Information Technology Policy",
+      "CITP"
+    ]
+  },
+  {
+    "uid": "pli",
+    "name_en": "Princeton Language and Intelligence",
+    "name_local": "Princeton Language and Intelligence",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Language and Intelligence"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "pni",
+    "name_en": "Princeton Neuroscience Institute",
+    "name_local": "Princeton Neuroscience Institute",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Neuroscience Institute",
+      "Princeton Neuroscience Institute"
+    ]
+  },
+  {
+    "uid": "lsi",
+    "name_en": "Lewis-Sigler Institute for Integrative Genomics",
+    "name_local": "Lewis-Sigler Institute for Integrative Genomics",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [
+      "Carl Icahn Laboratory"
+    ],
+    "context_aliases": [
+      "Lewis-Sigler Institute for Integrative Genomics",
+      "Lewis Sigler Institute for Integrative Genomics",
+      "Lewis-Sigler Institute"
+    ]
+  },
+  {
+    "uid": "qcb",
+    "name_en": "Quantitative and Computational Biology Program",
+    "name_local": "Quantitative and Computational Biology Program",
+    "kind": "program",
+    "parent": "lsi",
+    "aliases": [],
+    "context_aliases": [
+      "Quantitative and Computational Biology Program",
+      "Program in Quantitative and Computational Biology"
+    ]
+  },
+  {
+    "uid": "hmei",
+    "name_en": "High Meadows Environmental Institute",
+    "name_local": "High Meadows Environmental Institute",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Environmental Institute"
+    ],
+    "context_aliases": [
+      "HMEI",
+      "High Meadows Environmental Institute"
+    ]
+  },
+  {
+    "uid": "aos",
+    "name_en": "Program in Atmospheric and Oceanic Sciences",
+    "name_local": "Program in Atmospheric and Oceanic Sciences",
+    "kind": "program",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Program in Atmospheric and Oceanic Sciences",
+      "Atmospheric and Oceanic Sciences Program",
+      "Atmospheric and Oceanic Sciences",
+      "Atmospheric & Oceanic Sciences",
+      "Atmosphere and Ocean Sciences Program",
+      "Atmosphere and Ocean Sciences"
+    ]
+  },
+  {
+    "uid": "cimes",
+    "name_en": "Cooperative Institute for Modeling the Earth System",
+    "name_local": "Cooperative Institute for Modeling the Earth System",
+    "kind": "institute",
+    "parent": "aos",
+    "aliases": [
+      "Cooperative Institute for Modeling the Earth System"
+    ],
+    "context_aliases": [
+      "CIMES"
+    ]
+  },
+  {
+    "uid": "pacm",
+    "name_en": "Program in Applied and Computational Mathematics",
+    "name_local": "Program in Applied and Computational Mathematics",
+    "kind": "program",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Program in Applied and Computational Mathematics",
+      "Applied and Computational Mathematics"
+    ]
+  },
+  {
+    "uid": "pcts",
+    "name_en": "Princeton Center for Theoretical Science",
+    "name_local": "Princeton Center for Theoretical Science",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Princeton Center for Theoretical Science"
+    ]
+  },
+  {
+    "uid": "pgi",
+    "name_en": "Princeton Gravity Initiative",
+    "name_local": "Princeton Gravity Initiative",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Gravity Initiative"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "pqi",
+    "name_en": "Princeton Quantum Initiative",
+    "name_local": "Princeton Quantum Initiative",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Quantum Initiative"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "pph",
+    "name_en": "Princeton Precision Health",
+    "name_local": "Princeton Precision Health",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Precision Health Initiative"
+    ],
+    "context_aliases": [
+      "Princeton Precision Health"
+    ]
+  },
+  {
+    "uid": "cpbf",
+    "name_en": "Center for the Physics of Biological Function",
+    "name_local": "Center for the Physics of Biological Function",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [],
+    "context_aliases": [
+      "Center for the Physics of Biological Function"
+    ]
+  },
+  {
+    "uid": "cpree",
+    "name_en": "Center for Policy Research on Energy and the Environment",
+    "name_local": "Center for Policy Research on Energy and the Environment",
+    "kind": "center",
+    "parent": "spia",
+    "aliases": [
+      "Center for Policy Research on Energy and the Environment"
+    ],
+    "context_aliases": [
+      "C-PREE"
+    ]
+  },
+  {
+    "uid": "opr",
+    "name_en": "Office of Population Research",
+    "name_local": "Office of Population Research",
+    "kind": "center",
+    "parent": "spia",
+    "aliases": [
+      "Princeton University. Office of Population Research"
+    ],
+    "context_aliases": [
+      "Office of Population Research"
+    ]
+  },
+  {
+    "uid": "crcw",
+    "name_en": "Center for Research on Child and Family Wellbeing",
+    "name_local": "Center for Research on Child and Family Wellbeing",
+    "kind": "center",
+    "parent": "spia",
+    "aliases": [
+      "Center for Research on Child and Family Wellbeing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "piirs",
+    "name_en": "Princeton Institute for International and Regional Studies",
+    "name_local": "Princeton Institute for International and Regional Studies",
+    "kind": "institute",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Institute for International and Regional Studies",
+      "Princeton Institute of International and Regional Studies"
+    ],
+    "context_aliases": [
+      "PIIRS"
+    ]
+  },
+  {
+    "uid": "plas",
+    "name_en": "Program in Latin American Studies",
+    "name_local": "Program in Latin American Studies",
+    "kind": "program",
+    "parent": "piirs",
+    "aliases": [],
+    "context_aliases": [
+      "Program in Latin American Studies"
+    ]
+  },
+  {
+    "uid": "china-center",
+    "name_en": "Paul and Marcia Wythes Center on Contemporary China",
+    "name_local": "Paul and Marcia Wythes Center on Contemporary China",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Paul and Marcia Wythes Center on Contemporary China",
+      "Paul and Marcia Center on Contemporary China"
+    ],
+    "context_aliases": [
+      "Center on Contemporary China"
+    ]
+  },
+  {
+    "uid": "cdh",
+    "name_en": "Center for Digital Humanities",
+    "name_local": "Center for Digital Humanities",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Center for Digital Humanities"
+    ],
+    "context_aliases": [
+      "Center for Digital Humanities"
+    ]
+  },
+  {
+    "uid": "research-computing",
+    "name_en": "Princeton Research Computing",
+    "name_local": "Princeton Research Computing",
+    "kind": "center",
+    "parent": "princeton",
+    "aliases": [
+      "Princeton Research Computing"
+    ],
+    "context_aliases": [
+      "Research Computing",
+      "Research Software Engineering"
+    ]
+  }
+]

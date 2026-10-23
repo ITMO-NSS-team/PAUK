@@ -1,0 +1,635 @@
+[
+  {
+    "uid": "urfu",
+    "name_en": "Ural Federal University named after the first President of Russia B. N. Yeltsin",
+    "name_local": "Уральский федеральный университет имени первого Президента России Б. Н. Ельцина",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00hs7dr46",
+    "type": "university"
+  },
+  {
+    "uid": "insm",
+    "name_en": "Institute of Natural Sciences and Mathematics",
+    "name_local": "Институт естественных наук и математики",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Natural Sciences and Mathematics",
+      "Institute of Natural Science and Mathematics",
+      "School of Natural Sciences and Mathematics",
+      "Институт естественных наук и математики",
+      "ИЕНиМ"
+    ]
+  },
+  {
+    "uid": "ipt",
+    "name_en": "Institute of Physics and Technology",
+    "name_local": "Физико-технологический институт",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Physics and Technology",
+      "Физико-технологический институт",
+      "ФТИ"
+    ]
+  },
+  {
+    "uid": "ichem",
+    "name_en": "Institute of Chemical Engineering",
+    "name_local": "Химико-технологический институт",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Chemical Engineering",
+      "Institute of Chemical Technology",
+      "Chemical Technology Institute",
+      "Chemical Engineering Institute",
+      "Химико-технологический институт",
+      "ХТИ"
+    ]
+  },
+  {
+    "uid": "inmt",
+    "name_en": "Institute of New Materials and Technologies",
+    "name_local": "Институт новых материалов и технологий",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of New Materials and Technologies",
+      "Институт новых материалов и технологий",
+      "ИНМТ"
+    ]
+  },
+  {
+    "uid": "isa",
+    "name_en": "Institute of Civil Engineering and Architecture",
+    "name_local": "Институт строительства и архитектуры",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Civil Engineering and Architecture",
+      "Институт строительства и архитектуры"
+    ]
+  },
+  {
+    "uid": "uralenin",
+    "name_en": "Ural Power Engineering Institute",
+    "name_local": "Уральский энергетический институт",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [
+      "Ural Power Engineering Institute",
+      "Уральский энергетический институт",
+      "УралЭНИН",
+      "UralENIN"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "irit-rtf",
+    "name_en": "Institute of Radioelectronics and Information Technologies - RTF",
+    "name_local": "Институт радиоэлектроники и информационных технологий - РтФ",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [
+      "IRIT-RTF",
+      "ИРИТ-РтФ"
+    ],
+    "context_aliases": [
+      "Institute of Radioelectronics and Information Technologies",
+      "Institute of Radioelectronics and Informational Technologies",
+      "Институт радиоэлектроники и информационных технологий"
+    ]
+  },
+  {
+    "uid": "esittcs",
+    "name_en": "Engineering School of Information Technologies Telecommunications and Control Systems",
+    "name_local": "Инженерная школа информационных технологий телекоммуникаций и систем управления",
+    "kind": "school",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Engineering School of Information Technologies Telecommunications and Control Systems",
+      "Engineering School of Information Technologies",
+      "Инженерная школа информационных технологий телекоммуникаций и систем управления"
+    ]
+  },
+  {
+    "uid": "gsem",
+    "name_en": "Graduate School of Economics and Management",
+    "name_local": "Высшая школа экономики и менеджмента",
+    "kind": "school",
+    "parent": "urfu",
+    "aliases": [
+      "GSEM UrFU",
+      "ВШЭМ УрФУ"
+    ],
+    "context_aliases": [
+      "Graduate School of Economics and Management",
+      "School of Economics and Management",
+      "Institute of Economics and Management",
+      "Высшая школа экономики и менеджмента",
+      "GSEM",
+      "ВШЭМ"
+    ]
+  },
+  {
+    "uid": "spae",
+    "name_en": "School of Public Administration and Entrepreneurship",
+    "name_local": "Школа государственного управления и предпринимательства",
+    "kind": "school",
+    "parent": "gsem",
+    "aliases": [
+      "School of Public Administration and Entrepreneurship"
+    ],
+    "context_aliases": [
+      "Школа государственного управления и предпринимательства"
+    ]
+  },
+  {
+    "uid": "dep-regecon",
+    "name_en": "Department of Regional Economics",
+    "name_local": "Кафедра региональной экономики",
+    "kind": "department",
+    "parent": "gsem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Regional Economics",
+      "Кафедра региональной экономики"
+    ]
+  },
+  {
+    "uid": "dep-enveco",
+    "name_en": "Department of Environmental Economics",
+    "name_local": "Кафедра экономики природопользования",
+    "kind": "department",
+    "parent": "gsem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Environmental Economics",
+      "Кафедра экономики природопользования"
+    ]
+  },
+  {
+    "uid": "dep-emcre",
+    "name_en": "Department of Economics and Management of Construction and Real Estate Market",
+    "name_local": "Кафедра экономики и управления строительством и рынком недвижимости",
+    "kind": "department",
+    "parent": "gsem",
+    "aliases": [
+      "Department of Economics and Management of Construction and Real Estate Market"
+    ],
+    "context_aliases": [
+      "Кафедра экономики и управления строительством и рынком недвижимости"
+    ]
+  },
+  {
+    "uid": "urih",
+    "name_en": "Ural Institute of Humanities",
+    "name_local": "Уральский гуманитарный институт",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [
+      "Ural Institute of Humanities",
+      "Уральский гуманитарный институт",
+      "UrIH UrFU"
+    ],
+    "context_aliases": [
+      "Institution of Humanities",
+      "UrIH",
+      "УГИ"
+    ]
+  },
+  {
+    "uid": "ipesyp",
+    "name_en": "Institute of Physical Education Sports and Youth Policy",
+    "name_local": "Институт физической культуры спорта и молодежной политики",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Physical Education Sports and Youth Policy",
+      "Institute of Physical Education",
+      "Институт физической культуры спорта и молодежной политики"
+    ]
+  },
+  {
+    "uid": "info",
+    "name_en": "Institute of Fundamental Education",
+    "name_local": "Институт фундаментального образования",
+    "kind": "institute",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Fundamental Education",
+      "Институт фундаментального образования"
+    ]
+  },
+  {
+    "uid": "dep-nre",
+    "name_en": "Department of Nuclear and Renewable Energy Sources",
+    "name_local": "Кафедра атомных станций и возобновляемых источников энергии",
+    "kind": "department",
+    "parent": "uralenin",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Nuclear and Renewable Energy Sources",
+      "Department of Nuclear and Renewable Energy",
+      "Кафедра атомных станций и возобновляемых источников энергии"
+    ]
+  },
+  {
+    "uid": "dep-aes",
+    "name_en": "Department of Automated Electrical Systems",
+    "name_local": "Кафедра автоматизированных электрических систем",
+    "kind": "department",
+    "parent": "uralenin",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Automated Electrical Systems",
+      "Кафедра автоматизированных электрических систем"
+    ]
+  },
+  {
+    "uid": "dep-te",
+    "name_en": "Turbines and Engines Department",
+    "name_local": "Кафедра турбин и двигателей",
+    "kind": "department",
+    "parent": "uralenin",
+    "aliases": [],
+    "context_aliases": [
+      "Turbines and Engines Department",
+      "Department of Turbines and Engines",
+      "Кафедра турбин и двигателей"
+    ]
+  },
+  {
+    "uid": "dep-ee",
+    "name_en": "Department of Electrical Engineering",
+    "name_local": "Кафедра электротехники",
+    "kind": "department",
+    "parent": "uralenin",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Engineering",
+      "Кафедра электротехники"
+    ]
+  },
+  {
+    "uid": "dep-obc",
+    "name_en": "Department of Organic and Biomolecular Chemistry",
+    "name_local": "Кафедра органической и биомолекулярной химии",
+    "kind": "department",
+    "parent": "ichem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Organic and Biomolecular Chemistry",
+      "Department of Organic & Biomolecular Chemistry",
+      "Organic and Biomolecular Chemistry Department",
+      "Кафедра органической и биомолекулярной химии"
+    ]
+  },
+  {
+    "uid": "dep-tos",
+    "name_en": "Department of Technology for Organic Synthesis",
+    "name_local": "Кафедра технологии органического синтеза",
+    "kind": "department",
+    "parent": "ichem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Technology for Organic Synthesis",
+      "Department of Technologies for Organic Synthesis",
+      "TOS Department",
+      "Кафедра технологии органического синтеза"
+    ]
+  },
+  {
+    "uid": "dep-immchem",
+    "name_en": "Department of Immunochemistry",
+    "name_local": "Кафедра иммунохимии",
+    "kind": "department",
+    "parent": "ichem",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Immunochemistry",
+      "Кафедра иммунохимии"
+    ]
+  },
+  {
+    "uid": "eicpt",
+    "name_en": "Scientific Educational and Innovation Center of Chemical and Pharmaceutical Technologies",
+    "name_local": "Научно-образовательный и инновационный центр химико-фармацевтических технологий",
+    "kind": "center",
+    "parent": "ichem",
+    "aliases": [
+      "Educational and Innovation Center of Chemical and Pharmaceutical Technologies",
+      "Educational and Innovative Center of Chemical and Pharmaceutical Technologies"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dep-tmp",
+    "name_en": "Department of Theoretical and Mathematical Physics",
+    "name_local": "Кафедра теоретической и математической физики",
+    "kind": "department",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Theoretical and Mathematical Physics",
+      "Кафедра теоретической и математической физики"
+    ]
+  },
+  {
+    "uid": "dep-ebb",
+    "name_en": "Department of Experimental Biology and Biotechnology",
+    "name_local": "Кафедра экспериментальной биологии и биотехнологий",
+    "kind": "department",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Experimental Biology and Biotechnology",
+      "Кафедра экспериментальной биологии и биотехнологий"
+    ]
+  },
+  {
+    "uid": "dep-cmcs",
+    "name_en": "Department of Computational Mathematics and Computer Science",
+    "name_local": "Кафедра вычислительной математики и компьютерных наук",
+    "kind": "department",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computational Mathematics and Computer Science",
+      "Кафедра вычислительной математики и компьютерных наук"
+    ]
+  },
+  {
+    "uid": "dep-pic",
+    "name_en": "Department of Physical and Inorganic Chemistry",
+    "name_local": "Кафедра физической и неорганической химии",
+    "kind": "department",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physical and Inorganic Chemistry",
+      "Кафедра физической и неорганической химии"
+    ]
+  },
+  {
+    "uid": "lab-msmm",
+    "name_en": "Laboratory of Multi-Scale Mathematical Modeling",
+    "name_local": "Лаборатория многомасштабного математического моделирования",
+    "kind": "lab",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Multi-Scale Mathematical Modeling",
+      "Laboratory of Multiscale Mathematical Modeling",
+      "Лаборатория многомасштабного математического моделирования"
+    ]
+  },
+  {
+    "uid": "lab-mpbm",
+    "name_en": "Laboratory of Multiphase Physical and Biological Media Modeling",
+    "name_local": "Лаборатория моделирования многофазных физических и биологических сред",
+    "kind": "lab",
+    "parent": "insm",
+    "aliases": [
+      "Laboratory of Multiphase Physical and Biological Media Modeling",
+      "Laboratory of Multiphase Physical and Biological Media Modelling"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-mmpcp",
+    "name_en": "Laboratory of Mathematical Modeling of Physical and Chemical Processes in Multiphase Media",
+    "name_local": "Лаборатория математического моделирования физико-химических процессов в многофазных средах",
+    "kind": "lab",
+    "parent": "insm",
+    "aliases": [
+      "Laboratory of Mathematical Modeling of Physical and Chemical Processes in Multiphase Media"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "lab-astro",
+    "name_en": "Research Laboratory for Astrochemistry",
+    "name_local": "Лаборатория астрохимических исследований",
+    "kind": "lab",
+    "parent": "insm",
+    "aliases": [],
+    "context_aliases": [
+      "Research Laboratory for Astrochemistry",
+      "Laboratory of Astrochemical Research",
+      "Лаборатория астрохимических исследований"
+    ]
+  },
+  {
+    "uid": "dep-rmn",
+    "name_en": "Department of Rare Metals and Nanomaterials",
+    "name_local": "Кафедра редких металлов и наноматериалов",
+    "kind": "department",
+    "parent": "ipt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Rare Metals and Nanomaterials",
+      "Кафедра редких металлов и наноматериалов"
+    ]
+  },
+  {
+    "uid": "dep-tpam",
+    "name_en": "Department of Theoretical Physics and Applied Mathematics",
+    "name_local": "Кафедра теоретической физики и прикладной математики",
+    "kind": "department",
+    "parent": "ipt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Theoretical Physics and Applied Mathematics",
+      "Theoretical Physics and Applied Mathematics Department",
+      "Кафедра теоретической физики и прикладной математики"
+    ]
+  },
+  {
+    "uid": "dep-techphys",
+    "name_en": "Technical Physics Department",
+    "name_local": "Кафедра технической физики",
+    "kind": "department",
+    "parent": "ipt",
+    "aliases": [],
+    "context_aliases": [
+      "Technical Physics Department",
+      "Department of Technical Physics",
+      "Кафедра технической физики"
+    ]
+  },
+  {
+    "uid": "nanotech",
+    "name_en": "NANOTECH Center",
+    "name_local": "Центр НАНОТЕХ",
+    "kind": "center",
+    "parent": "ipt",
+    "aliases": [],
+    "context_aliases": [
+      "NANOTECH Center",
+      "NANOTECH Centre",
+      "Центр НАНОТЕХ"
+    ]
+  },
+  {
+    "uid": "lab-h2",
+    "name_en": "Hydrogen Energy Laboratory",
+    "name_local": "Лаборатория водородной энергетики",
+    "kind": "lab",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Hydrogen Energy Laboratory",
+      "Laboratory of Hydrogen Energy",
+      "Лаборатория водородной энергетики"
+    ]
+  },
+  {
+    "uid": "lab-sope",
+    "name_en": "Laboratory of Electrochemical Devices Based on Solid Oxide Proton Electrolytes",
+    "name_local": "Лаборатория электрохимических устройств на твердооксидных протонных электролитах",
+    "kind": "lab",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Electrochemical Devices Based on Solid Oxide Proton Electrolytes",
+      "Лаборатория электрохимических устройств на твердооксидных протонных электролитах"
+    ]
+  },
+  {
+    "uid": "dep-nfm",
+    "name_en": "Department of Non-Ferrous Metals Metallurgy",
+    "name_local": "Кафедра металлургии цветных металлов",
+    "kind": "department",
+    "parent": "inmt",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Non-Ferrous Metals Metallurgy",
+      "Department of Metallurgy of Non-Ferrous Metals",
+      "Кафедра металлургии цветных металлов"
+    ]
+  },
+  {
+    "uid": "dep-mf",
+    "name_en": "Metal Forming Department",
+    "name_local": "Кафедра обработки металлов давлением",
+    "kind": "department",
+    "parent": "inmt",
+    "aliases": [
+      "Metal Forming Department of the Ural Federal University"
+    ],
+    "context_aliases": [
+      "Metal Forming Department",
+      "Department of Metal Forming",
+      "Кафедра обработки металлов давлением"
+    ]
+  },
+  {
+    "uid": "lab-atnfm",
+    "name_en": "Laboratory of Advanced Technologies in Non-Ferrous and Ferrous Metals Raw Materials Processing",
+    "name_local": "Лаборатория перспективных технологий комплексной переработки минерального и техногенного сырья цветных и черных металлов",
+    "kind": "lab",
+    "parent": "inmt",
+    "aliases": [
+      "Laboratory of Advanced Technologies in Non-Ferrous and Ferrous Metals Raw Materials Processing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "dep-bssm",
+    "name_en": "Department of Building Structures and Soil Mechanics",
+    "name_local": "Кафедра строительных конструкций и механики грунтов",
+    "kind": "department",
+    "parent": "isa",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Building Structures and Soil Mechanics",
+      "Department “Building Structures and Soil Mechanics”",
+      "Кафедра строительных конструкций и механики грунтов"
+    ]
+  },
+  {
+    "uid": "dep-icre",
+    "name_en": "Department of Industrial and Civil Engineering and Real Estate Expertise",
+    "name_local": "Кафедра промышленного и гражданского строительства и экспертизы недвижимости",
+    "kind": "department",
+    "parent": "isa",
+    "aliases": [],
+    "context_aliases": [
+      "Civil Engineering and Real Estate Expertise",
+      "Department of Industrial and Civil Engineering and Real Estate Expertise"
+    ]
+  },
+  {
+    "uid": "dep-rt",
+    "name_en": "Department of Radioelectronics and Telecommunications",
+    "name_local": "Кафедра радиоэлектроники и телекоммуникаций",
+    "kind": "department",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Radioelectronics and Telecommunications",
+      "Department of Radio Electronics and Telecommunications",
+      "Кафедра радиоэлектроники и телекоммуникаций"
+    ]
+  },
+  {
+    "uid": "dep-bdva",
+    "name_en": "Department of Big Data Analytics and Video Analysis Methods",
+    "name_local": "Кафедра аналитики больших данных и методов видеоанализа",
+    "kind": "department",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Big Data Analytics and Video Analysis Methods",
+      "Department of Big Data Analytics and Methods of Videoanalysis",
+      "Department “Big data analytics and video analysis methods”",
+      "Кафедра аналитики больших данных и методов видеоанализа"
+    ]
+  },
+  {
+    "uid": "dep-iit",
+    "name_en": "Department of Intelligent Information Technologies",
+    "name_local": "Кафедра интеллектуальных информационных технологий",
+    "kind": "department",
+    "parent": "urfu",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Intelligent Information Technologies",
+      "Кафедра интеллектуальных информационных технологий"
+    ]
+  },
+  {
+    "uid": "dep-psych",
+    "name_en": "Department of Psychology",
+    "name_local": "Департамент психологии",
+    "kind": "department",
+    "parent": "urih",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology",
+      "Департамент психологии"
+    ]
+  },
+  {
+    "uid": "lab-brain",
+    "name_en": "Laboratory for Brain and Neurocognitive Development",
+    "name_local": "Лаборатория мозга и нейрокогнитивного развития",
+    "kind": "lab",
+    "parent": "urih",
+    "aliases": [
+      "Laboratory for Brain and Neurocognitive Development"
+    ],
+    "context_aliases": []
+  }
+]

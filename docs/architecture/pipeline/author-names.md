@@ -1,4 +1,4 @@
-# `author_names`: Russian and English name parts
+# `author_names`: local-language and English name parts
 
 **What this covers:** the LLM response contract, guards, retries and the repair
 of invalid names from earlier runs.
@@ -6,17 +6,52 @@ of invalid names from earlier runs.
 **Files involved:** `pauk/pipeline/stages/author_names.py`,
 `pauk/sources/llm.py`, `scripts/plan_author_names_repair.py`.
 
-The stage handles both ITMO staff and external coauthors. The staff catalog
+The stage handles both member staff and external coauthors. The staff catalog
 provides candidates and the academic degree, and the LLM splits `name_raw` and
 the name variants into surname, first name and, when known, second name
-(patronymic), in two languages.
+(patronymic), in two languages: the university's own (`*_local`) and English.
+What follows describes ITMO, where the local language is Russian; UFJF's
+differences are in the next section.
+
+## A Latin-script profile without patronymics (UFJF)
+
+The profile (`Institution.local_script`, `has_patronymic`, `staff_catalog`,
+[../institutions.md](../institutions.md)) changes four things:
+
+- **No staff catalog.** UFJF has none, so the stage runs without the file and
+  `matched_candidate` stays null. `PAUK_STAFF_CATALOG_FILE` can still point at
+  one.
+- **Its own prompt** (`LATIN_NAME_SPLIT_PROMPT`): the split Brazilian citation
+  (ABNT) uses. The surname is the last family name, joined with a generational
+  suffix ("Souza Filho"); everything before it, particles included, is the
+  first name: "Felipe de Paula Alves Benedicto" is "Benedicto" / "Felipe de
+  Paula Alves", which is how papers cite the person and how the map labels
+  them ("Benedicto F."). Diacritics are kept when a source spelling has them
+  and never added. Checked on 25 real UFJF names with
+  `anthropic/claude-haiku-4.5`: all 25 passed the contract.
+- **No patronymic.** Any `second_name_*` the model returns is a given name in
+  the wrong slot and is folded into `first_name_*` before anything else runs
+  ("Marcio E. C. Rodrigues" is "Rodrigues" / "Marcio E C").
+- **Particles stay with the given names.** A surname the model starts with
+  "da", "de", "do", "das" or "dos" (`Institution.surname_particles`) gets the
+  particle moved to the end of the first name: "de Oliveira" / "Luiz Fernando
+  Cappa" becomes "Oliveira" / "Luiz Fernando Cappa de". On 923 real names one
+  reply in twenty did this despite the prompt, and the same family name ended
+  up spelled two ways.
+- **No `matched_candidate`.** The prompt neither offers candidates nor asks for
+  the field, and whatever the model puts there anyway is ignored: rejecting it
+  cost a retry on 40% of the first real run.
+- **Latin script.** The `*_local` fields must be Latin letters (diacritics
+  count as Latin); there is no transliteration guard, and a failed call keeps
+  `name_raw` as `name_local` instead of `to_cyrillic`.
 
 ## Completion condition
 
-`author_names=completed` means `surname_ru`, `first_name_ru`, `surname_en` and
-`first_name_en` are non-empty strings. The required Russian fields must consist
-of Cyrillic letters and the English ones of Latin letters; hyphens, spaces and
-apostrophes are allowed. `second_name_ru` and `second_name_en` may be empty.
+`author_names=completed` means `surname_local`, `first_name_local`, `surname_en` and
+`first_name_en` are non-empty strings. The required `*_local` fields must consist
+of letters of the profile's script (Cyrillic for ITMO, Latin for UFJF) and the
+English ones of Latin letters; hyphens, spaces and
+apostrophes are allowed. `second_name_local` and `second_name_en` may be empty.
 
 The check belongs to the stage: the shared client validates the JSON transport,
 while each call site has its own response schema. Before checking the required
@@ -29,8 +64,24 @@ An incomplete semantic response gets one retry with the exact reason for the
 rejection. If the retry is also incomplete, the row is marked `failed` and the
 partial response is not copied into `Person`. A full name already stored is not
 erased by a forced run. For a new row only a safe fallback remains, the
-composite `name_ru`/`name_en`; name components are never guessed from word
+composite `name_local`/`name_en`; name components are never guessed from word
 order.
+
+## Model
+
+`PAUK_LLM_MODEL`, `anthropic/claude-haiku-5.5` by default since 2026-10-21
+(10x cheaper than haiku-4.5). Compared on 60 Portuguese and 60 Russian real
+names: on Portuguese names haiku-5.5 did as well or better (it expands an
+initial when a variant spells the name out); on Russian names it was worse,
+putting patronymic initials into the first name ("М Ю" for "М" + "Ю"), adding
+stress marks ("Каво́кина"), garbling a surname ("Пальедино") and leaving 3 of 60
+replies empty. Kept for every university by decision while prototyping; for a
+Russian-language graph that matters, set `PAUK_LLM_MODEL=anthropic/claude-haiku-4.5`.
+
+A reply that answers in a fenced JSON block, reconsiders in prose and answers
+again in a second block is read from the last block that parses
+(`pauk/sources/llm.py::_parse_json_body`): before that, all 8 failures of the
+first UFJF run were such replies.
 
 `OpenRouterClient` separately retries a network error, `429` and
 `500`/`502`/`503`/`504`: at most three transport attempts with exponential

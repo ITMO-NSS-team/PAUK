@@ -1,0 +1,34 @@
+{
+  "key": "unige",
+  "short_name": "UNIGE",
+  "short_name_local": "UNIGE",
+  "name_en": "University of Geneva",
+  "name_local": "Université de Genève",
+  "ror_id": "01swzsf04",
+  "language": "French",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "d"
+  ],
+  "email_domains": [
+    "unige.ch"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivGeneva|UNIGE)(?![^\\W\\d_])",
+  "long_name": "Università[\\s‐-]+di[\\s‐-]+Ginevra|University[\\s‐-]+of[\\s‐-]+Geneva|Université[\\s‐-]+de[\\s‐-]+Genève|Universite[\\s‐-]+de[\\s‐-]+Geneve|Schola[\\s‐-]+Genevensis|Univ\\.[\\s‐-]+of[\\s‐-]+Geneva",
+  "marker_replacement": "UnivGeneva",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|carouge|ch|chemin|east|floor|gatan|geneva|geneve|genève|katu|laan|north|pegasi|piazza|platz|plaza|plein|po|quai|rd|road|room|rue|schweiz|south|st|str|straat|strasse|straße|street|suisse|svizzera|switzerland|tie|ul|vej|versoix|via|viale|vägen|weg|west",
+  "other_organisations": "Geneva University Hospitals?|University Hospitals? of Geneva|Hôpitaux Universitaires de Genève|(?<![^\\W\\d_])HUG(?![^\\W\\d_])|University of Lausanne|(?<![^\\W\\d_])CERN(?![^\\W\\d_])|CNRS|EPFL|Idiap\\ Research\\ Institute|MAGIC\\ Telescopes|Swiss\\ Centre\\ for\\ Applied\\ Human\\ Toxicology|University\\ Hospital\\ of\\ Geneva",
+  "identity": "(?<![^\\W\\d_])UNIGE(?![^\\W\\d_])|Università[\\s‐-]+di[\\s‐-]+Ginevra|University[\\s‐-]+of[\\s‐-]+Geneva|Université[\\s‐-]+de[\\s‐-]+Genève|Universite[\\s‐-]+de[\\s‐-]+Geneve|Schola[\\s‐-]+Genevensis|Univ\\.[\\s‐-]+of[\\s‐-]+Geneva",
+  "city": "Geneva",
+  "staff_catalog": null,
+  "mongo_db": "pauk_unige",
+  "site_url": "https://www.unige.ch",
+  "unit_words": "faculty|faculté|school|institute|institut|centre|center|observatoire",
+  "external_authors": false
+}

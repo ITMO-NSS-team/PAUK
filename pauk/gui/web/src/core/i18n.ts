@@ -69,7 +69,7 @@ export type LocaleKey =
   | "field.total"
   | "overview.title"
   | "overview.avgPubsPerAuthor"
-  | "overview.itmoAuthors"
+  | "overview.memberAuthors"
   | "overview.externalAuthors"
   | "overview.knownYear"
   | "chart.authorsByDept"
@@ -159,7 +159,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "group.why.field":
       "Нет ни департамента, ни организации, сгруппированы по области публикаций, которые они реализуют.",
     "via.pub": "общую публикацию",
-    "via.person": "общего участника ИТМО",
+    "via.person": "общего участника {org}",
     "via.coauthor": "соавтора статей",
     "via.owner": "общего владельца",
     "field.report": "Отчет",
@@ -201,7 +201,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "panel.readMore": "+ читать полностью",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
-    "overview.itmoAuthors": "Из ИТМО",
+    "overview.memberAuthors": "Из {org}",
     "overview.externalAuthors": "Внешних",
     "overview.knownYear": "Известен год",
     "chart.authorsByDept": "Авторы по департаментам",
@@ -228,10 +228,10 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "brand.backToMenu": "← Меню",
     "section.filters": "Фильтры",
     "section.quickSearch": "Быстрый поиск",
-    "start.badge": "Открытый проект ИТМО",
-    "start.title": "Карта соавторства и открытого кода ИТМО",
+    "start.badge": "Открытый проект {org}",
+    "start.title": "Карта соавторства и открытого кода {org}",
     "start.subtitle":
-      "Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.",
+      "Публикации, авторы и департаменты {org} — и связанные с ними open-source репозитории на GitHub.",
     "start.cta": "Смотреть карту",
     "start.loading": "Загрузка данных…",
     "start.rendering": "Отрисовка графа…",
@@ -282,7 +282,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "group.why.field":
       "Neither a department nor an organization, grouped by the field of the publications they implement.",
     "via.pub": "a shared publication",
-    "via.person": "a shared ITMO member",
+    "via.person": "a shared {org} member",
     "via.coauthor": "a co-author of their papers",
     "via.owner": "a shared owner",
     "field.report": "Report",
@@ -324,7 +324,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "panel.readMore": "+ read more",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
-    "overview.itmoAuthors": "From ITMO",
+    "overview.memberAuthors": "From {org}",
     "overview.externalAuthors": "External",
     "overview.knownYear": "Known year",
     "chart.authorsByDept": "Authors by department",
@@ -351,10 +351,10 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "brand.backToMenu": "← Menu",
     "section.filters": "Filters",
     "section.quickSearch": "Quick Search",
-    "start.badge": "Open ITMO project",
-    "start.title": "ITMO co-authorship and open-source code map",
+    "start.badge": "Open {org} project",
+    "start.title": "{org} co-authorship and open-source code map",
     "start.subtitle":
-      "Publications, authors and departments of ITMO — and the open-source repositories linked to them on GitHub.",
+      "Publications, authors and departments of {org} — and the open-source repositories linked to them on GitHub.",
     "start.cta": "View the map",
     "start.loading": "Loading data…",
     "start.rendering": "Rendering the graph…",
@@ -367,8 +367,18 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   },
 };
 
+// The university the data describes, fixed at build time (scripts/deploy.sh
+// passes PAUK_INSTITUTION as VITE_INSTITUTION); mirrors pauk/institution.py.
+const ITMO_NAMES: Record<Lang, string> = { ru: "ИТМО", en: "ITMO" };
+const INSTITUTION_NAMES: Partial<Record<string, Record<Lang, string>>> = {
+  itmo: ITMO_NAMES,
+  ufjf: { ru: "UFJF", en: "UFJF" },
+};
+const INSTITUTION: Record<Lang, string> =
+  INSTITUTION_NAMES[String(import.meta.env.VITE_INSTITUTION || "itmo")] ?? ITMO_NAMES;
+
 export function t(key: LocaleKey, lang: Lang): string {
-  return LOCALES[lang][key];
+  return LOCALES[lang][key].replace("{org}", INSTITUTION[lang]);
 }
 
 export function kindLabel(kind: NodeKind | "dept", lang: Lang): string {

@@ -1,0 +1,319 @@
+[
+  {
+    "uid": "fau",
+    "name_en": "Friedrich-Alexander-Universität Erlangen-Nürnberg",
+    "name_local": "Friedrich-Alexander-Universität Erlangen-Nürnberg",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/00f7hpc57",
+    "type": "university"
+  },
+  {
+    "uid": "nat",
+    "name_en": "Faculty of Sciences",
+    "name_local": "Faculty of Sciences",
+    "kind": "faculty",
+    "parent": "fau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Sciences",
+      "Naturwissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "tech",
+    "name_en": "Faculty of Engineering",
+    "name_local": "Faculty of Engineering",
+    "kind": "faculty",
+    "parent": "fau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Engineering",
+      "Technische Fakultät"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "Faculty of Medicine",
+    "name_local": "Faculty of Medicine",
+    "kind": "faculty",
+    "parent": "fau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Medicine",
+      "Medizinische Fakultät"
+    ]
+  },
+  {
+    "uid": "phil",
+    "name_en": "Faculty of Humanities Social Sciences and Theology",
+    "name_local": "Faculty of Humanities Social Sciences and Theology",
+    "kind": "faculty",
+    "parent": "fau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Humanities",
+      "Philosophische Fakultät"
+    ]
+  },
+  {
+    "uid": "rw",
+    "name_en": "Faculty of Business Economics and Law",
+    "name_local": "Faculty of Business Economics and Law",
+    "kind": "faculty",
+    "parent": "fau",
+    "aliases": [],
+    "context_aliases": [
+      "Faculty of Business",
+      "Rechts- und Wirtschaftswissenschaftliche Fakultät"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "Department of Physics",
+    "name_local": "Department of Physics",
+    "kind": "department",
+    "parent": "nat",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Department Physik"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "Department of Chemistry and Pharmacy",
+    "name_local": "Department of Chemistry and Pharmacy",
+    "kind": "department",
+    "parent": "nat",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry and Pharmacy"
+    ]
+  },
+  {
+    "uid": "bio",
+    "name_en": "Department of Biology",
+    "name_local": "Department of Biology",
+    "kind": "department",
+    "parent": "nat",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Biology"
+    ]
+  },
+  {
+    "uid": "math",
+    "name_en": "Department of Mathematics",
+    "name_local": "Department of Mathematics",
+    "kind": "department",
+    "parent": "nat",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "gzn",
+    "name_en": "GeoZentrum Nordbayern",
+    "name_local": "GeoZentrum Nordbayern",
+    "kind": "department",
+    "parent": "nat",
+    "aliases": [
+      "GeoZentrum Nordbayern"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "geog",
+    "name_en": "Institute of Geography",
+    "name_local": "Institute of Geography",
+    "kind": "institute",
+    "parent": "nat",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Geography"
+    ]
+  },
+  {
+    "uid": "ecap",
+    "name_en": "Erlangen Centre for Astroparticle Physics",
+    "name_local": "Erlangen Centre for Astroparticle Physics",
+    "kind": "center",
+    "parent": "phys",
+    "aliases": [],
+    "context_aliases": [
+      "ECAP",
+      "Erlangen Centre for Astroparticle Physics"
+    ]
+  },
+  {
+    "uid": "mse",
+    "name_en": "Department of Materials Science and Engineering",
+    "name_local": "Department of Materials Science and Engineering",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Materials Science and Engineering",
+      "Department of Materials Science & Engineering"
+    ]
+  },
+  {
+    "uid": "cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "Department of Computer Science",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science",
+      "Department Informatik"
+    ]
+  },
+  {
+    "uid": "cbi",
+    "name_en": "Department of Chemical and Biological Engineering",
+    "name_local": "Department of Chemical and Biological Engineering",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemical and Biological Engineering"
+    ]
+  },
+  {
+    "uid": "eei",
+    "name_en": "Department of Electrical Electronic and Communication Engineering",
+    "name_local": "Department of Electrical Electronic and Communication Engineering",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical Electronic and Communication Engineering",
+      "Department of Electrical Engineering"
+    ]
+  },
+  {
+    "uid": "mb",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "Department of Mechanical Engineering",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "aibe",
+    "name_en": "Department Artificial Intelligence in Biomedical Engineering",
+    "name_local": "Department Artificial Intelligence in Biomedical Engineering",
+    "kind": "department",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "Department Artificial Intelligence in Biomedical Engineering"
+    ]
+  },
+  {
+    "uid": "lme",
+    "name_en": "Pattern Recognition Lab",
+    "name_local": "Pattern Recognition Lab",
+    "kind": "lab",
+    "parent": "cs",
+    "aliases": [],
+    "context_aliases": [
+      "Pattern Recognition Lab"
+    ]
+  },
+  {
+    "uid": "imeet",
+    "name_en": "Institute of Materials for Electronics and Energy Technology",
+    "name_local": "Institute of Materials for Electronics and Energy Technology",
+    "kind": "institute",
+    "parent": "mse",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Materials for Electronics and Energy Technology",
+      "i-MEET"
+    ]
+  },
+  {
+    "uid": "biomat",
+    "name_en": "Institute of Biomaterials",
+    "name_local": "Institute of Biomaterials",
+    "kind": "institute",
+    "parent": "mse",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biomaterials"
+    ]
+  },
+  {
+    "uid": "lse",
+    "name_en": "Institute for Smart Electronics and Systems",
+    "name_local": "Institute for Smart Electronics and Systems",
+    "kind": "institute",
+    "parent": "eei",
+    "aliases": [],
+    "context_aliases": [
+      "Institute for Smart Electronics and Systems"
+    ]
+  },
+  {
+    "uid": "path",
+    "name_en": "Institute of Pathology",
+    "name_local": "Institute of Pathology",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Pathology"
+    ]
+  },
+  {
+    "uid": "radio",
+    "name_en": "Institute of Radiology",
+    "name_local": "Institute of Radiology",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Radiology"
+    ]
+  },
+  {
+    "uid": "biochem",
+    "name_en": "Institute of Biochemistry",
+    "name_local": "Institute of Biochemistry",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Biochemistry"
+    ]
+  },
+  {
+    "uid": "virology",
+    "name_en": "Harald zur Hausen Institute of Virology",
+    "name_local": "Harald zur Hausen Institute of Virology",
+    "kind": "institute",
+    "parent": "med",
+    "aliases": [
+      "Harald zur Hausen Institute of Virology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "audiolabs",
+    "name_en": "International Audio Laboratories Erlangen",
+    "name_local": "International Audio Laboratories Erlangen",
+    "kind": "lab",
+    "parent": "tech",
+    "aliases": [],
+    "context_aliases": [
+      "International Audio Laboratories Erlangen"
+    ]
+  }
+]

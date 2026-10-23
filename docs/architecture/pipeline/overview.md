@@ -18,7 +18,8 @@ Fetches raw works from OpenAlex into MongoDB (collection `raw`, source
 `openalex_works`, see [../storage.md](../storage.md)). Three selectors
 (`pauk/pipeline/selectors.py`): `WorkSelector` (one id), `WorksFileSelector`
 (a file of ids, one per line) and `PeriodSelector` (a date range, cursor
-pagination by ITMO's ROR id, `ITMO_ROR_ID = "04txgxn49"`).
+pagination by the university's ROR id, `Institution.ror_id`, see
+[../institutions.md](../institutions.md)).
 
 **Truncated author lists.** The OpenAlex list endpoint returns at most 100
 authorships per work and does not always flag the cut. `_authors_truncated()`
@@ -60,7 +61,7 @@ Beyond the plain mapping it does the following:
   present, otherwise a hash of the name) that `dedup` can later fold into the
   real author.
 - **External author cap** (`EXTERNAL_AUTHORS_LIMIT = 500`): consortium papers
-  carry hundreds of authors. All ITMO authors are always kept; external ones
+  carry hundreds of authors. All member authors are always kept; external ones
   are capped so one large consortium does not flood the graph.
 - **Re-normalization keeps enrichment.** Existing enrichment data,
   `_processing` and ids folded by dedup (`merged_ids`) survive a repeat run:

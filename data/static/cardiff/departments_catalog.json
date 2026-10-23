@@ -1,0 +1,358 @@
+[
+  {
+    "uid": "cardiff",
+    "name_en": "Cardiff University",
+    "name_local": "Cardiff University",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/03kk7td41",
+    "type": "university"
+  },
+  {
+    "uid": "cbls",
+    "name_en": "College of Biomedical and Life Sciences",
+    "name_local": "College of Biomedical and Life Sciences",
+    "kind": "college",
+    "parent": "cardiff",
+    "aliases": [],
+    "context_aliases": [
+      "College of Biomedical and Life Sciences"
+    ]
+  },
+  {
+    "uid": "cpse",
+    "name_en": "College of Physical Sciences and Engineering",
+    "name_local": "College of Physical Sciences and Engineering",
+    "kind": "college",
+    "parent": "cardiff",
+    "aliases": [],
+    "context_aliases": [
+      "College of Physical Sciences and Engineering"
+    ]
+  },
+  {
+    "uid": "cahss",
+    "name_en": "College of Arts Humanities and Social Sciences",
+    "name_local": "College of Arts Humanities and Social Sciences",
+    "kind": "college",
+    "parent": "cardiff",
+    "aliases": [],
+    "context_aliases": [
+      "College of Arts Humanities and Social Sciences"
+    ]
+  },
+  {
+    "uid": "med",
+    "name_en": "School of Medicine",
+    "name_local": "School of Medicine",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [
+      "Cardiff University School of Medicine"
+    ],
+    "context_aliases": [
+      "School of Medicine"
+    ]
+  },
+  {
+    "uid": "bios",
+    "name_en": "School of Biosciences",
+    "name_local": "School of Biosciences",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [
+      "Cardiff School of Biosciences"
+    ],
+    "context_aliases": [
+      "School of Biosciences"
+    ]
+  },
+  {
+    "uid": "psy",
+    "name_en": "School of Psychology",
+    "name_local": "School of Psychology",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [],
+    "context_aliases": [
+      "School of Psychology"
+    ]
+  },
+  {
+    "uid": "health",
+    "name_en": "School of Healthcare Sciences",
+    "name_local": "School of Healthcare Sciences",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [],
+    "context_aliases": [
+      "School of Healthcare Sciences"
+    ]
+  },
+  {
+    "uid": "pharm",
+    "name_en": "School of Pharmacy and Pharmaceutical Sciences",
+    "name_local": "School of Pharmacy and Pharmaceutical Sciences",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [],
+    "context_aliases": [
+      "School of Pharmacy and Pharmaceutical Sciences"
+    ]
+  },
+  {
+    "uid": "dent",
+    "name_en": "School of Dentistry",
+    "name_local": "School of Dentistry",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [],
+    "context_aliases": [
+      "School of Dentistry"
+    ]
+  },
+  {
+    "uid": "optom",
+    "name_en": "School of Optometry and Vision Sciences",
+    "name_local": "School of Optometry and Vision Sciences",
+    "kind": "school",
+    "parent": "cbls",
+    "aliases": [],
+    "context_aliases": [
+      "School of Optometry and Vision Sciences"
+    ]
+  },
+  {
+    "uid": "eng",
+    "name_en": "School of Engineering",
+    "name_local": "School of Engineering",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Engineering"
+    ]
+  },
+  {
+    "uid": "phys",
+    "name_en": "School of Physics and Astronomy",
+    "name_local": "School of Physics and Astronomy",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Physics and Astronomy",
+      "School of Physics & Astronomy"
+    ]
+  },
+  {
+    "uid": "chem",
+    "name_en": "School of Chemistry",
+    "name_local": "School of Chemistry",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chemistry"
+    ]
+  },
+  {
+    "uid": "comsc",
+    "name_en": "School of Computer Science and Informatics",
+    "name_local": "School of Computer Science and Informatics",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Computer Science and Informatics"
+    ]
+  },
+  {
+    "uid": "earth",
+    "name_en": "School of Earth and Environmental Sciences",
+    "name_local": "School of Earth and Environmental Sciences",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Earth and Environmental Sciences"
+    ]
+  },
+  {
+    "uid": "maths",
+    "name_en": "School of Mathematics",
+    "name_local": "School of Mathematics",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [],
+    "context_aliases": [
+      "School of Mathematics"
+    ]
+  },
+  {
+    "uid": "arch",
+    "name_en": "Welsh School of Architecture",
+    "name_local": "Welsh School of Architecture",
+    "kind": "school",
+    "parent": "cpse",
+    "aliases": [
+      "Welsh School of Architecture"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "business",
+    "name_en": "Cardiff Business School",
+    "name_local": "Cardiff Business School",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "Cardiff Business School"
+    ]
+  },
+  {
+    "uid": "socsci",
+    "name_en": "School of Social Sciences",
+    "name_local": "School of Social Sciences",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Social Sciences"
+    ]
+  },
+  {
+    "uid": "geoplan",
+    "name_en": "School of Geography and Planning",
+    "name_local": "School of Geography and Planning",
+    "kind": "school",
+    "parent": "cahss",
+    "aliases": [],
+    "context_aliases": [
+      "School of Geography and Planning"
+    ]
+  },
+  {
+    "uid": "ii",
+    "name_en": "Division of Infection and Immunity",
+    "name_local": "Division of Infection and Immunity",
+    "kind": "division",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Infection and Immunity"
+    ]
+  },
+  {
+    "uid": "pmcn",
+    "name_en": "Division of Psychological Medicine and Clinical Neurosciences",
+    "name_local": "Division of Psychological Medicine and Clinical Neurosciences",
+    "kind": "division",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Psychological Medicine and Clinical Neurosciences"
+    ]
+  },
+  {
+    "uid": "cg",
+    "name_en": "Division of Cancer and Genetics",
+    "name_local": "Division of Cancer and Genetics",
+    "kind": "division",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Cancer and Genetics"
+    ]
+  },
+  {
+    "uid": "popmed",
+    "name_en": "Division of Population Medicine",
+    "name_local": "Division of Population Medicine",
+    "kind": "division",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Population Medicine"
+    ]
+  },
+  {
+    "uid": "ctr",
+    "name_en": "Centre for Trials Research",
+    "name_local": "Centre for Trials Research",
+    "kind": "center",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Trials Research"
+    ]
+  },
+  {
+    "uid": "cngg",
+    "name_en": "Centre for Neuropsychiatric Genetics and Genomics",
+    "name_local": "Centre for Neuropsychiatric Genetics and Genomics",
+    "kind": "center",
+    "parent": "med",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Neuropsychiatric Genetics and Genomics"
+    ]
+  },
+  {
+    "uid": "cubric",
+    "name_en": "Cardiff University Brain Research Imaging Centre",
+    "name_local": "Cardiff University Brain Research Imaging Centre",
+    "kind": "center",
+    "parent": "psy",
+    "aliases": [
+      "Cardiff University Brain Research Imaging Centre",
+      "CUBRIC"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "cci",
+    "name_en": "Cardiff Catalysis Institute",
+    "name_local": "Cardiff Catalysis Institute",
+    "kind": "institute",
+    "parent": "chem",
+    "aliases": [
+      "Cardiff Catalysis Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "nmhii",
+    "name_en": "Neuroscience and Mental Health Innovation Institute",
+    "name_local": "Neuroscience and Mental Health Innovation Institute",
+    "kind": "institute",
+    "parent": "cardiff",
+    "aliases": [
+      "Neuroscience and Mental Health Innovation Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "ecsc",
+    "name_en": "European Cancer Stem Cell Research Institute",
+    "name_local": "European Cancer Stem Cell Research Institute",
+    "kind": "institute",
+    "parent": "cardiff",
+    "aliases": [
+      "European Cancer Stem Cell Research Institute"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "wolfson",
+    "name_en": "Wolfson Centre for Young People's Mental Health",
+    "name_local": "Wolfson Centre for Young People's Mental Health",
+    "kind": "center",
+    "parent": "cardiff",
+    "aliases": [],
+    "context_aliases": [
+      "Wolfson Centre for Young People's Mental Health"
+    ]
+  }
+]

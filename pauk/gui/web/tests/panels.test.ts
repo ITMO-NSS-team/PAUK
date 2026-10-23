@@ -67,7 +67,7 @@ describe("mountPanel", () => {
     const sample = await loadSampleGraphData();
     const data = {
       ...sample,
-      authors: sample.authors.map((a, i) => (i === 0 ? { ...a, is_itmo: false } : a)),
+      authors: sample.authors.map((a, i) => (i === 0 ? { ...a, is_member: false } : a)),
     };
     const store = new Store<AppState>(initialState({ tab: 1 })); // showExternalAuthors: false
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -197,7 +197,7 @@ describe("mountPanel", () => {
   it("after the detail merge the author card shows the name in the SECOND language under the title (smaller, grey)", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
-    // A1: name_ru "Иванов Иван Иванович", name_en "Ivan Ivanov".
+    // A1: name_local "Иванов Иван Иванович", name_en "Ivan Ivanov".
     const store = new Store<AppState>({
       ...initialState({ lang: "ru" }),
       selection: { kind: "node", key: "A1" },
@@ -649,10 +649,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Варианты написания");
   });
 
-  it("the author card title is the full name (name_ru/name_en) in the current language as soon as detail arrives", async () => {
+  it("the author card title is the full name (name_local/name_en) in the current language as soon as detail arrives", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
-    // A1: name_ru "Иванов Иван Иванович", name_en "Ivan Ivanov".
+    // A1: name_local "Иванов Иван Иванович", name_en "Ivan Ivanov".
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "A1" },
@@ -682,7 +682,7 @@ describe("mountPanel", () => {
   it("the author card title stays the short label if the full name is empty, even when detail has already arrived", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
-    // A2: detail arrived, name_ru/name_en are empty.
+    // A2: detail arrived, name_local/name_en are empty.
     const author2 = data.authors.find((a) => a.key === "A2");
     if (!author2) throw new Error("the fixture must contain author A2");
     const store = new Store<AppState>({

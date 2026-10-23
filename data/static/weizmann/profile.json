@@ -1,0 +1,27 @@
+{
+  "key": "weizmann",
+  "short_name": "Weizmann",
+  "short_name_local": "Weizmann",
+  "name_en": "Weizmann Institute of Science",
+  "name_local": "Weizmann Institute of Science",
+  "ror_id": "0316ej306",
+  "language": "Hebrew",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "weizmann.ac.il"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:WeizmannInst)(?![^\\W\\d_])",
+  "long_name": "Weizmann[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Science|Machon[\\s‐-]+Weizmann[\\s‐-]+LeMada|The[\\s‐-]+Weizmann[\\s‐-]+Institute|معهد[\\s‐-]+وايزمان[\\s‐-]+للعلوم|Weizmann[\\s‐-]+Institute|Weizmann[\\s‐-]+Inst[\\s‐-]+Sci|מכון[\\s‐-]+ויצמן[\\s‐-]+למדע",
+  "marker_replacement": "WeizmannInst",
+  "place_words": "aleja|allee|av|ave|avenue|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|israel|katu|laan|north|piazza|platz|plaza|plein|po|pob|rd|rehovot|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ul|vej|via|viale|vägen|weg|west",
+  "other_organisations": "Sheba Medical Center|Tel Aviv University|Hebrew University|Sheba\\ Medical\\ Center",
+  "identity": "Weizmann[\\s‐-]+Institute[\\s‐-]+of[\\s‐-]+Science|Machon[\\s‐-]+Weizmann[\\s‐-]+LeMada|The[\\s‐-]+Weizmann[\\s‐-]+Institute|معهد[\\s‐-]+وايزمان[\\s‐-]+للعلوم|Weizmann[\\s‐-]+Institute|Weizmann[\\s‐-]+Inst[\\s‐-]+Sci|מכון[\\s‐-]+ויצמן[\\s‐-]+למדע",
+  "city": "Rehovot",
+  "staff_catalog": null,
+  "mongo_db": "pauk_weizmann",
+  "site_url": "https://www.weizmann.ac.il",
+  "unit_words": "department|faculty|institute|center|centre",
+  "external_authors": false
+}

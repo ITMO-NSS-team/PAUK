@@ -21,7 +21,7 @@ class BuildAuthorshipIndexTest(unittest.TestCase):
 
     def test_external_coauthors_are_indexed_but_do_not_keep_a_publication_alone(self):
         db = {
-            "persons": [{"id": "A1", "is_itmo": True}, {"id": "E1", "is_itmo": False}, {"id": "E2", "is_itmo": False}],
+            "persons": [{"id": "A1", "is_member": True}, {"id": "E1", "is_member": False}, {"id": "E2", "is_member": False}],
             "publications": [{"id": "P1"}, {"id": "P2"}],
             "authorship": [
                 {"pid": "P1", "per": "A1"},
@@ -37,7 +37,7 @@ class BuildAuthorshipIndexTest(unittest.TestCase):
         self.assertEqual(result.external_ids, {"E1", "E2"})
 
     def test_person_without_is_itmo_field_counts_as_itmo(self):
-        """Snapshots exported before external authors were added have no is_itmo field; everyone in them is ITMO."""
+        """Snapshots exported before external authors were added have no is_member field; everyone in them is ITMO."""
         db = {
             "persons": [{"id": "A1"}],
             "publications": [{"id": "P1"}],

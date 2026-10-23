@@ -9,7 +9,9 @@ from datetime import date
 from hashlib import sha1
 from typing import TypeVar
 
+from pauk.institution import Institution
 from pauk.models import Authorship, Funding, Person, Publication
+from pauk.settings import settings
 from pauk.storage import PreparedStore, RawStore
 
 logger = logging.getLogger(__name__)
@@ -17,8 +19,6 @@ logger = logging.getLogger(__name__)
 # Constrained (not bound) so a call passing Publication resolves _seed's
 # return type to list[Publication], not list[Publication | Person].
 _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
-
-ITMO_ROR_ID = "04txgxn49"
 
 # An author slot sometimes holds a venue, a collaborator group or a contact
 # address. OpenAlex mints author entities for all of them; persons they are not.
@@ -30,7 +30,7 @@ NOT_A_PERSON_NAME = re.compile(
     re.IGNORECASE,
 )
 
-# Consortium papers carry hundreds of authors. All ITMO-affiliated ones are
+# Consortium papers carry hundreds of authors. All member authors are
 # kept; external coauthors are capped so that a single epidemiology
 # consortium does not flood the graph.
 EXTERNAL_AUTHORS_LIMIT = 500
@@ -154,6 +154,27 @@ def _funding(work: dict) -> list[Funding]:
     return [entry for (name, grant_id), entry in entries.items() if grant_id or name not in named_grant_funders]
 
 
+def membership(person: Person, institution: Institution) -> bool:
+    """Whether a person belongs to the university.
+
+    Either a collected work lists them with the university's ROR, or they say
+    so themselves in ORCID. The author's OpenAlex profile does not count: it
+    pools the institutions of every work, and on consortium papers OpenAlex
+    hands authors the consortium's institutions, so a physicist who never
+    named the university became one of its members.
+
+    Authorships normalized before the flag was recorded say nothing either
+    way; only a person with no flagged authorship at all keeps what they had.
+    Letting an unflagged authorship fall back to the old mark kept the 35
+    ATLAS physicists members, since their rows still listed works from an
+    earlier run.
+    """
+    known = [authorship.is_member for authorship in person.authored if authorship.is_member is not None]
+    by_work = any(known) if known else person.is_member
+    by_orcid = any(a.source == "orcid" and institution.is_member_ror(a.ror) for a in person.affiliations)
+    return by_work or by_orcid
+
+
 def _canonical_person_id(person: Person) -> str:
     """A person's id is their bare OpenAlex author ID.
 
@@ -166,14 +187,14 @@ def _canonical_person_id(person: Person) -> str:
 def _merge_person(base: Person, extra: Person) -> Person:
     """Merge two prepared rows describing the same author (legacy split ids).
 
-    is_itmo is an OR (at least one ITMO affiliation makes the person ITMO);
+    is_member is an OR (one affiliation with the university makes a member);
     lists are deduplicated unions; scalar fields keep base's value and fill
     gaps from extra; processing states are kept from base, missing stages
     come from extra.
     """
-    base.is_itmo = base.is_itmo or extra.is_itmo
+    base.is_member = base.is_member or extra.is_member
     for field in Person.model_fields:
-        if field in {"id", "openalex_id", "is_itmo", "processing"}:
+        if field in {"id", "openalex_id", "is_member", "processing"}:
             continue
         current, incoming = getattr(base, field), getattr(extra, field)
         if isinstance(current, list):
@@ -191,9 +212,10 @@ def _merge_person(base: Person, extra: Person) -> Person:
 
 
 class OpenAlexNormalizer:
-    def __init__(self, raw: RawStore, prepared: PreparedStore) -> None:
+    def __init__(self, raw: RawStore, prepared: PreparedStore, institution: Institution | None = None) -> None:
         self.raw = raw
         self.prepared = prepared
+        self.institution = institution or settings.institution
 
     def _seed(self, entity: str, model: type[_PreparedModel], ids: set[str]) -> list[_PreparedModel]:
         """This group's own rows for `entity`, plus any of `ids` found in other groups.
@@ -297,8 +319,10 @@ class OpenAlexNormalizer:
                     continue
                 person_id = merged_alias.get(person_id, person_id)
                 institutions = authorship.get("institutions") or []
-                is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
-                if not is_itmo:
+                is_member = any(
+                    self.institution.is_member_ror(inst.get("ror") or inst.get("id")) for inst in institutions
+                )
+                if not is_member:
                     # Positions keep counting, so the kept authorships stay at
                     # the positions the work listed them under.
                     external_kept += 1
@@ -309,12 +333,12 @@ class OpenAlexNormalizer:
                     Person(
                         id=person_id,
                         openalex_id=openalex_id,
-                        is_itmo=is_itmo,
+                        is_member=is_member,
                         name_raw=author.get("display_name"),
                     ),
                 )
-                # At least one ITMO affiliation anywhere makes the person ITMO.
-                person.is_itmo = person.is_itmo or is_itmo
+                # One affiliation with the university anywhere makes the person a member.
+                person.is_member = person.is_member or is_member
                 person.orcid = person.orcid or _short_id(author.get("orcid"))
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
@@ -323,6 +347,7 @@ class OpenAlexNormalizer:
                     position=position,
                     affiliation="; ".join(authorship.get("raw_affiliation_strings") or []) or None,
                     is_corresponding=bool(authorship.get("is_corresponding")),
+                    is_member=is_member,
                 )
                 # Matched on (publication, position) rather than on equality:
                 # one author legitimately appears twice on one work, but the
@@ -339,6 +364,7 @@ class OpenAlexNormalizer:
                 if existing_authorship is None:
                     person.authored.append(authorship_record)
                     continue
+                existing_authorship.is_member = is_member
                 existing_authorship.is_corresponding = (
                     existing_authorship.is_corresponding or authorship_record.is_corresponding
                 )
@@ -346,6 +372,10 @@ class OpenAlexNormalizer:
                     # What the work states always wins over a filled-in value.
                     existing_authorship.affiliation = authorship_record.affiliation
                     existing_authorship.affiliation_source = None
+        for person in persons.values():
+            # Recomputed, not carried over: a row kept from an earlier run may
+            # have been marked under an older rule.
+            person.is_member = membership(person, self.institution)
         self.prepared.write_models("publications", publications.values())
         self.prepared.write_models("persons", persons.values())
         return {"publications": len(publications), "persons": len(persons)}

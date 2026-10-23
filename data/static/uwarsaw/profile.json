@@ -1,0 +1,27 @@
+{
+  "key": "uwarsaw",
+  "short_name": "UW",
+  "short_name_local": "UW",
+  "name_en": "University of Warsaw",
+  "name_local": "Uniwersytet Warszawski",
+  "ror_id": "039bjqg32",
+  "language": "Polish",
+  "local_script": "latin",
+  "has_patronymic": false,
+  "surname_particles": [],
+  "email_domains": [
+    "fuw.edu.pl"
+  ],
+  "marker": "(?<![^\\W\\d_])(?:UnivWarsaw)(?![^\\W\\d_])",
+  "long_name": "(?<!Medical[\\s‐-])(?<!Medical)University[\\s‐-]+of[\\s‐-]+Warsaw|Warsaw[\\s‐-]+University(?![\\s‐-]+of[\\s‐-]+(?:Technology|Life|Medicine))|Uniwersytet[\\s‐-]+Warszawski|Univ[\\s‐-]+Warsaw",
+  "marker_replacement": "UnivWarsaw",
+  "place_words": "al|aleja|allee|av|ave|avenue|banacha|bd|bldg|boulevard|box|building|calle|campus|east|floor|gatan|katu|krakowskie|laan|miecznikowa|north|pasteura|piazza|platz|plaza|plein|po|poland|polska|przedmiescie|przedmieście|rd|road|room|rue|south|st|str|straat|strasse|straße|street|tie|ujazdowskie|ul|vej|via|viale|vägen|warsaw|warszawa|weg|west|wigury|zwirki|żwirki",
+  "other_organisations": "Polish Academy of Sciences|Medical University of Warsaw|Warsaw University of Technology|Warsaw University of Life Sciences|Nencki",
+  "identity": "(?<!Medical[\\s‐-])(?<!Medical)University[\\s‐-]+of[\\s‐-]+Warsaw|Warsaw[\\s‐-]+University(?![\\s‐-]+of[\\s‐-]+(?:Technology|Life|Medicine))|Uniwersytet[\\s‐-]+Warszawski|Univ[\\s‐-]+Warsaw",
+  "city": "Warsaw",
+  "staff_catalog": null,
+  "mongo_db": "pauk_uwarsaw",
+  "site_url": "https://www.uw.edu.pl",
+  "unit_words": "faculty|institute|centre|center|laboratory|observatory",
+  "external_authors": false
+}

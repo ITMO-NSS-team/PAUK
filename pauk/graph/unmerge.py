@@ -127,7 +127,7 @@ def _survivor_patch(node: dict, canonical_props: dict | None, duplicate_props: d
     """What to set on the survivor to take the duplicate back out of it.
 
     A fold fills the survivor's empty fields from the duplicate, unions its
-    lists and ORs `is_itmo`. The inverse is narrow on purpose: only fields
+    lists and ORs `is_member`. The inverse is narrow on purpose: only fields
     the duplicate's row explains are touched, and each goes back to what
     the survivor's own row says, or to None, which removes it. Fields the
     duplicate never had are left alone, so an edit somebody made to one of
@@ -367,7 +367,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
                 raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
             prepared_updates.append((groups, content | restored))
     if patch:
-        # The plain upsert: `is_itmo` is sticky in the person one.
+        # The plain upsert: `is_member` is sticky in the person one.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0

@@ -1,0 +1,1028 @@
+[
+  {
+    "uid": "hku",
+    "name_en": "The University of Hong Kong",
+    "name_local": "香港大學",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/02zhqgq86",
+    "type": "university"
+  },
+  {
+    "uid": "fac-arch",
+    "name_en": "Faculty of Architecture",
+    "name_local": "建築學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Architecture"
+    ],
+    "context_aliases": [
+      "Faculty of Architecture"
+    ]
+  },
+  {
+    "uid": "arch-dept",
+    "name_en": "Department of Architecture",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Architecture"
+    ]
+  },
+  {
+    "uid": "arch-landscape",
+    "name_en": "Division of Landscape Architecture",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Landscape Architecture"
+    ]
+  },
+  {
+    "uid": "arch-dupad",
+    "name_en": "Department of Urban Planning and Design",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Urban Planning and Design"
+    ]
+  },
+  {
+    "uid": "arch-rec",
+    "name_en": "Department of Real Estate and Construction",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Real Estate and Construction"
+    ]
+  },
+  {
+    "uid": "fac-arts",
+    "name_en": "Faculty of Arts",
+    "name_local": "文學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Arts"
+    ],
+    "context_aliases": [
+      "Faculty of Arts"
+    ]
+  },
+  {
+    "uid": "arts-ling",
+    "name_en": "Department of Linguistics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Linguistics"
+    ]
+  },
+  {
+    "uid": "fac-fbe",
+    "name_en": "Faculty of Business and Economics",
+    "name_local": "經管學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Business School"
+    ],
+    "context_aliases": [
+      "Faculty of Business and Economics",
+      "Business School"
+    ]
+  },
+  {
+    "uid": "fac-dent",
+    "name_en": "Faculty of Dentistry",
+    "name_local": "牙醫學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Dentistry"
+    ],
+    "context_aliases": [
+      "Faculty of Dentistry"
+    ]
+  },
+  {
+    "uid": "dent-aoscdc",
+    "name_en": "Division of Applied Oral Sciences and Community Dental Care",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [
+      "Applied Oral Sciences and Community Dental Care",
+      "Applied Oral Sciences & Community Dental Care"
+    ],
+    "context_aliases": [
+      "Division of Applied Oral Sciences and Community Dental Care",
+      "Division of Applied Oral Sciences & Community Dental Care"
+    ]
+  },
+  {
+    "uid": "dent-rds",
+    "name_en": "Division of Restorative Dental Sciences",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Restorative Dental Sciences",
+      "Restorative Dental Sciences"
+    ]
+  },
+  {
+    "uid": "dent-omfs",
+    "name_en": "Division of Oral and Maxillofacial Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Oral and Maxillofacial Surgery",
+      "Oral and Maxillofacial Surgery"
+    ]
+  },
+  {
+    "uid": "dent-pdo",
+    "name_en": "Division of Paediatric Dentistry and Orthodontics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Paediatric Dentistry and Orthodontics",
+      "Division of Paediatric Dentistry & Orthodontics",
+      "Paediatric Dentistry and Orthodontics"
+    ]
+  },
+  {
+    "uid": "fac-edu",
+    "name_en": "Faculty of Education",
+    "name_local": "教育學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Education"
+    ],
+    "context_aliases": [
+      "Faculty of Education"
+    ]
+  },
+  {
+    "uid": "edu-hcld",
+    "name_en": "Academic Unit of Human Communication, Learning and Development",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [
+      "Academic Unit of Human Communication"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fac-eng",
+    "name_en": "Faculty of Engineering",
+    "name_local": "工程學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Engineering"
+    ],
+    "context_aliases": [
+      "Faculty of Engineering"
+    ]
+  },
+  {
+    "uid": "eng-me",
+    "name_en": "Department of Mechanical Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mechanical Engineering"
+    ]
+  },
+  {
+    "uid": "eng-ece",
+    "name_en": "Department of Electrical and Computer Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Electrical and Computer Engineering",
+      "Department of Electrical and Electronic Engineering",
+      "Department of Electrical & Electronic Engineering"
+    ]
+  },
+  {
+    "uid": "eng-civil",
+    "name_en": "Department of Civil Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Civil Engineering"
+    ]
+  },
+  {
+    "uid": "eng-dse",
+    "name_en": "Department of Data and Systems Engineering",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Data and Systems Engineering",
+      "Department of Data and System Engineering",
+      "Department of Industrial and Manufacturing Systems Engineering"
+    ]
+  },
+  {
+    "uid": "fac-law",
+    "name_en": "Faculty of Law",
+    "name_local": "法律學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Law"
+    ],
+    "context_aliases": [
+      "Faculty of Law"
+    ]
+  },
+  {
+    "uid": "fac-med",
+    "name_en": "Li Ka Shing Faculty of Medicine",
+    "name_local": "李嘉誠醫學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "Li Ka Shing Faculty of Medicine",
+      "LKS Faculty of Medicine",
+      "HKU Med"
+    ],
+    "context_aliases": [
+      "Faculty of Medicine"
+    ]
+  },
+  {
+    "uid": "med-scm",
+    "name_en": "School of Clinical Medicine",
+    "name_local": "臨床醫學學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [
+      "HKU School of Clinical Medicine"
+    ],
+    "context_aliases": [
+      "School of Clinical Medicine"
+    ]
+  },
+  {
+    "uid": "med-sbms",
+    "name_en": "School of Biomedical Sciences",
+    "name_local": "生物醫學學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biomedical Sciences"
+    ]
+  },
+  {
+    "uid": "med-sph",
+    "name_en": "School of Public Health",
+    "name_local": "公共衞生學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "School of Public Health"
+    ]
+  },
+  {
+    "uid": "sph-whocc",
+    "name_en": "WHO Collaborating Centre for Infectious Disease Epidemiology and Control",
+    "name_local": "",
+    "kind": "center",
+    "parent": "hku",
+    "aliases": [
+      "WHO Collaborating Centre for Infectious Disease Epidemiology and Control",
+      "World Health Organization Collaborating Centre for Infectious Disease Epidemiology and Control"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "med-nursing",
+    "name_en": "School of Nursing",
+    "name_local": "護理學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "School of Nursing"
+    ]
+  },
+  {
+    "uid": "med-scm-chinese",
+    "name_en": "School of Chinese Medicine",
+    "name_local": "中醫藥學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "School of Chinese Medicine"
+    ]
+  },
+  {
+    "uid": "med-pharm",
+    "name_en": "Department of Pharmacology and Pharmacy",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pharmacology and Pharmacy"
+    ]
+  },
+  {
+    "uid": "pharm-csmpr",
+    "name_en": "Centre for Safe Medication Practice and Research",
+    "name_local": "",
+    "kind": "center",
+    "parent": "hku",
+    "aliases": [
+      "Centre for Safe Medication Practice and Research"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "med-medicine",
+    "name_en": "Department of Medicine",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Medicine"
+    ]
+  },
+  {
+    "uid": "medicine-cardio",
+    "name_en": "Division of Cardiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Cardiology",
+      "Cardiology Division"
+    ]
+  },
+  {
+    "uid": "medicine-nephro",
+    "name_en": "Division of Nephrology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Nephrology"
+    ]
+  },
+  {
+    "uid": "medicine-rheum",
+    "name_en": "Division of Rheumatology and Clinical Immunology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Rheumatology and Clinical Immunology"
+    ]
+  },
+  {
+    "uid": "med-surgery",
+    "name_en": "Department of Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Surgery"
+    ]
+  },
+  {
+    "uid": "surgery-urology",
+    "name_en": "Division of Urology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Urology"
+    ]
+  },
+  {
+    "uid": "surgery-endocrine",
+    "name_en": "Division of Endocrine Surgery",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Division of Endocrine Surgery"
+    ]
+  },
+  {
+    "uid": "med-paed",
+    "name_en": "Department of Paediatrics and Adolescent Medicine",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Paediatrics and Adolescent Medicine",
+      "Department of Paediatrics & Adolescent Medicine",
+      "Department of Pediatrics and Adolescent Medicine",
+      "Department of Pediatrics & Adolescent Medicine"
+    ]
+  },
+  {
+    "uid": "med-psych",
+    "name_en": "Department of Psychiatry",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychiatry"
+    ]
+  },
+  {
+    "uid": "med-og",
+    "name_en": "Department of Obstetrics and Gynaecology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Obstetrics and Gynaecology",
+      "Department of Obstetrics & Gynaecology"
+    ]
+  },
+  {
+    "uid": "med-ortho",
+    "name_en": "Department of Orthopaedics and Traumatology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Orthopaedics and Traumatology",
+      "Department of Orthopaedics & Traumatology"
+    ]
+  },
+  {
+    "uid": "med-patho",
+    "name_en": "Department of Pathology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Pathology"
+    ]
+  },
+  {
+    "uid": "med-micro",
+    "name_en": "Department of Microbiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Microbiology"
+    ]
+  },
+  {
+    "uid": "med-ophth",
+    "name_en": "Department of Ophthalmology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Ophthalmology"
+    ]
+  },
+  {
+    "uid": "med-onco",
+    "name_en": "Department of Clinical Oncology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Clinical Oncology"
+    ]
+  },
+  {
+    "uid": "med-fmpc",
+    "name_en": "Department of Family Medicine and Primary Care",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Family Medicine and Primary Care"
+    ]
+  },
+  {
+    "uid": "med-radiology",
+    "name_en": "Department of Diagnostic Radiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Diagnostic Radiology"
+    ]
+  },
+  {
+    "uid": "med-emergency",
+    "name_en": "Department of Emergency Medicine",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Emergency Medicine"
+    ]
+  },
+  {
+    "uid": "med-anaes",
+    "name_en": "Department of Anaesthesiology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Anaesthesiology"
+    ]
+  },
+  {
+    "uid": "fac-sci",
+    "name_en": "Faculty of Science",
+    "name_local": "理學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Science"
+    ],
+    "context_aliases": [
+      "Faculty of Science"
+    ]
+  },
+  {
+    "uid": "sci-chem",
+    "name_en": "Department of Chemistry",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Chemistry"
+    ]
+  },
+  {
+    "uid": "sci-phys",
+    "name_en": "Department of Physics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics",
+      "Physics Department",
+      "Physics Department and State Key Laboratory of Optical Quantum Materials",
+      "Department of Physics and HK Institute of Quantum Science and Technology"
+    ]
+  },
+  {
+    "uid": "sci-math",
+    "name_en": "Department of Mathematics",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Mathematics"
+    ]
+  },
+  {
+    "uid": "sci-eps",
+    "name_en": "Department of Earth and Planetary Sciences",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Earth and Planetary Sciences",
+      "Department of Earth Sciences"
+    ]
+  },
+  {
+    "uid": "sci-sbs",
+    "name_en": "School of Biological Sciences",
+    "name_local": "生物科學學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "School of Biological Sciences",
+      "School of Biological Science"
+    ]
+  },
+  {
+    "uid": "sbs-ecology",
+    "name_en": "Area of Ecology and Biodiversity",
+    "name_local": "",
+    "kind": "program",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Area of Ecology and Biodiversity"
+    ]
+  },
+  {
+    "uid": "sbs-cfl",
+    "name_en": "Conservation Forensics Laboratory",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [
+      "Conservation Forensics Laboratory"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-swims",
+    "name_en": "The Swire Institute of Marine Science",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "Swire Institute of Marine Science"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "sci-hkiaa",
+    "name_en": "Hong Kong Institute for Astronomy and Astrophysics",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Hong Kong Institute for Astronomy and Astrophysics",
+      "The Hong Kong Institute for Astronomy and Astrophysics"
+    ]
+  },
+  {
+    "uid": "sci-hkiqst",
+    "name_en": "HK Institute of Quantum Science and Technology",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "HK Institute of Quantum Science & Technology",
+      "HK Institute of Quantum Science and Technology",
+      "Hong Kong Institute of Quantum Science and Technology"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "fac-socsci",
+    "name_en": "Faculty of Social Sciences",
+    "name_local": "社會科學學院",
+    "kind": "faculty",
+    "parent": "hku",
+    "aliases": [
+      "HKU Faculty of Social Sciences"
+    ],
+    "context_aliases": [
+      "Faculty of Social Sciences"
+    ]
+  },
+  {
+    "uid": "soc-geog",
+    "name_en": "Department of Geography",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Geography"
+    ]
+  },
+  {
+    "uid": "geog-jcstem-rs",
+    "name_en": "Jockey Club STEM Lab of Quantitative Remote Sensing",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [
+      "Jockey Club STEM Lab of Quantitative Remote Sensing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "soc-psych",
+    "name_en": "Department of Psychology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Psychology"
+    ]
+  },
+  {
+    "uid": "soc-swsa",
+    "name_en": "Department of Social Work and Social Administration",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Social Work and Social Administration"
+    ]
+  },
+  {
+    "uid": "swsa-saupo",
+    "name_en": "Sau Po Centre on Ageing",
+    "name_local": "",
+    "kind": "center",
+    "parent": "hku",
+    "aliases": [
+      "Sau Po Centre on Ageing"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "soc-sociology",
+    "name_en": "Department of Sociology",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Sociology"
+    ]
+  },
+  {
+    "uid": "soc-ppa",
+    "name_en": "Department of Politics and Public Administration",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Politics and Public Administration"
+    ]
+  },
+  {
+    "uid": "sch-cds",
+    "name_en": "School of Computing and Data Science",
+    "name_local": "計算與數據科學學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [
+      "HKU School of Computing and Data Science"
+    ],
+    "context_aliases": [
+      "School of Computing and Data Science",
+      "School of Computing & Data Science"
+    ]
+  },
+  {
+    "uid": "cds-cs",
+    "name_en": "Department of Computer Science",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Computer Science"
+    ]
+  },
+  {
+    "uid": "cds-saas",
+    "name_en": "Department of Statistics and Actuarial Science",
+    "name_local": "",
+    "kind": "department",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Department of Statistics and Actuarial Science"
+    ]
+  },
+  {
+    "uid": "cds-qici",
+    "name_en": "Quantum Information and Computation Initiative",
+    "name_local": "",
+    "kind": "center",
+    "parent": "hku",
+    "aliases": [
+      "QICI Quantum Information and Computation Initiative",
+      "Quantum Information and Computation Initiative"
+    ],
+    "context_aliases": [
+      "QICI"
+    ]
+  },
+  {
+    "uid": "grad-school",
+    "name_en": "Graduate School",
+    "name_local": "研究學院",
+    "kind": "school",
+    "parent": "hku",
+    "aliases": [
+      "HKU Graduate School"
+    ],
+    "context_aliases": [
+      "Graduate School"
+    ]
+  },
+  {
+    "uid": "skl-synchem",
+    "name_en": "State Key Laboratory of Synthetic Chemistry",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Synthetic Chemistry"
+    ]
+  },
+  {
+    "uid": "skl-liver",
+    "name_en": "State Key Laboratory of Liver Research",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Liver Research"
+    ]
+  },
+  {
+    "uid": "skl-eid",
+    "name_en": "State Key Laboratory of Emerging Infectious Diseases",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Emerging Infectious Diseases"
+    ]
+  },
+  {
+    "uid": "skl-brain",
+    "name_en": "State Key Laboratory of Brain and Cognitive Sciences",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Brain and Cognitive Sciences",
+      "The State Key Laboratory of Brain and Cognitive Sciences"
+    ]
+  },
+  {
+    "uid": "skl-pharmbiotech",
+    "name_en": "State Key Laboratory of Pharmaceutical Biotechnology",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Pharmaceutical Biotechnology",
+      "The State Key Laboratory of Pharmaceutical Biotechnology"
+    ]
+  },
+  {
+    "uid": "skl-oqm",
+    "name_en": "State Key Laboratory of Optical Quantum Materials",
+    "name_local": "",
+    "kind": "lab",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "State Key Laboratory of Optical Quantum Materials"
+    ]
+  },
+  {
+    "uid": "inst-imfm",
+    "name_en": "Institute of Molecular Functional Materials",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Institute of Molecular Functional Materials"
+    ]
+  },
+  {
+    "uid": "inst-iccn",
+    "name_en": "Institute for Climate and Carbon Neutrality",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "Institute for Climate and Carbon Neutrality"
+    ],
+    "context_aliases": []
+  },
+  {
+    "uid": "inst-ids",
+    "name_en": "Musketeers Foundation Institute of Data Science",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "Musketeers Foundation Institute of Data Science"
+    ],
+    "context_aliases": [
+      "Institute of Data Science"
+    ]
+  },
+  {
+    "uid": "inst-usi",
+    "name_en": "Urban Systems Institute",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Urban Systems Institute"
+    ]
+  },
+  {
+    "uid": "center-casic",
+    "name_en": "Centre for Advanced Semiconductors and Integrated Circuits",
+    "name_local": "",
+    "kind": "center",
+    "parent": "hku",
+    "aliases": [],
+    "context_aliases": [
+      "Centre for Advanced Semiconductors and Integrated Circuits",
+      "Center for Advanced Semiconductors and Integrated Circuits"
+    ]
+  },
+  {
+    "uid": "hku-siri",
+    "name_en": "The University of Hong Kong Shenzhen Institute of Research and Innovation",
+    "name_local": "香港大學深圳研究院",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "HKU-SIRI",
+      "The University of Hong Kong Shenzhen Institute of Research and Innovation",
+      "The University of Hong Kong–Shenzhen Institute of Research and Innovation"
+    ],
+    "context_aliases": [
+      "Shenzhen Institute of Research and Innovation"
+    ]
+  },
+  {
+    "uid": "siri-miles",
+    "name_en": "Materials Innovation Institute for Life Sciences and Energy",
+    "name_local": "",
+    "kind": "institute",
+    "parent": "hku",
+    "aliases": [
+      "Materials Innovation Institute for Life Sciences and Energy"
+    ],
+    "context_aliases": [
+      "MILES"
+    ]
+  }
+]
