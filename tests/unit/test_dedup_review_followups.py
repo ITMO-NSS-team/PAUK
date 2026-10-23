@@ -40,7 +40,7 @@ class NameBlockingFollowupTest(unittest.TestCase):
                             for f in person_name_forms([person])["A"]))
 
     def test_exact_identity_survives_absent_names(self):
-        people = [Person(id=i, orcid="same", is_itmo=True) for i in ("A", "B")]
+        people = [Person(id=i, orcid="0000-0002-1825-0097", is_itmo=True) for i in ("A", "B")]
         self.assertEqual(len(list(candidate_person_pairs(people, None))), 1)
 
 

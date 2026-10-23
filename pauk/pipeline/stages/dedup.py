@@ -246,6 +246,9 @@ def plan_person_merges(
         status "merged" plus their rule(s); held-back pairs and groups carry
         status "held" plus the reasons.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _orcid_relation
+
+    trusted_orcid = {identifier: _normalize_orcid(value) or None for identifier, value in trusted_orcid.items()}
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
@@ -322,10 +325,16 @@ def plan_person_merges(
     malformed_pairs: set[frozenset[str]] = set()
 
     def hold_multi_person(first: Person, second: Person) -> bool:
-        from pauk.graph.person_resolution import is_multi_person_name
+        from pauk.graph.person_resolution import _normalize_orcid, is_multi_person_name
 
         if not (is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")):
             return False
+        first_identity = _normalize_orcid(trusted_orcid.get(first.id) or first.orcid)
+        second_identity = _normalize_orcid(trusted_orcid.get(second.id) or second.orcid)
+        if _orcid_relation(first_identity, second_identity) == "conflict":
+            return True
+        if staff_ids.get(first.id) and staff_ids.get(second.id) and staff_ids[first.id] != staff_ids[second.id]:
+            return True
         members = frozenset((first.id, second.id))
         if members not in malformed_pairs:
             malformed_pairs.add(members)
@@ -359,21 +368,27 @@ def plan_person_merges(
             continue
         first_orcid = trusted_orcid.get(first.id)
         second_orcid = trusted_orcid.get(second.id)
+        relation = _orcid_relation(first_orcid or first.orcid, second_orcid or second.orcid)
+        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
+        if first_staff and second_staff and first_staff != second_staff:
+            continue
+        if relation == "unverified":
+            report.append({
+                "status": "held", "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "route": "invalid_orcid_reference",
+                "reason": "unverified ORCID reference cannot establish identity or conflict",
+            })
+            continue
         if first_orcid and second_orcid and first_orcid == second_orcid:
             plan_pair(first, second, "orcid")
             continue
         # Merging asks for the trusted ORCID, refusing takes any one on
         # record: an ORCID the crossref backfill supplied is weak evidence
         # that two persons are one, and full evidence that they are not.
-        if (first_orcid or first.orcid) and (second_orcid or second.orcid) \
-                and (first_orcid or first.orcid) != (second_orcid or second.orcid):
+        if relation == "conflict":
             # Different ORCIDs are explicit evidence of two distinct people:
             # never merge and not worth reporting.
-            continue
-        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
-        # Two official staff records are two employees, however alike the
-        # romanized names look. Like a differing ORCID, this needs no report.
-        if first_staff and second_staff and first_staff != second_staff:
             continue
         if _profiles_conflict(first, second):
             continue
@@ -634,6 +649,8 @@ def _partition_conflicted_component(
     Such a choice would make an arbitrary edge decide an identity and recreate
     the false-merge risk this safety check exists to prevent.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     member_set = set(members)
     adjacency: dict[str, set[str]] = {member: set() for member in members}
     for first, second in pairs:
@@ -660,7 +677,8 @@ def _partition_conflicted_component(
 
     def value_for(member: str, field: str) -> str | None:
         if field == "ORCID":
-            return trusted_orcid.get(member) or None
+            value = _normalize_orcid(trusted_orcid.get(member))
+            return value if value and not _unverified_orcid_reference(value) else None
         if field == "staff record":
             return staff_ids.get(member) or None
         value = getattr(by_id[member], field)
@@ -737,10 +755,15 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     # An empty string is an absent identity, not a second one: counting it
     # as a value splits a group on nothing, and the partitioner reads the
     # same field back as absent, so the two disagree about the same record.
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
+    orcids = {
+        orcid for member in members
+        if (orcid := _normalize_orcid(trusted_orcid.get(member))) and not _unverified_orcid_reference(orcid)
+    }
     if len(orcids) > 1:
         return "ORCID", orcids
     staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
@@ -1390,13 +1413,15 @@ class DedupStage(EnrichmentStage):
         OpenAlex author record was fetched it overrides the prepared value,
         including with None when OpenAlex knows no ORCID.
         """
+        from pauk.graph.person_resolution import _normalize_orcid
+
         raw_orcids: dict[str, str | None] = {}
         for envelope in self.raw.read("openalex_authors"):
             payload = envelope.get("payload") or {}
             author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
             if author_id:
-                raw_orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
-        return {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+                raw_orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
+        return {person.id: _normalize_orcid(raw_orcids.get(person.id, person.orcid)) or None for person in people}
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
         """Person ids the selection allows to participate in merging."""

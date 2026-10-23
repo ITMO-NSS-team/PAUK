@@ -207,21 +207,21 @@ class PersonResolutionPipelineTest(unittest.TestCase):
 
     def test_conflicted_component_keeps_exact_orcid_subgroups(self):
         people = [
-            person("A1", "Sergey Makarov", orcid="0000-0001"),
-            person("A2", "S. Makarov", orcid="0000-0001"),
+            person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097"),
+            person("A2", "S. Makarov", orcid="0000-0002-1825-0097"),
             person("B", "Sergey Makarov"),
-            person("C1", "Sergey Makarov", orcid="0000-0002"),
-            person("C2", "S. Makarov", orcid="0000-0002"),
+            person("C1", "Sergey Makarov", orcid="0000-0001-5109-3700"),
+            person("C2", "S. Makarov", orcid="0000-0001-5109-3700"),
         ]
 
         groups, report = plan_person_merges_resolved(
             people,
             {
-                "A1": "0000-0001",
-                "A2": "0000-0001",
+                "A1": "0000-0002-1825-0097",
+                "A2": "0000-0002-1825-0097",
                 "B": None,
-                "C1": "0000-0002",
-                "C2": "0000-0002",
+                "C1": "0000-0001-5109-3700",
+                "C2": "0000-0001-5109-3700",
             },
             decisions={
                 frozenset(("A2", "B")): SAME,
@@ -248,7 +248,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         # back in the bucket it was supposed to leave, and the stage died of
         # a RecursionError instead of folding two obvious duplicates.
         people = [
-            person("A1", "Sergey Makarov", orcid="0000-0001"),
+            person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097"),
             person("A2", "S. Makarov", orcid=""),
         ]
         people[0].email = "makarov@itmo.ru"
@@ -268,12 +268,12 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
 
     def test_identityless_records_follow_the_unique_nearest_identity(self):
         people = [
-            person("A1", "Sergey Makarov", orcid="0000-0001"),
-            person("A2", "S. Makarov", orcid="0000-0001"),
+            person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097"),
+            person("A2", "S. Makarov", orcid="0000-0002-1825-0097"),
             person("X", "Sergey Makarov"),
             person("Y", "Sergey Makarov"),
-            person("C1", "Sergey Makarov", orcid="0000-0002"),
-            person("C2", "S. Makarov", orcid="0000-0002"),
+            person("C1", "Sergey Makarov", orcid="0000-0001-5109-3700"),
+            person("C2", "S. Makarov", orcid="0000-0001-5109-3700"),
         ]
         pairs = [
             ("A1", "A2"),
@@ -300,9 +300,9 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
 
     def test_equal_distance_identityless_record_stays_for_review(self):
         people = [
-            person("A", "Sergey Makarov", orcid="0000-0001"),
+            person("A", "Sergey Makarov", orcid="0000-0002-1825-0097"),
             person("X", "Sergey Makarov"),
-            person("C", "Sergey Makarov", orcid="0000-0002"),
+            person("C", "Sergey Makarov", orcid="0000-0001-5109-3700"),
         ]
         pairs = [("A", "X"), ("X", "C")]
 
@@ -318,9 +318,9 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         self.assertEqual(conflict["persons"], ["A", "C", "X"])
 
     def test_partition_repeats_for_a_second_identity_conflict(self):
-        first = person("A1", "Sergey Makarov", orcid="0000-0001")
-        second = person("A2", "S. Makarov", orcid="0000-0001")
-        other = person("B", "Sergey Makarov", orcid="0000-0001")
+        first = person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097")
+        second = person("A2", "S. Makarov", orcid="0000-0002-1825-0097")
+        other = person("B", "Sergey Makarov", orcid="0000-0002-1825-0097")
         first.email = "one@example.org"
         second.email = "one@example.org"
         other.email = "two@example.org"
@@ -365,9 +365,9 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         self.assertEqual(report[-1]["route"], "component_conflict")
 
     def test_exact_identifier_does_not_override_another_profile_conflict(self):
-        first = person("A1", "Sergey Makarov", orcid="0000-0001")
-        second = person("A2", "S. Makarov", orcid="0000-0001")
-        other = person("C", "Sergey Makarov", orcid="0000-0002")
+        first = person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097")
+        second = person("A2", "S. Makarov", orcid="0000-0002-1825-0097")
+        other = person("C", "Sergey Makarov", orcid="0000-0001-5109-3700")
         first.email = "first@example.org"
         second.email = "second@example.org"
         pairs = [("A1", "A2"), ("A2", "C")]
@@ -376,7 +376,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
             pairs,
             {frozenset(pair): "manual" for pair in pairs},
             {value.id: value for value in (first, second, other)},
-            {"A1": "0000-0001", "A2": "0000-0001", "C": "0000-0002"},
+            {"A1": "0000-0002-1825-0097", "A2": "0000-0002-1825-0097", "C": "0000-0001-5109-3700"},
         )
 
         self.assertEqual(groups, [])
@@ -384,11 +384,11 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
 
     def test_partition_is_independent_of_pair_order(self):
         people = [
-            person("A1", "One", orcid="0000-0001"),
-            person("A2", "One alt", orcid="0000-0001"),
+            person("A1", "One", orcid="0000-0002-1825-0097"),
+            person("A2", "One alt", orcid="0000-0002-1825-0097"),
             person("B", "Bridge"),
-            person("C1", "Two", orcid="0000-0002"),
-            person("C2", "Two alt", orcid="0000-0002"),
+            person("C1", "Two", orcid="0000-0001-5109-3700"),
+            person("C2", "Two alt", orcid="0000-0001-5109-3700"),
         ]
         pairs = [("A1", "A2"), ("A2", "B"), ("B", "C1"), ("C1", "C2")]
         by_id = {value.id: value for value in people}
@@ -518,8 +518,8 @@ class DedupStageWiringTest(unittest.TestCase):
 
     def test_conflicting_orcid_never_reaches_a_model_or_queue(self):
         people = [
-            person("A1", "Ivan Petrov", orcid="0000-0001"),
-            person("A2", "Ivan Petrov", orcid="0000-0002"),
+            person("A1", "Ivan Petrov", orcid="0000-0002-1825-0097"),
+            person("A2", "Ivan Petrov", orcid="0000-0001-5109-3700"),
         ]
         models = FakeModels(
             ModelVerdict(True, 1.0),
@@ -528,7 +528,7 @@ class DedupStageWiringTest(unittest.TestCase):
 
         groups, report = plan_person_merges_resolved(
             people,
-            {"A1": "0000-0001", "A2": "0000-0002"},
+            {"A1": "0000-0002-1825-0097", "A2": "0000-0001-5109-3700"},
             models=models,
         )
 

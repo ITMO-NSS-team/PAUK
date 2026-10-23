@@ -90,7 +90,27 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
     return updates
 
 
-def flatten_merges(merges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+class MergeAliasConflict(ValueError):
+    """An ambiguous alias component that must not be folded automatically."""
+
+    def __init__(self, message: str, merges: list[tuple[str, str]], seed: str, label: str | None):
+        super().__init__(message)
+        self.label = label
+        neighbors: dict[str, set[str]] = defaultdict(set)
+        for first, second in merges:
+            neighbors[first].add(second)
+            neighbors[second].add(first)
+        members = {seed}
+        pending = [seed]
+        while pending:
+            for neighbor in neighbors[pending.pop()] - members:
+                members.add(neighbor)
+                pending.append(neighbor)
+        self.members = sorted(members)
+        self.aliases = sorted({pair for pair in merges if pair[0] in members and pair[0] != pair[1]})
+
+
+def flatten_merges(merges: list[tuple[str, str]], *, label: str | None = None) -> list[tuple[str, str]]:
     """Resolve aliases to one terminal survivor before any deletion.
 
     Overlapping historical aliases may name both an intermediate node and
@@ -113,12 +133,12 @@ def flatten_merges(merges: list[tuple[str, str]]) -> list[tuple[str, str]]:
             depth[parent] = max(depth[parent], depth[node] + 1)
             root = roots.setdefault(parent, roots[node])
             if root != roots[node]:
-                raise ValueError(f"Conflicting merge targets for {parent}")
+                raise MergeAliasConflict(f"Conflicting merge targets for {parent}", merges, parent, label)
             remaining[parent] -= 1
             if remaining[parent] == 0:
                 ready.append(parent)
-    if any(remaining.values()):
-        raise ValueError("Cyclic merge aliases cannot be applied")
+    if unresolved := sorted(node for node, count in remaining.items() if count):
+        raise MergeAliasConflict("Cyclic merge aliases cannot be applied", merges, unresolved[0], label)
     # A nearer survivor's scalar values take precedence over the records it
     # had swallowed; flat groups retain their original relative order.
     return [(node, roots[node]) for node in sorted(targets, key=depth.__getitem__)]
@@ -474,6 +494,13 @@ class Neo4jClient:
                 canonical_id = record["canonical_id"]
                 canonical = working_props.setdefault(canonical_id, dict(record["canonical_props"]))
                 fill = _merge_duplicate_properties(label, canonical, record["dup_props"])
+                # Direct graph folds also need provenance; not every caller
+                # has already published a prepared row with merged_ids.
+                aliases = fill.get("merged_ids", canonical.get("merged_ids")) or []
+                fill["merged_ids"] = [
+                    alias for alias in _union_values(aliases, [row["dup_id"]])
+                    if alias != canonical_id
+                ]
                 if fill:
                     canonical.update(fill)
                     fills.setdefault(canonical_id, {}).update(fill)
@@ -619,7 +646,7 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: dict(flatten_merges([
                     (record["merged_id"], record["canonical_id"]) for record in tx.run(query)
-                ])))
+                ], label=label)))
 
     def fetch_person_facts(self, node_ids: list[str]) -> dict[str, dict]:
         """A few decisive fields for the people on one page.
@@ -767,9 +794,14 @@ class Neo4jClient:
         corresponding_snapshot = ""
         corresponding_merge = ""
         if rel_type == "AUTHORED":
-            corresponding_snapshot = ", r.is_corresponding AS was_corresponding"
+            corresponding_snapshot = (
+                ", r.is_corresponding AS was_corresponding, "
+                "(size(coalesce(src.merged_ids, [])) > 0 OR size(coalesce(tgt.merged_ids, [])) > 0) "
+                "AS preserve_corresponding"
+            )
             corresponding_merge = (
                 "SET r.is_corresponding = CASE "
+                "WHEN NOT preserve_corresponding THEN r.is_corresponding "
                 "WHEN was_corresponding IS NULL AND row.rel_properties.is_corresponding IS NULL THEN null "
                 "ELSE coalesce(was_corresponding, false) "
                 "OR coalesce(row.rel_properties.is_corresponding, false) END"

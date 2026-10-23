@@ -22,7 +22,7 @@ from datetime import date
 
 from pymongo.database import Database
 
-from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy, _normalize_orcid
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
@@ -46,8 +46,9 @@ from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
+from .alias_review import record_alias_conflict
 from .audit import actor_context, audited_client
-from .client import chunked
+from .client import MergeAliasConflict, chunked
 from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
         payload = envelope.get("payload") or {}
         author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
         if author_id:
-            orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
+            orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
     return orcids
 
 
@@ -513,5 +514,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "graph_dedup_component_conflicts": component_conflicts,
             **overrides,
         }
+    except MergeAliasConflict as conflict:
+        record_alias_conflict(mongo_db, conflict, "dedup-graph")
+        raise
     finally:
         client.close()

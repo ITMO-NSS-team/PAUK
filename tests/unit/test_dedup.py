@@ -97,8 +97,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_same_orcid_merges_even_without_name_or_itmo_evidence(self):
         result, people = self.run_stage([
-            person("A1", "Maria Petrova", ["W1", "W2"], itmo=False, orcid="0000-0001"),
-            person("A2", "Maria Sidorova", ["W3"], itmo=False, orcid="0000-0001"),
+            person("A1", "Maria Petrova", ["W1", "W2"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Maria Sidorova", ["W3"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         self.assertEqual(result["dedup_merged"], 1)
         self.assertEqual(set(people), {"A1"})
@@ -111,7 +111,7 @@ class DedupStageTest(unittest.TestCase):
     def test_name_variant_with_shared_coauthor_merges(self):
         result, people = self.run_stage([
             person("A1", "Nikolay O. Nikitin", ["W1", "W2"],
-                   variants=["Nikolay Nikitin", "N.O. Nikitin"], orcid="0000-0002"),
+                   variants=["Nikolay Nikitin", "N.O. Nikitin"], orcid="0000-0001-5109-3700"),
             person("A2", "Nikolay Nikitin", ["W3"]),
             person("A3", "Ilia Revin", ["W1", "W3"]),
         ])
@@ -287,8 +287,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_same_name_with_different_orcids_stays_separate(self):
         result, people = self.run_stage([
-            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0001"),
-            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0002"),
+            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0002-1825-0097"),
+            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0001-5109-3700"),
         ])
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
         self.assertEqual(len(people), 2)
@@ -321,8 +321,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_conflicting_orcids_block_merge_and_candidates(self):
         result, people = self.run_stage([
-            person("A1", "Nikolay O. Nikitin", ["W1"], variants=["Nikolay Nikitin"], orcid="0000-0002"),
-            person("A2", "Nikolay Nikitin", ["W3"], orcid="0000-0003"),
+            person("A1", "Nikolay O. Nikitin", ["W1"], variants=["Nikolay Nikitin"], orcid="0000-0001-5109-3700"),
+            person("A2", "Nikolay Nikitin", ["W3"], orcid="0000-0002-1694-233X"),
             person("A3", "Ilia Revin", ["W1", "W3"]),
         ])
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
@@ -339,9 +339,9 @@ class DedupStageTest(unittest.TestCase):
 
     def test_transitive_orcid_group_folds_into_most_published(self):
         result, people = self.run_stage([
-            person("A1", "Name One", ["W1"], orcid="0000-0004"),
-            person("A2", "Name Two", ["W2", "W3"], orcid="0000-0004"),
-            person("A3", "Name Three", ["W4"], orcid="0000-0004"),
+            person("A1", "Name One", ["W1"], orcid="0000-0002-9079-593X"),
+            person("A2", "Name Two", ["W2", "W3"], orcid="0000-0002-9079-593X"),
+            person("A3", "Name Three", ["W4"], orcid="0000-0002-9079-593X"),
         ])
         self.assertEqual(result["dedup_merged"], 2)
         self.assertEqual(set(people), {"A2"})
@@ -353,8 +353,8 @@ class DedupStageTest(unittest.TestCase):
         # The crossref backfill can stamp a namesake's ORCID onto the wrong
         # person; the raw OpenAlex author record is the trusted source.
         result, people = self.run_stage([
-            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
-            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
+            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         # Without raw records prepared orcids are trusted - they merge...
         self.assertEqual(result["dedup_merged"], 1)
@@ -365,14 +365,14 @@ class DedupStageTest(unittest.TestCase):
         prepared = PreparedStore(db2, "sample")
         raw = RawStore(db2, "sample")
         prepared.write_models("persons", [
-            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
-            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
+            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         raw.append("openalex_authors",
-                   {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0001"},
+                   {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0002-1825-0097"},
                    {"author_id": "A1"})
         raw.append("openalex_authors",
-                   {"id": "https://openalex.org/A2", "orcid": "https://orcid.org/0000-0002"},
+                   {"id": "https://openalex.org/A2", "orcid": "https://orcid.org/0000-0001-5109-3700"},
                    {"author_id": "A2"})
         result = DedupStage(prepared, raw, self.config).run()
         self.assertEqual(result["dedup_merged"], 0)
@@ -382,10 +382,10 @@ class DedupStageTest(unittest.TestCase):
         # A and B each legitimately pair with the no-ORCID bridge M, but the
         # resulting group would span two distinct ORCIDs - refuse it whole.
         result, people = self.run_stage([
-            person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0001",
+            person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0002-1825-0097",
                    variants=["A. Ivanova"]),
             person("A2", "A. Ivanova", ["W3"], variants=["Anna Ivanova", "Anna B. Ivanova"]),
-            person("A3", "Anna B. Ivanova", ["W4"], orcid="0000-0002"),
+            person("A3", "Anna B. Ivanova", ["W4"], orcid="0000-0001-5109-3700"),
             person("A4", "Shared Coauthor", ["W1", "W3", "W4"]),
         ])
         self.assertEqual(result["dedup_merged"], 0)
@@ -397,8 +397,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_second_run_is_a_no_op(self):
         _, people = self.run_stage([
-            person("A1", "Maria Petrova", ["W1", "W2"], orcid="0000-0001"),
-            person("A2", "Maria Sidorova", ["W3"], orcid="0000-0001"),
+            person("A1", "Maria Petrova", ["W1", "W2"], orcid="0000-0002-1825-0097"),
+            person("A2", "Maria Sidorova", ["W3"], orcid="0000-0002-1825-0097"),
         ])
         again = DedupStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["dedup_merged"], 0)
@@ -856,7 +856,7 @@ class GraphDedupTest(unittest.TestCase):
         self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
                             [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
-                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0000-0002-1825-0097")])
         removed, report = dedup_graph_persons(client, {})
         self.assertEqual(removed, 1)
         # The record carrying an ORCID wins the canonical spot.
@@ -925,7 +925,7 @@ class GraphDedupTest(unittest.TestCase):
                             [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
                             [person("Y1", "Julia Borisova", ["W2"])])
-        removed, _report = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
+        removed, _report = dedup_graph_persons(client, {"X1": "0000-0002-1825-0097", "Y1": "0000-0001-5109-3700"})
         self.assertEqual(removed, 0)
         self.assertIn("X1", client.nodes["Person"])
         self.assertIn("Y1", client.nodes["Person"])
@@ -1027,7 +1027,7 @@ class GraphDedupTest(unittest.TestCase):
         old_group = self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
                                         [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
-                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0000-0002-1825-0097")])
         dedup_graph_persons(client, {})
         # The old group's prepared rows still carry X1: republishing them
         # must fold it right back instead of splitting the person again.
@@ -1273,8 +1273,8 @@ class BlockingTest(unittest.TestCase):
 
     def test_a_shared_orcid_pairs_names_with_nothing_in_common(self):
         people = [
-            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0001"),
-            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0001"),
+            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0002-1825-0097"),
+            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0002-1825-0097"),
         ]
         self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
 
@@ -1409,9 +1409,9 @@ class ReviewDecisionsTest(unittest.TestCase):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
         review.record_verdict(self.db, review.PAIR, ["A2", "A3"], review.SAME)
         result, people = self.run_stage([
-            person("A1", "Ivan Smirnov", ["W1"], orcid="0000-0001"),
+            person("A1", "Ivan Smirnov", ["W1"], orcid="0000-0002-1825-0097"),
             person("A2", "Ivan Smirnov", ["W2"]),
-            person("A3", "Ivan Smirnov", ["W3"], orcid="0000-0002"),
+            person("A3", "Ivan Smirnov", ["W3"], orcid="0000-0001-5109-3700"),
         ])
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(set(people), {"A1", "A2", "A3"})
