@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 WRITE_BATCH = 200
 # Texts are mostly English. On a raw Russian question no analyzer helps BM25
 # (compared on 2026-10-06: standard, english and russian return the same
-# noise) - there are hardly any shared words. With the question translated
-# (`Rag.translate`, passed to retrieve as `bm25_query`), English stemming and stop words are what matter.
+# noise) - there are hardly any shared words. With the question turned into English keywords
+# (`Rag.extract_keywords`, passed to retrieve as `bm25_query`), English stemming and stop words are what matter.
 ANALYZER = "english"
 NOT_RESEARCH = {"paratext", "peer-review"}
 FIGURE_LIKE = {"other", "dataset"}  # without an abstract: almost always one figure or table with its own DOI

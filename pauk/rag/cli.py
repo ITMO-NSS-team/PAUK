@@ -52,8 +52,15 @@ def add_parser(subparsers) -> None:
     p.add_argument("--profile", default="full")
     p.add_argument("--mode", choices=MODES, default="hybrid")
     p.add_argument("--fusion", choices=["minmax", "rrf"], default="minmax")
-    p.add_argument("--no-translate", action="store_true",
-                   help="BM25 on the question as written, not on its English keywords (saves one LLM call)")
+    p.add_argument("--no-keywords", action="store_true",
+                   help="search by the question as written, without LLM keyword extraction (saves one LLM call)")
+    p.add_argument("--keywords", default=None,
+                   help="use these English keywords instead of extracting them (as the planner passes them)")
+    p.add_argument("--no-abstain", action="store_true",
+                   help="always show the nearest results, even when the best match is below the model's threshold")
+    p.add_argument("--no-dense-keywords", action="store_true",
+                   help="give the encoder the question as written instead of the extracted keywords "
+                        "(BM25 still gets them)")
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--all-people", action="store_true", help="keep co-authors from outside ITMO")
     p.add_argument("--no-answer", action="store_true", help="retrieval only, no LLM call")
@@ -71,10 +78,38 @@ def add_parser(subparsers) -> None:
                    help="judgments JSON of an earlier run to copy matching grades from")
     p.add_argument("--judge", help="seed into judgments_<judge>.json instead of judgments.json")
 
-    p = sub.add_parser("metrics", help="P@k, nDCG@k, MRR per variant; sign test against a baseline")
+    p = sub.add_parser("calibrate", help="a model's min_score from off-topic questions, for empty answers")
+    p.add_argument("--variant", default="full@qwen3:hybrid:en+kw",
+                   help="the configuration ask uses; the threshold holds only for its query")
+    p.add_argument("--questions", default=None,
+                   help="CSV of questions the graph does not cover (default: data/rag/calibration/offtopic.csv)")
+    p.add_argument("--quantile", type=float, default=0.95,
+                   help="share of off-topic questions to answer empty (default 0.95)")
+
+    p = sub.add_parser("judge", help="grade a run's publications and repositories with an OpenRouter model")
+    p.add_argument("--run", default="human_check")
+    p.add_argument("--judge", required=True, help="writes judgments_<judge>.json, e.g. qwen")
+    p.add_argument("--model", default=None, help="OpenRouter model id (default: PAUK_LLM_MODEL)")
+    p.add_argument("--against", default=None,
+                   help="judge to report agreement with when done (default: judgments.json, the manual grades)")
+    p.add_argument("--workers", type=int, default=8, help="parallel requests (one item each)")
+    p.add_argument("--reasoning-effort", default=None,
+                   help="for reasoning models, e.g. minimal: OpenRouter's reasoning effort")
+    p.add_argument("--limit", type=int, default=None, help="judge only this many items (a probe)")
+    p.add_argument("--no-depth-line", action="store_true",
+                   help="the prompt without the pool-depth line, as the tails run was judged")
+
+    p = sub.add_parser("tails", help="rank of the last relevant item per variant, to choose the pool depth")
+    p.add_argument("--run", default="tails")
+    p.add_argument("--judge", required=True)
+
+    p = sub.add_parser("metrics", help="P@k, R@k, nDCG@k, MRR per variant; sign test against a baseline")
     p.add_argument("--run", default="validation")
+    p.add_argument("--k", help="comma-separated cutoffs, e.g. 3,5,10 (default: 5 and the pool's k; "
+                               "none above the pool's k); the sign test uses nDCG at the largest")
     p.add_argument("--judge", help="use judgments_<judge>.json and report agreement with judgments.json")
     p.add_argument("--baseline", help="variant the others are compared with, e.g. full:hybrid")
+    p.add_argument("--against", default=None, help="judge to compare --judge with instead of judgments.json")
 
 
 def runs_dir(config: Settings) -> Path:
@@ -148,7 +183,9 @@ def run(args, config: Settings) -> None:
         rag = Rag(config, model=args.model)
         try:
             result = rag.ask(args.question, profile=args.profile, mode=args.mode, fusion=args.fusion,
-                             translate=not args.no_translate, top_n=args.top, only_itmo=not args.all_people,
+                             keywords=not args.no_keywords, dense_keywords=not (args.no_keywords or args.no_dense_keywords),
+                             query_keywords=args.keywords, abstain=not args.no_abstain,
+                             top_n=args.top, only_itmo=not args.all_people,
                              with_answer=not args.no_answer)
         finally:
             rag.close()
@@ -159,8 +196,12 @@ def run(args, config: Settings) -> None:
 
         run_dir = runs_dir(config) / args.run
         questions = Path(args.questions) if args.questions else run_dir / "questions.csv"
-        if args.variants:
+        if args.variants is not None:
+            # An empty list (an unset shell variable) must fail, not fall back
+            # to the defaults and judge a pool nobody asked for.
             variants = _csv(args.variants)
+            if not variants:
+                raise SystemExit("--variants is empty")
         elif (run_dir / "pool.json").is_file():
             variants = list(json.loads((run_dir / "pool.json").read_text(encoding="utf-8"))["variants"])
         else:
@@ -174,16 +215,85 @@ def run(args, config: Settings) -> None:
         items = sum(len(v) for q in pool["questions"] for v in q["items"].values())
         print(json.dumps({"run": str(run_dir), "questions": len(pool["questions"]), "items": items,
                           "variants": list(pool["variants"]), "seeded": seeded}, ensure_ascii=False, indent=2))
-    elif command == "metrics":
-        from .evaluation import agreement, compute_metrics
+    elif command == "calibrate":
+        from .evaluation import calibrate
+        from .retrieve import Rag
+
+        questions = Path(args.questions) if args.questions else config.data_dir / "rag" / "calibration" / "offtopic.csv"
+        rag = Rag(config)
+        try:
+            print(json.dumps(calibrate(rag, questions, args.variant, args.quantile), ensure_ascii=False, indent=2))
+        finally:
+            rag.close()
+    elif command == "judge":
+        from pauk.sources.llm import OpenRouterClient
+
+        from .evaluation import (
+            _write_json,
+            agreement,
+            judge_pool,
+            judgments_path,
+            load_judgments,
+            load_pool,
+            person_grades,
+        )
 
         run_dir = runs_dir(config) / args.run
-        rows = compute_metrics(run_dir, args.judge, args.baseline)
+
+        def make_llm():
+            return OpenRouterClient(config.request_timeout, config.openrouter_api_key,
+                                    args.model or config.llm_model, config.openrouter_proxy_url)
+
+        result = judge_pool(run_dir, make_llm, args.judge, args.workers, state_depth=not args.no_depth_line,
+                            reasoning_effort=args.reasoning_effort, limit=args.limit)
+        # People are graded from their works by rule, never by the model.
+        judgments = load_judgments(run_dir, args.judge)
+        result["persons"] = person_grades(load_pool(run_dir), judgments)
+        _write_json(judgments_path(run_dir, args.judge), judgments)
+        print(json.dumps({"model": args.model or config.llm_model, **result,
+                          "agreement": agreement(run_dir, args.judge, args.against or None)},
+                         ensure_ascii=False, indent=2))
+    elif command == "tails":
+        import csv
+
+        from .evaluation import _write_json, load_judgments, load_pool, tails
+
+        run_dir = runs_dir(config) / args.run
+        rows = tails(load_pool(run_dir), load_judgments(run_dir, args.judge))
+        with (run_dir / f"tails_{args.judge}.csv").open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(rows[0]) if rows else ["question"])
+            writer.writeheader()
+            writer.writerows(rows)
+        summary = {}
+        for kind in ("publications", "repositories"):
+            mine = [r for r in rows if r["kind"] == kind]
+            if mine:
+                deepest = max(mine, key=lambda r: r["last_relevant"])
+                summary[kind] = {"max_last_relevant": deepest["last_relevant"], "depth": deepest["depth"],
+                                 "at": {"question": deepest["question"], "variant": deepest["variant"]},
+                                 "cut_by_ceiling": sum(r["last_relevant"] == r["depth"] for r in mine),
+                                 "unjudged": sum(r["unjudged"] for r in mine)}
+        _write_json(run_dir / f"tails_{args.judge}.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    elif command == "metrics":
+        from .evaluation import abstention, agreement, agreement_by_question, compute_metrics, load_pool
+
+        run_dir = runs_dir(config) / args.run
+        cutoffs = tuple(int(k) for k in _csv(args.k)) if args.k else None
+        rows = compute_metrics(run_dir, args.judge, args.baseline, cutoffs)
         columns = list(dict.fromkeys(key for row in rows for key in row))
         print("\t".join(columns))
         for row in rows:
             print("\t".join(str(row.get(c, "")) for c in columns))
+        for row in abstention(load_pool(run_dir)):
+            right = f"right {row['empty_right']}/{row['unanswerable']}, wrong {row['empty_wrong']}/{row['answerable']}" \
+                if row["min_score"] is not None else "no threshold for this model"
+            print(f"empty answers, {row['variant']}: {right}; auc {row['auc']}, best threshold {row['best_threshold']}")
         if args.judge:
-            for row in agreement(run_dir, args.judge):
-                print(f"agreement with judgments.json, {row['kind']}: {row['items']} items, exact {row['exact']}, "
-                      f"kappa {row['kappa']}, weighted {row['weighted_kappa']}")
+            against = f"judgments_{args.against}.json" if args.against else "judgments.json"
+            for row in agreement(run_dir, args.judge, args.against):
+                print(f"agreement with {against}, {row['kind']}: {row['items']} items, exact {row['exact']}, "
+                      f"kappa {row['kappa']}, weighted {row['weighted_kappa']} {row.get('weighted_kappa_ci', '')}")
+            for row in agreement_by_question(run_dir, args.judge, args.against):
+                print(f"agreement with {against}, question: {row['items']} items, exact {row['exact']}, "
+                      f"weighted {row['weighted_kappa']} - {row['question']}")

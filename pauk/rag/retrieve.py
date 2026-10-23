@@ -15,6 +15,7 @@ retrieval, and the answer is judged on its own.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
@@ -181,21 +182,23 @@ class Rag:
 
     # --- retrieval ----------------------------------------------------------------
 
-    def translate(self, question: str) -> str:
-        """English search keywords for the question, cached on disk per model.
+    def extract_keywords(self, question: str) -> str:
+        """English search keywords for the question: the topic in the terms papers use, filler dropped.
 
-        Only BM25 uses them: the embedding model is multilingual and reads
-        the question as written, while full-text search needs the words the
-        mostly English texts use.
+        BM25 needs them - it matches words, and the texts are mostly English.
+        The encoder may take them too (`dense_query`): Qwen3-Embedding gains
+        much from them, BGE-M3 nothing (validation of 2026-10-15).
+        Cached on disk per LLM and prompt: a rerun of the validation must
+        see the same keywords, and an edited prompt must not reuse old ones.
         """
-        path = self.config.data_dir / "rag" / "translations.json"
+        path = self.config.data_dir / "rag" / "keywords.json"
         cache = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-        key = f"{self.llm.model}\0{question}"
+        key = f"{self.llm.model}\0{KEYWORDS_PROMPT_ID}\0{question}"
         if key not in cache:
-            raw = self.llm.chat_json(question, system_prompt=TRANSLATE_SYSTEM, max_tokens=TRANSLATE_MAX_TOKENS)
+            raw = self.llm.chat_json(question, system_prompt=KEYWORDS_SYSTEM, max_tokens=KEYWORDS_MAX_TOKENS)
             query = raw.get("query") if isinstance(raw, dict) else None
             if not isinstance(query, str) or not query.strip():
-                raise RuntimeError(f"no translation: {self.llm.last_error or raw!r}")
+                raise RuntimeError(f"no keywords: {self.llm.last_error or raw!r}")
             cache[key] = query.strip()
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".tmp")
@@ -205,19 +208,21 @@ class Rag:
 
     def retrieve(self, question: str, *, profile: str = "full", model: str | None = None, mode: Mode = "hybrid",
                  k: int = 50,
-                 fusion: str = "minmax", bm25_query: str | None = None,
+                 fusion: str = "minmax", bm25_query: str | None = None, dense_query: str | None = None,
                  labels: tuple[str, ...] = LABELS) -> dict[str, list[Hit]]:
         """Top `k` publications and repositories for the question, best first.
 
         `bm25_query` replaces the question for full-text search only (the
-        translation from `translate`); the caller obtains it, so a failed
-        translation is handled once, where the caller can report it.
+        keywords from `extract_keywords`); the caller obtains it, so a failed
+        extraction is handled once, where the caller can report it.
+        `dense_query` does the same for the encoder - the validation uses it
+        to test the keywords against the question as written.
         """
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         model = get_model(model or self.model).alias
         spec = self.profile(profile, model)
-        vector = (self.embedder(model).encode([question], query=True)[0].tolist()
+        vector = (self.embedder(model).encode([dense_query or question], query=True)[0].tolist()
                   if mode != "bm25" else None)
         terms = escape_lucene(bm25_query or question)
         out: dict[str, list[Hit]] = {}
@@ -281,6 +286,18 @@ class Rag:
                 break
         return people
 
+    def weak_labels(self, hits: dict[str, list[Hit]], model: str) -> dict[str, float]:
+        """Labels whose best raw dense score falls below the model's `min_score`, with that score."""
+        threshold = get_model(model).min_score
+        if threshold is None:
+            return {}
+        weak = {}
+        for label, items in hits.items():
+            scores = [h.dense for h in items if h.dense is not None]
+            if scores and max(scores) < threshold:
+                weak[label] = max(scores)
+        return weak
+
     def describe(self, hits: dict[str, list[Hit]], profile: str, model: str | None = None) -> None:
         """Titles, years, authors and the indexed text, for the answer and for judges."""
         spec = self.profile(profile, model)
@@ -336,40 +353,66 @@ class Rag:
 
     def ask(self, question: str, *, profile: str = "full", model: str | None = None, mode: Mode = "hybrid",
             k: int = 50,
-            top_n: int = 10, fusion: str = "minmax", translate: bool = True, only_itmo: bool = True,
-            with_answer: bool = True) -> dict:
-        """One answer; `translate` defaults on, since hybrid:en won the 2026-10-07 validation.
+            top_n: int = 10, fusion: str = "minmax", keywords: bool = True, dense_keywords: bool = True,
+            query_keywords: str | None = None,
+            abstain: bool = True, only_itmo: bool = True, with_answer: bool = True) -> dict:
+        """One answer. `keywords` gives BM25 the extracted keywords, `dense_keywords` gives them to
+        the encoder too; both are on by default - with Qwen3-Embedding, the default model, that is
+        the best variant of the 2026-10-15 validation.
 
-        A failed translation (no API key, network) degrades to BM25 on the
-        question as written instead of failing the answer, and says so.
+        `query_keywords` are keywords the caller already has - the planner
+        of the text-to-Cypher pipeline asks for them in its own LLM call,
+        following KEYWORDS_RULES - and replace the extraction, saving a call.
+        Without them the keywords are extracted here, as the validation does:
+        its metrics hold for `extract_keywords`, so planner keywords should
+        be checked against them before they are trusted to the same degree.
+
+        A failed extraction (no API key, network) degrades to the question
+        as written instead of failing the answer, and says so.
         """
         timings: dict[str, float] = {}
         notes: list[str] = []
         start = time.perf_counter()
-        bm25_query = None
-        if translate and mode != "dense":
+        extracted = query_keywords.strip() if query_keywords and query_keywords.strip() else None
+        source = "given" if extracted else None
+        wanted = (keywords and mode != "dense") or (dense_keywords and mode != "bm25")
+        if wanted and extracted is None:
             try:
-                bm25_query = self.translate(question)
+                extracted = self.extract_keywords(question)
+                source = "extracted"
             except Exception as exc:  # the answer is still worth giving without it
-                notes.append(f"Перевод вопроса для BM25 не получен ({exc}); поиск по словам вопроса как есть.")
-                translate = False
+                notes.append(f"Ключевые слова вопроса не получены ({exc}); поиск по вопросу как есть.")
+                keywords = dense_keywords = False
         model = get_model(model or self.model).alias
         hits = self.retrieve(question, profile=profile, model=model, mode=mode, k=k, fusion=fusion,
-                             bm25_query=bm25_query)
+                             bm25_query=extracted if keywords else None,
+                             dense_query=extracted if dense_keywords else None)
+        if abstain:
+            # Nearest neighbours always exist; a weak best match means the
+            # graph has nothing on the topic, and an empty answer is the right one.
+            for label, weak in self.weak_labels(hits, model).items():
+                hits[label] = []
+                notes.append(f"{'Публикаций' if label == 'Publication' else 'Репозиториев'} по теме не найдено: "
+                             f"лучшее совпадение {weak:.3f} ниже порога модели.")
         timings["retrieve"] = round(time.perf_counter() - start, 3)
         people = self.experts(hits, top_n=top_n, only_itmo=only_itmo)
         timings["experts"] = round(time.perf_counter() - start - timings["retrieve"], 3)
         shown = {label: items[:top_n] for label, items in hits.items()}
         self.describe(shown, profile, model)
         answer = None
-        if with_answer:
+        if not any(shown.values()):
+            notes.append("По теме вопроса в графе ничего не найдено.")
+        elif with_answer:
             mark = time.perf_counter()
             answer = self.answer(question, shown, people)
             timings["answer"] = round(time.perf_counter() - mark, 3)
         return {
             "question": question,
             "options": {"profile": profile, "model": model, "mode": mode, "k": k, "top_n": top_n, "fusion": fusion,
-                        "translate": translate, "only_itmo": only_itmo},
+                        "keywords": keywords, "dense_keywords": dense_keywords,
+                        "query_keywords": extracted if wanted else None, "keywords_source": source if wanted else None,
+                        "abstain": abstain,
+                        "only_itmo": only_itmo},
             "persons": people,
             "publications": [asdict(h) for h in shown.get("Publication", [])],
             "repositories": [asdict(h) for h in shown.get("Repository", [])],
@@ -390,8 +433,16 @@ ANSWER_SYSTEM = """Ты отвечаешь на вопрос о науке в У
 # A cap keeps a looping model from running for minutes; 900 tokens hold 200 words with citations.
 ANSWER_MAX_TOKENS = 900
 
-TRANSLATE_SYSTEM = """Turn the user's question about research into English search keywords for a full-text
-search over paper titles, abstracts and repository READMEs. Translate the topic into the terms papers use.
-Keep names of models, methods, datasets, software and people exactly as written. Drop question words and
-filler ("who", "is there", "where", "in ITMO"). Return a JSON object {"query": "<keywords>"}."""
-TRANSLATE_MAX_TOKENS = 120
+# The rules alone, without the reply format: a caller that plans the question
+# with its own LLM call (the text-to-Cypher planner) puts them into its prompt,
+# so its keywords follow the rules the validation measured.
+KEYWORDS_RULES = """English search keywords from the user's question about research. They are used to
+retrieve scientific papers and code repositories, both by word matching and by meaning, so give the topic in
+the terms papers use. Keep names of models, methods, datasets, software and people exactly as written.
+Drop question words and filler ("who", "is there", "where", "works on"). Drop the names of the university and
+its units (ITMO, institutes, centres, laboratories): they appear in the affiliations of most texts and say
+nothing about the topic."""
+KEYWORDS_SYSTEM = f"""Extract {KEYWORDS_RULES} Return a JSON object {{"query": "<keywords>"}}."""
+KEYWORDS_MAX_TOKENS = 120
+# Part of the cache key: editing the prompt must not reuse keywords it no longer produces.
+KEYWORDS_PROMPT_ID = hashlib.sha1(KEYWORDS_SYSTEM.encode()).hexdigest()[:8]

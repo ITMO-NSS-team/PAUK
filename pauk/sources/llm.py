@@ -55,6 +55,7 @@ class OpenRouterClient(HttpClient):
         *,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
+        reasoning: dict | None = None,
     ) -> dict | None:
         """POST one user message, return the parsed JSON reply or None.
 
@@ -84,6 +85,11 @@ class OpenRouterClient(HttpClient):
         }
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        if reasoning is not None:
+            # OpenRouter's reasoning control (e.g. {"effort": "minimal"}): a
+            # reasoning model spends max_tokens on thinking first, and with a
+            # small cap it can return no answer at all.
+            body["reasoning"] = reasoning
 
         response = None
         for attempt in range(_TRANSIENT_RETRIES + 1):

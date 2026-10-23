@@ -11,6 +11,12 @@ from pauk.person_resolution_defaults import MERGE_FROM, SEPARATE_BELOW
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
+# Where the map's static files live. Inside the package by default, because
+# `public/` is committed — the GitHub Pages build is an artefact of this
+# repository. A service that rebuilds the map has no business writing into
+# its own source tree, so the path is a setting rather than a constant.
+MAP_DIR = Path(__file__).resolve().parent / "gui" / "data"
+
 
 def _path_setting(name: str, default: Path) -> Path:
     configured = os.getenv(name)
@@ -23,6 +29,7 @@ def _path_setting(name: str, default: Path) -> Path:
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path(os.getenv("PAUK_DATA_DIR") or ROOT_DIR / "data")
+    map_dir: Path = Path(os.getenv("PAUK_MAP_DIR") or MAP_DIR)
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
@@ -51,6 +58,10 @@ class Settings:
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "")
+    # The default of `pauk rag --model`: an alias or name from pauk/rag/models.py
+    # (bge, arctic, qwen3); each model keeps its own vectors. Qwen3 with the
+    # extracted keywords won the 2026-10-15 validation on all three kinds.
+    rag_embedding_model: str = os.getenv("PAUK_RAG_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
@@ -59,7 +70,7 @@ class Settings:
     # over TLS, and the browser stops sending the cookie unencrypted.
     admin_secure_cookie: bool = os.getenv("PAUK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
-    # Official ITMO staff records (personal data, never committed).
+    # Official ITMO staff records (personal data — never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
 
