@@ -180,7 +180,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
 
         for index in (1, 2, 3):
             _client.upsert_person_nodes_batch([(f"A{index}", {
-                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0001",
+                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0002-1825-0097",
                 "emails": [f"a{index}@example.org"], "other_names": [f"Alias {index}"],
                 "affiliations": json.dumps([{"name": f"Institute {index}", "source": "openalex"}]),
                 "biography": f"Profile {index}",
@@ -196,7 +196,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         from pauk.graph.dedup import dedup_graph_persons
 
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="0000-0002-1825-0097",
             emails=[f"p{i}@example.org"], other_names=[f"Alias {i}"],
             affiliations=[{"name": f"University {i}", "source": "openalex"}],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -340,7 +340,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         db = mongomock.MongoClient().dedup_test
         prepared = PreparedStore(db, "test")
         people = [
-            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="same",
+            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="0000-0002-1825-0097",
                    emails=[f"person{i}@example.org"],
                    authored=[{"publication_id": "W1", "is_corresponding": i == 2}])
             for i in (1, 2)
