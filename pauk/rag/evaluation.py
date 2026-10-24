@@ -41,6 +41,9 @@ K = 10
 # The model of a variant written without `@model`; see parse_variant.
 VARIANT_DEFAULT_MODEL = "bge"
 KINDS = ("persons", "publications", "repositories")
+# Question ids carry their group: `q152t2`. Only `t3` (semantic) is evaluated here.
+QUESTION_GROUP = re.compile(r"q\d+t(?P<group>\d+)")
+SEMANTIC_GROUP = "3"
 GRADES = (0, 1, 2)
 SNIPPET_CHARS = 700
 # How much of a paper's full text and of a README the judge reads (the judging prompt).
@@ -61,14 +64,26 @@ RETURN r.id AS id, r.name AS name, r.url AS url, r.description AS description, r
 """
 
 
-def read_questions(path: Path) -> list[dict[str, str]]:
-    """Rows of a CSV with a `question` column; other columns travel along as `meta`."""
+def read_questions(path: Path, groups: tuple[str, ...] = (SEMANTIC_GROUP,)) -> list[dict[str, str]]:
+    """Rows of a CSV with a `question` column; other columns travel along as `meta`.
+
+    The shared question bank also holds graph (`q…t1`) and mixed (`q…t2`)
+    questions, routed elsewhere; by default only the semantic group (`q…t3`)
+    is this module's to retrieve and grade. The mixed pipeline pools its
+    questions here too and asks for its group by `groups`. The group is read
+    from the id, not from `type`: `no_answer` occurs in every group. Rows
+    without such an id (an off-topic set for `calibrate`, older files) are
+    all kept.
+    """
     with path.open(encoding="utf-8-sig", newline="") as fh:
         rows = [{k: (v or "").strip() for k, v in row.items() if k} for row in csv.DictReader(fh)]
     if rows and "question" not in rows[0]:
         raise ValueError(f"{path} has no 'question' column")
     seen, out = set(), []
     for row in rows:
+        group = QUESTION_GROUP.fullmatch(row.get("id", ""))
+        if group and group["group"] not in groups:
+            continue
         if row.get("question") and row["question"] not in seen:
             seen.add(row["question"])
             out.append(row)
@@ -120,17 +135,24 @@ def _snippet(text: str | None) -> str:
 
 # --- pool -------------------------------------------------------------------------
 
-def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str], k: int = K) -> dict[str, Any]:
+def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str], k: int = K, *,
+               groups: tuple[str, ...] = (SEMANTIC_GROUP,), keywords_path: Path | None = None) -> dict[str, Any]:
+    """Every variant's top-k for every question, pooled for judging; see `read_questions` for `groups`.
+
+    `keywords_path` holds the hand-kept keywords by question id (default:
+    data/rag/keywords.json); a pipeline keeping its own bank passes its file.
+    """
     specs = {name: parse_variant(name) for name in variants}
-    questions = read_questions(questions_path)
+    questions = read_questions(questions_path, groups)
+    keywords = load_keywords(keywords_path or default_keywords_path(rag))
     # Variants of one model run back to back, so each model is loaded once.
     retrieved: dict[tuple[str, str], dict[str, list[Hit]]] = {}
     for name in sorted(specs, key=lambda n: specs[n]["model"] or rag.model):
         spec = specs[name]
         for meta in questions:
             question = meta["question"]
-            bm25_query = rag.extract_keywords(question) if spec["bm25_keywords"] and spec["mode"] != "dense" else None
-            dense_query = rag.extract_keywords(question) if spec["dense_keywords"] and spec["mode"] != "bm25" else None
+            bm25_query = _keywords(rag, meta, keywords)["text"] if spec["bm25_keywords"] and spec["mode"] != "dense" else None
+            dense_query = _keywords(rag, meta, keywords)["text"] if spec["dense_keywords"] and spec["mode"] != "bm25" else None
             # Deeper than k: the people are aggregated from these items.
             retrieved[name, question] = rag.retrieve(question, profile=spec["profile"], model=spec["model"],
                                                      mode=spec["mode"], fusion=spec["fusion"],
@@ -190,9 +212,10 @@ def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str
         for p in persons.values():
             p["evidence"] = [titles.get(i) or i for i in p["evidence"][:5]]
             p["code"] = [names.get(i) or i for i in p["code"][:5]]
-        entries.append({"question": question, "meta": meta, "rankings": rankings, "items": items, "extra": extra,
+        # Judgments are keyed by the question's id; the text stays in `meta`.
+        entries.append({"question": meta.get("id") or question, "meta": meta, "rankings": rankings, "items": items, "extra": extra,
                         "order": {kind: _shuffled(question, list(items[kind])) for kind in KINDS},
-                        "keywords": _keywords_used(rag, question, specs)})
+                        "keywords": _keywords_used(rag, meta, keywords, specs)})
     pool = {"k": k, "variants": specs, "kinds": list(KINDS), "questions": entries}
     add_person_context(rag.graph, pool)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -200,7 +223,31 @@ def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str
     return pool
 
 
-def _keywords_used(rag: Rag, question: str, specs: dict[str, dict[str, Any]]) -> dict[str, str] | None:
+def default_keywords_path(rag: Rag) -> Path:
+    return rag.config.data_dir / "rag" / "keywords.json"
+
+
+def load_keywords(path: Path) -> dict[str, dict[str, str]]:
+    """Hand-kept keywords by question id (`{"text", "llm", "prompt_id"}`).
+
+    The file may also hold `Rag.extract_keywords`' own cache, keyed by model,
+    prompt and text; those entries are skipped, as are empty ones (not yet
+    marked up), so such questions fall back to extraction.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    return {key: value for key, value in raw.items() if isinstance(value, dict) and value.get("text")}
+
+
+def _keywords(rag: Rag, meta: dict[str, str], keywords: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Keywords for the question: the hand-kept ones by its `id`, else extracted as before."""
+    found = keywords.get(meta.get("id", ""))
+    if found:
+        return found
+    return {"text": rag.extract_keywords(meta["question"]), "llm": rag.llm.model, "prompt_id": KEYWORDS_PROMPT_ID}
+
+
+def _keywords_used(rag: Rag, meta: dict[str, str], keywords: dict[str, dict[str, str]],
+                   specs: dict[str, dict[str, Any]]) -> dict[str, str] | None:
     """The keywords the variants searched with, and what made them, so the pool stands without the cache.
 
     They come from the cache the variants just used; the judges never see
@@ -208,7 +255,7 @@ def _keywords_used(rag: Rag, question: str, specs: dict[str, dict[str, Any]]) ->
     """
     if not any(spec["bm25_keywords"] or spec["dense_keywords"] for spec in specs.values()):
         return None
-    return {"text": rag.extract_keywords(question), "llm": rag.llm.model, "prompt_id": KEYWORDS_PROMPT_ID}
+    return _keywords(rag, meta, keywords)
 
 
 def _item_details(rag: Rag, rankings: dict[str, dict[str, list[str]]]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -318,8 +365,8 @@ def save_judgment(run_dir: Path, question: str, kind: str, item_id: str, grade: 
 def seed_judgments(run_dir: Path, source: Path, judge: str | None = None) -> int:
     """Copy grades from an earlier run for the same questions and items, without overwriting.
 
-    Keys are `<kind>:<node id>` per question text, so grades made in the
-    prototype (`data/search/.../judgments*.json`) carry over as they are.
+    Keys are `<kind>:<node id>` per question id (the `id` column), so the
+    source must be keyed by ids too.
     """
     pool = load_pool(run_dir)
     earlier = json.loads(source.read_text(encoding="utf-8"))
@@ -372,7 +419,8 @@ def judge_message(entry: dict[str, Any], kind: str, item: dict[str, Any]) -> str
     else:
         element = {"тип": "репозиторий", "название": item.get("title"), "описание": item.get("description") or "",
                    "README (начало)": item.get("readme_full") or ""}
-    return json.dumps({"вопрос": entry["question"], "правило релевантности": entry["meta"].get("expected", ""),
+    # `question` is the id in newer pools; the text is in `meta`.
+    return json.dumps({"вопрос": entry["meta"].get("question") or entry["question"], "правило релевантности": entry["meta"].get("expected", ""),
                        "элемент": element}, ensure_ascii=False, indent=1)
 
 
@@ -657,12 +705,13 @@ def calibrate(rag: Rag, questions_path: Path, variant: str, quantile: float = 0.
     honest estimate.
     """
     spec = parse_variant(variant)
+    keywords = load_keywords(default_keywords_path(rag)) if spec["bm25_keywords"] or spec["dense_keywords"] else {}
     scores = []
     for meta in read_questions(questions_path):
         question = meta["question"]
         label = "Repository" if targets(meta) == ("repositories",) else "Publication"
-        bm25_query = rag.extract_keywords(question) if spec["bm25_keywords"] and spec["mode"] != "dense" else None
-        dense_query = rag.extract_keywords(question) if spec["dense_keywords"] and spec["mode"] != "bm25" else None
+        bm25_query = _keywords(rag, meta, keywords)["text"] if spec["bm25_keywords"] and spec["mode"] != "dense" else None
+        dense_query = _keywords(rag, meta, keywords)["text"] if spec["dense_keywords"] and spec["mode"] != "bm25" else None
         hits = rag.retrieve(question, profile=spec["profile"], model=spec["model"], mode=spec["mode"],
                             fusion=spec["fusion"], bm25_query=bm25_query, dense_query=dense_query,
                             labels=(label,)).get(label, [])

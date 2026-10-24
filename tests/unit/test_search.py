@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 import json
+import logging
 import tempfile
 import unittest
 from pathlib import Path
@@ -351,6 +352,51 @@ class BatchTest(unittest.TestCase):
         batch.run(questions, self.out, options, engine=engine)
         batch.run(questions, self.out, options, engine=engine)
         self.assertEqual(engine.asked, ["один", "один"])
+
+    def _run_at(self, stamp: str, questions: Path, engine, options):
+        """A run whose files carry `stamp`, as if started at that second."""
+        with patch.object(batch, "datetime") as clock:
+            clock.now.return_value.strftime.return_value = stamp
+            return batch.run(questions, self.out, options, engine=engine)
+
+    def test_a_rerun_in_another_second_reuses_answers_and_marks(self):
+        # The files of each run are time-stamped; reuse must not depend on two
+        # runs falling into the same second.
+        questions = self.dir / "q.txt"
+        questions.write_text("один\n", encoding="utf-8")
+        engine = self.FakeEngine()
+        options = batch.AskOptions(llm_answer=False)
+        self._run_at("2026-10-24_10-00-00", questions, engine, options)
+        first_review = self.out / "review_q_2026-10-24_10-00-00.csv"
+        with first_review.open(encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        rows[0]["correct"] = "да"
+        with first_review.open("w", encoding="utf-8-sig", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=rows[0].keys())
+            writer.writeheader()
+            writer.writerows(rows)
+        questions.write_text("один\nдва\n", encoding="utf-8")
+        summary = self._run_at("2026-10-24_10-00-07", questions, engine, options)
+        self.assertEqual(engine.asked, ["один", "два"])
+        self.assertEqual(summary["reused"], 1)
+        with (self.out / "review_q_2026-10-24_10-00-07.csv").open(encoding="utf-8-sig", newline="") as fh:
+            self.assertEqual(next(csv.DictReader(fh))["correct"], "да")
+
+    def test_latest_output_is_the_newest_of_the_same_questions(self):
+        self.out.mkdir(parents=True)
+        for name in ("results_q_2026-10-24_09-00-00.jsonl", "results_q_2026-10-24_11-00-00.jsonl",
+                     "results_q_extra_2026-10-24_12-00-00.jsonl", "results_q_notes.jsonl"):
+            (self.out / name).write_text("", encoding="utf-8")
+        self.assertEqual(batch.latest_output(self.out, "results", "q", ".jsonl").name,
+                         "results_q_2026-10-24_11-00-00.jsonl")
+        self.assertIsNone(batch.latest_output(self.out, "results", "other", ".jsonl"))
+
+    def test_the_run_log_handler_is_detached(self):
+        questions = self.dir / "q.txt"
+        questions.write_text("один\n", encoding="utf-8")
+        before = list(logging.getLogger().handlers)
+        batch.run(questions, self.out, batch.AskOptions(), engine=self.FakeEngine())
+        self.assertEqual(logging.getLogger().handlers, before)
 
     def test_review_page_reads_and_saves_marks(self):
         questions = self.dir / "q.txt"

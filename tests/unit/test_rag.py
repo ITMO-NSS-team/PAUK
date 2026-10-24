@@ -486,9 +486,10 @@ class MetricsTest(unittest.TestCase):
         result = evaluation.judge_pool(self.run, _Llm, "q1", workers=2)
         self.assertEqual((result["graded"], result["failed"], result["prompt_tokens"]), (2, 1, 30))
         self.assertEqual(evaluation.load_judgments(self.run, "q1")["q"], {"publications:a": 2, "publications:b": 0})
-        log = [json.loads(line) for line in (self.run / "judge_q1.log.jsonl").read_text().splitlines()]
+        # The judge writes UTF-8; without the encoding Windows would read these as cp1251.
+        log = [json.loads(line) for line in (self.run / "judge_q1.log.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(log), 3)  # every request, failed ones included; people are never asked
-        config = json.loads((self.run / "judge_q1.config.json").read_text())
+        config = json.loads((self.run / "judge_q1.config.json").read_text(encoding="utf-8"))
         self.assertEqual(config["prompt_id"], hashlib.sha1(evaluation.judge_system(3).encode()).hexdigest()[:8])
         rows = evaluation.tails(evaluation.load_pool(self.run), evaluation.load_judgments(self.run, "q1"))
         self.assertEqual([(r["last_relevant"], r["unjudged"]) for r in rows], [(1, 1)])
@@ -518,6 +519,38 @@ class MetricsTest(unittest.TestCase):
             writer.writerows([["question", "type", "targets"], ["Кто?", "topic", "repositories"], ["Кто?", "", ""]])
         self.assertEqual(evaluation.read_questions(path), [{"question": "Кто?", "type": "topic",
                                                              "targets": "repositories"}])
+
+    def test_questions_csv_keeps_the_semantic_group_only(self):
+        path = self.run / "bank.csv"
+        with path.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerows([["id", "question", "type"], ["q001t3", "Кто A?", "topic"],
+                              ["q050t3", "Кто B?", "no_answer"], ["q101t1", "Сколько C?", "graph"],
+                              ["q153t2", "Сколько D?", "no_answer"], ["", "Кто E?", "topic"]])
+        # Graph and mixed questions are routed elsewhere, whatever their type; a row without a group stays.
+        self.assertEqual([q["question"] for q in evaluation.read_questions(path)], ["Кто A?", "Кто B?", "Кто E?"])
+        # The mixed pipeline pools its own group through the same reader.
+        self.assertEqual([q["question"] for q in evaluation.read_questions(path, ("2",))], ["Сколько D?", "Кто E?"])
+
+    def test_hand_kept_keywords_skip_the_extraction_cache(self):
+        path = self.run / "keywords.json"
+        path.write_text(json.dumps({"q001t3": {"text": "diffusion models", "llm": "manual", "prompt_id": "x"},
+                                    "q002t3": {"text": "", "llm": "", "prompt_id": ""},
+                                    "qwen\x00abc\x00Кто?": "llm keywords"}), encoding="utf-8")
+        keywords = evaluation.load_keywords(path)
+        self.assertEqual(list(keywords), ["q001t3"])  # empty and cache entries fall back to extraction
+
+        class _Rag:
+            llm = type("LLM", (), {"model": "m"})()
+
+            def extract_keywords(self, question):
+                return f"extracted {question}"
+
+        self.assertEqual(evaluation._keywords(_Rag(), {"id": "q001t3", "question": "Кто?"}, keywords)["text"],
+                         "diffusion models")
+        self.assertEqual(evaluation._keywords(_Rag(), {"id": "q002t3", "question": "Кто?"}, keywords)["text"],
+                         "extracted Кто?")
+        self.assertEqual(evaluation.load_keywords(self.run / "missing.json"), {})
 
     def test_targets_limit_the_judged_kinds(self):
         self.assertEqual(evaluation.targets({"targets": "repositories"}), ("repositories",))

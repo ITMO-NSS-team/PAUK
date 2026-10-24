@@ -884,6 +884,8 @@ dependencies = [
     { name = "pymupdf" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "rank-bm25" },
+    { name = "rapidfuzz" },
     { name = "requests" },
     { name = "scipy" },
     { name = "tqdm" },
@@ -894,12 +896,9 @@ dependencies = [
 [package.optional-dependencies]
 rag = [
     { name = "numpy" },
-    { name = "rank-bm25" },
-    { name = "rapidfuzz" },
     { name = "sentence-transformers" },
 ]
 search = [
-    { name = "rank-bm25" },
     { name = "sentence-transformers" },
 ]
 
@@ -924,9 +923,8 @@ requires-dist = [
     { name = "pymupdf", specifier = ">=1.27.2.3" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "python-multipart", specifier = ">=0.0.32" },
-    { name = "rank-bm25", marker = "extra == 'rag'", specifier = ">=0.2.2" },
-    { name = "rank-bm25", marker = "extra == 'search'", specifier = ">=0.2.2" },
-    { name = "rapidfuzz", marker = "extra == 'rag'", specifier = ">=3.9" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "rapidfuzz", specifier = ">=3.9" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=5.0" },

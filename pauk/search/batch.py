@@ -1,12 +1,15 @@
 """Run a list of questions through the search and lay the results out for review.
 
-Two files come out: `results.jsonl` with every answer in full (plan, entity
-candidates, entry points, sections, notes, timings) and `review.csv` with one
-row per question - what the system understood and the top of each section -
-plus empty columns for a person to mark whether it was right and, if not,
-at which step it broke. The CSV opens in Excel or Google Sheets as is.
+Each run writes, stamped with the questions file and the time,
+`results_<questions>_<time>.jsonl` with every answer in full (plan, entity
+candidates, entry points, sections, notes, timings) and
+`review_<questions>_<time>.csv` with one row per question - what the system
+understood and the top of each section - plus empty columns for a person to
+mark whether it was right and, if not, at which step it broke. The CSV opens
+in Excel or Google Sheets as is.
 
-Answers already in `results.jsonl` are reused unless --force: re-running
+Answers in the latest earlier results of the same questions file are reused
+unless --force, and the marks of its latest review carry over: re-running
 after adding a few questions costs tokens only for the new ones.
 """
 
@@ -16,6 +19,7 @@ from datetime import datetime
 import csv
 import json
 import logging
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -65,6 +69,21 @@ def _settings_key(options: AskOptions) -> dict[str, Any]:
     return {key: value for key, value in asdict(options).items() if key in keep}
 
 
+TIMESTAMP = "%Y-%m-%d_%H-%M-%S"
+_STAMP = r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}"
+
+
+def latest_output(out_dir: Path, kind: str, stem: str, suffix: str) -> Path | None:
+    """The newest `<kind>_<stem>_<time><suffix>` in out_dir, or None.
+
+    Matched exactly, so the runs of `q.txt` never pick up those of `q_extra.txt`;
+    the time stamp sorts as text.
+    """
+    pattern = re.compile(rf"{re.escape(kind)}_{re.escape(stem)}_{_STAMP}{re.escape(suffix)}")
+    found = sorted(path for path in out_dir.glob(f"{kind}_*{suffix}") if pattern.fullmatch(path.name))
+    return found[-1] if found else None
+
+
 def _load_cached(path: Path, options: AskOptions) -> dict[str, dict[str, Any]]:
     """Earlier answers to reuse; only those obtained with the same options."""
     if not path.exists():
@@ -98,28 +117,26 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
     questions = read_questions(questions_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.now().strftime(TIMESTAMP)
     file_prefix = f"{questions_path.stem}_{timestamp}"
     results_path = out_dir / f"results_{file_prefix}.jsonl"
     review_path = out_dir / f"review_{file_prefix}.csv"
-
     log_path = out_dir / f"log_{file_prefix}.log"
-    root_logger = logging.getLogger()
+    # The files of this run are new; what to reuse is in the latest earlier run.
+    earlier_results = latest_output(out_dir, "results", questions_path.stem, ".jsonl")
+    earlier_review = latest_output(out_dir, "review", questions_path.stem, ".csv")
 
-    # Создаем файловый обработчик
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
-
-
-    cached = {} if force else _load_cached(results_path, options)
+    cached = {} if force or earlier_results is None else _load_cached(earlier_results, options)
     own_engine = engine is None
     results = []
+    root_logger = logging.getLogger()
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                                                datefmt="%Y-%m-%d %H:%M:%S"))
+    # Attached only for this run, and always detached: a handler left on the
+    # root logger would copy every later run's log into this file too.
+    root_logger.addHandler(file_handler)
     try:
         for number, meta in enumerate(questions, 1):
             question = meta["question"]
@@ -147,8 +164,7 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
     with results_path.open("w", encoding="utf-8") as fh:
         for result in results:
             fh.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
-    # review_path = out_dir / "review.csv"
-    write_review(results, review_path)
+    write_review(results, review_path, marks_from=earlier_review)
     return {
         "questions": len(results),
         "reused": sum(1 for r in results if r["question"] in cached),
@@ -226,8 +242,9 @@ def _earlier_marks(path: Path) -> dict[str, dict[str, str]]:
         }
 
 
-def write_review(results: list[dict[str, Any]], path: Path) -> None:
-    marks = _earlier_marks(path)
+def write_review(results: list[dict[str, Any]], path: Path, marks_from: Path | None = None) -> None:
+    """The review CSV at `path`, keeping the marks of `marks_from` (default: `path` itself)."""
+    marks = _earlier_marks(marks_from or path)
     # utf-8-sig: without the BOM Excel opens Cyrillic as mojibake.
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")

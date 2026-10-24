@@ -67,7 +67,13 @@ def add_parser(subparsers) -> None:
 
     p = sub.add_parser("pool", help="run the variants on the questions and pool their top-k for judging")
     p.add_argument("--run", default="validation", help="run directory under data/rag/runs")
+    p.add_argument("--run-dir", default=None, help="run directory anywhere, instead of --run under data/rag/runs")
     p.add_argument("--questions", default=None, help="CSV with a question column (default: <run>/questions.csv)")
+    p.add_argument("--groups", default="3",
+                   help="comma-separated question groups to pool, from ids like q152t2 (default: 3, the semantic "
+                        "questions; rows without such an id are always kept)")
+    p.add_argument("--keywords-file", default=None,
+                   help="hand-kept keywords by question id (default: data/rag/keywords.json)")
     # No default list: rerunning `pool` on a judged run must not silently
     # shrink it to a few variants and drop the others from the metrics.
     p.add_argument("--variants", default=None,
@@ -88,6 +94,7 @@ def add_parser(subparsers) -> None:
 
     p = sub.add_parser("judge", help="grade a run's publications and repositories with an OpenRouter model")
     p.add_argument("--run", default="human_check")
+    p.add_argument("--run-dir", default=None, help="run directory anywhere, instead of --run under data/rag/runs")
     p.add_argument("--judge", required=True, help="writes judgments_<judge>.json, e.g. qwen")
     p.add_argument("--model", default=None, help="OpenRouter model id (default: PAUK_LLM_MODEL)")
     p.add_argument("--against", default=None,
@@ -101,10 +108,12 @@ def add_parser(subparsers) -> None:
 
     p = sub.add_parser("tails", help="rank of the last relevant item per variant, to choose the pool depth")
     p.add_argument("--run", default="tails")
+    p.add_argument("--run-dir", default=None, help="run directory anywhere, instead of --run under data/rag/runs")
     p.add_argument("--judge", required=True)
 
     p = sub.add_parser("metrics", help="P@k, R@k, nDCG@k, MRR per variant; sign test against a baseline")
     p.add_argument("--run", default="validation")
+    p.add_argument("--run-dir", default=None, help="run directory anywhere, instead of --run under data/rag/runs")
     p.add_argument("--k", help="comma-separated cutoffs, e.g. 3,5,10 (default: 5 and the pool's k; "
                                "none above the pool's k); the sign test uses nDCG at the largest")
     p.add_argument("--judge", help="use judgments_<judge>.json and report agreement with judgments.json")
@@ -114,6 +123,10 @@ def add_parser(subparsers) -> None:
 
 def runs_dir(config: Settings) -> Path:
     return config.data_dir / "rag" / "runs"
+
+
+def _run_dir(config: Settings, args) -> Path:
+    return Path(args.run_dir) if args.run_dir else runs_dir(config) / args.run
 
 
 def run(args, config: Settings) -> None:
@@ -194,7 +207,7 @@ def run(args, config: Settings) -> None:
         from .evaluation import build_pool, seed_judgments
         from .retrieve import Rag
 
-        run_dir = runs_dir(config) / args.run
+        run_dir = _run_dir(config, args)
         questions = Path(args.questions) if args.questions else run_dir / "questions.csv"
         if args.variants is not None:
             # An empty list (an unset shell variable) must fail, not fall back
@@ -206,9 +219,13 @@ def run(args, config: Settings) -> None:
             variants = list(json.loads((run_dir / "pool.json").read_text(encoding="utf-8"))["variants"])
         else:
             variants = _csv(DEFAULT_VARIANTS)
+        groups = tuple(_csv(args.groups))
+        if not groups:
+            raise SystemExit("--groups is empty")
         rag = Rag(config)
         try:
-            pool = build_pool(run_dir, rag, questions, variants, args.k)
+            pool = build_pool(run_dir, rag, questions, variants, args.k, groups=groups,
+                              keywords_path=Path(args.keywords_file) if args.keywords_file else None)
         finally:
             rag.close()
         seeded = {source: seed_judgments(run_dir, Path(source), args.judge) for source in args.seed_judgments}
@@ -238,7 +255,7 @@ def run(args, config: Settings) -> None:
             person_grades,
         )
 
-        run_dir = runs_dir(config) / args.run
+        run_dir = _run_dir(config, args)
 
         def make_llm():
             return OpenRouterClient(config.request_timeout, config.openrouter_api_key,
@@ -258,7 +275,7 @@ def run(args, config: Settings) -> None:
 
         from .evaluation import _write_json, load_judgments, load_pool, tails
 
-        run_dir = runs_dir(config) / args.run
+        run_dir = _run_dir(config, args)
         rows = tails(load_pool(run_dir), load_judgments(run_dir, args.judge))
         with (run_dir / f"tails_{args.judge}.csv").open("w", encoding="utf-8", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=list(rows[0]) if rows else ["question"])
@@ -278,7 +295,7 @@ def run(args, config: Settings) -> None:
     elif command == "metrics":
         from .evaluation import abstention, agreement, agreement_by_question, compute_metrics, load_pool
 
-        run_dir = runs_dir(config) / args.run
+        run_dir = _run_dir(config, args)
         cutoffs = tuple(int(k) for k in _csv(args.k)) if args.k else None
         rows = compute_metrics(run_dir, args.judge, args.baseline, cutoffs)
         columns = list(dict.fromkeys(key for row in rows for key in row))
