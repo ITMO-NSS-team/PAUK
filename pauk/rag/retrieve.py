@@ -58,7 +58,7 @@ UNWIND $ids AS id
 MATCH (p:Person {id: id})
 RETURN p.id AS id, p.name_ru AS name_ru, p.name_en AS name_en, p.name_raw AS name_raw,
        p.name_variants AS name_variants, p.orcid AS orcid, p.openalex_id AS openalex_id,
-       coalesce(p.is_itmo, false) AS is_itmo,
+       coalesce(p.is_itmo, p.is_member, false) AS is_itmo,
        [(p)-[:BELONGS_TO]->(d:Department) | coalesce(d.name_ru, d.name_en)] AS departments
 """
 PUBLICATION_DETAILS = """
