@@ -45,6 +45,16 @@ def add_parser(subparsers) -> None:
     p.add_argument("--judge", help="use judgments_<judge>.json instead of judgments.json, and report "
                                     "how far that judge agrees with judgments.json")
 
+    p = sub.add_parser("t2c-run", help="run the text-to-Cypher baseline over the validation bank (pauk.search.t2c_run)")
+    p.add_argument("--run", required=True, help="run name, a directory under <data_dir>/search/validation/runs")
+    p.add_argument("--ids", default=None, help="comma-separated question ids (default: the whole bank)")
+    p.add_argument("--no-pool", action="store_true", help="skip the pools over every search variant")
+    p.add_argument("--replan", action="store_true", help="ask the planner again even for good earlier plans")
+    p.add_argument("--timeout", type=float, default=30.0, help="seconds per Cypher query")
+
+    p = sub.add_parser("t2c-metrics", help="score a t2c-run against the labelled bank (pauk.search.t2c_metrics)")
+    p.add_argument("--run", required=True, help="run name, a directory under <data_dir>/search/validation/runs")
+
 
 def run(args, config: Settings) -> None:
     if args.search_command == "fetch-readmes":
@@ -84,6 +94,17 @@ def run(args, config: Settings) -> None:
                 print(f"\nagreement of {args.judge} with judgments.json on items both graded:")
                 for row in agreement(run_dir, args.judge) or [{"items": 0}]:
                     print("  ".join(f"{key}={value}" for key, value in row.items()))
+    elif args.search_command == "t2c-run":
+        from .t2c_run import run as run_t2c
+
+        ids = [part.strip() for part in args.ids.split(",") if part.strip()] if args.ids else None
+        summary = run_t2c(args.run, ids, pools=not args.no_pool, replan=args.replan, timeout=args.timeout,
+                          config=config)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    elif args.search_command == "t2c-metrics":
+        from .t2c_metrics import evaluate
+
+        print(json.dumps(evaluate(args.run), ensure_ascii=False, indent=2))
     elif args.search_command == "batch":
         from pathlib import Path
 
