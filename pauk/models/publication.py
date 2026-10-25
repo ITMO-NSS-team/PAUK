@@ -164,7 +164,11 @@ class Publication(BaseModel):
                     url=record.source_url,
                 ))
                 known_identifiers.add(record.key)
-        if not self.versions:
+        # V2 source records are authoritative. Legacy rows can still rebuild
+        # their version ledger from raw OpenAlex payloads during dedup, so an
+        # existing v1 ledger must not be overwritten by its compatibility
+        # source-record projection on the next model read.
+        if self.schema_version >= 2 or not self.versions:
             self.versions = [
                 PublicationVersion(
                     openalex_id=record.source_id,

@@ -1055,13 +1055,11 @@ class DedupStage(EnrichmentStage):
     def _refresh_version_ledger(self, publications: list[Publication],
                                 version_authors: dict[str, list[VersionAuthor]],
                                 known_persons: dict[str, Person]) -> int:
-        """Rebuild ledger entries from the raw payload of each record.
+        """Rebuild the compatibility ledger from source records or legacy raw.
 
-        Raw is the only per-record source that stays correct: a ledger entry
-        written after a merge would describe the merged state (the union of
-        every record's authors). Only authors that exist as persons here are
-        kept, which leaves out organizations in author slots, coauthors
-        dropped by the consortium cap, and ids person dedup folded away.
+        V2 source records are authoritative and already contain resolved PAUK
+        person ids. Raw OpenAlex payloads remain the fallback for legacy rows
+        that do not have that provenance ledger yet.
         """
         if not any(publication.versions for publication in publications):
             return 0
@@ -1075,7 +1073,29 @@ class DedupStage(EnrichmentStage):
 
         refreshed = 0
         for publication in publications:
+            source_records = {
+                record.source_id: record
+                for record in publication.source_records
+                if record.source == "openalex"
+            } if publication.schema_version >= 2 else {}
             for version in publication.versions:
+                source_record = source_records.get(version.openalex_id)
+                if source_record is not None:
+                    authors = [
+                        VersionAuthor(
+                            person_id=author.person_id,
+                            name=author.name,
+                            position=author.position,
+                        )
+                        for author in source_record.authors
+                    ]
+                    if authors != version.authors:
+                        version.authors = authors
+                        refreshed += 1
+                    if version.abstract is None and source_record.abstract is not None:
+                        version.abstract = source_record.abstract
+                        refreshed += 1
+                    continue
                 work = raw_works.get(version.openalex_id)
                 if work is None:
                     # No raw payload: keep whatever the entry already carries.
