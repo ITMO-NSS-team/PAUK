@@ -136,12 +136,13 @@ the graph so the next publish keeps the split.
 
 ## Publications
 
-One work reaches OpenAlex by several routes: a preprint and a version of
-record, a dataset or software deposit, a re-indexed duplicate of one DOI. Rows
-sharing a DOI or a title are one publication. The merge is lossless: each
-record is folded into `versions` (`PublicationVersion`: the title, DOI,
-journal, date, abstract and authors of that particular record), so every place
-the work appeared stays available on the surviving row.
+One work can reach PAUK through several source records: a preprint and a
+version of record, a dataset or software deposit, or a re-indexed duplicate.
+Rows sharing a normalized DOI are merged automatically. Title matching is an
+automatic rule only for legacy schema-v1 rows; schema-v2 rows with the same
+title and a shared author are written to `review_pairs` and remain separate.
+The source-neutral ledger is `source_records`; OpenAlex entries are also
+dual-written to legacy `versions` for the transition release.
 
 The representative of the surviving row: `article` > other types (including a
 missing type) > `preprint`; on a tie, the newer date, then more authors, then

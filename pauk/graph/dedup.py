@@ -267,35 +267,77 @@ def dedup_graph_persons(
     return removed, report
 
 
-def dedup_graph_publications(client) -> tuple[int, list[dict]]:
+def dedup_graph_publications(
+    client,
+    decisions: dict[frozenset[str], str] | None = None,
+) -> tuple[int, list[dict]]:
     """Fold duplicate Publication nodes across all published groups.
 
-    Same evidence and representative ranking as the per-group stage:
-    records sharing a DOI or non-placeholder title are one work; an article
-    wins over other types, which win over a preprint, then date and author
-    count break ties.
+    Schema-v2 records merge automatically only on DOI. Equal title plus a
+    shared author is held for review; the historical title rule remains for
+    schema-v1 nodes. An existing merged-id owner stays canonical, otherwise
+    an article wins over other types, then a preprint, date and author count.
     """
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
+    decisions = decisions or {}
     pairs, pair_rules = _keyed_pairs(
         rows,
         (
             (lambda row: _norm_doi(row.get("doi")), "doi"),
-            (lambda row: title if (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES else None, "title"),
+            (lambda row: title
+             if (row.get("schema_version") or 1) < 2
+             and (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES
+             else None, "title"),
         ),
     )
+    for members, verdict in decisions.items():
+        if verdict != review.SAME or len(members) != 2:
+            continue
+        first, second = sorted(members)
+        if first in by_id and second in by_id:
+            pairs.append((first, second))
+            pair_rules[frozenset((first, second))] = "manual"
 
     merges: list[tuple[str, str]] = []
     canonical_updates: list[tuple[str, dict]] = []
     report: list[dict] = []
+    modern_by_title: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        title = _norm(row.get("title"))
+        if (row.get("schema_version") or 1) >= 2 and not row.get("doi") \
+                and title not in PLACEHOLDER_TITLES:
+            modern_by_title[title].append(row)
+    for same_title in modern_by_title.values():
+        for index, first in enumerate(same_title):
+            first_authors = {author.get("person_id") for author in first.get("authors") or []}
+            for second in same_title[index + 1:]:
+                shared = sorted(first_authors & {
+                    author.get("person_id") for author in second.get("authors") or []
+                } - {None})
+                if shared:
+                    report.append({
+                        "status": "held",
+                        "entity": "publication",
+                        "record_a": first["id"],
+                        "name_a": first.get("title"),
+                        "record_b": second["id"],
+                        "name_b": second.get("title"),
+                        "shared_authors": shared,
+                        "held_because": "same title and author without DOI",
+                    })
     for members in _grouped(pairs):
+        member_ids = set(members)
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda row: _publication_rank_key(
-                row.get("type"),
-                _ordinal(row.get("publication_date")),
-                row.get("author_count") or 0,
-                row["id"],
+            key=lambda row: (
+                0 if (member_ids - {row["id"]}).intersection(row.get("merged_ids") or []) else 1,
+                *_publication_rank_key(
+                    row.get("type"),
+                    _ordinal(row.get("publication_date")),
+                    row.get("author_count") or 0,
+                    row["id"],
+                ),
             ),
         )
         canonical, duplicates = ranked[0], ranked[1:]
@@ -469,7 +511,16 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 ),
                 logreg_model=logreg_model,
             )
-            publications_removed, publication_report = dedup_graph_publications(client)
+            publication_aliases = client.fetch_merged_id_map("Publication")
+            publication_answers = review.decisions(
+                mongo_db,
+                publication_aliases,
+                kinds=(review.PUBLICATION,),
+            )
+            publications_removed, publication_report = dedup_graph_publications(
+                client,
+                decisions=publication_answers,
+            )
             repositories_removed, repository_report = dedup_graph_repositories(client)
 
         report = [
@@ -480,9 +531,20 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         component_conflicts = sum(
             row.get("route") == "component_conflict" for row in report
         )
-        # Only the person rows: publications and repositories are folded on
-        # a DOI or a url and never hold anything back, so there is nothing
-        # to ask about and no pair of people to key a question on.
+        for row in publication_report:
+            if row.get("status") == "held":
+                review.record_publication_pair(
+                    mongo_db, row["record_a"], row["record_b"],
+                    title=row.get("name_a") or row.get("name_b") or "",
+                    shared_authors=row.get("shared_authors") or [],
+                    source=review.GRAPH,
+                )
+        publication_aliases = client.fetch_merged_id_map("Publication")
+        for members, verdict in publication_answers.items():
+            if verdict == review.SAME and len({
+                publication_aliases.get(member, member) for member in members
+            }) == 1:
+                review.mark_applied(mongo_db, review.PUBLICATION, sorted(members))
         current_aliases = client.fetch_merged_id_map("Person")
         review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
         review.record_disputed(mongo_db, person_report)

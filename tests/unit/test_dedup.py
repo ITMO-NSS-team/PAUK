@@ -967,6 +967,36 @@ class GraphDedupTest(unittest.TestCase):
         self.assertIn("W1", client.nodes["Publication"])
         self.assertNotIn("W2", client.nodes["Publication"])
 
+    def test_graph_doi_merge_keeps_an_existing_canonical_owner(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("W1", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-01-01", "merged_ids": ["W2"],
+            }),
+            ("W2", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-12-01", "merged_ids": [],
+            }),
+        ])
+        removed, _report = dedup_graph_publications(client)
+        self.assertEqual(removed, 1)
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertNotIn("W2", client.nodes["Publication"])
+
+    def test_graph_publication_review_answer_is_applied(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("pub_1", {"title": "Same work", "schema_version": 2}),
+            ("pub_2", {"title": "Same work", "schema_version": 2}),
+        ])
+        removed, report = dedup_graph_publications(
+            client,
+            decisions={frozenset(("pub_1", "pub_2")): review.SAME},
+        )
+        self.assertEqual(removed, 1)
+        self.assertEqual(report[0]["rules"], ["manual"])
+
     def test_graph_fold_writes_the_folded_records_version_entry(self):
         # A cross-group fold deletes the duplicate node; its venue, abstract
         # and author list must land in the canonical's version ledger first.

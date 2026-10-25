@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from pauk.graph.client import _merge_duplicate_properties
@@ -439,9 +440,48 @@ class StoredShapeTest(unittest.TestCase):
         self.assertEqual(node["name_variants"], ["I. Petrov"])
 
     def test_creating_a_node_encodes_the_same_fields(self):
-        created = create_node(self.graph, "Publication", "W9",
-                              {"title": "paper", "funding": [{"funder": "RSF"}]})
-        self.assertIsInstance(created["funding"], str)
+        created = create_node(self.graph, "Person", "P9",
+                              {"name_raw": "Researcher", "affiliations": [{"name": "ITMO"}]})
+        self.assertIsInstance(created["affiliations"], str)
+
+    def test_publication_must_be_created_through_ingestion(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "pub_manual", {"title": "paper"})
+
+
+class SourceProvenanceMergeTest(unittest.TestCase):
+    def test_graph_fold_unions_source_provenance_by_stable_key(self):
+        canonical = {
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": json.dumps([
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "catalog", "source_id": "P1", "key": "catalog:P1"},
+            ]),
+        }
+        duplicate = {
+            "sources": ["archive"],
+            "source_keys": ["archive:A1"],
+            "identifiers": json.dumps([
+                {"scheme": "archive", "value": "A1", "normalized_key": "archive:A1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "archive", "source_id": "A1", "key": "archive:A1"},
+            ]),
+        }
+        merged = _merge_duplicate_properties("Publication", canonical, duplicate)
+        self.assertEqual(merged["sources"], ["catalog", "archive"])
+        self.assertEqual(merged["source_keys"], ["catalog:P1", "archive:A1"])
+        self.assertEqual(
+            {item["normalized_key"] for item in json.loads(merged["identifiers"])},
+            {"catalog:P1", "archive:A1"},
+        )
+        self.assertEqual(
+            {item["key"] for item in json.loads(merged["source_records"])},
+            {"catalog:P1", "archive:A1"},
+        )
 
 
 class MergeChainTest(unittest.TestCase):

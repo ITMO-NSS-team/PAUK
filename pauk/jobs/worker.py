@@ -47,7 +47,9 @@ def _collect(config: Settings, db: Database, payload, stop: Stop,
 
     selector = (WorkSelector(payload.work_id) if payload.work_id
                 else PeriodSelector(payload.date_from, payload.date_to))
-    return PipelineRunner(config, payload.group, db).run(selector, on_stage=report)
+    return PipelineRunner(config, payload.group, db).run(
+        selector, on_stage=report, source=payload.source,
+    )
 
 
 def _publish(config: Settings, db: Database, payload, stop: Stop,
@@ -98,6 +100,9 @@ def _health(config: Settings, db: Database, payload, stop: Stop,
         stats = collect(client.driver)
     finally:
         client.close()
+    from pauk.admin.identity_health import collect as collect_identity_health
+
+    stats["checks"].extend(collect_identity_health(db))
     health.save(db, stats)
     counted = health.verdict(stats["checks"])
     return {"checks": len(stats["checks"]),

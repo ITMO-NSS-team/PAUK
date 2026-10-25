@@ -54,6 +54,32 @@ class PdfStoreTest(unittest.TestCase):
         path.unlink()
         self.assertFalse(path.exists())
 
+    def test_source_record_key_is_hashed_and_windows_safe(self):
+        store = PdfStore(self.db, self.pdf_dir)
+        record_key = "archive:folder/тест:42"
+        store.save(record_key, b"data")
+        pointer = self.db.pdfs.find_one({"_id": record_key})
+        self.assertEqual(pointer["record_key"], record_key)
+        self.assertNotIn(":", pointer["filename"])
+        self.assertNotIn("/", pointer["filename"])
+        self.assertEqual(store.read(record_key), b"data")
+
+    def test_openalex_record_key_reads_legacy_file(self):
+        self.pdf_dir.mkdir(parents=True)
+        (self.pdf_dir / "W1.pdf").write_bytes(b"legacy")
+        store = PdfStore(self.db, self.pdf_dir)
+        self.assertTrue(store.exists("openalex:W1"))
+        self.assertEqual(store.read("openalex:W1"), b"legacy")
+
+    def test_pointer_filename_cannot_escape_pdf_directory(self):
+        outside = self.pdf_dir.parent / "outside.pdf"
+        outside.write_bytes(b"outside")
+        self.db.pdfs.insert_one({
+            "_id": "archive:key", "record_key": "archive:key", "filename": "../outside.pdf",
+        })
+        store = PdfStore(self.db, self.pdf_dir)
+        self.assertFalse(store.exists("archive:key"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,10 +20,10 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 | Node | Unique key | Labels |
 |---|---|---|
-| Person | `id` (bare OpenAlex author ID) | `Person` |
+| Person | `id` (opaque PAUK/legacy identity) | `Person` |
 | Department | `id` (the catalog `uid`) | `Department` |
 | Organization | `id` and `name_en` (both unique) | `Organization` |
-| Publication | `id` (bare OpenAlex work ID) | `Publication` |
+| Publication | `id` (opaque PAUK/legacy identity) | `Publication` |
 | Repository | `id` and `url` (both unique) | `Repository` |
 | GitHubProfile | `id` and `login` (both unique) | `GitHubProfile` |
 | LinkCandidate | `id` (the URL itself) | `LinkCandidate` |
@@ -58,7 +58,9 @@ Neo4j cannot store `null` inside an array property, so the sentinel is not
 arrays `pdf_id`, `context_source` and `reference_label` (an empty string means
 no value), `is_relevant`, `classification_status`, `llm_confidence` and
 `llm_reason`. `pdf_id` distinguishes PDFs of merged versions: page numbers
-are local to that file. The array is always sent alongside the contexts,
+are local to that file. New occurrences store the source-record key here;
+legacy OpenAlex ids remain readable during the compatibility release. The
+array is always sent alongside the contexts,
 including empty strings for unknown sources, so republishing cannot leave old
 PDF ids attached to new evidence.
 
@@ -127,8 +129,13 @@ that never touch the network, so they are tested without a live Neo4j
 (`tests/unit/test_graph_extract.py`).
 
 Neo4j cannot store nested maps or lists of maps (`funding`, `versions`,
-`affiliations`, `counts_by_year`) as node properties, so `extract_node`
+`identifiers`, `source_records`, `affiliations`, `counts_by_year`) as node properties, so `extract_node`
 serializes them to JSON text (`JSON_TEXT_FIELDS`).
+
+Publication nodes also carry native string arrays `sources`/`source_keys`.
+`openalex_url` and `versions` remain during the compatibility release. The
+admin editor treats identity and provenance properties as read-only; they
+must enter through the raw/adapter pipeline.
 
 ## `jsonl_loader.py`: load order
 

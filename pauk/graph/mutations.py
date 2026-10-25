@@ -26,8 +26,13 @@ from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# Set by client.py itself on every write; not editable from outside.
-RESERVED_FIELDS = frozenset({"id", "created_at", "updated_at"})
+# Identity and provenance are owned by raw -> adapter -> resolver. Editing
+# them directly in Neo4j would bypass the global identity index and be lost
+# on the next publish.
+RESERVED_FIELDS = frozenset({
+    "id", "created_at", "updated_at", "schema_version", "identifiers",
+    "source_records", "sources", "source_keys", "openalex_url", "versions",
+})
 
 
 def _build_node_fields() -> dict[str, frozenset[str]]:
@@ -291,6 +296,10 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
             again would silently turn into an update.
     """
     validate_fields(label, props)
+    if label == "Publication":
+        raise MutationError(
+            "Publication nodes are created by raw -> adapter -> identity resolution, not in Neo4j"
+        )
     if client.fetch_node_properties(label, node_id) is not None:
         raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
     client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
