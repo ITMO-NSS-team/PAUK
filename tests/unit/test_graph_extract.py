@@ -1,8 +1,10 @@
+import json
 import unittest
 
 from pauk.graph.extract import NODE_REGISTRY, extract_node, extract_relationships
 from pauk.models.department import Department
 from pauk.models.person import Person
+from pauk.models.publication import Publication
 
 PERSON_ROW = {
     "id": "p1",
@@ -93,6 +95,25 @@ class ExtractNodeTest(unittest.TestCase):
         self.assertEqual(props, {"name_en": "ISU", "name_variants": ["ISU", "ICST"]})
         self.assertEqual(extract_relationships(DEPARTMENT_ROW, NODE_REGISTRY["department"]), {})
 
+    def test_publication_identity_and_provenance_are_json_text(self):
+        row = {
+            **PUBLICATION_ROW,
+            "schema_version": 2,
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": [
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ],
+            "source_records": [
+                {"key": "catalog:P1", "source": "catalog", "source_id": "P1"},
+            ],
+        }
+        _, (_, props) = extract_node(row, NODE_REGISTRY["publication"])
+        self.assertEqual(props["sources"], ["catalog"])
+        self.assertEqual(props["source_keys"], ["catalog:P1"])
+        self.assertEqual(json.loads(props["identifiers"])[0]["normalized_key"], "catalog:P1")
+        self.assertEqual(json.loads(props["source_records"])[0]["key"], "catalog:P1")
+
 
 class ExtractRelationshipsTest(unittest.TestCase):
     def test_person_relationships(self):
@@ -153,6 +174,12 @@ class GraphFieldCoverageTest(unittest.TestCase):
         "parent_id": "published as a PART_OF relationship",
         "organization_id": "published as a PART_OF relationship",
     }
+    PUBLICATION_EXCLUDED = {
+        "id": "used as the node id, not a prop",
+        "department_ids": "published as a PRODUCED_BY relationship",
+        "mentions_links": "published as MENTIONS_LINK relationships",
+        "processing": "per-stage pipeline bookkeeping, never meant for the graph",
+    }
 
     def test_every_person_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
         covered = set(NODE_REGISTRY["itmo_person"].prop_fields) | set(
@@ -178,6 +205,16 @@ class GraphFieldCoverageTest(unittest.TestCase):
                 f"Department.{field} reaches no graph node's prop_fields and has no "
                 "exclusion reason - add it to department prop_fields or to "
                 "DEPARTMENT_EXCLUDED above",
+            )
+
+    def test_every_publication_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
+        covered = set(NODE_REGISTRY["publication"].prop_fields)
+        for field in Publication.model_fields:
+            if field in self.PUBLICATION_EXCLUDED:
+                continue
+            self.assertIn(
+                field, covered,
+                f"Publication.{field} reaches no graph property and has no exclusion reason",
             )
 
 

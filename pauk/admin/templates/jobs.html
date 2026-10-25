@@ -34,6 +34,7 @@
   <form method="post" action="/jobs" class="row">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="kind" value="pipeline">
+    <input type="hidden" name="source" value="openalex">
     <input type="hidden" name="seed" value="42">
     <div><label for="p_from">за период с</label>
       <input type="date" id="p_from" name="date_from" max="{{ today }}"></div>
@@ -69,6 +70,7 @@
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="collect">
+          <input type="hidden" name="source" value="openalex">
           <div><label for="date_from">за период с</label>
             <input type="date" id="date_from" name="date_from" max="{{ today }}" required></div>
           <div><label for="date_to">по</label>
@@ -78,6 +80,7 @@
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="collect">
+          <input type="hidden" name="source" value="openalex">
           <div class="grow"><label for="work_id">или одна работа по идентификатору</label>
             <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required></div>
           <div><button type="submit">Запустить</button></div>

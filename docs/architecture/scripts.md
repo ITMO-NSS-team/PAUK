@@ -76,6 +76,7 @@ to the checkout.
 | Script | What it does | Writes |
 |---|---|---|
 | `repair_implements.py` | Removes historical `IMPLEMENTS` claims if every link to the repository is classified and none has `is_relevant=true`; leaves `pending`/`failed` alone. Dry run by default, `--apply` writes | Mongo |
+| `migrate_source_neutral.py` | Plans/backfills source records, identity keys, DOI/person components, references and PDF pointers. It also imports legacy graph-only publications and people into the `legacy-graph` prepared group, then repoints source-record authors through existing graph aliases. Dry run by default; `--apply` is resumable and refuses to start while a worker or job is active. The plan reads Neo4j even with `--mongo-only`, because graph aliases and graph-only rows are migration inputs. Without `--mongo-only`, apply republishes groups, deduplicates Neo4j, reapplies overrides through graph dedup, exports the cache and rebuilds the GUI | `--apply`: Mongo, Neo4j and derived files |
 | `plan_author_names_repair.py` | Finds `author_names=completed` rows with empty required name parts and builds a manifest plus per-group id files (unique across groups) for a targeted `--force` rerun; does not change Mongo | only `data/reports/` |
 | `prune_stranger_profiles.py` | Deletes GitHub profiles harvested only from repositories nobody implements. Dry run by default, `--apply` writes | Mongo |
 

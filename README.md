@@ -1,6 +1,8 @@
 # PAUK
 
-PAUK collects publications from OpenAlex, enriches them with data from external sources (Crossref, ORCID, GitHub), finds code links in them, and loads the result into Neo4j.
+PAUK collects publications through typed source adapters (OpenAlex is the
+first built-in adapter), enriches them with data from external sources
+(Crossref, ORCID, GitHub), finds code links in them, and loads the result into Neo4j.
 
 ## Data
 
@@ -60,7 +62,9 @@ This field is not loaded into the graph.
 from MongoDB into Neo4j with `MERGE`. `id` is unique for every node type;
 `GitHubProfile` also has a unique `login`.
 
-A person's `id` is the bare OpenAlex author ID (one person, one node).
+Publication and person `id` values are opaque PAUK identities. Existing
+OpenAlex `W…`/`A…` ids remain valid; new rows use `pub_<uuid>`/`per_<uuid>`.
+External ids and provenance live in `identifiers` and `source_records`.
 `is_itmo` is set to `true` if at least one work has an ITMO affiliation, and
 data from other groups never lowers it back to `false`. Repositories whose
 `repositories` stage ended with status `failed` (for example, a 404) are not
@@ -72,7 +76,7 @@ loaded until a successful retry; their links remain `LinkCandidate` nodes.
 | Organization | `Organization` | `id`, `name_en` |
 | ITMO employee | `Person {is_itmo: true}` | `id`, `openalex_id`, `orcid`, full name, contacts, profiles |
 | External author | `Person {is_itmo: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
-| Publication | `Publication` | `id`, `title`, `doi`, date, journal, code, funding, OpenAlex/PDF URLs, abstract |
+| Publication | `Publication` | `id`, identifiers, source records/links, title, DOI, date, journal, code, funding, PDF URLs, abstract |
 | Repository | `Repository` | `id`, `name`, `url`, description, stars, license, dates |
 | GitHub profile | `GitHubProfile` | `id`, `login`, `name`, URL, description, location, type |
 | Link candidate | `LinkCandidate` | `id` (the URL), `url`, `host` |

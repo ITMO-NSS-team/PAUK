@@ -687,19 +687,30 @@ class CodeLinksStage(EnrichmentStage):
         self,
         pub: Publication,
     ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
-        version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
-        cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
+        primary_id = next(
+            (record.key for record in pub.source_records if record.pdf_urls or record.doi),
+            pub.id,
+        )
+        version_ids = dict.fromkeys([
+            *(pub.source_keys if pub.schema_version >= 2 else []),
+            *pub.merged_ids,
+            *(version.openalex_id for version in pub.versions),
+        ])
+        cached_versions = [
+            pdf_id for pdf_id in version_ids
+            if pdf_id != primary_id and self.pdf_store.exists(pdf_id)
+        ]
         # An already cached version makes a new download of a missing survivor unnecessary.
-        if cached_versions and not self.pdf_store.exists(pub.id):
+        if cached_versions and not self.pdf_store.exists(primary_id):
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = self._primary_pdf_pages(pub)
-        self.parsed_pdf_ids = {pub.id} if pages else set()
-        self.failed_pdf_ids = {pub.id} if error else set()
+            pages, occurrences, error = self._primary_pdf_pages(pub, primary_id)
+        self.parsed_pdf_ids = {primary_id} if pages else set()
+        self.failed_pdf_ids = {primary_id} if error else set()
         for page_found in occurrences:
             for found in page_found.values():
                 for occurrence in found:
-                    occurrence.pdf_id = pub.id
+                    occurrence.pdf_id = primary_id
         # Merged records can retain a more complete cached PDF than the survivor.
         errors = [error] if error else []
         for pdf_id in cached_versions:
@@ -716,18 +727,49 @@ class CodeLinksStage(EnrichmentStage):
                         occurrence.pdf_id = pdf_id
             pages.extend(version_pages)
             occurrences.extend(version_occurrences)
-        if cached_versions and not pages and not self.pdf_store.exists(pub.id):
+        # A canonical journal record can have only a DOI (and the crawler
+        # can be unavailable) while a lower-ranked preprint record owns the
+        # usable direct PDF. Provenance requires downloading that PDF under
+        # the preprint's source-record key, not under the aggregate id.
+        if not pages:
+            fallback_ids = [
+                record.key for record in pub.source_records
+                if record.key != primary_id
+                and record.key not in cached_versions
+                and (record.pdf_urls or record.doi)
+            ]
+            for record_key in fallback_ids:
+                fallback_pages, fallback_occurrences, fallback_error = self._primary_pdf_pages(
+                    pub, record_key,
+                )
+                if fallback_pages:
+                    pages.extend(fallback_pages)
+                    occurrences.extend(fallback_occurrences)
+                    self.parsed_pdf_ids.add(record_key)
+                    for page_found in fallback_occurrences:
+                        for found in page_found.values():
+                            for occurrence in found:
+                                occurrence.pdf_id = record_key
+                    # Failed higher-ranked records are equivalent to failed
+                    # URL candidates inside one record once a usable source
+                    # record succeeds.
+                    errors = []
+                    break
+                if fallback_error:
+                    self.failed_pdf_ids.add(record_key)
+                    errors.append(fallback_error)
+        if cached_versions and not pages and not self.pdf_store.exists(primary_id):
             # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub)
+            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub, primary_id)
             if primary_error:
-                self.failed_pdf_ids.add(pub.id)
+                self.failed_pdf_ids.add(primary_id)
                 errors.append(primary_error)
             if primary_pages:
-                self.parsed_pdf_ids.add(pub.id)
+                self.parsed_pdf_ids.add(primary_id)
                 for page_found in primary_occurrences:
                     for found in page_found.values():
                         for occurrence in found:
-                            occurrence.pdf_id = pub.id
+                            occurrence.pdf_id = primary_id
                 pages.extend(primary_pages)
                 occurrences.extend(primary_occurrences)
         return pages, occurrences, "; ".join(errors) or None
@@ -735,6 +777,7 @@ class CodeLinksStage(EnrichmentStage):
     def _primary_pdf_pages(
         self,
         pub: Publication,
+        record_key: str,
     ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
@@ -747,17 +790,20 @@ class CodeLinksStage(EnrichmentStage):
             and error carries the reason (e.g. a 403 for a non-open-access PDF).
         """
         errors = []
-        if self.pdf_store.exists(pub.id):
+        if self.pdf_store.exists(record_key):
             try:
-                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
+                pages, occurrences = _extract_pdf(self.pdf_store.read(record_key))
                 return pages, occurrences, None
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        sources = [(url, {}) for url in pub.pdf_urls]
-        if self.crawler_available and pub.doi:
+        source_record = next((record for record in pub.source_records if record.key == record_key), None)
+        pdf_urls = source_record.pdf_urls if source_record else pub.pdf_urls
+        doi = source_record.doi if source_record else pub.doi
+        sources = [(url, {}) for url in pdf_urls]
+        if self.crawler_available and doi:
             sources.append((
-                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),
+                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": doi}),
                 {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
             ))
         for source_url, kwargs in sources:
@@ -765,7 +811,7 @@ class CodeLinksStage(EnrichmentStage):
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
                 pages, occurrences = _extract_pdf(pdf_bytes)
                 # Error pages must never poison the cache for subsequent attempts.
-                self.pdf_store.save(pub.id, pdf_bytes)
+                self.pdf_store.save(record_key, pdf_bytes)
                 return pages, occurrences, None
             except Exception as exc:
                 errors.append(redact_text(exc))

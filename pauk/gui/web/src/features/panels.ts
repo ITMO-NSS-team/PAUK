@@ -139,6 +139,11 @@ function openalexUrlLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "openalexUrlLink"), text: "OpenAlex" };
 }
 
+function sourceUrlLink(source: string, url: string): PanelLink {
+  const text = source === "openalex" ? "OpenAlex" : source;
+  return { kind: "link", href: safeHref(url, "sourceUrlLink"), text };
+}
+
 function openalexIdLink(id: string): PanelLink {
   return { kind: "link", href: `https://openalex.org/${id}`, text: id };
 }
@@ -775,7 +780,12 @@ export function mountPanel(
 
         const detail = pubDetails.get(node.key);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
-        if (detail?.openalex_url)
+        if (detail?.source_links && detail.source_links.length > 0)
+          rows.push([
+            t("field.sources", lang),
+            detail.source_links.map((source) => sourceUrlLink(source.source, source.url)),
+          ]);
+        else if (detail?.openalex_url)
           rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
         if (detail?.type) rows.push([t("field.pubType", lang), detail.type]);
         if (detail && detail.fields.length > 0)

@@ -1,7 +1,9 @@
 from datetime import date
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .identity import ExternalIdentifier, PublicationSourceRecord, SourceAuthor
 from .processing import ProcessingState
 from .relations import MentionsLink
 
@@ -46,6 +48,13 @@ class Publication(BaseModel):
 
     id: str
     title: str
+    # Internal ids are opaque. Existing OpenAlex W ids remain valid legacy
+    # ids, while newly ingested entities use a PAUK-generated id.
+    schema_version: int = 1
+    identifiers: list[ExternalIdentifier] = Field(default_factory=list)
+    source_records: list[PublicationSourceRecord] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    source_keys: list[str] = Field(default_factory=list)
     # OpenAlex work type: "article", "preprint", "software", "dataset", ...
     # Not every work is a paper (e.g. a software release archived on Zenodo),
     # and the code_links stage treats those differently.
@@ -74,3 +83,122 @@ class Publication(BaseModel):
     versions: list[PublicationVersion] = Field(default_factory=list)
     merged_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_legacy_sources(cls, data: Any) -> Any:
+        """Accept v1 rows and expose them through the source-neutral ledger."""
+        if not isinstance(data, dict):
+            return data
+        values = dict(data)
+        records = [
+            record.model_dump(mode="python") if isinstance(record, BaseModel) else record
+            for record in (values.get("source_records") or [])
+        ]
+        if not records:
+            for version in values.get("versions") or []:
+                source_id = version.get("openalex_id") if isinstance(version, dict) else None
+                if not source_id:
+                    continue
+                records.append({
+                    "key": f"openalex:{source_id}",
+                    "source": "openalex",
+                    "source_id": source_id,
+                    "source_url": version.get("openalex_url"),
+                    "title": version.get("title"),
+                    "type": values.get("type"),
+                    "fields": values.get("fields") or [],
+                    "journal": version.get("journal"),
+                    "doi": version.get("doi"),
+                    "publication_date": version.get("publication_date"),
+                    "year": version.get("year"),
+                    "pdf_urls": version.get("pdf_urls") or [],
+                    "abstract": version.get("abstract"),
+                    "authors": version.get("authors") or [],
+                })
+        values["source_records"] = records
+        if records:
+            values.setdefault("sources", list(dict.fromkeys(r.get("source") for r in records if r.get("source"))))
+            values.setdefault("source_keys", list(dict.fromkeys(r.get("key") for r in records if r.get("key"))))
+        identifiers = list(values.get("identifiers") or [])
+        identifiers = [
+            item.model_dump(mode="python") if isinstance(item, BaseModel) else item
+            for item in identifiers
+        ]
+        known = {i.get("normalized_key") for i in identifiers if isinstance(i, dict)}
+        for record in records:
+            key = record.get("key")
+            if key and key not in known:
+                identifiers.append({
+                    "scheme": record.get("source"),
+                    "value": record.get("source_id"),
+                    "normalized_key": key,
+                    "url": record.get("source_url"),
+                })
+                known.add(key)
+            doi = record.get("doi")
+            if doi:
+                identifier = ExternalIdentifier(scheme="doi", value=doi)
+                if identifier.normalized_key not in known:
+                    identifiers.append(identifier.model_dump(mode="python"))
+                    known.add(identifier.normalized_key)
+        if values.get("doi"):
+            identifier = ExternalIdentifier(scheme="doi", value=values["doi"])
+            if identifier.normalized_key not in known:
+                identifiers.append(identifier.model_dump(mode="python"))
+        values["identifiers"] = identifiers
+        return values
+
+    @model_validator(mode="after")
+    def write_legacy_sources(self) -> "Publication":
+        """Keep old consumers alive during the dual-write migration window."""
+        self.sources = list(dict.fromkeys([*self.sources, *(r.source for r in self.source_records)]))
+        self.source_keys = list(dict.fromkeys([*self.source_keys, *(r.key for r in self.source_records)]))
+        known_identifiers = {identifier.normalized_key for identifier in self.identifiers}
+        for record in self.source_records:
+            if record.key not in known_identifiers:
+                self.identifiers.append(ExternalIdentifier(
+                    scheme=record.source,
+                    value=record.source_id,
+                    normalized_key=record.key,
+                    url=record.source_url,
+                ))
+                known_identifiers.add(record.key)
+        if not self.versions:
+            self.versions = [
+                PublicationVersion(
+                    openalex_id=record.source_id,
+                    title=record.title,
+                    doi=record.doi,
+                    journal=record.journal,
+                    publication_date=record.publication_date,
+                    year=record.year,
+                    openalex_url=record.source_url,
+                    pdf_urls=record.pdf_urls,
+                    abstract=record.abstract,
+                    authors=[VersionAuthor(
+                        person_id=author.person_id,
+                        name=author.name,
+                        position=author.position,
+                    ) for author in record.authors],
+                )
+                for record in self.source_records
+                if record.source == "openalex"
+            ]
+        if self.openalex_url is None:
+            self.openalex_url = next(
+                (record.source_url for record in self.source_records if record.source == "openalex"),
+                None,
+            )
+        return self
+
+
+__all__ = [
+    "ExternalIdentifier",
+    "Funding",
+    "Publication",
+    "PublicationSourceRecord",
+    "PublicationVersion",
+    "SourceAuthor",
+    "VersionAuthor",
+]

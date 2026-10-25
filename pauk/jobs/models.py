@@ -69,6 +69,7 @@ class CollectPayload(BaseModel):
     running the pipeline, and a path from a browser reads unrelated files."""
 
     group: str
+    source: str = "openalex"
     work_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None

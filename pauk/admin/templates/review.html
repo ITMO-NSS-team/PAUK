@@ -140,6 +140,7 @@
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
             {% if row.is_staff %}{% if row.chosen %}запись выбрана{% else %}никто из каталога{% endif %}
             {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
+            {% elif row.is_publication %}{% if row.verdict == "same" %}одна публикация{% else %}разные публикации{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {% if row.is_staff %}
@@ -206,6 +207,8 @@
             <button type="submit" name="verdict" value="split">отмеченные это один человек</button>
             {% elif row.is_github %}
             <button type="submit" name="verdict" value="same">это его аккаунт</button>
+            {% elif row.is_publication %}
+            <button type="submit" name="verdict" value="same">одна публикация</button>
             {% else %}
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
@@ -213,6 +216,7 @@
               {% if row.is_staff %}никто из них
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
+              {% elif row.is_publication %}разные публикации
               {% else %}разные{% endif %}</button>
             {% if not row.skipped_by %}
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>

@@ -76,6 +76,11 @@ def ensure_indexes(db: Database) -> None:
     db.person_merge_sources.create_index([("person_id", 1), ("saved_at", -1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
+    db.raw.create_index([("provider", 1), ("record_key", 1), ("fetched_at", 1)])
+    db.publications.create_index([("source_keys", 1)])
+    db.publications.create_index([("identifiers.normalized_key", 1)])
+    db.persons.create_index([("identifiers.normalized_key", 1)])
+    db.identity_keys.create_index([("entity", 1), ("entity_id", 1)])
     # The panel's change feed reads the audit two ways: the history of one
     # entity, and everything one person did.
     db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])

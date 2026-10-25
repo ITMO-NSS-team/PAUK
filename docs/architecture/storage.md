@@ -8,6 +8,11 @@ reference catalog, not intermediate pipeline data.
 **Files:** `pauk/storage/raw.py`, `prepared.py`, `mongo.py`, `review.py`,
 `atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`, `person_merge_sources.py`.
 
+`identity_keys` is global rather than group-scoped. Its `_id` is
+`<entity>:<scheme>:<normalized-value>` and `entity_id` is the immutable
+canonical owner. Exact source ids, DOI and ORCID resolve through it before a
+prepared row is built.
+
 PDF bytes live on disk (`Settings.pdf_dir`); Mongo holds only a pointer (the
 `pdfs` collection). `pauk/pipeline/stages/code_links.py` reads and writes
 them through `pdf.py::PdfStore`.
@@ -18,8 +23,10 @@ steps) is in [`../diagrams/mongodb-storage.md`](../diagrams/mongodb-storage.md).
 ## Entities are global, not per group
 
 There is one Mongo document per entity. Its `_id` is the entity's stable id
-(OpenAlex work id, a deterministic person id, and so on), and a `groups:
-[...]` field lists the names of the groups that touched it. If two
+(an opaque PAUK id; legacy OpenAlex ids are preserved for existing rows), and
+a `groups: [...]` field lists the names of the groups that touched it. New
+publications and people use `pub_<uuid4>` and `per_<uuid4>` respectively;
+external ids belong in `identifiers` and `source_records`. If two
 overlapping selections hit the same publication, it is enriched once: the
 enrichment stage of a new group sees the document already enriched by the
 previous group (same `processing` status, `pdf_urls`, and so on).
@@ -40,8 +47,9 @@ is the job of the dedup stages (`enrich dedup`, `pauk dedup graph`).
 
 ## `raw.py::RawStore`
 
-Append-only, collection `raw`, document `{source, group, fetched_at, request,
-payload}`. `append(source, payload, request)` is an `insert_one` with no
+Append-only, collection `raw`. V2 documents add `provider`, `record_type`,
+`record_key` and `schema_version` to `{source, group, fetched_at, request,
+payload}`. `append(...)` is an `insert_one` with no
 upsert, so fetch history is never overwritten. `read(source)` is
 `find({"source": source, "group": self.group})` sorted by `fetched_at`.
 
@@ -198,17 +206,18 @@ first) and `{members}` (all questions about one person).
 
 `pauk/pipeline/stages/code_links.py` reads and writes PDFs through
 `PdfStore(db, pdf_dir)`. The bytes are a plain file
-`<pdf_dir>/<publication_id>.pdf` (`Settings.pdf_dir`, default `data/pdf/`),
-flat with no per-group folder: like the publication itself, a PDF is tied to
-the global id. Mongo stores only a pointer: collection `pdfs`, one document
-per id, `{fetched_at}`. The path is not stored; it is derived from the id.
+`<pdf_dir>/<sha256(source-record-key)>.pdf` (`Settings.pdf_dir`, default
+`data/pdf/`). Mongo pointers store `record_key`, `filename` and `fetched_at`.
+Legacy `W….pdf` files remain readable through an OpenAlex-key fallback and
+do not have to be renamed.
 
-The cache is checked on disk, not in Mongo: `PdfStore.exists(id)` is
-`path.exists()`, with no database query. If the file is missing it is
-downloaded and written atomically (`atomic_write_bytes`), and only after the
-write succeeds is the pointer upserted. The order matters: if the process dies
-in between, a file may exist without a pointer, but a pointer never promises a
-file that is not there.
+`PdfStore.exists(record_key)` first reads the Mongo pointer to resolve its
+filename, then checks that path on disk. Without a pointer it derives the
+hashed filename and finally tries the legacy OpenAlex `W….pdf` fallback. If
+the file is missing it is downloaded and written atomically
+(`atomic_write_bytes`), and only after the write succeeds is the pointer
+upserted. The order matters: if the process dies in between, a file may exist
+without a pointer, but a pointer never promises a file that is not there.
 
 `PdfStore.read()` is a single `path.read_bytes()` call, so no file handle
 outlives it (important on Windows, where an open file cannot be deleted).
