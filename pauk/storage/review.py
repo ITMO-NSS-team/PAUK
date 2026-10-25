@@ -26,6 +26,9 @@ Five shapes of question:
   linked with IS_VERSION (`pauk.graph.version_candidates`), answered "same"
   (one work) or "different". Nothing is folded either way: the answer only
   confirms the link or removes it.
+- a **publication pair** with an equal title and a shared resolved author but
+  no DOI. A "same" answer is consumed by the next prepared or graph dedup
+  pass; "different" keeps both records.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`: these are
 written long before anything is published, and `pauk/pipeline/` imports
@@ -54,8 +57,10 @@ GITHUB = "github_person"
 STAFF = "staff_record"
 #: Two publications linked as versions of one work.
 PUB_VERSION = "publication_version"
+#: Two source-neutral publication records awaiting a dedup decision.
+PUBLICATION = "publication_pair"
 ALIAS = "person_alias_conflict"
-KINDS = (PAIR, GROUP, GITHUB, STAFF, PUB_VERSION, ALIAS)
+KINDS = (PAIR, GROUP, GITHUB, STAFF, PUB_VERSION, PUBLICATION, ALIAS)
 
 #: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
@@ -68,6 +73,27 @@ DISPUTE_FIELDS = ("disputed_at", "disputed_rule", "disputed_members", "disputed_
 #: Which pass asked. The same pair can come from both, and it is one question.
 STAGE = "stage"
 GRAPH = "graph"
+
+
+def record_publication_pair(db: Database, first: str, second: str, *,
+                            title: str, shared_authors: list[str],
+                            source: str = STAGE) -> None:
+    """Queue a probable publication duplicate without merging it."""
+    members = sorted({first, second})
+    moment = _now()
+    db[COLLECTION].update_one(
+        {"_id": question_id(PUBLICATION, members)},
+        {"$set": {
+            "evidence": {
+                "held_because": "same title and author without DOI",
+                "title": title,
+                "shared_authors": shared_authors,
+            },
+            "seen_at": moment,
+            "source": source,
+        }, "$setOnInsert": {"kind": PUBLICATION, "members": members}},
+        upsert=True,
+    )
 
 
 class ReviewError(Exception):
@@ -682,7 +708,7 @@ def record_undo(db: Database, kind: str, members: list[str],
 
 
 def mark_applied(db: Database, kind: str, members: list[str]) -> bool:
-    """Record that a "same" answer reached the graph.
+    """Record that a "same" answer reached prepared data or the graph.
 
     Separate from the answer because the two happen at different times. A
     pair answered before its group is published has nothing to merge yet,
