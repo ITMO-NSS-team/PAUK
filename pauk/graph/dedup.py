@@ -238,7 +238,7 @@ def dedup_graph_persons(
     canonical_nodes: list[tuple[str, dict]] = []
     for canonical, duplicates in groups:
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging %s (%s) into %s (%s)",
                 duplicate.id,
                 duplicate.name_raw,
@@ -301,7 +301,7 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
         canonical, duplicates = ranked[0], ranked[1:]
         merged_ids = list(canonical.get("merged_ids") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging publication %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("title"),
@@ -385,7 +385,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
         merged_ids = list(canonical.get("merged_ids") or [])
         cited_urls = list(canonical.get("cited_urls") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging repository %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("url"),

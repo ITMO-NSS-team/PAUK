@@ -24,6 +24,7 @@ from pymongo.errors import PyMongoError
 
 from pauk.jobs import locks, store
 from pauk.jobs.models import Job, JobKind, parse_payload
+from pauk.logging import set_run
 from pauk.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -300,6 +301,7 @@ class Worker:
             if stop():
                 raise Cancelled(f"остановлено перед шагом «{step}»")
 
+        set_run(f"{job.kind} {job.id}")
         try:
             with _Beat(self.db, job):
                 result = STEPS[job.kind](self.config, self.db, payload, stop, report)
@@ -316,6 +318,8 @@ class Worker:
             logger.exception("job %s failed", job.id)
             store.fail(self.db, job.id, f"{type(error).__name__}: {error}")
             return True
+        finally:
+            set_run(None)
         store.finish(self.db, job.id, result)
         logger.info("job %s done: %s", job.id,
                     ", ".join(f"{k}={v}" for k, v in sorted(result.items())) or "nothing to do")
