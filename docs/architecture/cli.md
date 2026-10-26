@@ -203,9 +203,10 @@ The change feed (`audit`) and the archive of replaced prepared rows
 Restoring a deleted record is unaffected: a snapshot of its fields lives in
 the decision itself, and decisions are not trimmed.
 
-### `admin worker` and `admin user`
+### `admin serve`, `admin worker` and `admin user`
 
 ```
+pauk admin serve [--host <address>] [--port <port>]
 pauk admin worker [--once] [--poll <seconds>] [--name <name>]
 pauk admin user add <login> [--role <role>]
 pauk admin user list
@@ -213,7 +214,10 @@ pauk admin user enable <login>
 pauk admin user disable <login>
 ```
 
-`worker` performs the runs scheduled from the panel, one at a time; `--once`
+`serve` runs the panel's web server (port 8505 by default) through uvicorn,
+with uvicorn's own lines in PAUK's log layout. `worker` performs the runs
+scheduled from the panel, one at a time, and tags its lines with the job in
+hand; `--once`
 takes at most one job and exits. `user` manages panel accounts (default
 role `editor`). `user` needs MongoDB only. See [../admin-panel.md](../admin-panel.md).
 

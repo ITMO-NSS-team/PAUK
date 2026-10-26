@@ -1,10 +1,12 @@
 # Deploying to the lab server
 
 **What it covers:** how the map is deployed to the lab server, where PAUK
-keeps its files there, and how the external PDF-Crawler-Service is wired in.
+keeps its files there, the Docker Compose setup that replaces the scripts
+below, and how the external PDF-Crawler-Service is wired in.
 
-**Files:** `scripts/deploy.sh`, `scripts/serve_static.py`,
-`scripts/mongo-up.sh`, `.env`/`.env.example` (`PAUK_PDF_CRAWLER_URL`).
+**Files:** `deploy/` (compose, image, nginx, log rotation),
+`scripts/deploy.sh`, `scripts/serve_static.py`, `scripts/mongo-up.sh`,
+`.env`/`.env.example` (`PAUK_PDF_CRAWLER_URL`).
 
 The map runs on `einsteinium.nsslab` (`ssh asteb@einsteinium.nsslab`; access
 by SSH key, and only over the lab VPN). Static files from `~/pauk-gui/` are
@@ -47,6 +49,33 @@ reads and writes PDFs through it. Secrets taken out of old dumps and runs are
 in `~/pauk/secrets/` (directory `700`, files `600`); one-off scripts and logs
 are in `~/pauk/scratch/<source>-<date>/`.
 
+## Docker Compose (`deploy/`)
+
+`deploy/compose.yml` runs every PAUK service on one host from one file:
+`mongo`, `neo4j`, `admin` (`pauk admin serve`), `worker` (`pauk admin
+worker`) and `site` (nginx: 8520 live, 8521 preview, 8522-8529 archived
+versions). The server does not run it yet: until the switch, the screen
+session, the systemd units and the native Neo4j described below stay in
+place. How to run it, the folders it mounts and the env file are in
+[`deploy/README.md`](../../deploy/README.md).
+
+What it changes compared with today:
+
+- **Memory is set, not left to defaults.** Mongo's cache is 6 GB (by default
+  it takes half the RAM, about 10 GB here), Neo4j gets a 2 GB heap and a
+  1 GB page cache. The worker has no limit until its peak on a real run is
+  measured.
+- **One env file, handed out per service.** `--env-file` points at the
+  secrets file outside the repository; each service in `compose.yml` lists
+  the variables it gets, so nginx sees none. Database addresses inside
+  Docker (`mongo:27017`, `bolt://neo4j:7687`) are set by compose.
+- **Logs on the local disk, one folder per service** (`~/pauk/logs/<service>/`),
+  capped by `deploy/logrotate.conf` at 3 files of 20 MB. PAUK's own lines
+  share one layout; see `pauk/logging.py`.
+- **Neo4j moves into a container** of the same version (2026.05.0), with the
+  same APOC and GDS jars mounted from a folder and the same settings
+  (`CYPHER_25`, unrestricted `apoc.*`/`gds.*`).
+
 ## MongoDB
 
 The `pauk-mongo` container runs `mongo:4.4`: the server has an old Xeon
@@ -63,8 +92,11 @@ docker run -d --name pauk-mongo --restart unless-stopped -p 27017:27017 \
 
 Data is a bind mount at `/home/asteb/pauk-mongo-data` on the server's disk
 (not a docker volume): a real folder, visible outside the container, that
-grows with the raw and prepared data. Port `27017` is published without
-authentication; access is limited only by the lab VPN, as with Neo4j. Check
+grows with the raw and prepared data. Authentication is on: the container
+was created with `MONGO_INITDB_ROOT_USERNAME`/`PASSWORD`, and with those set
+the image starts `mongod --auth` (the command above, without them, would
+not). Port `27017` is published; beyond the passwords, access is limited by
+the lab VPN. Check
 the state with `docker ps -a | grep mongo`, and the exact mount with
 `docker inspect pauk-mongo --format '{{json .Mounts}}' | python3 -m json.tool`.
 
