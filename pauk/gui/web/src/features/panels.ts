@@ -7,6 +7,7 @@ import type {
   PubNode,
   RepoDetail,
   RepoNode,
+  ReportsIndex,
 } from "../contracts/graph";
 import { DATA_CONFIG, PANEL_CONFIG } from "../core/config";
 import {
@@ -203,12 +204,12 @@ export function mountPanel(
 ): () => void {
   const container = requireElement("panel");
 
-  // TODO: static PDFs and file list next to the site data; move into repos-detail.json if this stays.
-  const reportFiles = new Map<string, string>();
+  // Written by `pauk reports build`, not by the site data build.
+  const reportKeys = new Map<string, Set<string>>();
   fetch(DATA_CONFIG.reportsIndexUrl)
-    .then((response) => (response.ok ? (response.json() as Promise<string[]>) : []))
-    .then((files) => {
-      for (const file of files) reportFiles.set(file.toLowerCase(), file);
+    .then((response) => (response.ok ? (response.json() as Promise<ReportsIndex>) : {}))
+    .then((index: ReportsIndex) => {
+      for (const [lang, keys] of Object.entries(index)) reportKeys.set(lang, new Set(keys));
       store.notify();
     })
     .catch((error: unknown) => console.warn("reports/index.json:", error));
@@ -298,17 +299,10 @@ export function mountPanel(
     };
   }
 
-  function reportLinksOf(repoUrl: string): PanelLink[] {
-    const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
-    const file = reportFiles.get(`${name}_report.pdf`);
-    return file
-      ? [
-          {
-            kind: "link",
-            href: `/reports/${encodeURIComponent(file)}`,
-            text: "PDF",
-          },
-        ]
+  /** No fallback to another language: a report the reader can't read is no report. */
+  function reportLinksOf(key: string, lang: AppState["lang"]): PanelLink[] {
+    return reportKeys.get(lang)?.has(key)
+      ? [{ kind: "link", href: `/reports/${lang}/${encodeURIComponent(key)}.pdf`, text: "PDF" }]
       : [];
   }
 
@@ -749,11 +743,11 @@ export function mountPanel(
             rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
           if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
           if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
-          const reportLinks = repoDetail ? reportLinksOf(repoDetail.url) : [];
-          if (reportLinks.length > 0) rows.push([t("field.report", lang), reportLinks]);
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
+        const reportLinks = reportLinksOf(node.key, lang);
+        if (reportLinks.length > 0) rows.push([t("field.report", lang), reportLinks]);
 
         const contributors = repoContributorRefsOf(node.key, lang);
         if (contributors.length > 0)

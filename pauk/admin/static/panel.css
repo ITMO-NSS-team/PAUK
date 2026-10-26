@@ -307,15 +307,34 @@ tr[id^="q-"]:target td { background: var(--bg); }
 .summary .card { margin: 0; display: flex; flex-direction: column; gap: 6px;
                  text-decoration: none; color: var(--text); }
 .summary .card:hover { border-color: var(--g4); }
-.summary .label { font-size: 11px; font-weight: 600; letter-spacing: .05em;
-                  text-transform: uppercase; color: var(--muted); }
-.summary .headline { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.summary .label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600;
+                  letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+/* The card is a link; the arrow says so without a button. */
+.summary .label::after { content: "->"; letter-spacing: 0; }
+.summary .card:hover .label::after { color: var(--text); }
+/* One height for a number and a phrase, so the lines under them align across cards. */
+.summary .headline { display: flex; align-items: center; min-height: 36px;
+                     font-size: 30px; font-weight: 700; line-height: 1.1; }
 .summary .headline.quiet { font-size: 19px; color: var(--muted); font-weight: 600; }
 .summary .headline .pulse { margin-right: 9px; }
 .summary .under { font-size: 13px; color: var(--muted); line-height: 1.45; }
-.summary .verdict { gap: 6px; }
-.summary .verdict .tally { padding: 4px 9px; font-size: 12px; }
-.summary .verdict .tally b { font-size: 15px; }
+.summary .foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border);
+                 font-size: 13px; color: var(--muted); line-height: 1.45; }
+.summary .state::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+                          border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.summary .state.ok { color: var(--ok); }
+.summary .state.bad { color: var(--danger); font-weight: 600; }
+/* One cell per check. Fills differ from the text tokens: those read alike as fills. */
+.summary .fail { --fill: #C8453A; }
+.summary .warn { --fill: #E0A526; }
+.summary .ok { --fill: #3A9A5B; }
+.summary .error { --fill: var(--g3); }
+.summary .meter { display: flex; gap: 2px; height: 10px; margin-top: 4px; }
+.summary .meter i { flex: 1; border-radius: 2px; background: var(--fill); }
+.summary .legend { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; color: var(--muted); }
+.summary .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 4px;
+                                border-radius: 2px; background: var(--fill); }
+.summary .legend b { color: var(--text); }
 
 .kind { font-weight: 600; }
 .kind-created { color: var(--ok); }

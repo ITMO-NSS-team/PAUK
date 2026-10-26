@@ -38,7 +38,7 @@ Thin wrappers, each knowing only its own API. All inherit from
 | `github.py` | `GitHubClient` | `get_repository`, `has_readme` (a separate call: the repository payload does not say whether a README exists), `contributors`, `commits`, `get_user`, `user_repositories`. It also retries rate limits sent as `403` or `429`: `Retry-After` first, then `X-RateLimit-Reset` for an exhausted primary limit, then at least 60 seconds for a secondary limit named only in the response body. The wait log line says which limit it was |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
-| `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call |
+| `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 
 ## PDF-Crawler-Service is not in this package
 

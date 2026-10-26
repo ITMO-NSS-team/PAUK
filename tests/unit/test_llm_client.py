@@ -3,7 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from pauk.sources.llm import OpenRouterClient
+from pauk.sources.base import HttpRequestError
+from pauk.sources.llm import OPENROUTER_KEY_URL, OpenRouterClient
 
 
 class OpenRouterClientLastResponseTest(unittest.TestCase):
@@ -155,3 +156,37 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertIsNone(client.chat_json("some prompt"))
         self.assertEqual(client.last_response, [])
         self.assertIn("not an object", client.last_error)
+
+class OpenRouterClientUsageTest(unittest.TestCase):
+    def setUp(self):
+        self.client = OpenRouterClient(timeout=5, api_key="secret-key", model="test-model")
+        patcher = patch("pauk.sources.base.time.sleep")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_usage_reads_the_running_total_of_the_key_with_the_key_as_bearer(self):
+        self.client.session.request = MagicMock(
+            return_value=OpenRouterClientLastResponseTest.response(200, {"data": {"usage": 1.25}})
+        )
+        self.assertEqual(self.client.usage(), 1.25)
+        self.assertEqual(self.client.session.request.call_args.args, ("GET", OPENROUTER_KEY_URL))
+        self.assertEqual(self.client.session.headers["Authorization"], "Bearer secret-key")
+
+    def test_usage_retries_a_transient_error(self):
+        self.client.session.request = MagicMock(side_effect=[
+            OpenRouterClientLastResponseTest.response(502, {}),
+            OpenRouterClientLastResponseTest.response(200, {"data": {"usage": 2.0}}),
+        ])
+        self.assertEqual(self.client.usage(), 2.0)
+
+    def test_usage_raises_without_the_key_in_the_message(self):
+        self.client.session.request = MagicMock(return_value=OpenRouterClientLastResponseTest.response(401, {}))
+        with self.assertRaises(HttpRequestError) as caught:
+            self.client.usage()
+        self.assertEqual(caught.exception.status_code, 401)
+        self.assertNotIn("secret-key", str(caught.exception))
+
+    def test_usage_reports_a_network_failure_by_its_type(self):
+        self.client.session.request = MagicMock(side_effect=requests.ConnectionError("down"))
+        with self.assertRaisesRegex(HttpRequestError, "ConnectionError"):
+            self.client.usage()
