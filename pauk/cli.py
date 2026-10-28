@@ -21,6 +21,7 @@ from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
+from pauk.sources.llm import check_providers
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
@@ -318,6 +319,11 @@ def main() -> None:
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> None:
+    if args.command in ("run", "enrich", "dedup"):
+        try:
+            check_providers(settings)
+        except ValueError as error:
+            parser.error(str(error))
     if args.command == "run":
         _cmd_run(args)
     elif args.command == "collect":

@@ -54,7 +54,7 @@ from pathlib import Path
 
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.sources.llm import LlmClient, llm_client
+from pauk.sources.llm import LlmClient, kill_running_clis, llm_client
 from pauk.storage import LlmLogStore
 
 from .base import EnrichmentStage
@@ -1021,6 +1021,7 @@ class AuthorNamesStage(EnrichmentStage):
                             yield future.result()
                     except BaseException:
                         pool.shutdown(wait=False, cancel_futures=True)
+                        kill_running_clis()
                         raise
 
         for person, parsed, second_name_corrected, llm_error in self.progress(

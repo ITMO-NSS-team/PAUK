@@ -35,7 +35,7 @@ which runs a local CLI, inherit from `base.py::HttpClient`.
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call |
-| `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude[:<model>]`, `codex:<model>`) |
+| `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`, `GeminiCli` runs `gemini -p`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude[:<model>]`, `codex:<model>`, `gemini:<model>`), `check_providers` parses every stage's setting when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage |
 
 ## PDF-Crawler-Service is not in this package
 

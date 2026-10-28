@@ -29,7 +29,7 @@ from pauk.graph.person_resolution_single import (
     split_batch_response,
 )
 from pauk.models import Person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels, _Request
+from pauk.pipeline.person_resolution import LOG_COLLECTION, ResolutionModels, _Request
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
@@ -209,7 +209,7 @@ class SingleResolutionTest(unittest.TestCase):
         self.assertEqual(len(review.questions(db)), 1)
 
     def test_single_response_is_cached_across_pair_renumbering(self):
-        models = OpenRouterResolutionModels(
+        models = ResolutionModels(
             Settings(
                 openrouter_api_key="test-key", person_resolution_provider="openrouter", person_resolution_batch_size=1
             ),
@@ -286,7 +286,7 @@ class PairPackingTest(unittest.TestCase):
             person_resolution_model="test-model",
             person_resolution_batch_size=batch_size,
         )
-        return OpenRouterResolutionModels(config, self.db, "test")
+        return ResolutionModels(config, self.db, "test")
 
     def items(self, numbers):
         return [
@@ -340,6 +340,22 @@ class PairPackingTest(unittest.TestCase):
         alone = sorted(body["id"] for system, body in self.calls if system == SYSTEM_PROMPT)
         self.assertEqual(alone, [1, 2, 3])
         self.assertEqual(sorted(verdicts), [1, 2, 3, 4])
+
+    def test_pairs_answered_by_a_batch_are_logged_with_its_batch_id(self):
+        self.run_models(self.models(3), [1, 2, 3])
+
+        records = list(self.db[LOG_COLLECTION].find())
+        batch = [record for record in records if record["context"].get("pair_ids")]
+        pairs = [record for record in records if "pair_id" in record["context"]]
+        self.assertEqual(len(batch), 1)
+        self.assertEqual(sorted(record["context"]["pair_id"] for record in pairs), [1, 2, 3])
+        self.assertEqual({record["context"]["batch_id"] for record in pairs}, {batch[0]["context"]["batch_id"]})
+
+    def test_a_pair_asked_alone_has_no_batch_id(self):
+        self.run_models(self.models(1), [1])
+
+        (record,) = list(self.db[LOG_COLLECTION].find())
+        self.assertNotIn("batch_id", record["context"])
 
     def test_a_failed_batch_is_tried_twice_and_not_asked_pair_by_pair(self):
         verdicts = self.run_models(self.models(2), [1, 2], lambda ids: None)

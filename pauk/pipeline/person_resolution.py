@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import threading
+import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
@@ -40,7 +41,7 @@ from pauk.graph.person_resolution_single import (
     split_batch_response,
 )
 from pauk.settings import Settings
-from pauk.sources.llm import LlmClient, llm_client
+from pauk.sources.llm import LlmClient, kill_running_clis, llm_client
 from pauk.storage import LlmLogStore
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class _Result:
     usage: dict | None
     error: str | None
     cache_hit: bool
+    batch_id: str | None = None
 
 
 def cache_payload(stage: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -106,7 +108,7 @@ def _batch_request(request: _Request) -> _Request:
     return replace(request, stage=BATCH_STAGE, system_prompt=BATCH_SYSTEM_PROMPT)
 
 
-class OpenRouterResolutionModels:
+class ResolutionModels:
     """Runs full-context person-resolution requests with bounded concurrency and a Mongo cache."""
 
     def __init__(self, config: Settings, db: Database, group: str) -> None:
@@ -258,7 +260,7 @@ class OpenRouterResolutionModels:
     def _invoke_one(self, request: _Request) -> list[_Result]:
         return [self._invoke(request)]
 
-    def _ask_batch(self, client: LlmClient, batch: list[_Request]) -> dict | None:
+    def _ask_batch(self, client: LlmClient, batch: list[_Request], batch_id: str) -> dict | None:
         payload = batch_payload([request.payload for request in batch])
         parsed = client.chat_json(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
@@ -273,20 +275,27 @@ class OpenRouterResolutionModels:
             parsed=parsed,
             usage=client.last_usage,
             error=None if parsed is not None else client.last_error or "no response",
-            context={"stage": BATCH_STAGE, "pair_ids": [request.pair_id for request in batch]},
+            context={"stage": BATCH_STAGE, "batch_id": batch_id, "pair_ids": [request.pair_id for request in batch]},
         )
         return parsed
 
     def _invoke_batch(self, batch: list[_Request]) -> list[_Result]:
-        """One request for several pairs, tried twice; a pair the reply leaves out or gets wrong is asked alone."""
+        """One request for several pairs, tried twice; a pair the reply leaves out or gets wrong is asked alone.
+
+        The batch call and every pair it answered are logged under one batch_id: a pair's own record shows the
+        batch prompt it was never sent alone, and no usage.
+        """
         client = self._client()
+        batch_id = uuid.uuid4().hex
         parsed = None
         for _attempt in range(2):
-            if (parsed := self._ask_batch(client, batch)) is not None:
+            if (parsed := self._ask_batch(client, batch, batch_id)) is not None:
                 break
         if parsed is None:
             error = client.last_error or "no response"
-            return [_Result(request, None, client.last_response, None, None, error, False) for request in batch]
+            return [
+                _Result(request, None, client.last_response, None, None, error, False, batch_id) for request in batch
+            ]
         answers = split_batch_response(parsed)
         results = []
         for request in batch:
@@ -300,7 +309,7 @@ class OpenRouterResolutionModels:
                 results.append(self._invoke(request))
                 continue
             self._store(keyed, answer, None, None)
-            results.append(_Result(keyed, verdict, None, answer, None, None, False))
+            results.append(_Result(keyed, verdict, None, answer, None, None, False, batch_id))
         return results
 
     def _hit(self, request: _Request, batch_size: int) -> _Result | None:
@@ -352,6 +361,7 @@ class OpenRouterResolutionModels:
                         # to the pool's own shutdown would pay for a whole
                         # block of answers nobody is going to read.
                         pool.shutdown(wait=False, cancel_futures=True)
+                        kill_running_clis()
                         raise
 
         for result in results:
@@ -373,6 +383,7 @@ class OpenRouterResolutionModels:
                     "pair_id": result.request.pair_id,
                     "stage": result.request.stage,
                     "cache_hit": result.cache_hit,
+                    **({"batch_id": result.batch_id} if result.batch_id else {}),
                 },
             )
         return {result.request.pair_id: result.verdict for result in results}

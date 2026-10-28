@@ -16,7 +16,7 @@ from pauk.graph.person_resolution import (
 )
 from pauk.models import Person
 from pauk.pipeline.person_name_facts import name_comparison_facts
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.settings import Settings
 
@@ -125,7 +125,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         self.assertEqual(context.as_judge_payload(), changed.as_judge_payload())
         for field in ("first_stage", "logreg_probability", "impact_not_identity_evidence"):
             self.assertNotIn(field, context.as_judge_payload())
-        models = OpenRouterResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
+        models = ResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
         with patch.object(models, "_run", return_value={}) as run:
             models.second_many([context, changed])
         left, right = run.call_args.args[0]
@@ -136,7 +136,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         base = SecondStageContext(
             0, ResearcherContext("A1", "Name"), ResearcherContext("A2", "Name"), "both_missing", "both_missing"
         )
-        models = OpenRouterResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
+        models = ResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
         with patch.object(models, "_run", return_value={}) as run:
             models.second_many([base, replace(base, identity_facts={"schema_version": 1})])
         left, right = run.call_args.args[0]

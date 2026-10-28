@@ -130,7 +130,8 @@ subscription CLI (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch i
 `PAUK_PERSON_RESOLUTION_BATCH_SIZE` (default 1) sends that many uncached pairs
 in one request `{"pairs": [...]}` and expects `{"results": [...]}`. A pair
 missing from the reply, repeated or invalid is asked again alone; a failed
-batch request is retried once, then its pairs go to review. Batch answers are
+batch request is retried once, then its pairs go to review. The batch call
+and the records of the pairs it answered share a `batch_id` in the LLM log. Batch answers are
 cached under the batch prompt: batch mode reuses single answers, single mode
 does not reuse batch answers. Keep 1 for production runs.
 
