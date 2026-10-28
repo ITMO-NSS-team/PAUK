@@ -48,11 +48,13 @@ PORT=8503 ./scripts/deploy.sh   # if 8501 is taken
 Nothing is built on the server and no `git pull` happens there. The site is
 static and is built locally from the current branch:
 
-1. If there are uncommitted changes, the script warns and asks to confirm
-   (`y/N`): they will end up in the build.
-2. It checks that `data/gui/private/` holds all four JSON files
-   (`graph-data`, `authors-detail`, `repos-detail`, `pubs-detail`). It does
-   not generate them; run `pauk gui build` first.
+1. Without `data/gui/private/graph-data.json` it stops: the map can't render
+   (run `pauk gui build` first). It generates nothing itself.
+2. Everything else is a warning, listed together under one `Continue? [y/N]`:
+   uncommitted changes (they end up in the build), a missing
+   `authors-detail`/`repos-detail`/`pubs-detail.json` (cards stay empty) and
+   a missing `reports/index.json` (no report buttons; run
+   `pauk reports build`, see [reports.md](reports.md)).
 3. `npm run build` in `pauk/gui/web/`. Vite copies the data from
    `data/gui/private/` into `dist/`, so the **private** variant, with
    personal author fields, is what reaches the server. Access to the server

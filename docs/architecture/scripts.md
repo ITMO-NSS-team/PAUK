@@ -85,7 +85,6 @@ to the checkout.
 |---|---|---|
 | `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories | draft in `data/static/` |
 | `export_link_labels.py` | Exports links (or whole papers) to CSV for manual labelling; the only tooling in the repository for measuring precision and recall of link extraction | no |
-| `mass_launch_osa_tool.py` | Batch launch of the external `osa_tool` over a list of repositories | external tool |
 
 `export_link_labels.py` has two modes: `links` measures precision over links
 already extracted, and `papers` measures recall, which cannot be seen from the

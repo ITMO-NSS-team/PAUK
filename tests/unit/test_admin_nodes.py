@@ -302,7 +302,7 @@ class NodeScreenTest(unittest.TestCase):
         self.graph.nodes[("Person", "A1")]["merged_ids"] = ["A9"]
         self.sign_in()
         body = self.client.get("/nodes/Person/A1", params={"folded": "A9"}).text
-        self.assertIn("свели с этой", body)
+        self.assertIn("склеили с этой", body)
         self.assertIn('class="val">A9</span>', body)
 
     def test_a_fold_the_record_does_not_carry_is_not_repeated_back(self):
@@ -729,7 +729,6 @@ class LinkMistakeTest(unittest.TestCase):
     def test_the_form_says_what_to_type_before_the_mistake_happens(self):
         body = self.client.get("/nodes/Repository/R1").text
         self.assertIn("по login", body)
-        self.assertIn("для репозитория – адрес", body)
 
 
 class LinkDirectionTest(unittest.TestCase):

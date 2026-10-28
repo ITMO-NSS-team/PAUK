@@ -89,7 +89,7 @@ def require_stores(db: Annotated[Database, Depends(get_db)]) -> None:
         logger.warning("mongo is not answering: %s", error)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Mongo не отвечает: правка не сохранилась бы как решение") from None
+            "Mongo не отвечает, правку не сохранили: без Mongo её перезаписала бы следующая публикация") from None
 
 
 def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
@@ -225,9 +225,19 @@ def running_job(request: Request) -> dict:
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                             context_processors=[running_job])
+def stamp(value) -> str:
+    """A graph timestamp as "23.09.2026 18:23" in local time; anything else as it is."""
+    # The driver returns its own DateTime, which converts to a datetime.
+    native = value.to_native() if hasattr(value, "to_native") else value
+    if isinstance(native, datetime):
+        return f"{aware(native).astimezone():%d.%m.%Y %H:%M}"
+    return "" if value is None else str(value)
+
+
 templates.env.filters["plural"] = plural
 templates.env.filters["moment"] = moment
 templates.env.filters["ago"] = ago
+templates.env.filters["stamp"] = stamp
 
 
 def job_words(kind) -> str:

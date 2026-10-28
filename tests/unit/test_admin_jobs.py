@@ -636,7 +636,7 @@ class PipelineOrderTest(unittest.TestCase):
         # that does not say so reads as the same thing offered twice.
         page = self.page()
         self.assertIn("только внутри", page)
-        self.assertIn("между разными сборами", page)
+        self.assertIn("между разными группами", page)
 
 
 class MapOptionsTest(unittest.TestCase):
@@ -1011,7 +1011,7 @@ class ResultTooLongTest(unittest.TestCase):
         many = {f"count_{index:02}": index for index in range(43)}
         self.finished(JobKind.PIPELINE, {"group": "g", "date_from": "2026-01-01"}, many)
         body = self.client.get("/jobs").text
-        self.assertIn("43 числа", body)
+        self.assertIn("итог: 43 показателя", body)
         # Folded, not dropped: the numbers are still there to open.
         self.assertIn("count_42", body)
 

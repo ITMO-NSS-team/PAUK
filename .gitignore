@@ -10,25 +10,28 @@ __pycache__/
 !data/static/
 !data/static/**
 data/static/*.draft.json
+
 # Official staff records — personal data, never committed.
 data/static/russian_names.csv
+
 data/cache/*
 data/pdf/*
 data/audit/*
 data/reports/*
 data/backups/*
+data/osa/
+
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
-# pauk/gui/graph_builder/builder.py --out-dir (по умолчанию — pauk.settings.Settings.gui_dir):
-# данные для сайта pauk/gui/web, private — полный, personal-поля включены;
-# public — урезанный вариант для сборки вне корпоративной сети (пока не подключён к сайту).
 data/gui/private/*
 data/gui/public/*
 !data/gui/private/.gitkeep
 !data/gui/public/.gitkeep
 
-docs/reports/*
+data/reports/
+docs/reports/
+
 
 *.egg-info/
 dist/
@@ -49,12 +52,6 @@ graphify-out/
 .graphifyignore
 .coverage
 
-# Database dumps and pre-write snapshots — large, never committed.
 data/backups/
-# Script output: plans, verdicts, unmatched rows. Regenerated from the data,
-# so it is never the record of anything. What is worth keeping — a runbook, a
-# list someone decided on — goes to docs/reports/ by hand.
-data/reports/
-docs/reports/
 
 *.log

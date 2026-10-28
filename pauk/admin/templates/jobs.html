@@ -4,7 +4,7 @@
 {% macro result(rows, open_upto) %}
 {%- if rows|length > open_upto %}
 <details>
-  <summary class="muted">{{ rows|length }} {{ rows|length|plural("число", "числа", "чисел") }}</summary>
+  <summary class="muted">итог: {{ rows|length }} {{ rows|length|plural("показатель", "показателя", "показателей") }}</summary>
   <div style="margin-top:6px">{{ numbers(rows) }}</div>
 </details>
 {%- else %}{{ numbers(rows) }}{% endif %}
@@ -44,7 +44,7 @@
     <div><button type="submit">Запустить</button></div>
   </form>
   <p class="muted" style="margin:10px 0 0">
-    Карта пересоберётся с персональными данными.
+    Пересоберутся обе версии карты: открытая, без персональных данных, и закрытая, с ними.
   </p>
 </div>
 
@@ -62,10 +62,10 @@
           <b>Собрать публикации</b>
           {% if last_done.collect %}<span class="ago">последний раз {{ last_done.collect|moment }}</span>{% endif %}
         </div>
-        <p class="muted">Из OpenAlex и прогон через все
-          {{ stages|length }} этапов обогащения: {{ stages|join(", ") }}.
-          Складывает результат в отдельную группу.
-          Этап <code>dedup</code> здесь сводит дубли только внутри неё.</p>
+        <p class="muted">Скачивает публикации из OpenAlex и прогоняет через все
+          {{ stages|length }} шагов обработки: {{ stages|join(", ") }}.
+          Результат сохраняется в новую группу данных.
+          Дубли людей на этом шаге ищутся только внутри этой группы.</p>
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="collect">
@@ -92,8 +92,8 @@
           <b>Выложить группу в граф</b>
           {% if last_done.publish %}<span class="ago">последний раз {{ last_done.publish|moment }}</span>{% endif %}
         </div>
-        <p class="muted">Переносит собранную группу в Neo4j. Ручные правки
-          применяются заново.</p>
+        <p class="muted">Переносит выбранную группу в граф Neo4j. Ручные правки после этого
+          накладываются заново, поэтому не теряются.</p>
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="publish">
@@ -114,8 +114,8 @@
           <b>Пересобрать карту</b>
           {% if last_done.map %}<span class="ago">последний раз {{ last_done.map|moment }}</span>{% endif %}
         </div>
-        <p class="muted">Карта рисуется из заранее собранных файлов и за
-          графом сама не следит.</p>
+        <p class="muted">Карта строится из отдельных файлов и сама за графом не обновляется.
+          Запускайте после публикации, чтобы новые данные появились на карте.</p>
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="map">
@@ -136,9 +136,9 @@
       <b>Дедупликация графа</b>
       {% if last_done.dedup %}<span class="ago">последний раз {{ last_done.dedup|moment }}</span>{% endif %}
     </div>
-    <p class="muted">Сводит дубли <b>между разными сборами</b>: очевидные сливает
-      сама, спорные кладёт в «Спорные случаи». Запускают руками, по мере
-      надобности. Слитое обратно не разделяется.</p>
+    <p class="muted">Ищет дубли людей <b>между разными группами</b>. Явные дубли склеивает сама,
+      сомнительные отправляет в «Спорные случаи». Запускается вручную, когда нужно.
+      Склеенное автоматически обратно не разделить.</p>
     <form method="post" action="/jobs" id="dedup-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="dedup">
@@ -147,7 +147,7 @@
     <script>
       // Спрашиваем, как при удалении узла. Разъединить сведённое нечем.
       document.getElementById("dedup-form")?.addEventListener("submit", (event) => {
-        if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: сведённые записи обратно не разделяются.")) {
+        if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: склеенные записи обратно не разделить.")) {
           event.preventDefault();
         }
       });
@@ -159,14 +159,14 @@
       <b>Сверка с источником</b>
       {% if last_done.prune %}<span class="ago">последний раз {{ last_done.prune|moment }}</span>{% endif %}
     </div>
-    <p class="muted">Публикация только добавляет, поэтому удалённое в Mongo
-      остаётся в графе. Сверка находит такие записи и связи. Заведённое
-      руками не трогает: оно записано в «Ручных решениях».</p>
+    <p class="muted">Публикация в граф только добавляет данные: если запись удалили из собранных
+      данных в Mongo, в графе она остаётся. Сверка находит такие записи и связи. То, что
+      заведено вручную, она не трогает: это хранится в «Ручных решениях».</p>
     <form method="post" action="/jobs" id="prune-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="prune">
-      <div><label><input type="checkbox" name="apply" value="true"> убрать найденное,
-        а не только посчитать</label></div>
+      <div><label><input type="checkbox" name="apply" value="true"> удалить найденное
+        (без галочки сверка только покажет список)</label></div>
       <div style="margin-top:8px"><button type="submit">Запустить</button></div>
     </form>
     <script>
@@ -186,7 +186,7 @@
 <div class="card live">
   <b><span class="pulse"></span>Сейчас идёт</b>
   <table style="margin-top:12px">
-    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th><th>где сейчас</th>
+    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>последний сигнал</th><th>где сейчас</th>
       {% if user.can_run %}<th></th>{% endif %}</tr>
     {% for job in under_way %}
     <tr>
