@@ -74,7 +74,8 @@ the relation-like models.
 - **`Department`**: `id`, `name_en`, `name_ru`, `name_variants` (spellings
   that `departments.py` uses to match a department in affiliation text),
   `context_aliases` (generic names that match only inside an affiliation
-  segment carrying an ITMO marker), `parent_id` or `organization_id` (at most
+  segment carrying an ITMO marker; both lists are also the department's search
+  spellings on the site), `parent_id` or `organization_id` (at most
   one is set: a sub-unit points to its parent department, a top-level unit to
   its organization), and `kind` (`megafaculty`, `school`, `faculty`,
   `institute`, `center`, `department`, `lab`, `unit`; used for styling). The
