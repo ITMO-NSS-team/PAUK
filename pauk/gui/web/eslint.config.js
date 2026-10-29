@@ -11,7 +11,7 @@ const LAYERS = ["contracts", "core", "map", "features", "app"];
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**"],
+    ignores: ["dist/**", "dist-public/**", "node_modules/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.strict,

@@ -56,12 +56,18 @@ def _initial(value: str) -> str:
     return f"{value[0].upper()}."
 
 
+def _mask_surname(surname: str) -> str:
+    """First two letters and an ellipsis ("Иванов" -> "Ив…"); one letter for a surname of three or fewer."""
+    letters = surname.strip()
+    return f"{letters[: 1 if len(letters) <= 3 else 2]}…"
+
+
 def _fmt_part(value: str, *, force_initial: bool) -> str:
     """Formats one part of a name (given name or patronymic) for the label.
 
-    Collapses to an initial for the public display, or when the part sits next
-    to another part. Otherwise left as the author gave it, except that a bare
-    initial (some LLM/catalog data) always gets a period.
+    Collapses to an initial when the part sits next to another part. Otherwise
+    left as the author gave it, except that a bare initial (some LLM/catalog
+    data) always gets a period.
     """
     stripped = value.rstrip(".")
     if force_initial or len(stripped) == 1:
@@ -75,7 +81,9 @@ def author_label(
     """One format for any author: surname first, then initials.
 
     Takes the three name parts of one language; a label per language is
-    assembled separately. There is no fallback to a raw combined string:
+    assembled separately. `public=True` is the GitHub Pages form: the surname
+    is cut to its first letters and every given name and patronymic becomes an
+    initial ("Ив… И. И."), so no full name reaches the public files. There is no fallback to a raw combined string:
     guessing surname/given-name/patronymic by word order is what the LLM step in
     author_names.py replaced. An empty surname returns "", and the caller picks
     the fallback.
@@ -83,14 +91,15 @@ def author_label(
     surname, first, second = surname or "", first or "", second or ""
     if not surname:
         return ""
-    if public and len(surname) > 3:
-        surname = surname[:3] + ".."
+    if public:
+        initials = " ".join(_initial(part.strip(".")) for part in (first, second) if part.strip("."))
+        return f"{_mask_surname(surname)} {initials}" if initials else _mask_surname(surname)
     if first and second:
         return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
     if second:  # only the patronymic survived - treat it as the initial
         return f"{surname} {_fmt_part(second, force_initial=True)}"
     if first:
-        return f"{surname} {_fmt_part(first, force_initial=public)}"
+        return f"{surname} {_fmt_part(first, force_initial=False)}"
     return surname
 
 
@@ -149,9 +158,9 @@ class AuthorNodeBuilder:
 
         Returns:
             `(summary, detail)` - `summary` goes into `graph-data.json`,
-            `detail` into `authors-detail.json`. Privacy is decided by which
-            folder `write_site_data()` puts the file in, not by trimming
-            fields here. The map label is the full "Surname I.O." form,
+            `detail` into `authors-detail.json`. These are the private rows;
+            `public.py::to_public` derives the published ones from them. The
+            map label is the full "Surname I.O." form,
             `author_label(..., public=False)`.
         """
         # set() because a data mismatch could count a publication twice.

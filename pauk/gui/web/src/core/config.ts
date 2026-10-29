@@ -87,13 +87,17 @@ export const FILTER_CONFIG = {
 } as const;
 
 // Served from Vite publicDir. Missing files are handled by app/main.ts.
+// BASE_URL is "/" on the lab server and "./" in the public build, which
+// GitHub Pages serves from a subpath.
+const BASE = import.meta.env.BASE_URL;
 export const DATA_CONFIG = {
-  graphDataUrl: "/graph-data.json",
-  authorDetailsUrl: "/authors-detail.json",
-  repoDetailsUrl: "/repos-detail.json",
-  pubDetailsUrl: "/pubs-detail.json",
-  reportsIndexUrl: "/reports/index.json",
-  implementationRatesUrl: "/implementation-rates.json",
+  graphDataUrl: `${BASE}graph-data.json`,
+  authorDetailsUrl: `${BASE}authors-detail.json`,
+  repoDetailsUrl: `${BASE}repos-detail.json`,
+  pubDetailsUrl: `${BASE}pubs-detail.json`,
+  reportsUrl: `${BASE}reports`,
+  reportsIndexUrl: `${BASE}reports/index.json`,
+  implementationRatesUrl: `${BASE}implementation-rates.json`,
 } as const;
 
 // Top-N lists in the info card.
