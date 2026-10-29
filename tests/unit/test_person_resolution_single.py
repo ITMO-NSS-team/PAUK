@@ -81,7 +81,7 @@ class SingleResolutionTest(unittest.TestCase):
         self.assertIn("catalog_status", payload["a"])
 
     def test_matching_identifier_cannot_override_unrelated_primary_names(self):
-        for identity in ({"orcid_a": "0000-1", "orcid_b": "0000-1"}, {"staff_id_a": "42", "staff_id_b": "42"}):
+        for identity in ({"orcid_a": "0000-0002-1825-0097", "orcid_b": "0000-0002-1825-0097"}, {"staff_id_a": "42", "staff_id_b": "42"}):
             with self.subTest(identity=identity):
                 pair = evidence(name_a="Oles Prokhorchuk", name_b="Maria Tanasa", **identity)
                 self.assertEqual(resolve_pair(pair).decision, Decision.REVIEW)
@@ -93,7 +93,7 @@ class SingleResolutionTest(unittest.TestCase):
                 self.assertEqual(answer.decision, Decision.REVIEW)
 
     def test_compatible_identifier_spelling_is_not_blocked(self):
-        pair = evidence(name_a="Yu. V. Generalova", name_b="Yulia Generalova", orcid_a="0000-1", orcid_b="0000-1")
+        pair = evidence(name_a="Yu. V. Generalova", name_b="Yulia Generalova", orcid_a="0000-0002-1825-0097", orcid_b="0000-0002-1825-0097")
         self.assertIsNone(merge_review_reason(pair))
         self.assertEqual(resolve_pair(pair).decision, Decision.MERGE)
 

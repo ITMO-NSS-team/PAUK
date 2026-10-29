@@ -171,7 +171,7 @@ again updates the document instead of creating a second one.
 | Field | Meaning |
 |---|---|
 | `_id` | `<kind>:<id>:<id>...` with members sorted, so (a, b) and (b, a) are one question |
-| `kind` | `person_pair`, `person_group`, `github_person` or `staff_record` |
+| `kind` | `person_pair`, `person_group`, `github_person`, `staff_record`, or the read-only diagnostic `person_alias_conflict` |
 | `members` | who the question is about: person records, an account login, catalog records |
 | `evidence` | what the rules gathered: names, shared coauthors, departments, refusal reasons (`held_because`); refreshed on every repeated refusal so there is something to compare against |
 | `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
@@ -193,6 +193,12 @@ it is taken apart with `record_undo` after `pauk.graph.unmerge.split_person`.
 
 Indexes include `{verdict, seen_at}` (the queue opens on unanswered, oldest
 first) and `{members}` (all questions about one person).
+
+Alias-conflict diagnostics have their own keys and are never identity decisions.
+They carry competing alias edges and the operation that stopped. Normal answers
+and skips cannot dismiss them or create identity decisions inside the affected
+component. Recording a diagnostic preserves existing ordinary group questions;
+repair and validated closure are separate from this queue.
 
 ## PDFs: on disk, Mongo holds only a pointer (`pdf.py::PdfStore`)
 
