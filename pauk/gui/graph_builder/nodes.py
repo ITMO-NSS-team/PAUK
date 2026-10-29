@@ -56,6 +56,12 @@ def _initial(value: str) -> str:
     return f"{value[0].upper()}."
 
 
+def _mask_surname(surname: str) -> str:
+    """First two letters and an ellipsis ("Иванов" -> "Ив…"); one letter for a surname of three or fewer."""
+    letters = surname.strip()
+    return f"{letters[: 1 if len(letters) <= 3 else 2]}…"
+
+
 def _fmt_part(value: str, *, force_initial: bool) -> str:
     """Formats one part of a name (given name or patronymic) for the label.
 
@@ -75,9 +81,9 @@ def author_label(
     """One format for any author: surname first, then initials.
 
     Takes the three name parts of one language; a label per language is
-    assembled separately. `public=True` is the GitHub Pages form: every given
-    name and patronymic becomes an initial ("Иванов И. И."), so no full first
-    name reaches the public files. There is no fallback to a raw combined string:
+    assembled separately. `public=True` is the GitHub Pages form: the surname
+    is cut to its first letters and every given name and patronymic becomes an
+    initial ("Ив… И. И."), so no full name reaches the public files. There is no fallback to a raw combined string:
     guessing surname/given-name/patronymic by word order is what the LLM step in
     author_names.py replaced. An empty surname returns "", and the caller picks
     the fallback.
@@ -87,7 +93,7 @@ def author_label(
         return ""
     if public:
         initials = " ".join(_initial(part.strip(".")) for part in (first, second) if part.strip("."))
-        return f"{surname} {initials}" if initials else surname
+        return f"{_mask_surname(surname)} {initials}" if initials else _mask_surname(surname)
     if first and second:
         return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
     if second:  # only the patronymic survived - treat it as the initial

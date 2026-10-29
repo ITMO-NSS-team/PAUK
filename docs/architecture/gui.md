@@ -35,12 +35,13 @@ Every run writes two variants of all four files:
   Only for the lab server behind the VPN.
 - `data/gui/public/`: for GitHub Pages. `public.py::to_public` rewrites the
   private data rather than hiding anything in the site: author names become
-  surname plus initials ("Иванов Иван Иванович" to "Иванов И. И.", a surname
-  alone stays; a name known only as free text keeps its first word), author
+  the surname's first letters plus initials ("Иванов Иван Иванович" to
+  "Ив… И. И.", "Ли Анна" to "Л… А."; free text is read surname first), author
   keys are renumbered (`a0`, `a1`, ...: the real ones are OpenAlex ids or
   `manual_person_<surname>_<name>`), and every row is cut to a whitelist.
   `authors-detail.json` keeps only `pub_roles`; `versions` is dropped from
-  publications. A field added to the builder later stays out of `public/`
+  publications, emails are cut out of abstracts, and an abstract scraped
+  together with the publisher's author block (ORCID links) is dropped. A field added to the builder later stays out of `public/`
   until it is added to a whitelist there on purpose.
   `tests/unit/test_gui_public.py` checks the written files for given names,
   personal values, original keys and private or service field names.

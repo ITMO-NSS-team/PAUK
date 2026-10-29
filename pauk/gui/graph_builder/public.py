@@ -5,8 +5,8 @@ CSS is still in the JSON anyone can download. Every row is cut down to a
 whitelist, so a field added to the builder later stays private until someone
 adds it here on purpose.
 
-- Author names are masked to surname plus initials (`author_label(...,
-  public=True)`), in both languages.
+- Author names are masked to the first letters of the surname plus initials
+  ("Ив… И. И.", `author_label(..., public=True)`), in both languages.
 - Author keys are renumbered (`a0`, `a1`, ...). The real ones are OpenAlex ids,
   which lead to the full name in one lookup, or `manual_person_<surname>_<name>`,
   which spell it out. Sequential keys mean a shared public link to an author
@@ -17,6 +17,8 @@ adds it here on purpose.
 """
 
 from __future__ import annotations
+
+import re
 
 from .nodes import author_label
 
@@ -31,20 +33,26 @@ PUB_DETAIL_FIELDS = (
     "key", "label", "journal", "doi", "has_code", "code_url", "type", "fields", "funding", "openalex_url", "abstract",
 )
 
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Some abstracts were scraped from publisher pages together with the author
+# block ("More by <name>https://orcid.org/..."); those are not abstracts at all.
+SCRAPED_AUTHOR_BLOCK = re.compile(r"orcid\.org/|More by ", re.IGNORECASE)
+
 # Which end of each edge list is an author key.
 AUTHOR_EDGE_ENDS = {"coauth_edges": ("s", "t"), "repo_author_edges": ("t",), "all_edges": ("s",)}
 
 
 def mask_free_text_name(text: str | None) -> str:
-    """Surname plus initials for a name known only as one string.
+    """The public form of a name known only as one string.
 
     The snapshot writes these surname first ("Kochemazov Stepan Evgenievich"),
-    so the first word is kept and every later one, including dotted initials
-    like "M.D.", becomes an initial. A name written given-name first loses its
-    surname to an initial instead, but no full given name survives either way.
+    so the first word is masked as a surname and every later one, including
+    dotted initials like "M.D.", becomes an initial.
     """
     words = (text or "").replace(".", " ").split()
-    return " ".join([*words[:1], *(f"{word[0].upper()}." for word in words[1:])])
+    if not words:
+        return ""
+    return " ".join([author_label(words[0], None, None, public=True), *(f"{word[0].upper()}." for word in words[1:])])
 
 
 def public_author_labels(row: dict) -> tuple[str, str]:
@@ -62,6 +70,13 @@ def public_author_labels(row: dict) -> tuple[str, str]:
 
 def _pick(row: dict, fields: tuple[str, ...]) -> dict:
     return {field: row[field] for field in fields if field in row}
+
+
+def public_abstract(text: str) -> str:
+    """The abstract without emails, or "" when it carries a scraped author block."""
+    if SCRAPED_AUTHOR_BLOCK.search(text):
+        return ""
+    return EMAIL.sub("", text)
 
 
 def to_public(
@@ -101,6 +116,9 @@ def to_public(
             if row["key"] in new_key
         ],
         "repos": [_pick(row, REPO_DETAIL_FIELDS) for row in detail["repos"]],
-        "pubs": [_pick(row, PUB_DETAIL_FIELDS) for row in detail["pubs"]],
+        "pubs": [
+            {**_pick(row, PUB_DETAIL_FIELDS), "abstract": public_abstract(row.get("abstract") or "")}
+            for row in detail["pubs"]
+        ],
     }
     return public_summary, public_detail

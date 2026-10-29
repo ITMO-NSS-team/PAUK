@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.gui.graph_builder.builder import write_site_data
-from pauk.gui.graph_builder.public import mask_free_text_name, public_author_labels
+from pauk.gui.graph_builder.public import mask_free_text_name, public_abstract, public_author_labels
 from pauk.gui.graph_builder.tests.test_graph_builder import BuildGraphDataIntegrationTest
 
 PERSONAL_FIELDS = {
@@ -23,8 +23,11 @@ PERSONAL_FIELDS = {
     "first_name_ru", "second_name_ru", "surname_ru", "first_name_en", "second_name_en", "surname_en",
 }
 SERVICE_FIELDS = {"created_at", "updated_at", "versions"}
-# Every given name and patronymic in the fixture, in both alphabets.
-GIVEN_NAMES = {"Иван", "Ivan", "Пётр", "Петрович", "Petr", "Petrovich", "Stepan", "Evgenievich", "Степан", "Евгеньевич"}
+# Every surname, given name and patronymic in the fixture, in both alphabets.
+NAME_WORDS = {
+    "Иванов", "Ivanov", "Петров", "Petrov", "Кочемазов", "Kochemazov",
+    "Иван", "Ivan", "Пётр", "Петрович", "Petr", "Petrovich", "Stepan", "Evgenievich", "Степан", "Евгеньевич",
+}
 PERSONAL_VALUES = {
     "petrov@itmo.ru", "0000-0002-1825-0097", "petrov-gh", "scholar123", "к.ф.-м.н.",
     "Institute of Secret Studies", "Petrov Petr Petrovich", "2026-08-14T10:23:45.123Z",
@@ -82,10 +85,10 @@ class PublicBuildTest(unittest.TestCase):
         cls.files = {name: json.loads(text) for name, text in cls.texts.items()}
         cls.graph = cls.files["graph-data.json"]
 
-    def test_no_given_name_or_patronymic_appears_as_a_word_in_any_file(self):
+    def test_no_part_of_a_name_appears_as_a_word_in_any_file(self):
         for name, text in self.texts.items():
             words = set(re.findall(r"\w+", text))
-            self.assertEqual(words & GIVEN_NAMES, set(), name)
+            self.assertEqual(words & NAME_WORDS, set(), name)
 
     def test_no_personal_value_or_original_author_key_appears_in_any_file(self):
         original_keys = {'"A1"', '"A5000000002"', "manual_person_kochemazov_stepan"}
@@ -104,7 +107,7 @@ class PublicBuildTest(unittest.TestCase):
         labels = {(a["label"], a["label_en"]) for a in self.graph["authors"]}
         self.assertEqual(
             labels,
-            {("Иванов И.", "Ivanov I."), ("Петров П. П.", "Petrov P. P."), ("Кочемазов С. Е.", "Kochemazov S. E.")},
+            {("Ив… И.", "Iv… I."), ("Пе… П. П.", "Pe… P. P."), ("Ко… С. Е.", "Ko… S. E.")},
         )
 
     def test_renumbered_keys_stay_consistent_across_edges_and_detail(self):
@@ -126,15 +129,19 @@ class PublicBuildTest(unittest.TestCase):
 
 class MaskingTest(unittest.TestCase):
     def test_free_text_keeps_the_first_word_and_initials_the_rest(self):
-        self.assertEqual(mask_free_text_name("Иванов Иван Иванович"), "Иванов И. И.")
-        self.assertEqual(mask_free_text_name("Ivanov Ivan"), "Ivanov I.")
-        self.assertEqual(mask_free_text_name("Gusarov D.A."), "Gusarov D. A.")
-        self.assertEqual(mask_free_text_name("Иванов"), "Иванов")
+        self.assertEqual(mask_free_text_name("Иванов Иван Иванович"), "Ив… И. И.")
+        self.assertEqual(mask_free_text_name("Ivanov Ivan"), "Iv… I.")
+        self.assertEqual(mask_free_text_name("Gusarov D.A."), "Gu… D. A.")
+        self.assertEqual(mask_free_text_name("Иванов"), "Ив…")
         self.assertEqual(mask_free_text_name(None), "")
 
     def test_english_label_falls_back_to_the_masked_russian_one(self):
         row = {"surname_ru": "Иванов", "first_name_ru": "Иван", "second_name_ru": "Иванович"}
-        self.assertEqual(public_author_labels(row), ("Иванов И. И.", "Иванов И. И."))
+        self.assertEqual(public_author_labels(row), ("Ив… И. И.", "Ив… И. И."))
+
+    def test_abstracts_lose_emails_and_scraped_author_blocks(self):
+        self.assertEqual(public_abstract("Data. Contact: a.b@itmo.ru for details"), "Data. Contact:  for details")
+        self.assertEqual(public_abstract("Text More by Jane Doehttps://orcid.org/0000-0001-0000-0000"), "")
 
 
 if __name__ == "__main__":

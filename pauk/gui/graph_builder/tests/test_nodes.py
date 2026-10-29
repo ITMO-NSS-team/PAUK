@@ -62,17 +62,18 @@ class AuthorLabelTest(unittest.TestCase):
         self.assertEqual(author_label("", "", ""), "")
 
     def test_public_build_keeps_the_surname_and_initials_the_rest(self):
-        self.assertEqual(author_label("Иванов", "Иван", "Иванович", public=True), "Иванов И. И.")
-        self.assertEqual(author_label("Ivanov", "Ivan", "Ivanovich", public=True), "Ivanov I. I.")
+        self.assertEqual(author_label("Иванов", "Иван", "Иванович", public=True), "Ив… И. И.")
+        self.assertEqual(author_label("Ivanov", "Ivan", "Ivanovich", public=True), "Iv… I. I.")
 
-    def test_public_build_surname_only_stays_as_is(self):
-        self.assertEqual(author_label("Иванов", None, None, public=True), "Иванов")
+    def test_public_build_cuts_the_surname_to_its_first_letters(self):
+        self.assertEqual(author_label("Иванов", None, None, public=True), "Ив…")
+        self.assertEqual(author_label("Ли", "Анна", None, public=True), "Л… А.")
 
     def test_public_build_initials_a_lone_given_name_too(self):
         # With no patronymic, the given name is written out in full in the
         # private build ("Горизонтова Мария"); public must not leak that.
-        self.assertEqual(author_label("Иванов", "Иван", None, public=True), "Иванов И.")
-        self.assertEqual(author_label("Иванов", "И.", None, public=True), "Иванов И.")
+        self.assertEqual(author_label("Иванов", "Иван", None, public=True), "Ив… И.")
+        self.assertEqual(author_label("Иванов", "И.", None, public=True), "Ив… И.")
 
 
 class AuthorVariantsTest(unittest.TestCase):
