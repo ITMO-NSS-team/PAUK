@@ -5,7 +5,7 @@ site, and how the site itself is organized.
 
 **Files:** the `pauk/gui/graph_builder/` package (`builder.py`,
 `authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`,
-`grants.py`, `config.py`, tests in `tests/`) and the site in
+`grants.py`, `public.py`, `config.py`, tests in `tests/`) and the site in
 `pauk/gui/web/`.
 
 Of the `pauk/gui` chain, only `pauk/cache/export.py` touches Neo4j;
@@ -28,11 +28,24 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 - `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
   fields that the site loads lazily after the map.
 
-Privacy is decided by folder, not by content. `authors-detail.json`
-(personal fields) is written only to `data/gui/private/`; the other three
-files go to both `public/` and `private/`, because Vite serves static files
-from a single folder (`vite.config.ts::publicDir`, which points at
-`data/gui/private/`). The build runs in stages, one module each:
+Every run writes two variants of all four files:
+
+- `data/gui/private/`: full names and personal fields (email, ORCID, GitHub,
+  Google Scholar, degree, affiliations, name variants, record timestamps).
+  Only for the lab server behind the VPN.
+- `data/gui/public/`: for GitHub Pages. `public.py::to_public` rewrites the
+  private data rather than hiding anything in the site: author names become
+  surname plus initials ("Иванов Иван Иванович" to "Иванов И. И.", a surname
+  alone stays; a name known only as free text keeps its first word), author
+  keys are renumbered (`a0`, `a1`, ...: the real ones are OpenAlex ids or
+  `manual_person_<surname>_<name>`), and every row is cut to a whitelist.
+  `authors-detail.json` keeps only `pub_roles`; `versions` is dropped from
+  publications. A field added to the builder later stays out of `public/`
+  until it is added to a whitelist there on purpose.
+  `tests/unit/test_gui_public.py` checks the written files for given names,
+  personal values, original keys and private or service field names.
+
+The build runs in stages, one module each:
 `authorship.py` (who wrote what), `departments.py`, `layout.py`, `nodes.py`,
 `edges.py`.
 
@@ -126,17 +139,39 @@ by exactly one function (`COORD_MIN`/`COORD_MAX`, `STRANDED_JITTER`/
 
 ## `pauk/gui/web/`: the site
 
-TypeScript + Vite; the map uses Sigma.js (graphology).
-`vite.config.ts::publicDir` points at `data/gui/private/`, so the data is
-picked up both by `npm run dev` and by the build.
+TypeScript + Vite; the map uses Sigma.js (graphology). The build mode picks
+the variant (`vite.config.ts`):
 
 ```bash
 cd pauk/gui/web
 npm install
-npm run dev        # local
-npm run build      # dist/: static files together with the data
+npm run dev            # local, private data
+npm run build          # dist/: lab server site with data/gui/private
+npm run dev:public     # local, public data
+npm run build:public   # dist-public/: GitHub Pages site with data/gui/public
 npm test && npm run typecheck && npm run lint
 ```
+
+The public build uses relative URLs (`base: "./"`), because Pages serves it
+from `/PAUK/`, and writes to `dist-public/`, so it never overwrites the lab
+server's `dist/`. OSA reports (`reports/`) are not part of `data/gui/public`;
+they describe public repositories only and are added to the published site by
+`scripts/publish_pages.sh`. A plain `npm run build:public` has no report
+buttons.
+
+**Publishing to GitHub Pages** (https://itmo-nss-team.github.io/PAUK/):
+
+```bash
+pauk gui build                  # both variants
+scripts/publish_pages.sh        # needs gh with write access to the repo
+```
+
+The script packs `data/gui/public/*.json` plus the reports, uploads the
+archive to the `pages-data` release (the data is never committed) and runs
+`.github/workflows/pages.yml` on `main`, which builds the site from main's
+code with `npm run build:public` and deploys it. The `github-pages`
+environment only accepts deployments from `main`, so the workflow has to be
+merged there before the first run.
 
 Layers in `src/` (import order is enforced by eslint-boundaries: a layer may
 import only from itself and the layers below): `contracts` (JSON shapes,

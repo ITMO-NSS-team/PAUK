@@ -42,7 +42,7 @@ class AuthorLabelTest(unittest.TestCase):
 
     def test_private_build_writes_out_a_lone_given_name(self):
         # With no patronymic, the given name is written out in full in the
-        # private build; only public=True truncates it.
+        # private build; only public=True reduces it to an initial.
         self.assertEqual(author_label("Иванов", "Пётр", None), "Иванов Пётр")
 
     def test_a_bare_initial_given_name_gets_its_period_even_in_private(self):
@@ -61,18 +61,18 @@ class AuthorLabelTest(unittest.TestCase):
         self.assertEqual(author_label(None, "Иван", "Иванович"), "")
         self.assertEqual(author_label("", "", ""), "")
 
-    def test_public_build_truncates_the_surname(self):
-        self.assertEqual(author_label("Иванов", "Иван", "Иванович", public=True), "Ива.. И.И.")
+    def test_public_build_keeps_the_surname_and_initials_the_rest(self):
+        self.assertEqual(author_label("Иванов", "Иван", "Иванович", public=True), "Иванов И. И.")
+        self.assertEqual(author_label("Ivanov", "Ivan", "Ivanovich", public=True), "Ivanov I. I.")
 
-    def test_public_build_leaves_short_surnames_alone(self):
-        # 3 letters or fewer: nothing to truncate.
-        self.assertEqual(author_label("Ив", "Ан", None, public=True), "Ив А.")
-        self.assertEqual(author_label("Ив", None, None, public=True), "Ив")
+    def test_public_build_surname_only_stays_as_is(self):
+        self.assertEqual(author_label("Иванов", None, None, public=True), "Иванов")
 
     def test_public_build_initials_a_lone_given_name_too(self):
         # With no patronymic, the given name is written out in full in the
         # private build ("Горизонтова Мария"); public must not leak that.
-        self.assertEqual(author_label("Иванов", "Иван", None, public=True), "Ива.. И.")
+        self.assertEqual(author_label("Иванов", "Иван", None, public=True), "Иванов И.")
+        self.assertEqual(author_label("Иванов", "И.", None, public=True), "Иванов И.")
 
 
 class AuthorVariantsTest(unittest.TestCase):
