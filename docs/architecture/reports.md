@@ -22,11 +22,15 @@ pauk reports build github_a_b   # just these ids; --force regenerates
 ## Settings
 
 `pauk/reports/settings.py::ReportsSettings`, apart from the project-wide
-`Settings`: the pinned OSA version, the model and its context window, the
+`Settings`: the pinned OSA version, the context window, the
 languages, parallel runs, timeouts, degraded-run markers, the LFS and proxy
 bypass config, and `out_dir` from `PAUK_REPORTS_DIR` (relative to the repository root; unset
 means `data/gui/private/reports`). Where the PDFs live elsewhere, link that
 folder as `data/gui/private/reports`, so the site build and `deploy.sh` find it.
+The model is project-wide: `Settings.reports_model` (`PAUK_REPORTS_MODEL`).
+`context_window` is sized for the default model; lower it for a model with a
+smaller window. A model change leaves existing PDFs as they are: run with
+`--force` to regenerate them.
 
 ## Which repositories
 
