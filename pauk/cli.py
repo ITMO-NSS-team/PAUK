@@ -168,6 +168,18 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
 
 
+def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
+    """Register `versions report` (journal only) and `versions link` (IS_VERSION edges)."""
+    p = sub.add_parser("versions")
+    versions_sub = p.add_subparsers(dest="versions_command", required=True)
+    p = versions_sub.add_parser("report", help="report candidate version pairs the dedup stage did not catch")
+    p.add_argument("--output", type=Path, help="default: cache_dir/version_candidates.jsonl")
+    p = versions_sub.add_parser("link", help="write candidate version pairs into the graph as IS_VERSION")
+    p.add_argument("--llm", action="store_true",
+                   help="ask the LLM about MEDIUM_FUZZY pairs no earlier run asked about")
+    p.add_argument("--force", action="store_true", help="with --llm: ask again about every MEDIUM_FUZZY pair")
+
+
 def _add_reports_parsers(sub: argparse._SubParsersAction) -> None:
     """Register `reports build`: OSA PDF reports on the snapshot's repositories, for the site."""
     from pauk.reports.settings import reports_settings
@@ -188,6 +200,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
+    _add_versions_parsers(sub)
     _add_reports_parsers(sub)
     admin_cli.add_parser(sub)
     return parser
@@ -293,6 +306,20 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
     write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
 
 
+def _cmd_versions(args) -> None:
+    if args.versions_command == "link":
+        from pauk.graph.version_link import run_version_link
+
+        with _mongo_db() as db:
+            _log_result("versions link", None, run_version_link(settings, db, args.llm, args.force))
+        return
+    # Read-only against Neo4j: no Mongo connection, no lock. The journal path
+    # is logged by run_version_report itself.
+    from pauk.graph.version_candidates import run_version_report
+
+    run_version_report(settings, args.output)
+
+
 def _cmd_reports(args, parser: argparse.ArgumentParser) -> None:
     if args.reports_command != "build":
         parser.error(f"unknown reports command: {args.reports_command}")
@@ -367,6 +394,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_cache(args, parser)
     elif args.command == "gui":
         _cmd_gui(args, parser)
+    elif args.command == "versions":
+        _cmd_versions(args)
     elif args.command == "reports":
         _cmd_reports(args, parser)
     elif args.command == "admin":

@@ -39,6 +39,7 @@ KINDS = {
     JobKind.MAP: "пересборка карты",
     JobKind.PRUNE: "сверка с источником",
     JobKind.HEALTH: "проверки по графу",
+    JobKind.VERSIONS: "версии публикаций",
 }
 
 STATES = {
@@ -94,6 +95,9 @@ def _payload_lines(kind, payload: dict) -> list[str]:
         # "apply=False" would read as "found nothing", not "left it alone".
         return ["удалить найденное" if payload.get("apply")
                 else "только показать список, ничего не удалять"]
+    if JobKind(kind) is JobKind.VERSIONS:
+        return ["со спорными парами к LLM" if payload.get("llm")
+                else "без LLM, только известные вердикты"]
     lines = []
     for name, value in sorted(payload.items()):
         if value is None or value == "":
@@ -216,6 +220,8 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     if kind is JobKind.PRUNE:
         # An unticked checkbox sends nothing, which is the counting run.
         return {"apply": bool(form.get("apply"))}
+    if kind is JobKind.VERSIONS:
+        return {"llm": bool(form.get("llm"))}
     return {}
 
 

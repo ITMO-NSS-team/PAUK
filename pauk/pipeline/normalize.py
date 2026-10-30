@@ -261,6 +261,7 @@ class OpenAlexNormalizer:
                     publication_date=date.fromisoformat(pub_date) if pub_date else None,
                     year=int(pub_date[:4]) if pub_date else None,
                     journal=source.get("display_name"),
+                    venue_type=source.get("type"),
                     pdf_urls=list(dict.fromkeys(
                         url for location in [work.get("best_oa_location"), *(work.get("locations") or [])]
                         if (url := (location or {}).get("pdf_url"))

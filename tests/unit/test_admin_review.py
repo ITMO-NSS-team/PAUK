@@ -1031,3 +1031,91 @@ class SplitBackTest(unittest.TestCase):
         self.fold()
         self.db.persons.delete_one({"id": "A2"})
         self.assertNotIn("/review/withdraw", self.body())
+
+
+class VersionQuestionTest(unittest.TestCase):
+    """Two publications the version rules linked: nothing folds, the edge moves."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "PREPRINT_PUBLISHED",
+            "mergeable": True, "record_a": "W1", "title_a": "Spider webs, preprint",
+            "record_b": "W2", "title_b": "Spider webs", "venue_a": "arXiv", "venue_b": "Sensors",
+            "title_sim": 0.86, "abstract_sim": None,
+        }])
+        self.graph = FakePanelGraph()
+        self.graph.add("Publication", "W1")
+        self.graph.add("Publication", "W2")
+        self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {
+            "bucket": "PREPRINT_PUBLISHED", "status": "held"}
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self, tab="versions"):
+        return self.client.get("/review", params={"tab": tab}).text
+
+    def answer(self, verdict):
+        csrf = self.body().split('name="csrf" value="')[1].split('"')[0]
+        return self.client.post("/review/answer", data={
+            "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2", "verdict": verdict})
+
+    def test_the_tab_shows_both_publications_and_the_bucket(self):
+        body = self.body()
+        self.assertIn("две публикации", body)
+        self.assertIn("/nodes/Publication/W1", body)
+        self.assertIn("препринт и публикация", body)
+        self.assertIn("arXiv", body)
+        self.assertIn("одна работа", body)
+
+    def test_same_confirms_the_edge_and_folds_nothing(self):
+        response = self.answer("same")
+        self.assertIn("done=linked", response.headers["location"])
+        edge = self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        self.assertEqual(edge["status"], "same")
+        self.assertIn(("Publication", "W1"), self.graph.nodes)
+
+    def test_a_missing_venue_does_not_shift_the_other(self):
+        self.db[review.COLLECTION].update_many({}, {"$unset": {"evidence.venue_a": ""}})
+        body = self.body()
+        self.assertLess(body.index("/nodes/Publication/W2"), body.index("Sensors"))
+
+    def test_same_without_an_edge_says_so(self):
+        del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        response = self.answer("same")
+        self.assertIn("done=no_edge", response.headers["location"])
+
+    def test_different_removes_the_edge(self):
+        response = self.answer("different")
+        self.assertIn("done=unlinked", response.headers["location"])
+        self.assertNotIn(("Publication", "IS_VERSION", "Publication", "W1", "W2"),
+                         self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+
+    def withdraw(self):
+        csrf = self.body("answered").split('name="csrf" value="')[1].split('"')[0]
+        return self.client.post("/review/withdraw", data={
+            "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2"})
+
+    def test_withdrawing_same_puts_the_edge_back_on_hold(self):
+        self.answer("same")
+        response = self.withdraw()
+        self.assertIn("done=reopened", response.headers["location"])
+        edge = self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        self.assertEqual(edge["status"], "held")
+        self.assertIn("/nodes/Publication/W1", self.body())
+        self.assertEqual(review.version_decisions(self.db), {})
+
+    def test_withdrawing_different_waits_for_the_next_link(self):
+        self.answer("different")
+        response = self.withdraw()
+        self.assertIn("done=relink", response.headers["location"])
+        self.assertIn("/nodes/Publication/W1", self.body())
+
+    def test_a_graph_that_is_down_does_not_promise_a_merge(self):
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
+        response = self.answer("same")
+        self.assertIn("done=version_waiting", response.headers["location"])

@@ -142,6 +142,38 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
+def publication_buckets(rows: Iterable, doi_of: Callable, title_of: Callable) -> list[tuple[str, list]]:
+    """Records of one work, as (rule, records) buckets to fold together.
+
+    A shared DOI is one work. A shared title is one only where it cannot
+    join two DOIs: two records with different DOIs and one title are a
+    preprint and its article, an original and its translation, two talks.
+    Those stay apart, and `pauk versions link` relates them. A record with
+    no DOI still folds into the one DOI its title carries; where the title
+    carries several, it folds only with the other records that have none,
+    since nothing says which of the DOIs it belongs to.
+
+    Grouping these buckets transitively can never put two DOIs together:
+    a record has one DOI and one title, and no title bucket holds two DOIs.
+
+    Args:
+        doi_of, title_of: The normalized key of a record, or None.
+    """
+    by_doi: dict[str, list] = defaultdict(list)
+    by_title: dict[str, list] = defaultdict(list)
+    for row in rows:
+        if doi := doi_of(row):
+            by_doi[doi].append(row)
+        if title := title_of(row):
+            by_title[title].append(row)
+    buckets = [("doi", bucket) for bucket in by_doi.values()]
+    for bucket in by_title.values():
+        if len({doi_of(row) for row in bucket} - {None}) > 1:
+            bucket = [row for row in bucket if not doi_of(row)]
+        buckets.append(("title", bucket))
+    return buckets
+
+
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
@@ -1122,12 +1154,14 @@ class DedupStage(EnrichmentStage):
                                              author.position, author.person_id))
         refreshed = self._refresh_version_ledger(publications, version_authors, known_persons)
 
-        pairs = self._pairs_by_key(publications, in_scope, (
+        buckets = publication_buckets(
+            publications,
             lambda publication: _norm_doi(publication.doi),
             lambda publication: (
                 title if (title := _norm(publication.title)) not in PLACEHOLDER_TITLES else None
             ),
-        ))
+        )
+        pairs = self._bucket_pairs([bucket for _, bucket in buckets], in_scope)
 
         id_map: dict[str, str] = {}
         for members in _grouped(pairs):

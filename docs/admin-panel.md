@@ -289,7 +289,7 @@ again (next section).
 
 ## Review queue
 
-"Спорные случаи" holds questions the pipeline cannot settle by evidence. Four
+"Спорные случаи" holds questions the pipeline cannot settle by evidence. Five
 kinds:
 
 | question | asked by | answer |
@@ -298,12 +298,14 @@ kinds:
 | a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
 | whose GitHub account is this? | `github_match` stage | "это его аккаунт" (this is their account) or "не его" (not theirs) |
 | which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
+| are these two publications one work? | `pauk versions link` / the "Версии публикаций" job, for a mergeable version bucket | "одна работа" (one work) confirms the `IS_VERSION` edge, "разные" (different) removes it for good; nothing is merged |
 
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
 existing document instead of creating a second one. The default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
-accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).
+accounts and the catalog. The rest is under "Все нерешенные" (All unresolved);
+publication versions also have a tab of their own, "Версии публикаций".
 
 **An answer beats the rules, both ways.** Rules read answers before deciding
 anything. "One person" merges the pair even with no evidence; "different"
@@ -333,7 +335,9 @@ rules would rebuild the same group through the remaining records.
 **Skip and reverse.** "не знаю" (don't know) removes the question from the
 unseen tab without answering it. An answer that has not merged anything can be
 withdrawn with "передумать" (change my mind), and the question returns to the
-queue.
+queue. For two publications the `IS_VERSION` edge goes back with it: a
+confirmed one is held again, a removed one returns with the next
+`pauk versions link`.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record
@@ -347,8 +351,8 @@ from the panel.
 
 ## Queue and cancellation
 
-Only one writer touches the graph at a time. Publish, dedup, map rebuild and
-the pipeline take turns; a job that finds the graph busy goes back to the
+Only one writer touches the graph at a time. Publish, dedup, publication
+versions, map rebuild and the pipeline take turns; a job that finds the graph busy goes back to the
 queue. Collect locks only its own group and runs in parallel. The same lock
 applies to terminal commands: `pauk publish graph` during a publish from the
 panel reports who holds the graph and does nothing.
@@ -402,7 +406,7 @@ uv run pauk admin user enable ivanov
 |---|---|
 | `viewer` | view only: search, node card, relationships, audit log, manual decisions, review questions, DB health, pipeline |
 | `editor` | plus edit fields, create and delete records, link and unlink, answer review questions |
-| `admin` | plus start runs: pipeline, collect, publish, dedup, reconcile, map rebuild, health checks |
+| `admin` | plus start runs: pipeline, collect, publish, dedup, publication versions, reconcile, map rebuild, health checks |
 
 Roles guard against mistakes, not against intruders: the role is a command
 argument, so anyone with server access can grant themselves `admin`.

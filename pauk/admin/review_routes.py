@@ -35,6 +35,7 @@ from pauk.graph.mutations import (
     read_node,
 )
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
+from pauk.graph.version_link import CONFIRMED, HELD, REL_TYPE
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
@@ -51,6 +52,20 @@ TABS = {
     "disputed": {"disputed": True},
     "skipped": {"skipped": True, "answered": False},
     "answered": {"answered": True},
+    "versions": {"kind": review.PUB_VERSION, "answered": False, "skipped": False},
+}
+
+#: Version buckets in the words the page uses.
+BUCKETS = {
+    "MISSED_BY_NORM": "одинаковый заголовок, разные DOI",
+    "DOI_SIBLING": "DOI отличается суффиксом версии",
+    "PREPRINT_PUBLISHED": "препринт и публикация",
+    "RU_EN_TRANSLATION": "перевод",
+    "STRONG_FUZZY": "очень похожий заголовок, общие авторы",
+    "MEDIUM_FUZZY": "похожий заголовок, LLM не спрашивали",
+    "MEDIUM_FUZZY_STRONG": "похожий заголовок и аннотация или препринт",
+    "MEDIUM_FUZZY_LLM_SAME": "похожий заголовок, LLM: одна работа",
+    "MEDIUM_FUZZY_CONF_JOURNAL": "доклад и журнальная статья, LLM: разные",
 }
 
 #: Rules in the words the page uses.
@@ -118,6 +133,8 @@ def _asks(row: dict) -> str:
         return "аккаунт GitHub"
     if kind == review.STAFF:
         return "запись каталога"
+    if kind == review.PUB_VERSION:
+        return "две публикации"
     return "две записи"
 
 
@@ -136,15 +153,18 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
         name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
+        publication = row["kind"] == review.PUB_VERSION
+        label = "Publication" if publication else "Person"
         shown.append({
             "id": member,
             "name": name or member,
             # The card carries the way back; the search is the only other exit.
             "href": None if record else
                     (evidence.get("url") if account
-                     else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
+                     else f"/nodes/{label}/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
+            "publication": publication,
         })
     return shown
 
@@ -163,6 +183,13 @@ def _shown(row: dict, back: str = "") -> dict:
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
+        "is_version": row["kind"] == review.PUB_VERSION,
+        "bucket": BUCKETS.get(evidence.get("bucket"), evidence.get("bucket")),
+        # By position, like `members`: a missing venue must not shift the other one.
+        "venues": [evidence.get("venue_a"), evidence.get("venue_b")],
+        "title_sim": evidence.get("title_sim"),
+        "abstract_sim": evidence.get("abstract_sim"),
+        "llm_reason": evidence.get("llm_reason"),
         "chosen": row.get("chosen"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
@@ -227,7 +254,7 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
     if graph is None:
         return rows
     wanted = sorted({person["id"] for row in rows for person in row["people"]
-                     if not person["account"] and not person["record"]})
+                     if not person["account"] and not person["record"] and not person["publication"]})
     try:
         facts = person_facts(graph, wanted)
     except (ServiceUnavailable, AuthError) as error:
@@ -283,6 +310,71 @@ def _fold_now(graph, db, members: list[str], actor: str) -> str:
     review.mark_applied(db, review.PAIR, members)
     logger.info("%s folded %s into %s from the review queue", actor, duplicate, canonical)
     return "merged"
+
+
+def _version_edges(graph, members: list[str]) -> list[tuple[str, str]]:
+    """The IS_VERSION edges between two publications, whichever way they point."""
+    a, b = members
+    return [(edge_src, edge_tgt) for edge_src, edge_tgt in ((a, b), (b, a))
+            if any(edge["type"] == REL_TYPE and edge["outgoing"] and edge["other_id"] == edge_tgt
+                   for edge in graph.fetch_node_relationships("Publication", edge_src))]
+
+
+def _settle_version(graph, members: list[str], verdict: str) -> str:
+    """Put an answer about two publications on their IS_VERSION edge now.
+
+    Nothing is folded: "same" marks the edge confirmed, "different" removes
+    it. `pauk versions link` reads the answer too, so a graph that is down
+    only delays this.
+
+    Returns:
+        "linked" or "unlinked", "no_edge" when there is no edge to confirm
+        (folded or removed since; the answer still stands for the next
+        `pauk versions link`), or "version_waiting" when the graph cannot do
+        it now.
+    """
+    if graph is None:
+        return "version_waiting"
+    try:
+        pairs = _version_edges(graph, members)
+        if verdict == review.DIFFERENT:
+            graph.delete_relationships_batch("Publication", "Publication", REL_TYPE, pairs)
+            return "unlinked"
+        if not pairs:
+            return "no_edge"
+        graph.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
+                                         [(src, tgt, {"status": CONFIRMED}) for src, tgt in pairs])
+        return "linked"
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
+        return "version_waiting"
+
+
+def _reopen_version(graph, members: list[str]) -> str:
+    """Undo `_settle_version` once its answer is taken back.
+
+    A confirmed edge goes back to held. A removed one cannot be put back
+    from here (its direction and evidence come from the rules), so it waits
+    for `pauk versions link`, which writes it again now that no answer
+    stands in the way.
+
+    Returns:
+        "reopened", "relink" when there is no edge until the next
+        `pauk versions link`, or "version_waiting" when the graph cannot do
+        it now.
+    """
+    if graph is None:
+        return "version_waiting"
+    try:
+        pairs = _version_edges(graph, members)
+        if not pairs:
+            return "relink"
+        graph.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
+                                         [(src, tgt, {"status": HELD}) for src, tgt in pairs])
+        return "reopened"
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("version answer for %s withdrawn, the graph did not answer: %s", members, error)
+        return "version_waiting"
 
 
 @router.post("/review/answer")
@@ -347,6 +439,8 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     done = ""
     if verdict == review.SAME and kind == review.PAIR:
         done = _fold_now(graph, db, members, user.actor)
+    elif verdict in review.VERDICTS and kind == review.PUB_VERSION:
+        done = _settle_version(graph, members, verdict)
     return RedirectResponse(f"/review?tab={tab}&done={done}" if done else f"/review?tab={tab}",
                             status_code=status.HTTP_303_SEE_OTHER)
 
@@ -404,10 +498,12 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 
 
 @router.post("/review/withdraw")
-async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: StoresReady):
+async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
+                   _: CsrfChecked, __: StoresReady):
     """Take an answer back, leaving the question in the queue.
 
-    The question stays because a real run asked it.
+    The question stays because a real run asked it. A version answer has
+    already reached its edge, so the edge is taken back with it.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -419,5 +515,8 @@ async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: S
     if not dropped:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
     logger.info("%s withdrew the answer about %s %s", user.actor, kind, members)
-    return RedirectResponse(f"/review?tab={_tab(form.get('tab'), 'answered')}",
-                            status_code=status.HTTP_303_SEE_OTHER)
+    tab = _tab(form.get("tab"), "answered")
+    if kind == review.PUB_VERSION:
+        return RedirectResponse(f"/review?tab={tab}&done={_reopen_version(graph, members)}",
+                                status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(f"/review?tab={tab}", status_code=status.HTTP_303_SEE_OTHER)
