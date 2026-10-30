@@ -7,6 +7,7 @@ to come back is exactly what a real merge takes away.
 """
 
 import unittest
+from copy import deepcopy
 
 import mongomock
 
@@ -260,3 +261,25 @@ class ChainTest(UnmergeTest):
         split_person(self.graph, self.db, ["A1", "A2"])
         self.assertEqual(self.graph.nodes[("Person", "A1")]["merged_ids"], [])
         self.assertEqual(self.graph.nodes[("Person", "A2")]["merged_ids"], ["A9"])
+
+    def test_an_aggregate_row_covers_its_deleted_members(self):
+        self.publish(
+            person("A1", "Ivan Smirnov", works=["W1"], merged_ids=["A3"], other_names=["Kept"]),
+            person("A2", "I. Smirnov", works=["W2"], other_names=["Returning"]),
+        )
+        self.fold()
+        split_person(self.graph, self.db, ["A1", "A2"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["other_names"], ["Kept"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["merged_ids"], ["A3"])
+
+    def test_contaminated_prepared_aggregate_refuses_before_any_write(self):
+        self.publish(person("A1", "Ivan Smirnov", works=["W1"]),
+                     person("A2", "I. Smirnov", works=["W2"]))
+        self.fold()
+        self.db.persons.update_one({"id": "A1"}, {"$set": {"merged_ids": ["A2"]}})
+        before = deepcopy((self.graph.nodes, self.graph.relationships))
+        with self.assertRaisesRegex(NothingToRebuild, "already aggregates"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+        self.assertEqual((self.graph.nodes, self.graph.relationships), before)

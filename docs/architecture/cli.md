@@ -185,7 +185,8 @@ since.
 
 `merge` deletes the duplicate together with its relationships and cannot be
 undone. The panel's "split back" button ("разделить обратно", in
-`pauk/graph/unmerge.py`) rebuilds a `Person` from its prepared row, but only
+`pauk/graph/unmerge.py`) rebuilds a `Person` from its prepared row or durable
+pre-merge snapshot, but only
 for a pair merged through an answer in the "Спорные случаи" (disputed cases)
 queue; a merge done with this command never enters that queue. The command
 asks for confirmation; `--yes` skips it.
@@ -257,6 +258,20 @@ tables from Neo4j, taking the rest from the newest snapshot.
 rows from it. The snapshot defaults to the newest in `cache_dir`. See
 [cache.md](cache.md).
 
+## `reports build`
+
+```
+pauk reports build [<repo id> ...] [--cache <snapshot>] [--force] [--workers 6]
+```
+
+Runs OSA on every repository of the snapshot that has no report yet, except
+third-party ones (cited, never `IMPLEMENTS`, no ITMO contributor), and
+writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
+`reports/index.json`. Repository ids limit the run, `--force` regenerates
+existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.
+Exits non-zero if any report failed. `PAUK_REPORTS_DIR` sets another folder.
+See [reports.md](reports.md).
+
 ## `gui build`
 
 ```
@@ -266,4 +281,6 @@ pauk gui build [--cache <snapshot>] [--out-dir <folder>] [--seed 42]
 Snapshot to layout to JSON for the `pauk/gui/web` site
 (`pauk/gui/graph_builder/builder.py::write_site_data`). By default it takes
 the newest snapshot from `cache_dir` and writes to `gui_dir`
-(`data/gui/{public,private}`). See [gui.md](gui.md).
+(`data/gui/{public,private}`): `private/` for the lab server, `public/`
+(masked names, no personal or service fields) for GitHub Pages. See
+[gui.md](gui.md).

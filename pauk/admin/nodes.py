@@ -251,7 +251,7 @@ async def restore(label: str, node_id: str, user: Editor,
     fields = decisions.deleted_fields(db, label, node_id)
     if not fields:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "не сохранилось, чем восстанавливать эту запись")
+                            "не сохранилось данных, чтобы восстановить эту запись")
     try:
         create_node(graph, label, node_id,
                     {name: value for name, value in fields.items()
@@ -431,7 +431,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
             label, node_id,
             f"{other_label} с {wanted} = «{other}» в графе нет. "
             f"Эта связь ищет вторую сторону по полю {wanted}"
-            + (f", а не по идентификатору — впишите {_hint(wanted)}."
+            + (f", а не по идентификатору – впишите {_hint(wanted)}."
                if wanted != "id" else ". Проверьте идентификатор."))
     except MutationError as error:
         return _link_failed(label, node_id, str(error))

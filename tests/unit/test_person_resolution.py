@@ -1,6 +1,7 @@
 import unittest
 
 from pauk.graph.person_resolution import (
+    DEFAULT_POLICY,
     MODEL_FEATURES,
     Decision,
     ModelVerdict,
@@ -39,17 +40,47 @@ def evidence(**changes):
 
 
 class PersonResolutionTest(unittest.TestCase):
+    def test_default_policy_uses_the_deployed_confidence_gates(self):
+        self.assertEqual(DEFAULT_POLICY.separate_below, 0.13)
+        self.assertEqual(DEFAULT_POLICY.merge_from, 0.94)
+
     def test_feature_vector_matches_the_fitted_model_contract(self):
         features = feature_vector(evidence())
 
         self.assertEqual(tuple(features), MODEL_FEATURES)
-        self.assertEqual(len(features), 46)
-        self.assertAlmostEqual(features["shared_coauthors"], 1.0986122886681098)
-        self.assertEqual(features["surname_equal"], 1)
-        self.assertEqual(features["compatible_name"], 1)
+        self.assertEqual(len(features), 56)
+        self.assertAlmostEqual(features["roles_v2__shared_coauthors"], 1.0986122886681098)
+        self.assertEqual(features["roles_v2__surname_equal"], 1)
+        self.assertEqual(features["roles_v2__compatible_name"], 1)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 0)
+
+    def test_long_token_features_ignore_name_order(self):
+        features = feature_vector(evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin"))
+
+        self.assertEqual(features["roles_v2__surname_equal"], 1)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 0)
+
+    def test_long_token_features_tolerate_transliteration_spelling(self):
+        features = feature_vector(evidence(name_a="E. A. Zernitskaya", name_b="Ekaterina Zernitckaia"))
+
+        self.assertGreater(features["roles_v2__long_token_similarity_max"], 0.8)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+
+    def test_remaining_full_names_expose_namesakes(self):
+        features = feature_vector(evidence(name_a="Ivan Petrov", name_b="Igor Petrov"))
+
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 1)
+
+    def test_initials_cannot_fake_a_compatible_long_token(self):
+        features = feature_vector(evidence(name_a="A. V. Shashkin", name_b="Alexander Vinogradov"))
+
+        self.assertEqual(features["roles_v2__long_token_compatible"], 0)
 
     def test_probability_is_stable_for_a_known_feature_vector(self):
-        self.assertAlmostEqual(logistic_probability(evidence()), 0.9006393934, places=9)
+        self.assertAlmostEqual(logistic_probability(evidence()), 0.9819791912082376, places=12)
 
     def test_conflicting_identifier_is_a_hard_veto(self):
         result = resolve_pair(evidence(orcid_a="0000-0001", orcid_b="0000-0002"))
@@ -62,8 +93,8 @@ class PersonResolutionTest(unittest.TestCase):
         for name_a, name_b in (("李明", "李明"), ("李明", "王芳"), ("", "")):
             with self.subTest(name_a=name_a, name_b=name_b):
                 features = feature_vector(evidence(name_a=name_a, name_b=name_b))
-                self.assertEqual(features["exact_name"], 0)
-                self.assertEqual(features["same_tokens"], 0)
+                self.assertEqual(features["roles_v2__exact_name"], 0)
+                self.assertEqual(features["roles_v2__same_tokens"], 0)
 
                 result = resolve_pair(evidence(name_a=name_a, name_b=name_b))
                 self.assertEqual(result.decision, Decision.SEPARATE)
@@ -73,8 +104,8 @@ class PersonResolutionTest(unittest.TestCase):
     def test_matching_trusted_identifier_overrides_probability_zone(self):
         result = resolve_pair(
             evidence(
-                name_a="X",
-                name_b="Y",
+                name_a="A. Petrov",
+                name_b="Alexander Petrov",
                 shared_coauthors=0,
                 shared_departments=0,
                 shared_fields=0,
@@ -91,8 +122,8 @@ class PersonResolutionTest(unittest.TestCase):
     def test_orcid_url_and_bare_value_are_the_same_identifier(self):
         result = resolve_pair(
             evidence(
-                name_a="X",
-                name_b="Y",
+                name_a="A. Petrov",
+                name_b="Alexander Petrov",
                 orcid_a="https://orcid.org/0000-0001",
                 orcid_b="0000-0001",
             )
@@ -142,7 +173,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
-    def test_different_surnames_are_never_merged_on_the_name_alone(self):
+    def test_different_full_names_are_never_merged_on_initials_alone(self):
         result = resolve_pair(
             evidence(
                 person_a="name_1",
@@ -156,52 +187,63 @@ class PersonResolutionTest(unittest.TestCase):
                 works_b=1,
                 surname_occurrences_a=1,
                 surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
-        self.assertGreaterEqual(result.probability, 0.99)
         self.assertEqual(result.decision, Decision.FIRST_MODEL)
         self.assertEqual(result.route, "surname_mismatch")
+
+    def test_conflicting_remaining_full_names_require_model_review(self):
+        result = resolve_pair(
+            evidence(
+                name_a="Andrey V. Lyamin",
+                name_b="Andrey Volchek",
+                shared_coauthors=0,
+                shared_publications=0,
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
+        )
+
+        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+        self.assertEqual(result.route, "surname_mismatch")
+
+    def test_name_order_does_not_create_a_surname_mismatch(self):
+        result = resolve_pair(
+            evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin"),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
+        )
+
+        self.assertEqual(result.decision, Decision.MERGE)
+        self.assertEqual(result.route, "logreg_high")
 
     def test_a_transliterated_surname_is_not_a_mismatch(self):
         result = resolve_pair(
             evidence(
-                person_a="name_1",
                 name_a="Aleksey Grigorev",
                 name_b="A.S. Grigoriev",
                 shared_coauthors=0,
-                shared_departments=0,
-                shared_fields=0,
                 shared_publications=0,
-                works_a=3,
-                works_b=1,
-                surname_occurrences_a=1,
-                surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
-    def test_a_joint_work_still_allows_a_merge_across_surnames(self):
+    def test_a_joint_work_does_not_override_a_name_conflict(self):
         result = resolve_pair(
             evidence(
-                person_a="name_1",
                 name_a="A. V. Shashkin",
                 name_b="Alexander Vinogradov",
                 shared_coauthors=0,
-                shared_departments=0,
-                shared_fields=0,
                 shared_publications=2,
-                works_a=3,
-                works_b=1,
-                surname_occurrences_a=1,
-                surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
-        self.assertEqual(result.decision, Decision.MERGE)
-        self.assertEqual(result.route, "logreg_high")
+        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+        self.assertEqual(result.route, "surname_mismatch")
 
     def test_uncertain_pair_requires_two_positive_model_verdicts(self):
         initial = resolve_pair(
@@ -223,8 +265,8 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(second.decision, Decision.SECOND_MODEL)
 
         rejected = apply_second_verdict(second, ModelVerdict(False, 0.87, "no independent support"))
-        self.assertEqual(rejected.decision, Decision.SEPARATE)
-        self.assertEqual(rejected.route, "qwen_second_separate")
+        self.assertEqual(rejected.decision, Decision.REVIEW)
+        self.assertEqual(rejected.route, "qwen_disagreement")
 
     def test_cascade_reproduces_two_positive_verdict_requirement(self):
         pair = evidence(
@@ -324,7 +366,7 @@ class PersonResolutionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence(shared_coauthors=-1)
 
-    def test_negative_first_verdict_finishes_without_second_call(self):
+    def test_negative_first_verdict_requires_second_call(self):
         initial = resolve_pair(
             evidence(
                 name_a="A. Petrov",
@@ -341,8 +383,8 @@ class PersonResolutionTest(unittest.TestCase):
 
         result = apply_first_verdict(initial, ModelVerdict(False, 0.78, "insufficient evidence"))
 
-        self.assertEqual(result.decision, Decision.SEPARATE)
-        self.assertEqual(result.route, "qwen_first_separate")
+        self.assertEqual(result.decision, Decision.SECOND_MODEL)
+        self.assertFalse(result.first_duplicate)
 
     def test_model_confidence_outside_contract_is_rejected(self):
         with self.assertRaises(ValueError):

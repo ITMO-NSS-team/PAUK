@@ -180,6 +180,19 @@ def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--force", action="store_true", help="with --llm: ask again about every MEDIUM_FUZZY pair")
 
 
+def _add_reports_parsers(sub: argparse._SubParsersAction) -> None:
+    """Register `reports build`: OSA PDF reports on the snapshot's repositories, for the site."""
+    from pauk.reports.settings import reports_settings
+
+    p = sub.add_parser("reports")
+    reports_sub = p.add_subparsers(dest="reports_command", required=True)
+    p = reports_sub.add_parser("build", help="generate the missing OSA reports (needs OpenRouter, not the lab VPN)")
+    p.add_argument("keys", nargs="*", help="repository ids to limit the run to (default: every repository)")
+    p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
+    p.add_argument("--force", action="store_true", help="regenerate reports that already exist")
+    p.add_argument("--workers", type=int, default=reports_settings.workers, help="OSA runs in parallel")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pauk")
     parser.add_argument("--verbose", action="store_true")
@@ -188,6 +201,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
     _add_versions_parsers(sub)
+    _add_reports_parsers(sub)
     admin_cli.add_parser(sub)
     return parser
 
@@ -306,6 +320,25 @@ def _cmd_versions(args) -> None:
     run_version_report(settings, args.output)
 
 
+def _cmd_reports(args, parser: argparse.ArgumentParser) -> None:
+    if args.reports_command != "build":
+        parser.error(f"unknown reports command: {args.reports_command}")
+    from pauk.cache.graph_snapshot import latest_snapshot
+    from pauk.reports import ReportsBuilder
+
+    path = args.cache or latest_snapshot(settings.cache_dir)
+    logger.info("reports build: %s", path)
+    try:
+        result = ReportsBuilder(settings).build(
+            path, keys=frozenset(args.keys), force=args.force, workers=args.workers
+        )
+    except (ValueError, RuntimeError) as error:
+        raise SystemExit(str(error)) from None
+    _log_result("reports build", None, result)
+    if result["failed"]:
+        raise SystemExit(f"{result['failed']} report(s) failed")
+
+
 def _cmd_admin(args) -> None:
     # `schema` only prints the whitelists; it reaches neither database,
     # so it stays usable without one running.
@@ -363,6 +396,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_gui(args, parser)
     elif args.command == "versions":
         _cmd_versions(args)
+    elif args.command == "reports":
+        _cmd_reports(args, parser)
     elif args.command == "admin":
         _cmd_admin(args)
     else:

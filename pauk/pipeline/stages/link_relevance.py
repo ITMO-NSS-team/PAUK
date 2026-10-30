@@ -8,68 +8,157 @@ from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publicat
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore
+from pauk.urls import deduplicate_repo_urls
 
 from .base import EnrichmentStage
-from .code_links import ARCHIVED_DEPOSIT_REASON
+from .code_links import ARCHIVED_DEPOSIT_REASON, CONTEXT_WINDOW
 
 logger = logging.getLogger(__name__)
 
-PROMPT_TEMPLATE = """Ты помогаешь анализировать научные публикации.
+# A context spans up to 500 characters on either side. Twelve keeps the
+# evidence near 12,000 characters while leaving room for all six source
+# types and repeated confirmations without making every LLM call unbounded.
+MODEL_CONTEXT_LIMIT = 12
+CONTEXT_OVERLAP_THRESHOLD = 0.8
+AMBIGUOUS_URL_REASON = "ambiguous_url_extraction"
 
-Публикация:
-  Название: {title}
+PROMPT_TEMPLATE = """You help analyze scientific publications.
 
-В её материалах найдена ссылка:
+Publication:
+  Title: {title}
+
+A link was found in its materials:
   URL: {url}
 
-Все найденные контексты этой ссылки:
+Contexts of this link selected for analysis:
 {contexts}
 
-Вопрос: это репозиторий/модель/датасет, который ВЫЛОЖИЛИ САМИ АВТОРЫ этой
-статьи как сопроводительный материал - или это упоминание чужого инструмента?
+Question: is this a repository/model/dataset RELEASED BY THE AUTHORS of this
+paper as accompanying material, or is it a mention of someone else's tool?
 
-Признаки авторского: "our code is available at", "we release", "наш код
-доступен"; имя пользователя/организации в URL похоже на автора или его
-аффилиацию.
-Признаки чужого: ссылка в списке литературы; известная чужая библиотека
-(PyTorch, BERT, Llama); формулировки "we use", "based on", "following [N]".
+Signs of an authors' artifact: "our code is available at", "we release",
+"our code is available"; the username/organization in the URL resembles an
+author's name or affiliation.
+Signs of an external tool: a link in the reference list; a well-known external
+library (PyTorch, BERT, Llama); phrases such as "we use", "based on", "following [N]".
 
-Учитывай все контексты вместе. Если данных недостаточно или контексты
-противоречат друг другу, верни null в поле is_authors_artifact.
+Consider all provided contexts together. If the evidence is insufficient or the
+contexts contradict each other, return null in the is_authors_artifact field.
 
-Ответь СТРОГО валидным JSON без markdown:
-{{"is_authors_artifact": null, "confidence": 0.0, "reason": "одно короткое предложение"}}
+Return STRICTLY valid JSON without markdown:
+{{"is_authors_artifact": null, "confidence": 0.0, "reason": "one short sentence"}}
 """
 
 
-def _source_hint(page_number: int | None) -> str:
-    if page_number is None:
-        return "абстракт OpenAlex (контекст ограничен)"
-    return f"видимый текст PDF, страница {page_number}"
+def _source_hint(occurrence: LinkOccurrence) -> str:
+    if occurrence.source == "deposit_title":
+        return "archived deposit title"
+    if occurrence.source == "citation":
+        return f"in-text citation [{occurrence.reference_label}], page {occurrence.page_number}"
+    if occurrence.source == "reference":
+        label = f" [{occurrence.reference_label}]" if occurrence.reference_label else ""
+        return f"reference list{label}, page {occurrence.page_number}"
+    if occurrence.source == "pdf_annotation":
+        return f"PDF clickable region, page {occurrence.page_number}"
+    if occurrence.page_number is None:
+        return "OpenAlex abstract (limited context)"
+    return f"PDF visible text, page {occurrence.page_number}"
 
 
-def _format_contexts(occurrences: list[LinkOccurrence]) -> str:
-    if not occurrences:
-        return "[1] Источник неизвестен\n\"\"\"\n(контекст пустой)\n\"\"\""
-
-    blocks: list[str] = []
-    seen: set[tuple[int | None, str]] = set()
+def _unique_context_occurrences(occurrences: list[LinkOccurrence]) -> list[LinkOccurrence]:
+    unique: list[LinkOccurrence] = []
+    seen: set[tuple] = set()
     for occurrence in occurrences:
-        context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
-        key = (occurrence.page_number, context)
-        if key in seen:
+        context = " ".join((occurrence.context or "").split()) or "(empty context)"
+        key = (
+            occurrence.pdf_id,
+            occurrence.page_number,
+            context,
+            occurrence.source,
+            occurrence.reference_label,
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(occurrence)
+    return unique
+
+
+def _model_occurrences(
+    occurrences: list[LinkOccurrence], limit: int = MODEL_CONTEXT_LIMIT
+) -> list[LinkOccurrence]:
+    unique: list[LinkOccurrence] = []
+    for occurrence in _unique_context_occurrences(occurrences):
+        if any(_contexts_overlap(occurrence, kept) for kept in unique):
             continue
-        seen.add(key)
+        unique.append(occurrence)
+    if len(unique) <= limit:
+        return unique
+
+    selected: set[int] = set()
+    sources: set[str | None] = set()
+    for index, occurrence in enumerate(unique):
+        if len(selected) >= limit:
+            break
+        if occurrence.source not in sources:
+            sources.add(occurrence.source)
+            selected.add(index)
+    for index in range(len(unique)):
+        if len(selected) >= limit:
+            break
+        occurrence = unique[index]
+        if not any(
+            (unique[kept].pdf_id, unique[kept].page_number) == (occurrence.pdf_id, occurrence.page_number)
+            for kept in selected
+        ):
+            selected.add(index)
+    for index in range(len(unique)):
+        if len(selected) >= limit:
+            break
+        selected.add(index)
+    return [occurrence for index, occurrence in enumerate(unique) if index in selected]
+
+
+def _contexts_overlap(first: LinkOccurrence, second: LinkOccurrence) -> bool:
+    # Split link annotations must not exhaust the budget with nearly identical windows.
+    if (first.pdf_id, first.page_number, first.source, first.reference_label) != (
+        second.pdf_id, second.page_number, second.source, second.reference_label
+    ) or any(value is None for value in (first.text_start, first.text_end, second.text_start, second.text_end)):
+        return False
+    first_start, second_start = max(0, first.text_start - CONTEXT_WINDOW), max(0, second.text_start - CONTEXT_WINDOW)
+    first_end, second_end = first.text_end + CONTEXT_WINDOW, second.text_end + CONTEXT_WINDOW
+    overlap = min(first_end, second_end) - max(first_start, second_start)
+    return overlap >= CONTEXT_OVERLAP_THRESHOLD * min(first_end - first_start, second_end - second_start)
+
+
+def _format_contexts(
+    occurrences: list[LinkOccurrence], limit: int | None = MODEL_CONTEXT_LIMIT
+) -> str:
+    if not occurrences:
+        return "[1] Unknown source\n\"\"\"\n(empty context)\n\"\"\""
+
+    unique = _unique_context_occurrences(occurrences)
+    selected = unique if limit is None else _model_occurrences(unique, limit)
+    blocks: list[str] = []
+    for occurrence in selected:
+        context = " ".join((occurrence.context or "").split()) or "(empty context)"
+        source_hint = _source_hint(occurrence)
+        if occurrence.pdf_id:
+            source_hint += f", PDF {occurrence.pdf_id}"
         blocks.append(
-            f"[{len(blocks) + 1}] Источник: {_source_hint(occurrence.page_number)}\n"
+            f"[{len(blocks) + 1}] Source: {source_hint}\n"
             f'\"\"\"\n{context}\n\"\"\"'
+        )
+    if len(selected) < len(unique):
+        blocks.append(
+            f"Another {len(unique) - len(selected)} context(s) were saved "
+            "but omitted due to the request size limit or overlapping windows."
         )
     return "\n\n".join(blocks)
 
 
 def _build_prompt(title: str | None, url: str, occurrences: list[LinkOccurrence]) -> str:
     return PROMPT_TEMPLATE.format(
-        title=title or "(без названия)",
+        title=title or "(untitled)",
         url=url,
         contexts=_format_contexts(occurrences),
     )
@@ -97,13 +186,16 @@ def _parse_verdict(result: dict) -> tuple[bool | None, float, str | None]:
 
 
 def _update_publication_code(publication: Publication, links: list[CodeLink]) -> None:
-    relevant = [link for link in links if link.is_relevant is True and not link.url_ambiguous]
-    publication.has_code = bool(relevant)
-    if not relevant:
+    urls = deduplicate_repo_urls(
+        link.url for link in links
+        if link.is_relevant is True and not link.url_ambiguous
+    )
+    publication.has_code = bool(urls)
+    if not urls:
         publication.code_url = None
         return
     # JSON text, kept for the GUI, which displays every author-produced artifact of a paper.
-    publication.code_url = json.dumps([link.url for link in relevant], ensure_ascii=False)
+    publication.code_url = json.dumps(urls, ensure_ascii=False)
 
 
 class LinkRelevanceStage(EnrichmentStage):
@@ -139,14 +231,22 @@ class LinkRelevanceStage(EnrichmentStage):
             state = pub.processing.get(self.name)
             if not self.needs_attempt(state):
                 continue
-            # Under --force, re-judge everything except the one deterministic
-            # verdict code_links sets itself (not an LLM call, nothing to
-            # re-judge) - e.g. to re-classify with a newly configured model.
+            for link in row.links:
+                if link.url_ambiguous:
+                    link.classification_status = ClassificationStatus.CLASSIFIED
+                    link.is_relevant = None
+                    link.llm_confidence = None
+                    link.llm_reason = AMBIGUOUS_URL_REASON
+            # Under --force, re-judge only verdicts that came from the model.
+            # Extraction ambiguity cannot be resolved from the same contexts.
             pending = [
                 link
                 for link in row.links
-                if link.classification_status != ClassificationStatus.CLASSIFIED
-                or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
+                if not link.url_ambiguous
+                and (
+                    link.classification_status != ClassificationStatus.CLASSIFIED
+                    or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
+                )
             ]
             candidates.append((row, pub, pending))
         changed = 0

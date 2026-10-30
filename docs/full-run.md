@@ -29,6 +29,29 @@ and Neo4j (on Linux, `free -g`). API keys are checked after `.env` is set up
 A full cycle needs `OPENALEX_API_KEY`, `GITHUB_TOKEN` and `OPENROUTER_API_KEY`
 (plus `OPENROUTER_PROXY_URL` if OpenRouter is not reachable directly).
 
+A full run needs about 10 GB of disk: it leaves about 5 GB of downloaded PDFs
+and about 1.5 GB of LLM call logs in Mongo.
+
+Check that the OpenRouter key answers and that its limit covers the whole run:
+if the limit runs out mid-stage, 403 comes back instantly and the stage walks
+through thousands of records in a minute without doing anything. The command
+below only checks that the key answers; look up the remaining limit in
+OpenRouter.
+
+```bash
+uv run python -c "from pauk.sources.llm import OpenRouterClient; from pauk.settings import settings as s; c=OpenRouterClient(s.request_timeout, s.openrouter_api_key, s.person_resolution_model, s.openrouter_proxy_url); print('reply:', bool(c.chat_json('Reply with JSON {\"ok\":true}')), c.last_error or '')"
+```
+
+Set the LLM stage threads in advance: `PAUK_PERSON_RESOLUTION_CONCURRENCY`
+(dedup; 8 by default, about 30 pairs per second at 32) and
+`PAUK_AUTHOR_NAMES_CONCURRENCY` (names; at 16 it takes an hour instead of
+sixteen).
+
+`PAUK_PDF_CRAWLER_URL` turns on the PDF-Crawler-Service fallback; an empty
+value turns it off. If the service cannot find PDFs by DOI from your network,
+every publication wastes minutes and gets a 422 - then it is better to turn
+the fallback off.
+
 ## 1. Database copy
 
 ### Take a dump
@@ -103,6 +126,24 @@ link_relevance -> emails -> repositories -> repo_people -> dedup ->
 github_match -> author_names` (plus the optional `social_graph`). One stage:
 `uv run pauk enrich <stage> --group testrun`.
 
+`departments`, `code_links`, `link_relevance`, `emails`, `github_match` and
+`dedup` write their results to Mongo in one batch at the end: an interrupted
+stage leaves no partial result, and the counters in the database do not move
+while it runs, so watch the log. `persons`, `repo_people` and `author_names`
+write as they go.
+
+Person dedup runs through the resolver: a logistic model separates and merges
+the confident pairs itself, and the LLM (`PAUK_PERSON_RESOLUTION_MODEL`)
+decides the rest. That is why the stage needs `OPENROUTER_API_KEY`; with
+`PAUK_PERSON_RESOLUTION_ENABLED=false` it runs on the old rules, without an
+LLM.
+
+On the 2020-2026 corpus the resolver takes 5-6 hours on 32 threads and uses
+about 60% of all tokens of the run; names take an hour on 16 threads; the
+other stages take minutes. Verdicts are cached in `llm_person_resolution_cache`
+and survive pair renumbering after merges, so a restart after a break is
+cheap.
+
 The `dedup` stage folds duplicates within one group. Deduplicating the whole
 graph is a separate command (section 3).
 
@@ -113,8 +154,9 @@ uv run pauk publish graph --group testrun     # per group
 uv run pauk dedup graph                         # whole graph
 ```
 
-`dedup graph` takes tens of minutes on a large graph; the planning phase logs
-only at its end. Merges it held back and deferred pairs go to
+`dedup graph` on the full graph takes about an hour with a filled verdict
+cache and hours with an empty one; resolver progress is in the log (`person
+resolution qwen_first: N/M`). Merges it held back and deferred pairs go to
 `data/cache/dedup_candidates_graph.jsonl`.
 
 ## 4. Update the web
@@ -185,6 +227,15 @@ After the copy checks out, repeat sections 2-5 against production: in the
 repository's `.env`, restore the production database addresses (from the
 server's `.env`) instead of the local ones.
 
+A large run is easier to build in a new database (`MONGO_DB=pauk_<date>`),
+leaving the old one untouched. Then, before switching over, copy
+`admin_users` and `graph_overrides` from the previous database, apply the
+edits (`pauk admin overrides apply`) and restart the services: the map, the
+admin panel and the worker. They read `.env` at startup, so without a restart
+they keep working with the old database. When started from `screen`, run them
+with the binaries from `.venv`: the user `PATH` is not there and `uv` is not
+found.
+
 Remove the copy when done:
 
 ```bash
@@ -194,7 +245,7 @@ docker rm -f pauk-mongo-copy pauk-neo4j-copy
 ## Checklist
 
 ```
-[ ] 0. pre-flight: disk / RAM / ports / keys
+[ ] 0. pre-flight: disk / RAM / ports / keys and key limit / LLM threads
 [ ] 1. dump -> restore into local Mongo -> local Neo4j; env on the copy, verified
 [ ] 2. pauk run --from ... --to ... --name testrun
 [ ] 3. pauk publish graph --group testrun ; pauk dedup graph

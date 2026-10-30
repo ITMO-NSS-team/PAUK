@@ -205,6 +205,8 @@ def _shown(row: dict, back: str = "") -> dict:
         "shared_coauthors": evidence.get("shared_coauthors"),
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
+        "input_route": evidence.get("input_route"),
+        "model_verdicts": evidence.get("model_verdicts") or {},
         "seen_at": row.get("seen_at"),
         "verdict": row.get("verdict"),
         "actor": row.get("actor"),
@@ -424,7 +426,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             if len(same) < 2:
                 return back("Отметьте хотя бы двоих, кого считаете одним человеком.")
             if len(same) >= len(members):
-                return back("Вся группа не может быть одним человеком — её отклонили "
+                return back("Вся группа не может быть одним человеком – её отклонили "
                             "как раз потому, что внутри разные люди.")
             # Nothing is folded here: later merges would name a swallowed node.
             review.record_split(db, members, same, actor=user.actor, note=note)
@@ -467,7 +469,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 
     if kind != review.PAIR:
         # Only a pair is ever folded; the other kinds link rather than merge.
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "слитой была только пара")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "склеенной была только пара")
     if graph is None:
         return back("Граф недоступен, разделить записи сейчас нельзя.")
     # Before the graph is touched: an undo the store refuses would strand it.
@@ -485,7 +487,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                     "или её удалили вручную.")
     except NotFound as error:
         logger.warning("%s could not split %s: %s", user.actor, members, error)
-        return back("В графе нет этого слияния. Возможно, записи уже разделили.")
+        return back("В графе нет этой склейки. Возможно, записи уже разделили.")
     except MutationError as error:
         logger.warning("%s could not split %s: %s", user.actor, members, error)
         return back("Разделить не удалось, подробности в журнале сервиса.")

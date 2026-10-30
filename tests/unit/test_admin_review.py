@@ -50,18 +50,19 @@ class ReviewPageTest(unittest.TestCase):
         body = self.client.get("/review").text
         # The pair worth asking about and the refused group, not the
         # "only one is ITMO" pair.
-        self.assertIn("A1", body)
-        self.assertNotIn("A4", body)
+        # Bare IDs can occur by chance inside the random CSRF token.
+        self.assertRegex(body, r'href="/nodes/Person/A1(?:\?|")')
+        self.assertNotRegex(body, r'href="/nodes/Person/A4(?:\?|")')
 
     def test_every_question_is_reachable(self):
         # Nothing the page filters is hidden from it.
         self.sign_in()
-        self.assertIn("A4", self.client.get("/review", params={"tab": "open"}).text)
+        self.assertRegex(self.client.get("/review", params={"tab": "open"}).text, r'href="/nodes/Person/A4(?:\?|")')
 
     def test_a_viewer_sees_the_queue_without_the_buttons(self):
         self.sign_in(login="guest")
         body = self.client.get("/review").text
-        self.assertIn("A1", body)
+        self.assertRegex(body, r'href="/nodes/Person/A1(?:\?|")')
         self.assertNotIn("/review/answer", body)
 
     def test_a_viewer_cannot_answer(self):
@@ -74,6 +75,52 @@ class ReviewPageTest(unittest.TestCase):
             "verdict": "different"})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_single_model_answer_is_visible_without_a_fake_second_vote(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="qwen_first", model_verdicts={
+            "single": {"decision": "review", "confidence": 0.8, "reason": "<script>ambiguous</script>"},
+        })
+        review.record_held(self.db, [row], source=review.STAGE)
+        self.sign_in()
+        body = self.client.get("/review").text
+        self.assertIn("Решение Qwen", body)
+        self.assertIn("нужно ревью", body)
+        self.assertIn("&lt;script&gt;ambiguous&lt;/script&gt;", body)
+        self.assertNotIn("Второй запрос", body)
+
+    def test_both_model_answers_are_visible_and_escaped(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="surname_mismatch", model_verdicts={
+            "first": {"duplicate": True, "confidence": .91, "reason": "<script>bad()</script>",
+                      "support": ["shared_work"], "risk": []},
+            "second": {"duplicate": False, "confidence": .83, "reason": "different surnames",
+                       "support": [], "risk": ["name_conflict"]},
+        })
+        review.record_held(self.db, [row])
+        self.sign_in()
+        response = self.client.get("/review?tab=open")
+        self.assertEqual(response.status_code, 200)
+        for value in ("Ответы Qwen", "surname_mismatch", "дубль", "разные", "91%", "83%",
+                      "shared_work", "name_conflict", "different surnames", "&lt;script&gt;"):
+            self.assertIn(value, response.text)
+        self.assertNotIn("<script>bad()</script>", response.text)
+
+    def test_missing_second_model_answer_is_not_shown_as_negative(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="qwen_first", model_verdicts={
+            "first": {"duplicate": True, "confidence": .9, "reason": "same researcher",
+                      "support": [], "risk": []},
+            "second": None,
+        })
+        review.record_held(self.db, [row])
+        self.sign_in()
+        response = self.client.get("/review?tab=open")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("same researcher", response.text)
+        second = response.text.split("Второй запрос:</b>")[1].split("</div>")[0]
+        self.assertIn("ответ отсутствует", second)
+        self.assertNotIn("разные", second)
 
     def test_answering_records_the_verdict_and_who_gave_it(self):
         self.sign_in()
@@ -174,20 +221,20 @@ class AnsweredTabTest(unittest.TestCase):
 
     def test_a_merge_says_when_it_will_happen(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
-        self.assertIn("сольётся на следующем прогоне", self.body())
+        self.assertIn("склеится при следующем прогоне", self.body())
 
     def test_a_merge_that_happened_says_so_instead(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
         review.mark_applied(self.db, review.PAIR, ["A1", "A2"])
         body = self.body()
-        self.assertIn("слито", body)
-        self.assertNotIn("сольётся на следующем прогоне", body)
+        self.assertIn("склеено", body)
+        self.assertNotIn("склеится при следующем прогоне", body)
 
     def test_keeping_two_people_apart_promises_no_merge(self):
         # There is nothing to apply: the answer only stops the rules from
         # merging the pair later.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
 
 class FoldNowTest(unittest.TestCase):
@@ -350,7 +397,7 @@ class DisputedTabTest(unittest.TestCase):
         # Nothing was merged. Saying otherwise would send somebody looking
         # for a merge that never happened.
         self.assertIn("user:andrey", self.body())
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
     def test_confirming_it_again_clears_the_disagreement(self):
         response = self.client.post("/review/answer", data={
@@ -613,7 +660,7 @@ class StaffChoiceTest(unittest.TestCase):
         self.choose(self.RECORDS[0])
         body = self.body("answered")
         self.assertIn("запись выбрана", body)
-        self.assertIn("сведёт записи на следующем прогоне", body)
+        self.assertIn("склеит записи при следующем прогоне", body)
 
 
 class ChoiceFormGuardTest(unittest.TestCase):
@@ -736,7 +783,7 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
     def test_what_the_rules_say_now_sits_by_the_old_reason(self):
         # It is the rules changing their mind, not part of the answer.
         why = self.cells()[2]
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
     def test_a_viewer_sees_the_answer_without_the_buttons(self):
         # The column is shown to a viewer too, who has to see what had
@@ -781,7 +828,7 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
             "name_b": "B", "rule": "same_name"}])
         why = self.cells()[2]
         self.assertIn("–", why)
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
 
 class SkippedTabTest(unittest.TestCase):

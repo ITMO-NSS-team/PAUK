@@ -9,7 +9,7 @@ from collections import defaultdict
 
 import requests
 
-from pauk.graph.client import _merge_duplicate_properties
+from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists, flatten_merges
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -274,6 +274,7 @@ class RecordingNeo4jClient:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
+            clean = _preserve_merged_person_lists(existing, clean)
             clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
             self.nodes["Person"].setdefault(node_id, {}).update(clean)
 
@@ -291,11 +292,48 @@ class RecordingNeo4jClient:
                              for node in self.nodes.get(tgt_primary, {}).values())
             if src_ok and tgt_ok:
                 key = (src_primary, rel_type, tgt_primary, src_id, tgt_id)
-                self._set_properties(self.edges.setdefault(key, {}), props)
+                edge = self.edges.setdefault(key, {})
+                corresponding = edge.get("is_corresponding") or props.get("is_corresponding")
+                has_corresponding = any(value is not None for value in (
+                    edge.get("is_corresponding"), props.get("is_corresponding")
+                ))
+                self._set_properties(edge, props)
+                if rel_type == "AUTHORED" and has_corresponding:
+                    edge["is_corresponding"] = bool(corresponding)
                 matched += 1
             else:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
+
+    def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
+                                         tgt_match_prop="id") -> int:
+        matched = 0
+        for src, tgt, props in relationships:
+            edge = self.edges.get((src_label, rel_type, tgt_label, src, tgt))
+            if edge is not None:
+                self._set_properties(edge, props)
+                matched += 1
+        return matched
+
+    def sync_mentions_links_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_keys, candidate_ids in publications:
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label != "Publication" or rel_type != "MENTIONS_LINK" or src_id != publication_id:
+                    continue
+                if tgt_label == "Repository":
+                    repository_id = next((node_id for node_id, props in self.nodes[tgt_label].items()
+                                          if props.get("url") == tgt_id), tgt_id)
+                    keep = repository_id in repository_keys or tgt_id in repository_keys
+                elif tgt_label == "LinkCandidate":
+                    keep = tgt_id in candidate_ids
+                else:
+                    continue
+                if not keep:
+                    del self.edges[key]
+                    removed += 1
+        return removed
 
     def sync_implements_relationships_batch(self, publications) -> int:
         removed = 0
@@ -341,26 +379,38 @@ class RecordingNeo4jClient:
         duplicate. On both nodes and edges the canonical's own values win,
         but anything only the duplicate knew fills the gap."""
         removed = 0
-        for dup_id, canonical_id in merges:
+        for dup_id, canonical_id in flatten_merges(merges):
             if dup_id == canonical_id:
                 continue
             if dup_id not in self.nodes.get(label, {}):
                 continue
             if canonical_id not in self.nodes.get(label, {}):
                 continue
+            duplicate_url = self.nodes[label][dup_id].get("url") if label == "Repository" else None
+            canonical_url = self.nodes[label][canonical_id].get("url") if label == "Repository" else None
             for key, props in list(self.edges.items()):
                 src_primary, rel_type, tgt_primary, src_id, tgt_id = key
                 if src_primary == label and src_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, canonical_id, tgt_id)
                 elif tgt_primary == label and tgt_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_id)
+                elif tgt_primary == label and duplicate_url is not None and tgt_id == duplicate_url:
+                    moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_url)
                 else:
                     continue
                 del self.edges[key]
                 if src_primary == tgt_primary and moved_key[3] == moved_key[4]:
                     # An edge between the two halves of a fold goes with the duplicate.
                     continue
-                self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
+                existing = self.edges.get(moved_key, {})
+                merged = {**props, **existing}
+                if rel_type == "AUTHORED" and any(value is not None for value in (
+                    props.get("is_corresponding"), existing.get("is_corresponding")
+                )):
+                    merged["is_corresponding"] = bool(
+                        props.get("is_corresponding") or existing.get("is_corresponding")
+                    )
+                self.edges[moved_key] = merged
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from typing import Any
 
 import requests
@@ -11,6 +10,7 @@ import requests
 from .base import HttpClient
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
 _CODE_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _RAW_TEXT_LIMIT = 64 * 1024
 _TRANSIENT_RETRIES = 2
@@ -32,13 +32,15 @@ class OpenRouterClient(HttpClient):
     """Minimal OpenRouter chat-completions client, JSON-object mode only."""
 
     def __init__(self, timeout: int, api_key: str, model: str, proxy_url: str = "") -> None:
-        super().__init__(timeout)
+        super().__init__(timeout, {"Authorization": f"Bearer {api_key}"})
         self.api_key = api_key
         self.model = model
         # Routes only this client's traffic through a forward proxy (e.g. an
         # internal tunnel that bypasses a geo-block) - other HttpClient
         # instances (OpenAlex, Crossref, ...) are untouched.
         self.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        if self.proxies:
+            self.session.proxies.update(self.proxies)
         # Token usage from the most recent chat_json() call (or None if it
         # failed before OpenRouter replied) - read by callers that need to
         # track cost, e.g. the model-comparison script.
@@ -48,6 +50,14 @@ class OpenRouterClient(HttpClient):
         # read by callers that log LLM calls in full (see LlmLogStore).
         self.last_response: Any | None = None
         self.last_error: str | None = None
+
+    def usage(self) -> float:
+        """Dollars this API key has spent so far, OpenRouter's running total.
+
+        Raises:
+            HttpRequestError: the key is rejected or OpenRouter is unreachable.
+        """
+        return float(self.get_json(OPENROUTER_KEY_URL)["data"]["usage"])
 
     def chat_json(
         self,
@@ -97,7 +107,10 @@ class OpenRouterClient(HttpClient):
                 )
             except requests.RequestException as exc:
                 if attempt < _TRANSIENT_RETRIES:
-                    time.sleep(self._backoff_delay(attempt))
+                    self._wait(
+                        self._backoff_delay(attempt), type(exc).__name__, "POST", OPENROUTER_URL,
+                        attempt, _TRANSIENT_RETRIES,
+                    )
                     continue
                 self.last_error = type(exc).__name__
                 logger.warning("OpenRouter: request to %s failed: %s", self.model, exc)
@@ -105,7 +118,7 @@ class OpenRouterClient(HttpClient):
 
             delay = self._retry_delay(response, attempt)
             if delay is not None and attempt < _TRANSIENT_RETRIES:
-                time.sleep(delay)
+                self._wait(delay, self._retry_reason(response), "POST", OPENROUTER_URL, attempt, _TRANSIENT_RETRIES)
                 continue
             break
 

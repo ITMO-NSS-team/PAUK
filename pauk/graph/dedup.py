@@ -49,7 +49,6 @@ from pauk.urls import normalize_repo_url
 
 from .audit import actor_context, audited_client
 from .client import chunked
-from .extract import NODE_REGISTRY, extract_node
 from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
@@ -216,6 +215,11 @@ def dedup_graph_persons(
             is_itmo=bool(row.get("is_itmo")),
             name_raw=row.get("name_raw"),
             name_variants=list(row.get("name_variants") or []),
+            other_names=list(row.get("other_names") or []),
+            surname_ru=row.get("surname_ru"),
+            surname_en=row.get("surname_en"),
+            first_name_ru=row.get("first_name_ru"),
+            first_name_en=row.get("first_name_en"),
             orcid=row.get("orcid"),
             email=row.get("email"),
             github=row.get("github"),
@@ -260,11 +264,14 @@ def dedup_graph_persons(
                 canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
             canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
             merges.append((duplicate.id, canonical.id))
-        # The canonical node inherits what its duplicates knew (variants,
-        # filled scalars, merged_ids) before their nodes disappear.
-        spec = NODE_REGISTRY["itmo_person" if canonical.is_itmo else "external_person"]
-        _labels, node = extract_node(canonical.model_dump(by_alias=True, exclude_none=True), spec)
-        canonical_nodes.append(node)
+        # These Person objects are projections for matching, not full graph
+        # records. Serializing their defaults would erase fields never read.
+        # The fold below merges the complete stored properties transactionally.
+        canonical_nodes.append((canonical.id, {
+            "is_itmo": canonical.is_itmo,
+            "name_variants": canonical.name_variants,
+            "merged_ids": canonical.merged_ids,
+        }))
 
     for chunk in chunked(canonical_nodes):
         client.upsert_person_nodes_batch(chunk)
@@ -479,14 +486,18 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
+        component_conflicts = sum(
+            row.get("route") == "component_conflict" for row in report
+        )
         # Only the person rows: publications and repositories are folded on
         # a DOI or a url and never hold anything back, so there is nothing
         # to ask about and no pair of people to key a question on.
-        review.record_held(mongo_db, person_report, source=review.GRAPH)
+        current_aliases = client.fetch_merged_id_map("Person")
+        review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
         review.record_disputed(mongo_db, person_report)
         # Re-read, not the map from before the pass: what this pass folded
         # is exactly the difference between the two.
-        review.mark_applied_merges(mongo_db, client.fetch_merged_id_map("Person"))
+        review.mark_applied_merges(mongo_db, current_aliases)
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:
@@ -508,6 +519,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "graph_publications_merged": publications_removed,
             "graph_repositories_merged": repositories_removed,
             "graph_dedup_candidates": held,
+            "graph_dedup_component_conflicts": component_conflicts,
             **overrides,
         }
     finally:

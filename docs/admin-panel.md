@@ -315,8 +315,8 @@ is not asked again.
 **When an answer takes effect.** It is recorded immediately. If both person
 records are already graph nodes, the panel merges them right away. Otherwise
 the next run that sees both does it: a collect of the same group, or graph
-dedup after publishing. The queue shows "слито" (merged) with a date, or
-"сольется на следующем прогоне" (will merge on the next run). GitHub-account
+dedup after publishing. The queue shows "склеено" (merged) with a date, or
+"склеится при следующем прогоне" (will merge on the next run). GitHub-account
 and catalog answers are never applied by the panel itself: the next collect
 binds the account, and the next collect or graph dedup uses the catalog
 record. Neo4j is not needed to record an answer.

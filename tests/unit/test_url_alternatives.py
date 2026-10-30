@@ -4,7 +4,7 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.graph.jsonl_loader import extract_repo_links
-from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
+from pauk.models import CodeLink, GitHubProfile, LinkOccurrence, Publication, RepoLink, Repository
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.code_links import _collect_occurrences, _occurrences_in_text
 from pauk.pipeline.stages.link_relevance import _update_publication_code
@@ -51,8 +51,13 @@ class UrlAlternativesTest(unittest.TestCase):
             with self.subTest(text=text):
                 found = self.collect(text)
                 self.assertEqual(list(found), [self.FULL])
-                self.assertIn(self.SHORT + "\npublic", found[self.FULL][0].raw_fragments)
-                self.assertIn(self.FULL, found[self.FULL][0].raw_fragments)
+                fragments = {
+                    fragment
+                    for occurrence in found[self.FULL]
+                    for fragment in occurrence.raw_fragments
+                }
+                self.assertIn(self.SHORT + "\npublic", fragments)
+                self.assertIn(self.FULL, fragments)
 
     def test_both_direct_spellings_keep_both(self):
         found = self.collect(self.SHORT + "\npublic", self.SHORT + " and " + self.FULL)
@@ -63,6 +68,21 @@ class UrlAlternativesTest(unittest.TestCase):
         found = self.collect(self.SHORT + "\npublic", self.SHORT + "\npublic")
         self.assertEqual(set(found), {self.SHORT, self.FULL})
         self.assertTrue(all(link.url_ambiguous for link in self.links(found)))
+
+    def test_pdf_annotation_cannot_confirm_wrapped_visible_text(self):
+        wrapped = _occurrences_in_text(self.SHORT + "\npublic", 1)
+        wrapped.setdefault(self.FULL, []).append(LinkOccurrence(
+            context="click here",
+            page_number=1,
+            source="pdf_annotation",
+            candidate_urls=[self.FULL],
+            continuous=True,
+        ))
+
+        found = _collect_occurrences("", [wrapped])
+
+        self.assertIn(self.SHORT, found)
+        self.assertEqual(len(found[self.SHORT][0].candidate_urls), 2)
 
     def test_abstract_and_different_owner_cannot_resolve_pdf(self):
         found = self.collect(self.SHORT + "\npublic", self.FULL.replace("/org/", "/other/"),
@@ -115,6 +135,21 @@ class UrlAlternativesTest(unittest.TestCase):
         for _, _, props in edges:
             self.assertTrue(props["url_ambiguous"])
             self.assertIsNone(props["is_relevant"])
+
+    def test_code_url_deduplicates_equivalent_repository_spellings(self):
+        publication = Publication(id="W1", title="Test")
+        links = [
+            CodeLink(url="https://github.com/Org/Repo", is_relevant=True),
+            CodeLink(url="https://github.com/org/repo/", is_relevant=True),
+            CodeLink(url="http://github.com/ORG/Repo.git", is_relevant=True),
+        ]
+
+        _update_publication_code(publication, links)
+
+        self.assertEqual(
+            publication.code_url,
+            '["https://github.com/Org/Repo"]',
+        )
 
     def test_github_checks_both_once_and_preserves_temporary_failures(self):
         for status_code, expected in [(404, "not_found"), (403, "failed"), (502, "failed")]:

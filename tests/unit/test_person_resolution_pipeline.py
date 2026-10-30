@@ -1,3 +1,4 @@
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +22,11 @@ from pauk.pipeline.person_resolution_planner import (
     SAME,
     plan_person_merges_resolved,
 )
-from pauk.pipeline.stages.dedup import DedupStage
+from pauk.pipeline.stages.dedup import (
+    DedupStage,
+    _finalize_person_merge_groups,
+    _group_conflict,
+)
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore, review
 
@@ -70,27 +75,66 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(len(groups), 1)
         self.assertEqual({groups[0][0].id, groups[0][1][0].id}, {"A1", "A2"})
         self.assertEqual(report[-1]["status"], "merged")
+        self.assertEqual(report[-1]["route"], "qwen_second_merge")
         self.assertEqual(report[-1]["rules"], ["qwen_second_merge"])
         self.assertEqual(len(models.first_calls), 1)
         self.assertEqual(len(models.second_calls), 1)
 
-    def test_first_model_rejection_becomes_a_review_question(self):
-        models = FakeModels(ModelVerdict(False, 0.8, "insufficient evidence"))
+    def test_two_negative_verdicts_separate_without_review(self):
+        models = FakeModels(ModelVerdict(False, 0.8), ModelVerdict(False, 0.8))
+
+        groups, report = plan_person_merges_resolved(self.people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["status"], "separate")
+        self.assertEqual(report[0]["route"], "qwen_second_separate")
+        self.assertFalse(report[0]["model_verdicts"]["first"]["duplicate"])
+        self.assertFalse(report[0]["model_verdicts"]["second"]["duplicate"])
+        self.assertEqual(len(models.second_calls), 1)
+        self.assertFalse(models.second_calls[0].as_payload()["first_stage"]["same_person"])
+
+    def test_second_model_rejection_requires_review_after_positive_first(self):
+        models = FakeModels(
+            ModelVerdict(True, 0.8, "possible duplicate"),
+            ModelVerdict(False, 0.8, "different people"),
+        )
 
         groups, report = plan_person_merges_resolved(self.people, {}, models=models)
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["status"], "held")
-        self.assertEqual(report[0]["route"], "qwen_first_separate")
-        self.assertEqual(models.second_calls, [])
+        self.assertEqual(report[0]["route"], "qwen_disagreement")
+        self.assertEqual(report[0]["input_route"], "qwen_first")
+        self.assertEqual(report[0]["model_verdicts"]["first"]["duplicate"], True)
+        self.assertEqual(report[0]["model_verdicts"]["first"]["reason"], "possible duplicate")
+        self.assertEqual(report[0]["model_verdicts"]["second"]["duplicate"], False)
+        self.assertEqual(report[0]["model_verdicts"]["second"]["reason"], "different people")
+        self.assertEqual(len(models.second_calls), 1)
+
+    def test_negative_then_positive_requires_review(self):
+        models = FakeModels(ModelVerdict(False, 0.9), ModelVerdict(True, 0.9))
+        groups, report = plan_person_merges_resolved(self.people, {}, models=models)
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["route"], "qwen_disagreement")
 
     def test_model_failure_is_safe_and_reviewable(self):
-        groups, report = plan_person_merges_resolved(
-            self.people, {}, models=FakeModels()
-        )
+        groups, report = plan_person_merges_resolved(self.people, {}, models=FakeModels())
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["held_because"], ["first model unavailable"])
+
+    def test_second_model_failure_is_safe_and_reviewable(self):
+        groups, report = plan_person_merges_resolved(
+            self.people,
+            {},
+            models=FakeModels(ModelVerdict(True, 0.8, "possible duplicate")),
+        )
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["held_because"], ["second model unavailable"])
+        self.assertEqual(report[0]["model_verdicts"]["first"]["reason"], "possible duplicate")
+        self.assertIsNone(report[0]["model_verdicts"]["second"])
 
     def test_a_human_merge_answer_skips_both_models(self):
         models = FakeModels()
@@ -161,6 +205,254 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(conflict["persons"], ["A1", "A2", "A3"])
         self.assertEqual(conflict["manual_conflicts"], [["A1", "A3"]])
 
+    def test_conflicted_component_keeps_exact_orcid_subgroups(self):
+        people = [
+            person("A1", "Sergey Makarov", orcid="0000-0001"),
+            person("A2", "S. Makarov", orcid="0000-0001"),
+            person("B", "Sergey Makarov"),
+            person("C1", "Sergey Makarov", orcid="0000-0002"),
+            person("C2", "S. Makarov", orcid="0000-0002"),
+        ]
+
+        groups, report = plan_person_merges_resolved(
+            people,
+            {
+                "A1": "0000-0001",
+                "A2": "0000-0001",
+                "B": None,
+                "C1": "0000-0002",
+                "C2": "0000-0002",
+            },
+            decisions={
+                frozenset(("A2", "B")): SAME,
+                frozenset(("B", "C1")): SAME,
+            },
+            models=FakeModels(),
+        )
+
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
+        self.assertCountEqual(folded, [{"A1", "A2"}, {"C1", "C2"}])
+        self.assertEqual(
+            {row["person_a"]: row["route"] for row in report if row["status"] == "merged"},
+            {"A2": "same_orcid", "C2": "same_orcid"},
+        )
+        conflict = next(row for row in report if row.get("route") == "component_conflict")
+        self.assertEqual(conflict["persons"], ["A1", "B", "C1"])
+        self.assertEqual(conflict["held_because"], ["group spans 2 distinct ORCID values"])
+
+
+class ConflictedComponentPartitionTest(unittest.TestCase):
+    def test_an_empty_identity_is_absent_rather_than_a_second_value(self):
+        # An empty string used to count as an identity of its own while the
+        # partitioner read the same field as absent. The record kept landing
+        # back in the bucket it was supposed to leave, and the stage died of
+        # a RecursionError instead of folding two obvious duplicates.
+        people = [
+            person("A1", "Sergey Makarov", orcid="0000-0001"),
+            person("A2", "S. Makarov", orcid=""),
+        ]
+        people[0].email = "makarov@itmo.ru"
+        people[1].email = ""
+        pairs = [("A1", "A2")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pairs[0]): "qwen_second_merge"},
+            {value.id: value for value in people},
+            {value.id: value.orcid for value in people},
+        )
+
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
+        self.assertEqual(folded, [{"A1", "A2"}])
+        self.assertFalse([row for row in report if row["status"] == "held"])
+
+    def test_identityless_records_follow_the_unique_nearest_identity(self):
+        people = [
+            person("A1", "Sergey Makarov", orcid="0000-0001"),
+            person("A2", "S. Makarov", orcid="0000-0001"),
+            person("X", "Sergey Makarov"),
+            person("Y", "Sergey Makarov"),
+            person("C1", "Sergey Makarov", orcid="0000-0002"),
+            person("C2", "S. Makarov", orcid="0000-0002"),
+        ]
+        pairs = [
+            ("A1", "A2"),
+            ("A2", "X"),
+            ("X", "Y"),
+            ("Y", "C1"),
+            ("C1", "C2"),
+        ]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "qwen_second_merge" for pair in pairs},
+            {value.id: value for value in people},
+            {value.id: value.orcid for value in people},
+        )
+
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
+        self.assertCountEqual(
+            folded,
+            [{"A1", "A2", "X"}, {"Y", "C1", "C2"}],
+        )
+        conflict = next(row for row in report if row.get("route") == "component_conflict")
+        self.assertEqual(conflict["persons"], ["A1", "C1"])
+
+    def test_equal_distance_identityless_record_stays_for_review(self):
+        people = [
+            person("A", "Sergey Makarov", orcid="0000-0001"),
+            person("X", "Sergey Makarov"),
+            person("C", "Sergey Makarov", orcid="0000-0002"),
+        ]
+        pairs = [("A", "X"), ("X", "C")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "qwen_second_merge" for pair in pairs},
+            {value.id: value for value in people},
+            {value.id: value.orcid for value in people},
+        )
+
+        self.assertEqual(groups, [])
+        conflict = next(row for row in report if row.get("route") == "component_conflict")
+        self.assertEqual(conflict["persons"], ["A", "C", "X"])
+
+    def test_partition_repeats_for_a_second_identity_conflict(self):
+        first = person("A1", "Sergey Makarov", orcid="0000-0001")
+        second = person("A2", "S. Makarov", orcid="0000-0001")
+        other = person("B", "Sergey Makarov", orcid="0000-0001")
+        first.email = "one@example.org"
+        second.email = "one@example.org"
+        other.email = "two@example.org"
+        people = [first, second, other]
+        pairs = [("A1", "A2"), ("A2", "B")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "qwen_second_merge" for pair in pairs},
+            {value.id: value for value in people},
+            {value.id: value.orcid for value in people},
+        )
+
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
+        self.assertEqual(folded, [{"A1", "A2"}])
+        conflict = next(row for row in report if row.get("route") == "component_conflict")
+        self.assertEqual(conflict["persons"], ["A1", "B"])
+
+    def test_staff_subgroups_survive_a_staff_conflict(self):
+        people = [
+            person("A1", "One"),
+            person("A2", "One alt"),
+            person("B", "Bridge"),
+            person("C1", "Two"),
+            person("C2", "Two alt"),
+        ]
+        pairs = [("A1", "A2"), ("A2", "B"), ("B", "C1"), ("C1", "C2")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "qwen_second_merge" for pair in pairs},
+            {value.id: value for value in people},
+            {},
+            {"A1": "staff-1", "A2": "staff-1", "C1": "staff-2", "C2": "staff-2"},
+        )
+
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
+        self.assertCountEqual(folded, [{"A1", "A2"}, {"C1", "C2"}])
+        merged_routes = {row["person_a"]: row["route"] for row in report if row["status"] == "merged"}
+        self.assertEqual(merged_routes, {"A2": "same_staff", "C2": "same_staff"})
+        self.assertEqual(report[-1]["persons"], ["A1", "B", "C1"])
+        self.assertEqual(report[-1]["route"], "component_conflict")
+
+    def test_exact_identifier_does_not_override_another_profile_conflict(self):
+        first = person("A1", "Sergey Makarov", orcid="0000-0001")
+        second = person("A2", "S. Makarov", orcid="0000-0001")
+        other = person("C", "Sergey Makarov", orcid="0000-0002")
+        first.email = "first@example.org"
+        second.email = "second@example.org"
+        pairs = [("A1", "A2"), ("A2", "C")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "manual" for pair in pairs},
+            {value.id: value for value in (first, second, other)},
+            {"A1": "0000-0001", "A2": "0000-0001", "C": "0000-0002"},
+        )
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[-1]["persons"], ["A1", "A2", "C"])
+
+    def test_partition_is_independent_of_pair_order(self):
+        people = [
+            person("A1", "One", orcid="0000-0001"),
+            person("A2", "One alt", orcid="0000-0001"),
+            person("B", "Bridge"),
+            person("C1", "Two", orcid="0000-0002"),
+            person("C2", "Two alt", orcid="0000-0002"),
+        ]
+        pairs = [("A1", "A2"), ("A2", "B"), ("B", "C1"), ("C1", "C2")]
+        by_id = {value.id: value for value in people}
+        orcids = {value.id: value.orcid for value in people}
+        rules = {frozenset(pair): "qwen_second_merge" for pair in pairs}
+
+        forward = _finalize_person_merge_groups(pairs, rules, by_id, orcids)
+        reverse = _finalize_person_merge_groups(list(reversed(pairs)), rules, by_id, orcids)
+
+        def normalized(result):
+            groups, report = result
+            folded = sorted(sorted([group[0].id, *(duplicate.id for duplicate in group[1])]) for group in groups)
+            held = sorted(row["persons"] for row in report if row["status"] == "held")
+            return folded, held
+
+        self.assertEqual(normalized(forward), normalized(reverse))
+
+    def test_randomized_partitions_never_emit_a_conflicting_group(self):
+        randomizer = random.Random(205)
+        with self.assertLogs("pauk.pipeline.stages.dedup", level="WARNING"):
+            for iteration in range(250):
+                people = [
+                    person(
+                        f"P{index}",
+                        f"Person {index}",
+                        orcid=(f"orcid-{randomizer.randrange(5)}" if randomizer.random() < 0.65 else None),
+                    )
+                    for index in range(randomizer.randrange(3, 30))
+                ]
+                for value in people:
+                    if randomizer.random() < 0.35:
+                        value.email = f"mail-{randomizer.randrange(4)}@example.org"
+                    elif randomizer.random() < 0.15:
+                        # An absent identity also arrives as an empty string.
+                        value.email = ""
+                        value.orcid = "" if randomizer.random() < 0.5 else value.orcid
+                ids = [value.id for value in people]
+                pairs = list(zip(ids, ids[1:], strict=False))
+                pairs.extend(tuple(randomizer.sample(ids, 2)) for _ in range(randomizer.randrange(len(ids))))
+                by_id = {value.id: value for value in people}
+                orcids = {value.id: value.orcid for value in people}
+                staff_ids = {
+                    value.id: f"staff-{randomizer.randrange(5)}" for value in people if randomizer.random() < 0.45
+                }
+
+                groups, _report = _finalize_person_merge_groups(
+                    pairs,
+                    {frozenset(pair): "qwen_second_merge" for pair in pairs},
+                    by_id,
+                    orcids,
+                    staff_ids,
+                )
+
+                emitted: set[str] = set()
+                for canonical, duplicates in groups:
+                    members = [
+                        canonical.id,
+                        *(duplicate.id for duplicate in duplicates),
+                    ]
+                    with self.subTest(iteration=iteration, members=members):
+                        self.assertIsNone(_group_conflict(members, by_id, orcids, staff_ids))
+                        self.assertTrue(emitted.isdisjoint(members))
+                    emitted.update(members)
+
 
 class DedupStageWiringTest(unittest.TestCase):
     def setUp(self):
@@ -182,12 +474,8 @@ class DedupStageWiringTest(unittest.TestCase):
         )
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(
-        self, model_factory
-    ):
-        model_factory.return_value = FakeModels(
-            ModelVerdict(True, 0.9), ModelVerdict(True, 0.9)
-        )
+    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(self, model_factory):
+        model_factory.return_value = FakeModels(ModelVerdict(True, 0.9), ModelVerdict(True, 0.9))
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
@@ -195,21 +483,38 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(review.questions(self.db), [])
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_sends_a_rejected_pair_to_review_panel(
-        self, model_factory
-    ):
-        model_factory.return_value = FakeModels(
-            ModelVerdict(False, 0.9, "different people")
-        )
+    def test_pipeline_accepts_a_rejected_pair_without_review(self, model_factory):
+        model_factory.return_value = FakeModels(ModelVerdict(False, 0.9, "different people"), ModelVerdict(False, 0.9))
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
         self.assertEqual(result["dedup_merged"], 0)
-        self.assertEqual(result["dedup_candidates"], 1)
+        self.assertEqual(result["dedup_candidates"], 0)
+        self.assertEqual(review.questions(self.db), [])
+
+    def _assert_pipeline_persists_disagreement(self, first):
+        self.assertEqual(review.questions(self.db), [])
+        with patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels") as model_factory:
+            model_factory.return_value = FakeModels(
+                ModelVerdict(first, 0.9, "first reason"), ModelVerdict(not first, 0.8, "second reason")
+            )
+            result = DedupStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(result["dedup_merged"], 0)
         (question,) = review.questions(self.db)
-        self.assertEqual(question["kind"], review.PAIR)
-        self.assertEqual(question["members"], ["A1", "A2"])
-        self.assertEqual(question["evidence"]["route"], "qwen_first_separate")
+        evidence = question["evidence"]
+        self.assertEqual(evidence["input_route"], "qwen_first")
+        self.assertEqual(evidence["model_verdicts"]["first"]["duplicate"], first)
+        self.assertEqual(evidence["model_verdicts"]["second"]["duplicate"], not first)
+        self.assertEqual(evidence["model_verdicts"]["first"]["reason"], "first reason")
+        self.assertEqual(evidence["model_verdicts"]["second"]["reason"], "second reason")
+        self.assertEqual(evidence["model_verdicts"]["first"]["confidence"], 0.9)
+        self.assertEqual(evidence["model_verdicts"]["second"]["confidence"], 0.8)
+
+    def test_pipeline_persists_negative_then_positive_for_review(self):
+        self._assert_pipeline_persists_disagreement(False)
+
+    def test_pipeline_persists_positive_then_negative_for_review(self):
+        self._assert_pipeline_persists_disagreement(True)
 
     def test_conflicting_orcid_never_reaches_a_model_or_queue(self):
         people = [
@@ -227,7 +532,10 @@ class DedupStageWiringTest(unittest.TestCase):
             models=models,
         )
 
-        self.assertEqual((groups, report), ([], []))
+        self.assertEqual(groups, [])
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["status"], "separate")
+        self.assertEqual(report[0]["reason"], "conflicting ORCID")
         self.assertEqual(models.first_calls, [])
 
 
@@ -243,12 +551,14 @@ class ResolverCacheTest(unittest.TestCase):
 
     def evidence(self):
         return PairEvidence(
-            person_a="A1", name_a="Ivan Petrov", person_b="A2", name_b="I. Petrov",
+            person_a="A1",
+            name_a="Ivan Petrov",
+            person_b="A2",
+            name_b="I. Petrov",
         )
 
     def answer(self, pair_id):
-        return {"results": [{"id": pair_id, "duplicate": True, "confidence": 0.9,
-                             "reason": "same person"}]}
+        return {"results": [{"id": pair_id, "duplicate": True, "confidence": 0.9, "reason": "same person"}]}
 
     def test_a_verdict_stored_under_one_number_answers_another(self):
         calls = []
@@ -267,8 +577,7 @@ class ResolverCacheTest(unittest.TestCase):
         self.assertEqual(self.db["llm_person_resolution_cache"].count_documents({}), 1)
 
     def test_the_key_still_separates_different_people(self):
-        other = PairEvidence(person_a="B1", name_a="Anna Volkova",
-                             person_b="B2", name_b="A. Volkova")
+        other = PairEvidence(person_a="B1", name_a="Anna Volkova", person_b="B2", name_b="A. Volkova")
         keys = {
             self.models._fingerprint(request)
             for request in (
@@ -291,8 +600,10 @@ class ResolverBatchingTest(unittest.TestCase):
 
     def evidence(self, number):
         return PairEvidence(
-            person_a=f"A{number}", name_a=f"Ivan Petrov{number}",
-            person_b=f"B{number}", name_b=f"I. Petrov{number}",
+            person_a=f"A{number}",
+            name_a=f"Ivan Petrov{number}",
+            person_b=f"B{number}",
+            name_b=f"I. Petrov{number}",
         )
 
     def test_an_interrupt_drops_the_rest_of_the_block(self):
@@ -306,9 +617,11 @@ class ResolverBatchingTest(unittest.TestCase):
             started.append(request.pair_id)
             raise KeyboardInterrupt
 
-        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
-            with self.assertRaises(KeyboardInterrupt):
-                models.first_many(items)
+        with (
+            patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            models.first_many(items)
 
         self.assertLess(len(started), len(items))
 

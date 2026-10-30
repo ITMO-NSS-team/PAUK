@@ -1,7 +1,7 @@
 """OpenRouter execution for the duplicate-person resolution cascade.
 
 The inference contract lives in :mod:`pauk.graph.person_resolution`.  This
-module is the operational adapter: it runs both model stages concurrently,
+module is the operational adapter: it runs model requests concurrently,
 validates every response, records the calls and reuses successful answers
 for identical evidence on later pipeline runs.
 """
@@ -29,6 +29,7 @@ from pauk.graph.person_resolution import (
     parse_first_stage_response,
     parse_second_stage_response,
 )
+from pauk.graph.person_resolution_single import SYSTEM_PROMPT, SingleVerdict, full_payload, parse_response
 from pauk.settings import Settings
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore
@@ -39,6 +40,8 @@ CACHE_COLLECTION = "llm_person_resolution_cache"
 LOG_COLLECTION = "llm_logs_person_resolution"
 FIRST_STAGE = "qwen_first"
 SECOND_STAGE = "qwen_second"
+SINGLE_STAGE = "qwen_single"
+Verdict = ModelVerdict | SingleVerdict
 
 
 @dataclass(frozen=True)
@@ -48,13 +51,13 @@ class _Request:
     system_prompt: str
     payload: dict
     max_tokens: int
-    parser: Callable[[dict, int], ModelVerdict]
+    parser: Callable[[dict, int], Verdict]
 
 
 @dataclass(frozen=True)
 class _Result:
     request: _Request
-    verdict: ModelVerdict | None
+    verdict: Verdict | None
     raw_response: dict | None
     parsed: dict | None
     usage: dict | None
@@ -89,7 +92,7 @@ def _renumbered(stage: str, parsed: Mapping[str, Any], pair_id: int) -> dict[str
 
 
 class OpenRouterResolutionModels:
-    """Runs the two Qwen stages with bounded concurrency and a Mongo cache."""
+    """Runs full-context Qwen requests with bounded concurrency and a Mongo cache."""
 
     def __init__(self, config: Settings, db: Database, group: str) -> None:
         self.config = config
@@ -100,6 +103,16 @@ class OpenRouterResolutionModels:
         self._local = threading.local()
         self._cache = db[CACHE_COLLECTION]
         self._log = LlmLogStore(db, LOG_COLLECTION)
+
+    def single_many(self, items: list[tuple[SecondStageContext, PairEvidence]]) -> dict[int, SingleVerdict | None]:
+        return self._run(
+            [
+                _Request(
+                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT, full_payload(context, evidence), 260, parse_response
+                )
+                for context, evidence in items
+            ]
+        )
 
     def first_many(self, items: list[tuple[int, PairEvidence]]) -> dict[int, ModelVerdict | None]:
         requests = [
@@ -121,7 +134,7 @@ class OpenRouterResolutionModels:
                 pair_id=context.pair_id,
                 stage=SECOND_STAGE,
                 system_prompt=SECOND_STAGE_SYSTEM_PROMPT,
-                payload=context.as_payload(),
+                payload=context.as_judge_payload(),
                 max_tokens=220,
                 parser=parse_second_stage_response,
             )
@@ -231,7 +244,7 @@ class OpenRouterResolutionModels:
             )
         return result
 
-    def _run(self, requests: list[_Request]) -> dict[int, ModelVerdict | None]:
+    def _run(self, requests: list[_Request]) -> dict[int, Verdict | None]:
         if not requests:
             return {}
         results: list[_Result] = []
@@ -240,7 +253,7 @@ class OpenRouterResolutionModels:
         else:
             done = 0
             for start in range(0, len(requests), self.workers * 8):
-                block = requests[start:start + self.workers * 8]
+                block = requests[start : start + self.workers * 8]
                 with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
                     futures = [pool.submit(self._invoke, request) for request in block]
                     try:

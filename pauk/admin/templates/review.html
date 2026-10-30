@@ -7,17 +7,17 @@
 
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
-<p class="note">Записи слиты, связи перешли на оставшуюся.
+<p class="note">Записи склеены, связи перешли на оставшуюся.
    Если это ошибка, в отвеченных есть «разделить обратно».</p>
 {% elif done == "apart" %}
 <p class="note">Записи разделены. Запись вернулась со своими связями,
    и вопрос теперь отвечен как «разные люди».</p>
 {% elif done == "chosen" %}
-<p class="note">Запись выбрана. Сведёт на следующем прогоне дедупликации.</p>
+<p class="note">Запись выбрана. Записи склеятся при следующей дедупликации.</p>
 {% elif done == "split" %}
-<p class="note">Группа разобрана. Отмеченные сольются на следующем прогоне.</p>
+<p class="note">Группа разобрана. Отмеченные склеятся при следующем прогоне.</p>
 {% elif done == "waiting" %}
-<p class="note">Решение записано. Слияние на следующем прогоне.</p>
+<p class="note">Ответ сохранён. Записи склеятся при следующем прогоне.</p>
 {% elif done == "linked" %}
 <p class="note">Связь IS_VERSION подтверждена. Публикации остаются отдельными узлами.</p>
 {% elif done == "unlinked" %}
@@ -54,7 +54,7 @@
   {% elif tab == "disputed" %}Расхождений нет. Правила пайплайна не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
   {% elif tab == "versions" %}Пар-версий нет. Очередь наполняет «Версии публикаций» на странице задач.
-  {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
+  {% else %}Вопросов нет. Новые появляются после дедупликации и сопоставления аккаунтов GitHub.{% endif %}</p>
 {% else %}
 <div class="card scroll">
   <table class="fixed">
@@ -111,6 +111,25 @@
         {% if row.shared_fields %}
         <div class="muted">{{ row.shared_fields|join(", ") }}</div>
         {% endif %}
+        {% if row.model_verdicts %}
+        <details>
+          <summary>Ответы Qwen</summary>
+          {% if row.input_route %}<div class="muted">Маршрут: {{ row.input_route }}</div>{% endif %}
+          {% set verdict_labels = [("single", "Решение Qwen")] if "single" in row.model_verdicts else [("first", "Первый запрос"), ("second", "Второй запрос")] %}
+          {% for key, label in verdict_labels %}
+          {% set answer = row.model_verdicts.get(key) %}
+          <div><b>{{ label }}:</b>
+            {% if answer is not none %}
+              {% if answer.decision == "merge" or answer.duplicate is sameas true %}дубль{% elif answer.decision == "separate" or answer.duplicate is sameas false %}разные{% elif answer.decision == "review" %}нужно ревью{% else %}не определено{% endif %}
+              · уверенность {{ "%.0f"|format(answer.confidence * 100) }}%
+              <div>{{ answer.reason }}</div>
+              {% if answer.support %}<div>За: {{ answer.support|join(", ") }}</div>{% endif %}
+              {% if answer.risk %}<div>Риски: {{ answer.risk|join(", ") }}</div>{% endif %}
+            {% else %}<span class="muted">ответ отсутствует</span>{% endif %}
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
         {% if row.is_group and not row.verdict %}
         <span class="muted">Отметьте слева тех, кто один человек.</span>
         {% endif %}
@@ -133,7 +152,7 @@
         {% else %}<span class="muted">–</span>{% endif %}
         {% if row.disputed_at %}
         <div class="change" style="margin-top:6px">
-          <span class="now">теперь связывают: {{ row.disputed_rule }}</span>
+          <span class="now">правила теперь склеивают: {{ row.disputed_rule }}</span>
         </div>
         {% endif %}
       </td>
@@ -147,13 +166,13 @@
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {% if row.is_staff %}
-            {% if row.chosen %}<br><span class="muted">сведёт записи на следующем прогоне</span>{% endif %}
+            {% if row.chosen %}<br><span class="muted">склеит записи при следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
             <br><span class="muted">привяжется на следующем сборе</span>
           {% elif row.is_version %}
           {% elif row.verdict == "same" %}
-            {% if row.applied_at %}<br><span class="muted">слито {{ row.applied_at|moment }}</span>
-            {% else %}<br><span class="muted">сольётся на следующем прогоне</span>{% endif %}
+            {% if row.applied_at %}<br><span class="muted">склеено {{ row.applied_at|moment }}</span>
+            {% else %}<br><span class="muted">склеится при следующем прогоне</span>{% endif %}
           {% endif %}
         </div>
         {% elif row.skipped_by %}

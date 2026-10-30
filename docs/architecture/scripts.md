@@ -19,6 +19,7 @@ The "Writes" column is the one thing worth knowing before you run a script.
 | Script | What it does | Writes |
 |---|---|---|
 | `deploy.sh` | Builds the site locally from the current branch, rsyncs it to the server and restarts the `screen` session that serves it. It does **not** regenerate the map data and does no `git pull` on the server; see [deploy.md](deploy.md) | server |
+| `publish_pages.sh` | Uploads the public map data (`data/gui/public` plus the OSA reports) to the `pages-data` release and runs the GitHub Pages workflow; see [gui.md](gui.md) | GitHub Pages |
 | `serve_static.py` | Serves the site on the server: `http.server` plus ready-made `.gz` files for browsers that accept gzip. Started by `deploy.sh` | no |
 | `mongo-up.sh` | Idempotent (re)start of the `pauk-mongo` container on the server | server |
 | `systemd/` | Unit files `pauk-admin.service` (admin panel) and `pauk-worker.service` (`pauk admin worker`); installation is in [../admin-panel.md](../admin-panel.md) | no |
@@ -86,7 +87,6 @@ to the checkout.
 |---|---|---|
 | `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories | draft in `data/static/` |
 | `export_link_labels.py` | Exports links (or whole papers) to CSV for manual labelling; the only tooling in the repository for measuring precision and recall of link extraction | no |
-| `mass_launch_osa_tool.py` | Batch launch of the external `osa_tool` over a list of repositories | external tool |
 
 `export_link_labels.py` has two modes: `links` measures precision over links
 already extracted, and `papers` measures recall, which cannot be seen from the
