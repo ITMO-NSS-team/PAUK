@@ -26,17 +26,10 @@ class Settings:
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    # `or`, not a getenv default: .env.example lists these as empty
-    # assignments, and an uncommented empty one must still mean the default.
     llm_model: str = os.getenv("PAUK_LLM_MODEL") or "qwen/qwen-2.5-72b-instruct"
-    # The person-resolution verdict cache is keyed by this name, so changing
-    # it sends every pair to the LLM again.
     person_resolution_model: str = (
         os.getenv("PAUK_PERSON_RESOLUTION_MODEL") or "qwen/qwen3-next-80b-a3b-instruct"
     )
-    # ReportsSettings.context_window is sized for this model, so a model with a
-    # smaller window needs it lowered too. Existing PDFs are kept on a model
-    # change; `pauk reports build --force` regenerates them.
     reports_model: str = os.getenv("PAUK_REPORTS_MODEL") or "anthropic/claude-haiku-5.5"
     person_resolution_enabled: bool = os.getenv(
         "PAUK_PERSON_RESOLUTION_ENABLED", "true"
