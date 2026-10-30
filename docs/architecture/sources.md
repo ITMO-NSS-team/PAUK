@@ -6,8 +6,8 @@ per external API.
 **Files:** `pauk/sources/base.py`, `openalex.py`, `github.py`, `crossref.py`,
 `orcid.py`, `llm.py`.
 
-Thin wrappers, each knowing only its own API. All inherit from
-`base.py::HttpClient`.
+Thin wrappers, each knowing only its own API. All except `SubscriptionCliClient`,
+which runs a local CLI, inherit from `base.py::HttpClient`.
 
 ## `base.py::HttpClient`
 
@@ -39,6 +39,7 @@ Thin wrappers, each knowing only its own API. All inherit from
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
+| `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`, `GeminiCli` runs `gemini -p`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude[:<model>]`, `codex:<model>`, `gemini:<model>`), `check_providers` parses every stage's setting when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage |
 
 ## PDF-Crawler-Service is not in this package
 

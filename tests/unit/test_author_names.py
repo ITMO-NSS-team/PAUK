@@ -21,8 +21,8 @@ def person(pid, name, *, variants=(), degree=None, itmo=True):
                   name_variants=list(variants), degree=degree)
 
 
-class _FakeOpenRouterClient:
-    """Stands in for pauk.sources.OpenRouterClient in tests: returns queued
+class _FakeLlmClient:
+    """Stands in for the LLM client in tests: returns queued
     replies in call order instead of hitting the network. A queued value of
     None simulates a failed call, matching what chat_json() returns then."""
 
@@ -30,6 +30,7 @@ class _FakeOpenRouterClient:
 
     def __init__(self, *args, **kwargs) -> None:
         del args, kwargs
+        self.model = "test-model"
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -63,8 +64,8 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
-                   _FakeOpenRouterClient.queued(replies)):
+        with patch("pauk.pipeline.stages.author_names.llm_client",
+                   _FakeLlmClient.queued(replies)):
             result = AuthorNamesStage(
                 self.prepared, self.raw, self.config, force=force
             ).run()
@@ -199,8 +200,8 @@ class AuthorNamesStageTest(unittest.TestCase):
             "reason": "complete split",
         }
         with patch(
-            "pauk.pipeline.stages.author_names.OpenRouterClient",
-            _FakeOpenRouterClient.queued([complete]),
+            "pauk.pipeline.stages.author_names.llm_client",
+            _FakeLlmClient.queued([complete]),
         ):
             again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
 
@@ -523,8 +524,8 @@ class AuthorNamesStageTest(unittest.TestCase):
                       "second_name_ru": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
                       "second_name_en": None, "reason": ""}],
         )
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
-                   _FakeOpenRouterClient.queued([])):
+        with patch("pauk.pipeline.stages.author_names.llm_client",
+                   _FakeLlmClient.queued([])):
             again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["author_names"], 0)
 
@@ -709,6 +710,7 @@ class _ThreadedFakeClient:
 
     def __init__(self, *args, **kwargs) -> None:
         del args, kwargs
+        self.model = "test-model"
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -740,7 +742,7 @@ class ParallelAuthorNamesTest(unittest.TestCase):
         prepared = PreparedStore(db, "sample")
         prepared.write_models("persons", people)
         _ThreadedFakeClient.threads = set()
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient", _ThreadedFakeClient):
+        with patch("pauk.pipeline.stages.author_names.llm_client", _ThreadedFakeClient):
             result = AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
         return result, {p.id: p for p in prepared.read_models("persons", Person)}
 

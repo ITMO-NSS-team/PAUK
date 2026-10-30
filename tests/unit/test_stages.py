@@ -306,13 +306,14 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(classified.classification_status, ClassificationStatus.CLASSIFIED)
         self.assertEqual(pending.classification_status, ClassificationStatus.PENDING)
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_classifies_pending_links(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_classifies_pending_links(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -391,13 +392,14 @@ class StagesTest(unittest.TestCase):
         self.assertFalse(publication.has_code)
         self.assertIsNone(publication.code_url)
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_sends_every_occurrence_in_one_prompt(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_sends_every_occurrence_in_one_prompt(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": True, "confidence": 0.9, "reason": "later context confirms it",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -418,7 +420,7 @@ class StagesTest(unittest.TestCase):
 
         LinkRelevanceStage(prepared, raw).run()
 
-        [call] = openrouter_client.return_value.chat_json.call_args_list
+        [call] = llm_client.return_value.chat_json.call_args_list
         prompt = call.args[0]
         self.assertIn("We use this library as a dependency.", prompt)
         self.assertIn("Our complete implementation is available here.", prompt)
@@ -455,13 +457,14 @@ class StagesTest(unittest.TestCase):
         self.assertIn("PDF visible text", formatted)
         self.assertIn("PDF clickable region", formatted)
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": None, "confidence": 0.3, "reason": "insufficient context",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -480,13 +483,14 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(link.llm_confidence, 0.3)
         self.assertEqual(link.llm_reason, "insufficient context")
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_rejects_a_non_boolean_verdict(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_rejects_a_non_boolean_verdict(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": "false", "confidence": 0.8, "reason": "wrong JSON type",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -504,13 +508,14 @@ class StagesTest(unittest.TestCase):
         [log] = list(self.db["llm_logs_link_relevance"].find({}))
         self.assertEqual(log["error"], "is_authors_artifact must be true, false, or null")
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_logs_every_llm_call(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_logs_every_llm_call(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
         }
-        openrouter_client.return_value.last_response = {"choices": [{"message": {"content": "..."}}]}
-        openrouter_client.return_value.last_usage = {"total_tokens": 42}
+        llm_client.return_value.last_response = {"choices": [{"message": {"content": "..."}}]}
+        llm_client.return_value.last_usage = {"total_tokens": 42}
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -528,8 +533,8 @@ class StagesTest(unittest.TestCase):
         self.assertIsNone(log["error"])
         self.assertEqual(log["context"], {"publication_id": "W1", "url": "https://github.com/org/repo"})
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_reuses_already_classified_links_without_an_llm_call(self, openrouter_client):
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_reuses_already_classified_links_without_an_llm_call(self, llm_client):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -540,18 +545,19 @@ class StagesTest(unittest.TestCase):
         ])
         result = LinkRelevanceStage(prepared, raw).run()
         self.assertEqual(result["publications"], 1)
-        openrouter_client.return_value.chat_json.assert_not_called()
+        llm_client.return_value.chat_json.assert_not_called()
         publication = next(prepared.read_models("publications", Publication))
         self.assertTrue(publication.has_code)
         self.assertEqual(json.loads(publication.code_url), ["https://github.com/asl/BandageNG"])
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_force_rejudges_llm_verdicts_but_not_the_archived_deposit(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_force_rejudges_llm_verdicts_but_not_the_archived_deposit(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": False, "confidence": 0.5, "reason": "re-judged",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -564,19 +570,20 @@ class StagesTest(unittest.TestCase):
             ]),
         ])
         LinkRelevanceStage(prepared, raw, force=True).run()
-        self.assertEqual(openrouter_client.return_value.chat_json.call_count, 1)
+        self.assertEqual(llm_client.return_value.chat_json.call_count, 1)
         links = {link.url: link for link in next(prepared.read_models("repo_links", RepoLink)).links}
         self.assertEqual(links["https://github.com/asl/BandageNG"].llm_reason,
                           "repository_archived_by_this_deposit")
         self.assertEqual(links["https://github.com/org/repo"].llm_reason, "re-judged")
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_skips_ambiguous_url_and_rejudges_confirmed_url(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = {
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_skips_ambiguous_url_and_rejudges_confirmed_url(self, llm_client):
+        llm_client.return_value.chat_json.return_value = {
             "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
         }
-        openrouter_client.return_value.last_response = {"choices": []}
-        openrouter_client.return_value.last_usage = None
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         short_url = "https://github.com/KseniiaCheloshkina/cancer_"
@@ -613,8 +620,8 @@ class StagesTest(unittest.TestCase):
 
         LinkRelevanceStage(prepared, raw, force=True).run()
 
-        openrouter_client.return_value.chat_json.assert_called_once()
-        prompt = openrouter_client.return_value.chat_json.call_args.args[0]
+        llm_client.return_value.chat_json.assert_called_once()
+        prompt = llm_client.return_value.chat_json.call_args.args[0]
         self.assertIn(f"URL: {full_url}", prompt)
         self.assertNotIn(f"URL: {short_url}\n", prompt)
         links = {link.url: link for link in next(
@@ -630,11 +637,12 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(json.loads(publication.code_url), [full_url])
         self.assertEqual(self.db["llm_logs_link_relevance"].count_documents({}), 1)
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = None
-        openrouter_client.return_value.last_response = None
-        openrouter_client.return_value.last_usage = None
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_marks_failed_when_the_llm_call_fails(self, llm_client):
+        llm_client.return_value.chat_json.return_value = None
+        llm_client.return_value.last_response = None
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -648,12 +656,13 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(link.classification_status, ClassificationStatus.FAILED)
         self.assertIsNone(link.is_relevant)
 
-    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_force_failure_clears_the_stale_verdict_for_retry(self, openrouter_client):
-        openrouter_client.return_value.chat_json.return_value = None
-        openrouter_client.return_value.last_response = None
-        openrouter_client.return_value.last_usage = None
-        openrouter_client.return_value.last_error = "temporary failure"
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_link_relevance_force_failure_clears_the_stale_verdict_for_retry(self, llm_client):
+        llm_client.return_value.chat_json.return_value = None
+        llm_client.return_value.last_response = None
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.model = "test-model"
+        llm_client.return_value.last_error = "temporary failure"
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(
