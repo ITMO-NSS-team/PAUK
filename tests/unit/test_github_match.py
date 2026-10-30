@@ -6,7 +6,8 @@ from pathlib import Path
 
 import mongomock
 
-from pauk.models import GitHubProfile, Person, Repository
+from pauk.models import Contribution, GitHubProfile, Person, Repository
+from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages import social_graph
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.github_match import (
@@ -256,6 +257,20 @@ class GitHubMatchStageTest(unittest.TestCase):
         (row,) = self.journal()
         self.assertIn("email_exact", row["signals"])
 
+    def test_a_shared_address_keeps_every_author_regardless_of_insertion_order(self):
+        authors = [person("A1", "Ivan Petrov", email="shared@itmo.ru"),
+                   person("A2", "Boris Smirnov", email="shared@itmo.ru")]
+        for ordered in (authors, list(reversed(authors))):
+            with self.subTest(order=[author.id for author in ordered]):
+                result, people = self.run_stage(
+                    ordered, [profile("coder42", emails=["shared@itmo.ru"])], [])
+
+                self.assertEqual(result["github_matched"], 0)
+                self.assertEqual(result["github_review"], 1)
+                self.assertTrue(all(author.github is None for author in people.values()))
+                (question,) = review.questions(self.prepared.db, answered=False)
+                self.assertEqual(question["members"], ["A1", "A2", "coder42"])
+
     def test_an_account_is_recognised_by_a_second_address(self):
         # ORCID lists several addresses for a third of the people who list
         # any; the account committed with one that is not on the card.
@@ -501,6 +516,10 @@ class GitHubReviewTest(unittest.TestCase):
         self.prepared.write_models("persons", people)
         self.prepared.write_models("github_profiles", profiles)
         self.prepared.write_models("repositories", repositories)
+        return self.rerun_stage(selection)
+
+    def rerun_stage(self, selection=None):
+        """Keep the rows saved by the previous run, as a real repeat does."""
         result = GitHubMatchStage(self.prepared, self.raw, self.config, selection=selection).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
@@ -689,6 +708,184 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertIsNone(people["A1"].github)
         self.assertEqual(review.count(self.db, answered=False), 0)
 
+    def applied_account_choice(self, *, independent=False):
+        repo = repository("coder42", "tool")
+        first = person("A1", "Ivan Petrov")
+        if independent:
+            first.github = "orcid-login"
+            first.email = "original@lab.test"
+            first.contributed_to = [Contribution(repository_id=repo.id, role="owner")]
+        self.run_stage(
+            [first, person("A2", "Ivan Petrov")],
+            [profile("coder42", name="Ivan Petrov", emails=["account@lab.test"], repos=[repo.url])],
+            [repo],
+        )
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A1")
+        self.rerun_stage()
+        return repo
+
+    def test_rechoosing_an_account_removes_the_previous_owners_generated_fields(self):
+        repo = self.applied_account_choice()
+        review.withdraw(self.db, review.GITHUB, ["A1", "A2", "coder42"])
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        _, people = self.rerun_stage()
+
+        self.assertIsNone(people["A1"].github)
+        self.assertIsNone(people["A1"].email)
+        self.assertEqual(people["A1"].contributed_to, [])
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertEqual(people["A2"].email, "account@lab.test")
+        self.assertEqual(people["A2"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="owner")])
+
+    def test_rechoosing_preserves_the_previous_owners_independent_fields(self):
+        repo = self.applied_account_choice(independent=True)
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A1"].github, "orcid-login")
+        self.assertEqual(people["A1"].email, "original@lab.test")
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="owner")])
+
+    def test_an_unchanged_repeat_keeps_the_information_needed_to_reverse_a_choice(self):
+        self.applied_account_choice()
+        self.rerun_stage()
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        _, people = self.rerun_stage()
+
+        self.assertIsNone(people["A1"].github)
+        self.assertIsNone(people["A1"].email)
+        self.assertEqual(people["A1"].contributed_to, [])
+
+    def test_withdrawing_a_choice_does_not_use_the_copied_email_as_evidence(self):
+        self.applied_account_choice()
+        review.withdraw(self.db, review.GITHUB, ["A1", "A2", "coder42"])
+
+        result, people = self.rerun_stage()
+
+        self.assertEqual(result["github_matched"], 0)
+        self.assertEqual(result["github_review"], 1)
+        self.assertTrue(all(author.github is None and author.email is None
+                            and not author.contributed_to for author in people.values()))
+
+    def test_a_scoped_rechoice_leaves_the_old_owner_until_their_own_run(self):
+        self.applied_account_choice()
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        _, people = self.rerun_stage(PreparedSelection("persons", frozenset({"A2"})))
+
+        self.assertEqual(people["A1"].github, "coder42")
+        self.assertEqual(people["A2"].github, "coder42")
+        _, people = self.rerun_stage(PreparedSelection("persons", frozenset({"A1"})))
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(people["A2"].github, "coder42")
+
+    def test_a_group_without_the_profile_does_not_retract_a_previous_match(self):
+        repo = self.applied_account_choice()
+        self.prepared.write_models("github_profiles", [])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A1"].github, "coder42")
+        self.assertEqual(people["A1"].email, "account@lab.test")
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="owner")])
+
+    def test_refusing_one_account_keeps_a_contribution_supported_by_another(self):
+        repo = repository("lab", "tool")
+        self.run_stage(
+            [person("A1", "Ivan Petrov")],
+            [profile(login, name="Ivan Petrov", company="ITMO", repos=[repo.url])
+             for login in ("alpha", "beta")],
+            [repo],
+        )
+        review.record_verdict(self.db, review.GITHUB, ["A1", "alpha"], review.DIFFERENT)
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A1"].github, "beta")
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="contributor")])
+        self.assertEqual([match.login for match in people["A1"].github_match.matches], ["beta"])
+
+    def test_a_refusal_can_retract_a_tracked_account_absent_from_this_group(self):
+        self.applied_account_choice()
+        self.prepared.write_models("github_profiles", [])
+        review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"], review.DIFFERENT)
+
+        _, people = self.rerun_stage()
+
+        self.assertIsNone(people["A1"].github)
+        self.assertIsNone(people["A1"].email)
+        self.assertEqual(people["A1"].contributed_to, [])
+
+    def test_an_unchanged_match_keeps_contributions_visible_only_to_another_group(self):
+        repo = self.applied_account_choice()
+        PreparedStore(self.db, "other").upsert_models("repositories", [repo])
+        self.prepared.write_models("repositories", [])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="owner")])
+
+    def test_an_automatic_match_keeps_evidence_from_a_repository_in_another_group(self):
+        repo = repository("coder42", "tool")
+        self.run_stage([person("A1", "Ivan Petrov")],
+                       [profile("coder42", name="Ivan Petrov", repos=[repo.url])], [repo])
+        PreparedStore(self.db, "other").upsert_models("repositories", [repo])
+        self.prepared.write_models("repositories", [])
+
+        result, people = self.rerun_stage()
+
+        self.assertEqual(result["github_matched"], 1)
+        self.assertEqual(people["A1"].github, "coder42")
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="owner")])
+
+    def test_a_refreshed_repository_role_replaces_the_previous_role(self):
+        repo = self.applied_account_choice()
+        repo.owner_login = "new-owner"
+        self.prepared.write_models("repositories", [repo])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A1"].contributed_to,
+                         [Contribution(repository_id=repo.id, role="contributor")])
+
+    def test_rechoosing_after_a_person_fold_removes_the_inherited_match(self):
+        self.applied_account_choice()
+        people = {author.id: author for author in self.prepared.read_models("persons", Person)}
+        survivor = _merge_person(person("A3", "Ivan Petrov"), people["A1"])
+        survivor.merged_ids = ["A1"]
+        self.prepared.write_models("persons", [survivor, people["A2"]])
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        _, people = self.rerun_stage()
+
+        self.assertIsNone(people["A3"].github)
+        self.assertIsNone(people["A3"].email)
+        self.assertEqual(people["A3"].contributed_to, [])
+        self.assertEqual(people["A2"].github, "coder42")
+
+    def test_a_legacy_refusal_removes_the_login_without_guessing_other_origins(self):
+        author = person("A1", "Ivan Petrov", github="coder42", email="known@lab.test")
+        contribution = Contribution(repository_id="R1", role="owner")
+        author.contributed_to = [contribution]
+        review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+
+        for profiles in ([profile("coder42", name="Ivan Petrov")], []):
+            with self.subTest(profile_available=bool(profiles)):
+                _, people = self.run_stage([author], profiles)
+
+                self.assertIsNone(people["A1"].github)
+                self.assertEqual(people["A1"].email, "known@lab.test")
+                self.assertEqual(people["A1"].contributed_to, [contribution])
+
     def test_a_choice_survives_the_chosen_author_being_folded(self):
         self.run_stage(*self.namesakes("A1", "A2"))
         review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
@@ -757,6 +954,21 @@ class GitHubReviewTest(unittest.TestCase):
         open_members = [question["members"] for question in review.questions(self.db, answered=False)]
         self.assertEqual(open_members, [["A2", "coder42"]])
 
+    def test_refusing_one_author_does_not_hide_another_with_the_same_address(self):
+        self.run_stage(
+            [person("A1", "Ivan Petrov", email="shared@itmo.ru"),
+             person("A2", "Boris Smirnov", email="shared@itmo.ru")],
+            [profile("coder42", emails=["shared@itmo.ru"])],
+        )
+        review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+
+        result, people = self.rerun_stage()
+
+        self.assertEqual(result["github_matched"], 1)
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
     def test_a_yes_about_a_tied_author_links_that_author(self):
         self.run_stage([person("A2", "Ivan Petrov")], [profile("coder42", name="Ivan Petrov")])
         both = ([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
@@ -776,6 +988,47 @@ class GitHubReviewTest(unittest.TestCase):
             [profile("nick", name="Night Owl", repos=["https://github.com/lab/tool"])],
             [repository("lab", "tool", works=["W1"])])
         self.assertEqual(people["A1"].github, "nick")
+
+    def test_a_confirmation_survives_the_accounts_display_name_changing(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.SAME)
+        self.prepared.write_models("github_profiles", [profile("XieN-N", name="Night Owl")])
+
+        result, people = self.rerun_stage()
+
+        self.assertEqual(result["github_matched"], 1)
+        self.assertEqual(people["A1"].github, "XieN-N")
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_choice_without_remaining_signals_still_considers_a_new_rival(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        self.prepared.upsert_models("persons", [person("A3", "Boris Smirnov", email="boris@itmo.ru")])
+        self.prepared.write_models("github_profiles", [
+            profile("coder42", name="Night Owl", emails=["boris@itmo.ru"]),
+        ])
+
+        result, people = self.rerun_stage()
+
+        self.assertEqual(result["github_matched"], 0)
+        self.assertTrue(all(author.github is None for author in people.values()))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A2", "A3", "coder42"])
+        self.assertEqual(question["evidence"]["held_because"], [
+            "answered before, but the question did not name every author that fits",
+        ])
+
+    def test_a_confirmation_without_remaining_signals_follows_a_folded_author(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.SAME)
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        self.prepared.write_models("persons", [survivor])
+        self.prepared.write_models("github_profiles", [profile("XieN-N", name="Night Owl")])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A2"].github, "XieN-N")
 
     def kokorin(self):
         """Two namesakes; the account shares an address with the second."""

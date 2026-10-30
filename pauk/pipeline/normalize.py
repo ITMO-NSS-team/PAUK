@@ -10,6 +10,7 @@ from hashlib import sha1
 from typing import TypeVar
 
 from pauk.models import Authorship, Funding, Person, Publication
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.storage import PreparedStore, RawStore
 
 logger = logging.getLogger(__name__)
@@ -171,9 +172,18 @@ def _merge_person(base: Person, extra: Person) -> Person:
     gaps from extra; processing states are kept from base, missing stages
     come from extra.
     """
+    tracked = base.github_match is not None or extra.github_match is not None
+    matches = []
+    if tracked:
+        # Merge independent sources first, or one row's match could erase the other's facts later.
+        extra = extra.model_copy(deep=True)
+        matches = retract_matches(base)
+        for match in retract_matches(extra):
+            if match not in matches:
+                matches.append(match)
     base.is_itmo = base.is_itmo or extra.is_itmo
     for field in Person.model_fields:
-        if field in {"id", "openalex_id", "is_itmo", "processing"}:
+        if field in {"id", "openalex_id", "is_itmo", "processing", "github_match"}:
             continue
         current, incoming = getattr(base, field), getattr(extra, field)
         if isinstance(current, list):
@@ -187,6 +197,8 @@ def _merge_person(base: Person, extra: Person) -> Person:
             base.emails.append(address)
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
+    if tracked:
+        apply_matches(base, matches)
     return base
 
 

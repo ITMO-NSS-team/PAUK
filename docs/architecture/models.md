@@ -61,6 +61,11 @@ the relation-like models.
     display).
   - `github` is filled from ORCID links and by the `github_match` stage;
     `google_scholar` comes from ORCID links.
+  - `github_match` records applied account matches and their additions over
+    independent sources. `GitHubMatchResult` holds one account's login, address
+    and contributions; `GitHubMatchState` also records which displayed values
+    and contributions were added by applying those results. This metadata stays
+    in Mongo and is not part of the graph schema.
 - The block under the `# Stubs` comment (`scopus_id`, `researcher_id`,
   `h_index`, `wikipedia` and others) holds fields no pipeline stage fills.
   The exceptions are `other_names`, `homepage`, `linkedin`, `gitlab_username`

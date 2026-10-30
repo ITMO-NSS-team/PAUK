@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import mongomock
 
-from pauk.models import Authorship, Person, Publication
+from pauk.models import Authorship, GitHubMatchResult, Person, Publication
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.persons import PersonsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -183,6 +184,18 @@ class OrcidIdentityTest(AffiliationBackfillTest):
         # The login, not the URL: that is what the matcher and the graph
         # compare accounts on.
         self.assertEqual(result.github, "adeptvin1")
+
+    def test_later_orcid_confirmation_survives_removing_the_match(self):
+        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1")
+        apply_matches(person, [GitHubMatchResult(login="coder42", email="account@lab.test")])
+        payload = self.orcid_urls("https://github.com/Coder42")
+        payload["person"]["emails"] = {"email": [{"email": "account@lab.test"}]}
+
+        result = self.run_orcid(payload, person)
+        retract_matches(result)
+
+        self.assertEqual(result.github, "coder42")
+        self.assertEqual(result.email, "account@lab.test")
 
     def test_a_link_pasted_from_the_address_bar_still_names_the_account(self):
         # Authors paste what the browser showed them, tab and all.

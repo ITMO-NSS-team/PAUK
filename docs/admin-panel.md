@@ -612,6 +612,14 @@ On a node card, under the relationship table, the form offers only the
 relationships allowed for that label, out of the eleven the graph knows. The
 node whose card you opened is filled in; you enter only the other side.
 
+Each choice carries its direction relative to the open card. For
+`Department -> PART_OF -> Department`, "входит в подразделение" makes the card
+the child, and "включает подразделение" makes it the parent. Unlink forms also
+carry this direction, so removing an incoming edge cannot remove an outgoing
+edge between the same two departments. An older form without a direction is
+accepted only when the labels determine the side unambiguously; otherwise the
+panel asks to reopen the card before writing anything.
+
 What matters is **how the other side is addressed**, written in parentheses by
 each option. Usually it is the id, with two exceptions:
 

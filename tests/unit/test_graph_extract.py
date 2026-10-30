@@ -146,6 +146,7 @@ class GraphFieldCoverageTest(unittest.TestCase):
         "department_ids": "published as a BELONGS_TO relationship",
         "authored": "published as an AUTHORED relationship",
         "contributed_to": "published as a CONTRIBUTED_TO relationship",
+        "github_match": "prepared provenance for retracting account matches, not a graph property",
         "processing": "per-stage pipeline bookkeeping, never meant for the graph",
     }
     DEPARTMENT_EXCLUDED = {

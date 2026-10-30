@@ -10,12 +10,14 @@ import json
 import logging
 import re
 import unicodedata
+from collections import defaultdict
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import NamedTuple
 
-from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
+from pauk.models import Contribution, GitHubMatchResult, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.dedup import folded_ids
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
@@ -211,15 +213,16 @@ class Match(NamedTuple):
     refused: list[Fit]
 
 
-def match_account(account: dict, authors: dict[str, dict], email_index: dict[str, str],
+def match_account(account: dict, authors: dict[str, dict], email_index: dict[str, set[str]],
                   name_index: dict[str, set[str]], bridge: dict[str, set[str]],
                   verdicts: dict[str, str] | None = None) -> Match:
     """The author this account belongs to, and every other author it could be.
 
-    Only authors reachable by publication, address or full name are scored. A
-    tie on score goes to a shared address, then to a bridge; a tie on all three
-    goes to a person. What people answered about this account (`verdicts`, by
-    author) comes first. A "no" leaves the author out. A "yes" wins the choice,
+    Authors reachable by publication, address, full name or a manual
+    confirmation are scored. A tie on score goes to a shared address, then
+    to a bridge; a tie on all three goes to a person. What people answered
+    about this account (`verdicts`, by author) comes first. A "no" leaves
+    the author out. A "yes" wins the choice,
     even where the signals alone would reject the pair, unless an author the
     rules would link fits as well or better: the "yes" was given without that
     author in view, so the account is asked about again, with all of them.
@@ -228,16 +231,18 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
     bridge_ids: set[str] = set()
     for publication_id in account["publication_ids"]:
         bridge_ids |= bridge.get(publication_id, set())
-    email_ids = {email_index[email] for email in account["emails"] if email in email_index}
+    email_ids = {author_id for email in account["emails"] for author_id in email_index.get(email, ())}
     name_ids: set[str] = set()
     for name in account["names"]:
         if len(name.split()) >= 2:
             name_ids |= name_index.get(name, set())
+    # A changed profile must not make a saved confirmation unreachable.
+    confirmed_ids = {author_id for author_id, verdict in verdicts.items() if verdict == review.SAME}
 
     ranked: list[tuple[tuple[bool, float, bool, bool], Fit]] = []
     refusals: list[tuple[tuple[bool, float, bool, bool], Fit]] = []
     # Sorted: on a tie the question must name the same author on every run.
-    for author_id in sorted(bridge_ids | email_ids | name_ids):
+    for author_id in sorted(bridge_ids | email_ids | name_ids | confirmed_ids):
         author = authors.get(author_id)
         if author is None:
             continue
@@ -347,11 +352,11 @@ class GitHubMatchStage(EnrichmentStage):
                 "github": person.github,
             }
 
-        email_index: dict[str, str] = {}
+        email_index: dict[str, set[str]] = {}
         name_index: dict[str, set[str]] = {}
         for author_id, author in authors.items():
             for email in author["emails"]:
-                email_index.setdefault(email, author_id)
+                email_index.setdefault(email, set()).add(author_id)
             for name in author["names"]:
                 if len(name.split()) >= 2:
                     name_index.setdefault(name, set()).add(author_id)
@@ -410,10 +415,21 @@ class GitHubMatchStage(EnrichmentStage):
         people = list(self.prepared.read_models("persons", Person))
         profiles = list(self.prepared.read_models("github_profiles", GitHubProfile))
         repositories = list(self.prepared.read_models("repositories", Repository))
+        # Reevaluate known evidence even when only another group holds its repository now.
+        known_repository_ids = {
+            contribution.repository_id for person in people if person.github_match
+            for match in person.github_match.matches for contribution in match.contributed_to
+        }
+        repositories.extend(self.prepared.get_models(
+            "repositories", known_repository_ids - {repository.id for repository in repositories}, Repository))
         # Read but unused: the bridge comes from the authorships on each person.
         list(self.prepared.read_models("publications", Publication))
 
-        authors, email_index, name_index = self._authors(people)
+        # A previous match's copied address is an output, not independent evidence.
+        independent = [person.model_copy(deep=True) if person.github_match else person for person in people]
+        for person in independent:
+            retract_matches(person)
+        authors, email_index, name_index = self._authors(independent)
         accounts = self._accounts(profiles, repositories)
         bridge = self._bridge(people)
         logger.info("github_match: %d accounts against %d ITMO authors",
@@ -422,9 +438,13 @@ class GitHubMatchStage(EnrichmentStage):
         aliases = folded_ids(people)
         # Through folded ids: an answer about a since-merged person keeps applying.
         answers = review.github_decisions(self.prepared.db, aliases)
+        known_logins = set(accounts) | {person.github for person in people if person.github} | {
+            match.login for person in people if person.github_match
+            for match in person.github_match.matches
+        }
         verdicts: dict[str, dict[str, str]] = {}
         for members, verdict in answers.items():
-            for login in (member for member in members if member in accounts):
+            for login in (member for member in members if member in known_logins):
                 for person_id in members - {login}:
                     verdicts.setdefault(login, {})[person_id] = verdict
 
@@ -466,6 +486,7 @@ class GitHubMatchStage(EnrichmentStage):
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
         linked: set[str] = set()
+        results: dict[str, list[GitHubMatchResult]] = defaultdict(list)
         for row in decisions:
             stats[row["decision"]] = stats.get(row["decision"], 0) + 1
             if row["decision"] != "matched":
@@ -474,26 +495,43 @@ class GitHubMatchStage(EnrichmentStage):
             if not self.selected("persons", person.id):
                 continue
             linked.add(row["login"])
-            state = person.processing.get(self.name)
-            person.github = person.github or row["login"]
-            # Only an author without an address takes the account's: ORCID's stays.
-            if not person.email:
-                person.email = pick_email(accounts[row["login"]]["emails"])
-                if person.email:
-                    filled_emails += 1
-            for url in accounts[row["login"]]["repos"]:
+            contributions = []
+            for url in sorted(accounts[row["login"]]["repos"]):
                 repository = repositories_by_url.get(url)
                 if repository is None:
                     continue
                 role = "owner" if repository.owner_login == row["login"] else "contributor"
-                contribution = Contribution(repository_id=repository.id, role=role)
-                if contribution not in person.contributed_to:
-                    person.contributed_to.append(contribution)
+                contributions.append(Contribution(repository_id=repository.id, role=role))
+            results[person.id].append(GitHubMatchResult(
+                login=row["login"], email=pick_email(accounts[row["login"]]["emails"]),
+                contributed_to=contributions,
+            ))
+
+        for person in people:
+            if not self.selected("persons", person.id):
+                continue
+            refused = verdicts.get(person.github, {}).get(person.id) == review.DIFFERENT
+            if person.github_match is None and person.id not in results and not refused:
+                continue
+            previous_email = person.email
+            previous = retract_matches(person)
+            assigned = results.get(person.id, [])
+            still_matched = {match.login for match in assigned}
+            # Group reads may omit profiles or repositories collected by another group.
+            retained = [match for match in previous if (match.login not in accounts or match.login in still_matched)
+                        and verdicts.get(match.login, {}).get(person.id) != review.DIFFERENT]
+            if refused:
+                # Explicit refusals also cover logins saved before provenance was tracked.
+                person.github = None
+            apply_matches(person, [*assigned, *retained])
+            filled_emails += previous_email is None and person.email is not None
+            state = person.processing.get(self.name)
             person.processing[self.name] = ProcessingState(
-                status=ProcessingStatus.COMPLETED,
+                status=(ProcessingStatus.COMPLETED if person.github_match.matches
+                        else ProcessingStatus.COMPLETED_EMPTY),
                 attempts=(state.attempts if state else 0) + 1,
                 finished_at=datetime.now(UTC),
-                result_count=1,
+                result_count=len(person.github_match.matches),
             )
 
         self.prepared.write_models("persons", people)

@@ -362,6 +362,24 @@ def _triple(raw: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _relationship_choice(label: str, raw: str) -> tuple[str, str, str, bool]:
+    """Read the card's side of a relationship, including older unambiguous forms."""
+    direction, _, triple = raw.partition("|")
+    if direction in ("outgoing", "incoming"):
+        src_label, rel_type, tgt_label = _triple(triple)
+        outgoing = direction == "outgoing"
+    else:
+        src_label, rel_type, tgt_label = _triple(raw)
+        if src_label == tgt_label == label:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "В старой форме не указано направление связи. Откройте карточку заново.")
+        outgoing = src_label == label
+    if label != (src_label if outgoing else tgt_label):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Выбранная сторона связи не относится к этой карточке.")
+    return src_label, rel_type, tgt_label, outgoing
+
+
 # How each link reads in Russian: leaving the node, then entering it.
 LINK_WORDS = {
     ("Department", "PART_OF", "Department"): ("входит в подразделение", "включает подразделение"),
@@ -401,18 +419,17 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     if not other:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the other end is empty")
 
-    # This node takes whichever end its label matches; the other one is typed.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label))
     if match_prop is None:
         return _link_failed(label, node_id,
                             f"Граф не знает связи ({src_label})-[:{rel_type}]->({tgt_label}).")
     try:
-        if src_label == label:
+        if outgoing:
             src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
         else:
             # This node is the target, and a target is matched by match_prop.
@@ -470,11 +487,11 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     # As in the link form: a target is addressed by match_prop, not always by id.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
-    if src_label == label:
+    if outgoing:
         src_id, tgt_id = node_id, other
     else:
         src_id = other

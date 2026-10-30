@@ -21,6 +21,7 @@ from pauk.graph.overrides import (
     tombstoned_relationships,
 )
 from pauk.settings import Settings
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_mutations import FakeGraph
 
 
@@ -520,6 +521,106 @@ class RelationshipScreenTest(unittest.TestCase):
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
 
 
+class RelationshipDirectionTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Department", "D1", name_en="Child")
+        self.graph.add("Department", "D2", name_en="Parent")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.forward = ("Department", "PART_OF", "Department", "D1", "D2")
+        self.reverse = ("Department", "PART_OF", "Department", "D2", "D1")
+
+    def link_form(self, node_id, words, other_id):
+        body = self.client.get(f"/nodes/Department/{node_id}").text
+        form = RenderedForms(body).with_button("Связать")
+        option = next(option for option in form["selects"]["triple"]
+                      if option["text"].strip().startswith(words))
+        form["fields"].update(triple=option["value"], other_id=other_id)
+        return form
+
+    def unlink_form(self, words):
+        body = self.client.get("/nodes/Department/D2").text
+        row = next(block.split("</tr>", 1)[0] for block in body.split("<tr>")
+                   if f"<b>{words}</b>" in block)
+        return RenderedForms(row).with_button("отвязать")
+
+    def test_incoming_and_outgoing_department_options_have_distinct_values(self):
+        incoming = self.link_form("D2", "включает подразделение", "D1")
+        outgoing = self.link_form("D2", "входит в подразделение", "D1")
+
+        self.assertNotEqual(incoming["fields"]["triple"], outgoing["fields"]["triple"])
+
+    def test_linking_from_the_parent_card_places_the_child_at_the_source(self):
+        form = self.link_form("D2", "включает подразделение", "D1")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(self.forward, self.graph.relationships)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+        (claim,) = active_overrides(self.db)
+        self.assertEqual((claim["src_id"], claim["target_id"]), ("D1", "D2"))
+
+    def test_linking_from_the_child_card_places_the_parent_at_the_target(self):
+        form = self.link_form("D1", "входит в подразделение", "D2")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(self.forward, self.graph.relationships)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+
+    def test_unlinking_an_incoming_edge_preserves_the_outgoing_edge(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.unlink_form("включает подразделение")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(self.forward, self.graph.relationships)
+        self.assertIn(self.reverse, self.graph.relationships)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual((decision["src_id"], decision["target_id"]), ("D1", "D2"))
+
+    def test_unlinking_an_outgoing_edge_preserves_the_incoming_edge(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.unlink_form("входит в подразделение")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+        self.assertIn(self.forward, self.graph.relationships)
+
+    def test_a_legacy_ambiguous_form_is_refused_without_changing_the_graph(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.link_form("D2", "включает подразделение", "D1")
+        form["fields"]["triple"] = "Department|PART_OF|Department"
+        for action in ("add", "delete"):
+            with self.subTest(action=action):
+                response = self.client.post(f"/nodes/Department/rel/{action}/D2", data=form["fields"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("заново", response.json()["detail"])
+                self.assertEqual(set(self.graph.relationships), {self.forward, self.reverse})
+                self.assertEqual(active_overrides(self.db), [])
+
+    def test_a_direction_that_does_not_belong_to_the_card_is_refused(self):
+        form = self.link_form("D2", "включает подразделение", "D1")
+        for triple in ("outgoing|Person|AUTHORED|Publication",
+                       "incoming|Department|PART_OF|Organization"):
+            with self.subTest(triple=triple):
+                response = self.client.post(form["action"], data={**form["fields"], "triple": triple})
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.graph.relationships, {})
+
+
 class CreateNodeTest(unittest.TestCase):
     """Adding a node the pipeline does not know about."""
 
@@ -899,12 +1000,10 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         links, and the first form on the page is not necessarily the one
         under test.
         """
-        import re
         body = self.client.get(page).text
-        for block in body.split("/rel/delete")[1:]:
-            if f'name="triple"\n                 value="{triple}"' in block or \
-               f'value="{triple}"' in block:
-                return re.search(r'name="other_id" value="([^"]*)"', block).group(1)
+        for form in RenderedForms(body).forms:
+            if "/rel/delete/" in form["action"] and form["fields"].get("triple", "").split("|", 1)[-1] == triple:
+                return form["fields"]["other_id"]
         raise AssertionError(f"на странице нет формы отвязки для {triple}")
 
     def test_the_page_offers_the_value_the_edge_is_matched_by(self):
@@ -967,14 +1066,10 @@ class FieldTypeTest(unittest.TestCase):
 
     def submit(self, **over):
         """Send the form the way a browser does - every box, as text."""
-        import re
         page = self.client.get("/nodes/Repository/R1").text
-        data = {"csrf": re.search(r'name="csrf" value="([^"]+)"', page).group(1),
-                "seen_at": re.search(r'name="seen_at" value="([^"]*)"', page).group(1),
-                "name": "PAUK", "stars_num": "42", "has_readme": "True",
-                "cited_urls": '["https://a.test"]'}
-        data.update(over)
-        return self.client.post("/nodes/Repository/R1", data=data)
+        form = RenderedForms(page).with_button("Сохранить")
+        form["fields"].update(over)
+        return self.client.post(form["action"], data=form["fields"])
 
     def test_untouched_fields_keep_their_types(self):
         # "42" is not 42, so an untouched count counted as an edit and was
@@ -989,6 +1084,40 @@ class FieldTypeTest(unittest.TestCase):
         self.submit(name="PAUK 2")
         (override,) = list(self.db["graph_overrides"].find())
         self.assertEqual(list(override["fields"]), ["name"])
+
+    def test_an_untouched_rendered_form_records_no_edit(self):
+        response = self.submit()
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("unchanged=1", response.headers["location"])
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_quotes_markup_and_line_breaks_in_a_list_survive_an_edit(self):
+        values = ['Иван "Ivan" Петров', "O'Connor", '<script>alert("x")</script>',
+                  "first\nsecond", 'https://a.test/?x=1&y="quoted"#section']
+        self.graph.nodes[("Repository", "R1")]["cited_urls"] = values
+
+        response = self.submit(name="PAUK 2")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["cited_urls"], values)
+
+    def test_an_empty_list_stays_a_list(self):
+        self.graph.nodes[("Repository", "R1")]["cited_urls"] = []
+
+        response = self.submit(name="PAUK 2")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["cited_urls"], [])
+
+    def test_text_that_looks_like_json_stays_text(self):
+        value = '["PAUK", "ИТМО"]'
+        self.graph.nodes[("Repository", "R1")]["name"] = value
+
+        response = self.submit(stars_num="43")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["name"], value)
 
     def test_a_number_edited_by_hand_stays_a_number(self):
         self.submit(stars_num="43")
@@ -1194,11 +1323,9 @@ class UnlinkFromTheTargetTest(unittest.TestCase):
         form comes first tests a different one than intended.
         """
         page = self.client.get(f"/nodes/{label}/{node_id}").text
-        for action, body in re.findall(
-                r'<form method="post" action="([^"]*rel/delete[^"]*)">(.*?)</form>', page, re.S):
-            fields = dict(re.findall(r'name="([^"]+)"\s+value="([^"]*)"', body, re.S))
-            if fields.get("triple") == triple:
-                return action, fields
+        for form in RenderedForms(page).forms:
+            if "/rel/delete/" in form["action"] and form["fields"].get("triple", "").split("|", 1)[-1] == triple:
+                return form["action"], form["fields"]
         raise AssertionError(f"на странице нет формы отвязывания для {triple}")
 
     def test_the_form_offers_the_source_id_not_a_missing_property(self):

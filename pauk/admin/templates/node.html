@@ -28,9 +28,14 @@
     <table>
       <tr><th>поле</th><th>значение</th></tr>
       {% for name in editable %}
+      {% set value = props.get(name) %}
+      {% if value is sequence and value is not string %}
+      {# Lists must round-trip as JSON, escaped for a double-quoted attribute. #}
+      {% set value = value|tojson|forceescape %}
+      {% endif %}
       <tr>
         <td>{{ name }}</td>
-        <td><input type="text" name="{{ name }}" value="{{ props.get(name) if props.get(name) is not none else "" }}"
+        <td><input type="text" name="{{ name }}" value="{{ value if value is not none else "" }}"
                    {% if not user.can_write %}disabled{% endif %}></td>
       </tr>
       {% endfor %}
@@ -68,7 +73,7 @@
         <form method="post" action="/nodes/{{ label }}/rel/delete/{{ node_id | urlencode }}">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="triple"
-                 value="{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
+                 value="{{ 'outgoing' if rel.outgoing else 'incoming' }}|{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
           <input type="hidden" name="other_id" value="{{ rel.match_value }}">
           <button type="submit" class="ghost">отвязать</button>
         </form>
@@ -145,10 +150,10 @@
       <select id="triple" name="triple" style="padding:8px 10px; font:inherit; font-size:14px;
               border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text)">
         {% for link in links.outgoing %}
-        <option value="{{ link.key }}">{{ link.forward }} – указать {{ link.tgt_label }} по {{ link.match_prop }}</option>
+        <option value="outgoing|{{ link.key }}">{{ link.forward }} – указать {{ link.tgt_label }} по {{ link.match_prop }}</option>
         {% endfor %}
         {% for link in links.incoming %}
-        <option value="{{ link.key }}">{{ link.backward }} – указать {{ link.src_label }} по {{ link.match_prop }}</option>
+        <option value="incoming|{{ link.key }}">{{ link.backward }} – указать {{ link.src_label }} по {{ link.match_prop }}</option>
         {% endfor %}
       </select>
     </div>

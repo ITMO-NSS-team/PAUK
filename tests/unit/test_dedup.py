@@ -20,6 +20,7 @@ from pauk.models import (
     Affiliation,
     ClassificationStatus,
     CodeLink,
+    GitHubMatchResult,
     LinkOccurrence,
     Person,
     Publication,
@@ -29,6 +30,7 @@ from pauk.models import (
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.models.relations import Contribution
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -735,7 +737,9 @@ class RepositoryDedupTest(unittest.TestCase):
         newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
                            github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
         author = person("A1", "Author One", ["W1"])
-        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        apply_matches(author, [GitHubMatchResult(
+            login="contributor", contributed_to=[Contribution(repository_id=older.id, role="contributor")],
+        )])
         prepared.write_models("persons", [author])
         prepared.write_models("publications", [publication("W1", "One work")])
         prepared.write_models("repositories", [older, newer])
@@ -757,6 +761,10 @@ class RepositoryDedupTest(unittest.TestCase):
         self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
         saved_author, = prepared.read_models("persons", Person)
         self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.matches[0].contributed_to[0].repository_id, newer.id)
+        retract_matches(saved_author)
+        self.assertEqual(saved_author.contributed_to, [])
         self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
 
         for _ in range(2):

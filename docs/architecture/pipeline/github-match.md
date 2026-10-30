@@ -3,7 +3,8 @@
 **What this covers:** how a collected GitHub account is linked to an ITMO
 author.
 
-**Files involved:** `pauk/pipeline/stages/github_match.py`.
+**Files involved:** `pauk/pipeline/stages/github_match.py`,
+`pauk/pipeline/github_matches.py`, `pauk/models/person.py`.
 
 Reads the `github_profiles` collection (accounts collected by `repositories`,
 `repo_people` and `social_graph`), `persons` and `repositories`. Writes
@@ -13,13 +14,18 @@ journal `github_matches.jsonl` in `data/audit/<group>/`.
 ## What gets compared
 
 Every account against every author would be millions of pairs, nearly all with
-no signal at all. Only three groups are considered, each an existing
-relationship:
+no signal at all. Candidates come from existing relationships and saved answers:
 
 - **bridge**: the account was found on a repository cited by a publication that
   has ITMO authors;
 - **email**: the account's address equals the author's address;
-- **name**: the full name (not a single word) equals the author's name.
+- **name**: the full name (not a single word) equals the author's name;
+- **answer**: a person confirmed the author or chose them for this account.
+
+An address indexes every author who has it. A shared address therefore brings
+all of them into the comparison; an unresolved tie asks a question instead of
+choosing whichever Mongo returned first. A manual confirmation brings its author
+into the comparison even after the account's name, address or repositories change.
 
 A single-word name does not enter the index: half the sample shares a surname,
 and such a match means nothing.
@@ -141,3 +147,44 @@ are signed with) and `contributed_to` with the role `owner` or `contributor`,
 which is the `CONTRIBUTED_TO` edge. The edge is created only to a repository
 present in the `repositories` collection; repositories walked by `social_graph`
 are not stored there, so they cannot be referenced.
+
+## Applying and withdrawing matches
+
+`Person.github_match` holds the applied results and the exact values they added
+over independent sources: `github`, `email` and `contributed_to`. Applying and
+retracting these additions lives in `pipeline/github_matches.py`; the stage and
+person merging reuse it. No extra Mongo collection or graph property is involved.
+
+The matcher compares authors without its own earlier additions. An address copied
+from an account is therefore never independent proof that the account belongs to
+that author. For selected persons, a repeat run retracts the old additions and
+applies the current results. Withdrawing an answer can return the account to review;
+choosing another author removes the old owner's generated fields before applying
+the account to the new owner. A pre-existing value or a later independent change
+survives retraction.
+
+A group can lack profiles or repositories another group collected. An absent
+profile keeps its earlier result until a person explicitly refuses it. A still
+matched account keeps its previously known contributions alongside the ones this
+group sees; fresh repository data replaces an earlier role for that account.
+Repositories already named in the match provenance are looked up by id with
+`PreparedStore.get_models`, across groups, so a group's missing row does not erase
+the evidence for its own earlier match. This does not change group membership.
+Scoped runs change only selected persons, so a rechoice targeting only
+the new owner leaves the old owner unchanged until a run covers that person too.
+
+Person merging first combines independent fields, then reapplies the combined
+account results. This prevents a match on one row from claiming an independent
+value on the other. Repository dedup updates ids inside the provenance too. A later
+ORCID confirmation releases the match's claim on the login, and an address present
+in the independently collected `emails` survives retraction.
+
+Rows written before this tracking existed have no recoverable provenance here.
+An explicit refusal still clears the named GitHub login. Their existing addresses
+and contributions are retained: removing those requires a separate repair based on
+surviving source data, rather than guessing which stage supplied them.
+
+Publishing updates the changed node properties. As with other source removals,
+old `CONTRIBUTED_TO` edges are removed by the existing reconcile operation
+(`pauk admin prune`, or "Сверка с источником" in the panel); publishing alone
+does not remove them. Manual relationship claims remain protected there.
