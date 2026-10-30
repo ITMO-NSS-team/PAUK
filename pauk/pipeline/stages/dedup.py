@@ -74,6 +74,7 @@ from pauk.models import (
     VersionAuthor,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.membership import apply_membership
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
     _abstract,
@@ -1337,6 +1338,7 @@ class DedupStage(EnrichmentStage):
                     canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
+            apply_membership(canonical)
             self._record_state(canonical, len(duplicates))
         if removed:
             people = [person for person in people if person.id not in removed]

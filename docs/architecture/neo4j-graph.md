@@ -51,7 +51,9 @@ the main fields, at no extra request
 ([pipeline/repositories.md](pipeline/repositories.md)).
 
 `AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
-`is_corresponding`; `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
+`is_corresponding`. It also carries institution RORs and the original work
+and author IDs for membership evidence; an unknown institution list differs
+from an explicitly empty one. `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
 `context` (a list), `page_number` (a list; `0` means the abstract, because
 Neo4j cannot store `null` inside an array property, so the sentinel is not
 `None`; see [pipeline/code-links.md](pipeline/code-links.md)), the parallel
@@ -92,13 +94,15 @@ working data for matching and also real people's addresses; they stay in the
 prepared rows and in the `github_matches.jsonl` journal. Of the collected
 profile, only `company` goes into the graph.
 
-A person always has the single label `:Person`; ITMO membership is the
-boolean property `is_itmo`, not a label. The property is sticky: the same
-author can be ITMO in one group and external in another, but `is_itmo` only
-grows, and an external row never lowers an existing `is_itmo=true`
-(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` in
-`client.py::upsert_person_nodes_batch`). In cross-group dedup the same rule
-is applied by `BOOLEAN_MERGE_FIELDS["Person"]` in `_fold_nodes_batch`.
+A person always has the single label `:Person`; `is_itmo` is a boolean
+property used by existing consumers. A membership result based on complete
+source evidence may update it in either direction. Legacy or incomplete
+records cannot lower a previously true value. Source evidence is retained
+through person folds so a later split can restore the original owners.
+The graph also records source coverage and observation times. A partial or
+older import cannot withdraw a newer claim. Existing graph rows without this
+provenance need a full source re-evaluation before their historical membership
+can be corrected safely.
 
 The department hierarchy is recursive: each `Department` is `PART_OF` exactly
 one parent, either another `Department` (`parent_id`) or a root

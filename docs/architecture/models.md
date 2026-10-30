@@ -50,9 +50,18 @@ the relation-like models.
   author's own OpenAlex/ORCID records instead of what the work says.
 - **`Person`**: id is the bare OpenAlex author ID (one person, one node; there
   is no `itmo_*`/`external_*` split).
-  - `is_itmo` is a boolean, not a label. At least one ITMO affiliation
-    anywhere makes the person ITMO for good: the property is "sticky" (see
-    `graph/client.py::upsert_person_nodes_batch`).
+  - `is_itmo` remains the boolean used by existing consumers. Membership
+    status and source-specific evidence explain how it was calculated.
+    An explicit institution ROR for this author on a collected work or an
+    ORCID employment can support it; OpenAlex author-profile affiliation
+    alone cannot. Legacy records with incomplete evidence remain unknown.
+  - `membership_evidence` records the original source owner and work or ORCID
+    record. `membership_status` is `supported`, `unsupported` or `unknown`;
+    only a complete source assessment can produce an unsupported result.
+    Authorship institution observations retain their fetch time, so replaying
+    an older source group cannot restore a withdrawn claim.
+    `membership_orcid_sources` retains the source owner even after a successful
+    ORCID refresh returns no qualifying employment.
   - Russian name parts (`first_name_ru`, `second_name_ru`, `surname_ru`) and
     `name_ru`/`name_en` are filled by the `author_names` stage.
   - `email` is the one address shown on the card; `emails` are all known

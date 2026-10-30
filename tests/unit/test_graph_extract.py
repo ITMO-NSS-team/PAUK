@@ -147,6 +147,7 @@ class GraphFieldCoverageTest(unittest.TestCase):
         "authored": "published as an AUTHORED relationship",
         "contributed_to": "published as a CONTRIBUTED_TO relationship",
         "processing": "per-stage pipeline bookkeeping, never meant for the graph",
+        "membership_orcid_sources": "used to derive membership_source_coverage, not published separately",
     }
     DEPARTMENT_EXCLUDED = {
         "id": "used as the node id, not a prop",

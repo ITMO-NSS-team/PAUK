@@ -10,6 +10,15 @@ from hashlib import sha1
 from typing import TypeVar
 
 from pauk.models import Authorship, Funding, Person, Publication
+from pauk.pipeline.membership import (
+    ITMO_ROR_ID,
+    apply_membership,
+    authorship_institution_rors,
+    authorship_snapshot_is_current,
+    reconcile_authorship_snapshot,
+    refresh_authorship_membership,
+    source_observed_at,
+)
 from pauk.storage import PreparedStore, RawStore
 
 logger = logging.getLogger(__name__)
@@ -17,8 +26,6 @@ logger = logging.getLogger(__name__)
 # Constrained (not bound) so a call passing Publication resolves _seed's
 # return type to list[Publication], not list[Publication | Person].
 _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
-
-ITMO_ROR_ID = "04txgxn49"
 
 # An author slot sometimes holds a venue, a collaborator group or a contact
 # address. OpenAlex mints author entities for all of them; persons they are not.
@@ -166,10 +173,10 @@ def _canonical_person_id(person: Person) -> str:
 def _merge_person(base: Person, extra: Person) -> Person:
     """Merge two prepared rows describing the same author (legacy split ids).
 
-    is_itmo is an OR (at least one ITMO affiliation makes the person ITMO);
-    lists are deduplicated unions; scalar fields keep base's value and fill
-    gaps from extra; processing states are kept from base, missing stages
-    come from extra.
+    Source evidence is retained as deduplicated unions and membership is
+    reevaluated after merging. The legacy boolean survives when evidence is
+    incomplete. Scalar gaps and missing processing stages are filled from
+    the extra row without replacing existing values.
     """
     base.is_itmo = base.is_itmo or extra.is_itmo
     for field in Person.model_fields:
@@ -187,6 +194,7 @@ def _merge_person(base: Person, extra: Person) -> Person:
             base.emails.append(address)
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
+    apply_membership(base)
     return base
 
 
@@ -218,6 +226,14 @@ class OpenAlexNormalizer:
             for authorship in (e["payload"].get("authorships") or [])
             if (person_id := _authorship_person_id(authorship.get("author") or {}))
         }
+        # A newer work may omit an author entirely; its earlier source claim
+        # must still be reachable even when this group never contained them.
+        if work_ids:
+            person_ids.update(
+                row["id"] for row in self.prepared.db.persons.find(
+                    {"authored.institution_source_id": {"$in": sorted(work_ids)}}, {"id": 1},
+                ) if row.get("id")
+            )
         publications: OrderedDict[str, Publication] = OrderedDict(
             (row.id, row) for row in self._seed("publications", Publication, work_ids)
         )
@@ -242,12 +258,39 @@ class OpenAlexNormalizer:
         publication_alias = {
             merged_id: publication.id for publication in publications.values() for merged_id in publication.merged_ids
         }
+        source_people: dict[str, set[str]] = {}
+        for person in persons.values():
+            for authored in person.authored:
+                if authored.institution_source_id:
+                    source_people.setdefault(authored.institution_source_id, set()).add(person.id)
         for envelope in envelopes:
             work = envelope["payload"]
             work_id = _short_id(work.get("id"))
             if not work_id:
                 continue
             publication_id = publication_alias.get(work_id, work_id)
+            observed_at = source_observed_at(envelope.get("fetched_at"))
+            raw_authorships = work.get("authorships")
+            slots = {
+                (owner, position): authorship_institution_rors(authorship)
+                for position, authorship in enumerate(raw_authorships or [], start=1)
+                if isinstance(authorship, dict)
+                and (owner := _authorship_person_id(authorship.get("author") or {}))
+            }
+            author_count = work.get("authors_count")
+            complete = (
+                isinstance(raw_authorships, list)
+                and not work.get("is_authors_truncated")
+                and len(slots) == len(raw_authorships)
+                and (author_count is None or isinstance(author_count, int) and author_count <= len(raw_authorships))
+            )
+            current_owners = {
+                owner for owner, _ in slots
+                if (existing_person := persons.get(merged_alias.get(owner, owner))) is None
+                or authorship_snapshot_is_current(existing_person, owner, work_id, observed_at)
+            }
+            for person_id in source_people.get(work_id, ()):
+                reconcile_authorship_snapshot(persons[person_id], work_id, slots, observed_at, complete=complete)
             if publication_id == work_id:
                 pub_date = work.get("publication_date")
                 source = (work.get("primary_location") or {}).get("source") or {}
@@ -295,9 +338,10 @@ class OpenAlexNormalizer:
                 person_id = openalex_id or _fallback_person_id(author)
                 if not person_id:
                     continue
+                source_person_id = person_id
                 person_id = merged_alias.get(person_id, person_id)
-                institutions = authorship.get("institutions") or []
-                is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
+                institution_rors = authorship_institution_rors(authorship)
+                is_itmo = ITMO_ROR_ID in (institution_rors or [])
                 if not is_itmo:
                     # Positions keep counting, so the kept authorships stay at
                     # the positions the work listed them under.
@@ -309,12 +353,13 @@ class OpenAlexNormalizer:
                     Person(
                         id=person_id,
                         openalex_id=openalex_id,
-                        is_itmo=is_itmo,
+                        is_itmo=False,
                         name_raw=author.get("display_name"),
                     ),
                 )
-                # At least one ITMO affiliation anywhere makes the person ITMO.
-                person.is_itmo = person.is_itmo or is_itmo
+                source_people.setdefault(work_id, set()).add(person_id)
+                if source_person_id not in current_owners:
+                    continue
                 person.orcid = person.orcid or _short_id(author.get("orcid"))
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
@@ -323,6 +368,8 @@ class OpenAlexNormalizer:
                     position=position,
                     affiliation="; ".join(authorship.get("raw_affiliation_strings") or []) or None,
                     is_corresponding=bool(authorship.get("is_corresponding")),
+                    institution_source_person_id=source_person_id,
+                    institution_source_id=work_id,
                 )
                 # Matched on (publication, position) rather than on equality:
                 # one author legitimately appears twice on one work, but the
@@ -333,12 +380,25 @@ class OpenAlexNormalizer:
                         row
                         for row in person.authored
                         if row.publication_id == publication_id and row.position == position
+                        and (row.institution_source_id in {None, work_id} or institution_rors is None)
+                        and (
+                            row.institution_source_person_id == source_person_id
+                            or row.institution_source_person_id is None and not person.merged_ids
+                        )
                     ),
                     None,
                 )
                 if existing_authorship is None:
                     person.authored.append(authorship_record)
+                    refresh_authorship_membership(
+                        person, authorship_record, authorship, source_person_id, work_id, observed_at,
+                        snapshot_accepted=True,
+                    )
                     continue
+                refresh_authorship_membership(
+                    person, existing_authorship, authorship, source_person_id, work_id, observed_at,
+                    snapshot_accepted=True,
+                )
                 existing_authorship.is_corresponding = (
                     existing_authorship.is_corresponding or authorship_record.is_corresponding
                 )
@@ -346,6 +406,8 @@ class OpenAlexNormalizer:
                     # What the work states always wins over a filled-in value.
                     existing_authorship.affiliation = authorship_record.affiliation
                     existing_authorship.affiliation_source = None
+        for person in persons.values():
+            apply_membership(person)
         self.prepared.write_models("publications", publications.values())
         self.prepared.write_models("persons", persons.values())
         return {"publications": len(publications), "persons": len(persons)}

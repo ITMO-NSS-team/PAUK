@@ -5,6 +5,8 @@ from typing import LiteralString, cast
 
 from neo4j import GraphDatabase
 
+from pauk.pipeline.membership import ITMO_ROR_ID, POLICY_VERSION, normalize_ror, source_observed_at
+
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 2000
@@ -26,6 +28,135 @@ JSON_LIST_MERGE_FIELDS = {
     "Publication": {"funding", "versions"},
 }
 
+MEMBERSHIP_FIELDS = {
+    "membership_status", "membership_policy", "membership_evidence", "membership_source_coverage"
+}
+
+
+def _membership_evidence(properties: dict) -> list[dict] | None:
+    value = properties.get("membership_evidence", [])
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    return value if isinstance(value, list) and all(isinstance(item, dict) for item in value) else None
+
+
+def _completed_membership(properties: dict) -> bool:
+    evidence = _membership_evidence(properties)
+    status = properties.get("membership_status")
+    return (
+        properties.get("membership_policy") == POLICY_VERSION
+        and evidence is not None
+        and (
+            (status == "supported" and bool(evidence) and all(
+                item.get("source") in {"openalex_work", "orcid"}
+                and normalize_ror(item.get("ror")) == ITMO_ROR_ID for item in evidence
+            ))
+            or (status == "unsupported" and not evidence)
+        )
+    )
+
+
+def _source_key(row: dict) -> tuple | None:
+    key = (row.get("source"), row.get("source_person_id"), row.get("source_id"))
+    return key if all(isinstance(value, str) and value for value in key) else None
+
+
+def _source_coverage(properties: dict) -> dict[tuple, dict]:
+    rows = properties.get("membership_source_coverage", [])
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except (ValueError, TypeError):
+            return {}
+    if not isinstance(rows, list):
+        return {}
+    return {key: row for row in rows if isinstance(row, dict) and (key := _source_key(row))}
+
+
+def _covers_source(stored: dict, incoming: dict, key: tuple | None) -> bool:
+    if key not in incoming:
+        return False
+    if key not in stored:
+        return True
+    previous = source_observed_at(stored.get(key, {}).get("observed_at"))
+    observed = source_observed_at(incoming[key].get("observed_at"))
+    if previous is None:
+        return observed is not None or stored[key] == incoming[key]
+    if observed is None:
+        return False
+    if observed != previous:
+        return observed > previous
+    return (isinstance(stored[key].get("supports_itmo"), bool)
+            and stored[key]["supports_itmo"] == incoming[key].get("supports_itmo"))
+
+
+def _source_membership_update(first: dict, second: dict) -> tuple[list[dict], list[dict]]:
+    """Replace evidence per original source, never per partial person payload."""
+    before, after = _source_coverage(first), _source_coverage(second)
+    evidence = [row for row in _membership_evidence(first) or []
+                if not _covers_source(before, after, _source_key(row))]
+    evidence = _union_values(evidence, [row for row in _membership_evidence(second) or []
+                                      if _source_key(row) not in before
+                                      or _covers_source(before, after, _source_key(row))])
+    coverage = dict(before)
+    for key, row in after.items():
+        if _covers_source(before, after, key):
+            coverage[key] = row
+    return evidence, list(coverage.values())
+
+
+def _merge_membership_properties(first: dict, second: dict) -> dict:
+    """Fold assessed sources without treating an unknown member as negative."""
+    if not (MEMBERSHIP_FIELDS & first.keys() or MEMBERSHIP_FIELDS & second.keys()):
+        return {}
+    evidence, coverage = _source_membership_update(first, second)
+    assessed = [_completed_membership(row) for row in (first, second)]
+    if evidence and any(done and row.get("membership_status") == "supported"
+                       for row, done in zip((first, second), assessed, strict=True)):
+        status, is_itmo = "supported", True
+    elif all(assessed):
+        status, is_itmo = "unsupported", False
+    else:
+        status, is_itmo = "unknown", bool(first.get("is_itmo") or second.get("is_itmo"))
+    return {
+        "membership_status": status,
+        "membership_policy": POLICY_VERSION,
+        "membership_evidence": json.dumps(evidence, ensure_ascii=False),
+        "membership_source_coverage": json.dumps(coverage, ensure_ascii=False),
+        "is_itmo": is_itmo,
+    }
+
+
+def _person_membership_update(stored: dict, incoming: dict, node_id: str) -> dict:
+    """Only a complete assessment covering the live cluster may retract True."""
+    stored_scope = {node_id, *(stored.get("merged_ids") or [])}
+    incoming_scope = {node_id, *(incoming.get("merged_ids") or [])}
+    before, after = _source_coverage(stored), _source_coverage(incoming)
+    claims_covered = all(_covers_source(before, after, _source_key(claim))
+                         for claim in _membership_evidence(stored) or [])
+    stale_source = any(key in before and not _covers_source(before, after, key) for key in after)
+    evidence, coverage = _source_membership_update(stored, incoming)
+    if (_completed_membership(incoming) and stored_scope <= incoming_scope
+            and claims_covered and not stale_source):
+        return {
+            "membership_status": incoming["membership_status"],
+            "membership_policy": POLICY_VERSION,
+            "membership_evidence": json.dumps(evidence, ensure_ascii=False),
+            "membership_source_coverage": json.dumps(coverage, ensure_ascii=False),
+            "is_itmo": incoming["membership_status"] == "supported",
+        }
+    if (_completed_membership(stored) and incoming_scope <= stored_scope
+            and not _completed_membership(incoming) and not after):
+        # A legacy import must not resurrect a classification already withdrawn.
+        return {key: stored[key] for key in MEMBERSHIP_FIELDS if key in stored} | {
+            "is_itmo": stored["membership_status"] == "supported"
+        }
+    merged = _merge_membership_properties(stored, incoming)
+    return merged or {"is_itmo": bool(stored.get("is_itmo") or incoming.get("is_itmo"))}
+
 
 def _union_values(current: list, extra: list) -> list:
     """Return an order-preserving union that also supports JSON objects."""
@@ -45,6 +176,8 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
 
     for key, duplicate_value in duplicate.items():
         if key in {"id", "created_at", "updated_at"}:
+            continue
+        if label == "Person" and key in MEMBERSHIP_FIELDS:
             continue
         canonical_value = canonical.get(key)
         if key in bool_fields:
@@ -81,6 +214,7 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
         elif canonical_value is None:
             updates[key] = duplicate_value
     if label == "Person":
+        updates.update(_merge_membership_properties(canonical, duplicate))
         addresses = updates.get("emails", canonical.get("emails")) or []
         merged = _union_values(addresses, [
             value for value in (canonical.get("email"), duplicate.get("email")) if value
@@ -231,12 +365,8 @@ class Neo4jClient:
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         """Create or update Person nodes, retaining lists from graph folds.
 
-        is_itmo is a sticky boolean property, not a label: at least one ITMO
-        affiliation anywhere makes the person ITMO, so a row that arrives
-        with is_itmo=False never downgrades a node that is already ITMO. It
-        is excluded from the blind `n += row.properties` merge and set
-        separately via coalesce/OR so the merge can't clobber a True with a
-        later False.
+        Legacy rows cannot retract membership. A completed, versioned
+        assessment may replace it only when it covers the live cluster.
 
         Args:
             nodes: List of (node_id, properties) tuples. Each properties
@@ -265,7 +395,7 @@ class Neo4jClient:
             MERGE (n:Person {id: row.node_id})
             ON CREATE SET n += row.properties, n.created_at = datetime(), n.updated_at = datetime()
             ON MATCH SET  n += row.properties, n.updated_at = datetime()
-            SET n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo
+            SET n.is_itmo = row.is_itmo
             """,
         )
 
@@ -274,17 +404,22 @@ class Neo4jClient:
                 record["id"]: record["props"]
                 for record in tx.run(
                     "UNWIND $ids AS id MATCH (n:Person {id: id}) "
-                    "WHERE size(coalesce(n.merged_ids, [])) > 0 "
                     "RETURN n.id AS id, properties(n) AS props",
                     ids=[row["node_id"] for row in batch],
                 )
             }
             prepared = []
             for row in batch:
-                props = _preserve_merged_person_lists(stored.get(row["node_id"], {}), row["properties"])
-                prepared.append({**row, "properties": props})
+                previous = stored.get(row["node_id"], {})
+                membership = _person_membership_update(
+                    previous, {**row["properties"], "is_itmo": row["is_itmo"]}, row["node_id"]
+                )
+                props = _preserve_merged_person_lists(previous, row["properties"])
+                props = {key: value for key, value in props.items() if key not in MEMBERSHIP_FIELDS}
+                props.update({key: value for key, value in membership.items() if key != "is_itmo"})
+                prepared.append({**row, "properties": props, "is_itmo": membership["is_itmo"]})
                 # The same id can occur more than once in an import batch.
-                stored[row["node_id"]] = {**stored.get(row["node_id"], {}), **props}
+                stored[row["node_id"]] = {**previous, **props, "is_itmo": membership["is_itmo"]}
             tx.run(query, batch=prepared).consume()
 
         with self.driver.session() as session:
@@ -382,6 +517,23 @@ class Neo4jClient:
             "AND none(edge IN old_edges WHERE edge.is_corresponding IS NOT NULL) THEN null "
             "ELSE coalesce(keep.is_corresponding, false) "
             "OR any(edge IN old_edges WHERE coalesce(edge.is_corresponding, false)) END"
+            " SET new.institution_rors = CASE "
+            "WHEN keep.institution_rors IS NULL "
+            "AND all(edge IN old_edges WHERE edge.institution_rors IS NULL) THEN null "
+            "ELSE reduce(rors = coalesce(keep.institution_rors, []), edge IN old_edges | "
+            "reduce(result = rors, value IN coalesce(edge.institution_rors, []) | "
+            "CASE WHEN value IN result THEN result ELSE result + value END)) END"
+            " SET new.institution_source_person_id = CASE "
+            "WHEN all(edge IN old_edges WHERE edge.institution_source_person_id = "
+            "new.institution_source_person_id) "
+            "AND ((keep.institution_source_person_id IS NULL AND keep.institution_rors IS NULL) OR "
+            "keep.institution_source_person_id = new.institution_source_person_id) "
+            "THEN new.institution_source_person_id ELSE null END"
+            " SET new.institution_source_id = CASE "
+            "WHEN all(edge IN old_edges WHERE edge.institution_source_id = new.institution_source_id) "
+            "AND ((keep.institution_source_id IS NULL AND keep.institution_rors IS NULL) "
+            "OR keep.institution_source_id = new.institution_source_id) "
+            "THEN new.institution_source_id ELSE null END"
         )
         move_queries = [
             cast(
@@ -754,7 +906,17 @@ class Neo4jClient:
                 row = authored_rows[key]
                 previous = row["rel_properties"].get("is_corresponding")
                 incoming = rel_props_clean.get("is_corresponding")
+                old_rors = row["rel_properties"].get("institution_rors")
+                new_rors = rel_props_clean.get("institution_rors")
+                provenance = {
+                    name: row["rel_properties"].get(name)
+                    if row["rel_properties"].get(name) == rel_props_clean.get(name) else None
+                    for name in ("institution_source_person_id", "institution_source_id")
+                }
                 row["rel_properties"].update(rel_props_clean)
+                if old_rors is not None or new_rors is not None:
+                    row["rel_properties"]["institution_rors"] = _union_values(old_rors or [], new_rors or [])
+                row["rel_properties"].update(provenance)
                 if previous is not None or incoming is not None:
                     row["rel_properties"]["is_corresponding"] = bool(previous or incoming)
                 row["input_count"] += 1
@@ -767,12 +929,32 @@ class Neo4jClient:
         corresponding_snapshot = ""
         corresponding_merge = ""
         if rel_type == "AUTHORED":
-            corresponding_snapshot = ", r.is_corresponding AS was_corresponding"
+            corresponding_snapshot = (
+                ", r.is_corresponding AS was_corresponding, "
+                "r.institution_rors AS was_rors, r.institution_source_person_id AS was_owner, "
+                "r.institution_source_id AS was_source, "
+                "(size(coalesce(src.merged_ids, [])) > 0 OR size(coalesce(tgt.merged_ids, [])) > 0) "
+                "AS preserve_corresponding"
+            )
             corresponding_merge = (
                 "SET r.is_corresponding = CASE "
                 "WHEN was_corresponding IS NULL AND row.rel_properties.is_corresponding IS NULL THEN null "
                 "ELSE coalesce(was_corresponding, false) "
                 "OR coalesce(row.rel_properties.is_corresponding, false) END"
+                " SET r.institution_rors = CASE WHEN NOT preserve_corresponding THEN r.institution_rors "
+                "WHEN was_rors IS NULL AND r.institution_rors IS NULL THEN null "
+                "ELSE reduce(result = coalesce(was_rors, []), value IN coalesce(r.institution_rors, []) | "
+                "CASE WHEN value IN result THEN result ELSE result + value END) END"
+                " SET r.institution_source_person_id = CASE "
+                "WHEN preserve_corresponding AND (was_rors IS NOT NULL OR was_owner IS NOT NULL) "
+                "AND (was_owner IS NULL OR r.institution_source_person_id IS NULL "
+                "OR was_owner <> r.institution_source_person_id) "
+                "THEN null ELSE r.institution_source_person_id END"
+                " SET r.institution_source_id = CASE "
+                "WHEN preserve_corresponding AND (was_rors IS NOT NULL OR was_source IS NOT NULL) "
+                "AND (was_source IS NULL OR r.institution_source_id IS NULL "
+                "OR was_source <> r.institution_source_id) "
+                "THEN null ELSE r.institution_source_id END"
             )
         query = cast(
             LiteralString,
