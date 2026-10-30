@@ -176,9 +176,16 @@ every publish waiting on Busy. Then:
 - a pair answered `"different"` gets no edge; an edge the rules no longer
   produce is removed, unless somebody added it by hand (`graph_overrides`,
   `op: "link"`) or confirmed it (`"same"`); an edge deleted by hand
-  (`op: "delete"`) is not written again and its pair is not asked about;
+  (`op: "delete"`) is not written again and its pair is not asked about.
+  Both kinds of hand edit are read through the fold map, so they follow a
+  publication folded since onto its survivor;
+- one edge per pair: when the rules turn a confirmed pair around (the dates
+  changed), the old direction is removed and the new one carries the
+  confirmation; a direction added by hand wins over the rules';
 - mergeable pairs become `publication_version` questions (the "Версии
-  публикаций" tab of `/review`); an answer there changes the edge at once.
+  публикаций" tab of `/review`); an answer there changes the edge at once,
+  and withdrawing it puts a confirmed edge back to `held` (a removed one comes
+  back with the next `link`).
   An open question the rules no longer ask is dropped; an answered or
   skipped one stays.
 

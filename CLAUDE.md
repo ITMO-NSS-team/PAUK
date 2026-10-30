@@ -23,7 +23,7 @@ uv sync                                                     # установка
 
 # Тесты (стиль unittest.TestCase, в CI запускаются через pytest как раннер)
 uv run python -m unittest discover -s tests/unit            # локально, обычный раннер unittest
-uv run --with pytest pytest tests/ -q                       # то, что запускает CI (unit + bench; integration без Docker пропускается)
+uv run --with pytest pytest tests/ -q                       # первый шаг CI (unit + bench; integration без Docker пропускается)
 uv run --with pytest pytest tests/unit/test_normalize.py -q # один файл
 uv run --with pytest pytest tests/unit/test_normalize.py::ClassName::test_method -q  # один тест
 
@@ -37,7 +37,8 @@ uv run --with pytest pytest pauk -q
 # сети и БД. unittest discover его не видит — после правок стадий/загрузчика:
 uv run --with pytest pytest tests/bench -q
 
-# tests/integration/ — нужен Docker; без него аккуратно пропускается:
+# tests/integration/ — нужен Docker; без него аккуратно пропускается.
+# В CI это второй шаг, с настоящим Neo4j:
 uv run --with pytest --with mongomock --with 'testcontainers[neo4j]' pytest tests/integration -q
 
 uv run ruff check <изменённые файлы>                        # линтер, конфиг в pyproject.toml
@@ -117,7 +118,9 @@ data/gui/{public,private}/*.json             данные для сайта pauk
   `pauk publish graph --group <group>` вливает свою группу через MERGE;
   ничто ниже по потоку не читает Mongo напрямую. Из цепочки GUI к Neo4j
   ходит только `pauk/cache/export.py`; `pauk/gui/` читает готовый снепшот
-  с диска.
+  с диска. В граф попадают только поля, перечисленные в реестре
+  `pauk/graph/extract.py::NODE_REGISTRY`: новое поле prepared-модели
+  без записи там до Neo4j не дойдёт.
 - **Резюмируемость** — на уровне строки, через `processing: dict[str,
   ProcessingState]` (`_processing` в JSON) на каждой prepared-модели —
   свой статус на каждый enrichment-этап (`not_started`/`completed`/
@@ -201,7 +204,8 @@ API, параметры Neo4j/Mongo. Читает `.env` (см. `.env.example`).
 Узлы: `Department`, `Organization`, `Person {is_itmo}`, `Publication`,
 `Repository`, `GitHubProfile`, `LinkCandidate`. Основные связи:
 `BELONGS_TO`, `AUTHORED`, `CONTRIBUTED_TO`, `PART_OF`, `PRODUCED_BY`,
-`MENTIONS_LINK`, `DEVELOPED_BY`, `IMPLEMENTS`, `OWNED_BY`. Сотрудник ИТМО —
+`MENTIONS_LINK`, `DEVELOPED_BY`, `IMPLEMENTS`, `OWNED_BY`; `IS_VERSION`
+(Publication→Publication) пишет `pauk versions link`, а не publish. Сотрудник ИТМО —
 это свойство `p.is_itmo`, а не лейбл. Полный список свойств и
 Mermaid-диаграмма: [`docs/architecture/neo4j-graph.md`](docs/architecture/neo4j-graph.md),
 [`docs/diagrams/neo4j-schema.md`](docs/diagrams/neo4j-schema.md).

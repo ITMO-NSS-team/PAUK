@@ -35,7 +35,7 @@ from pauk.graph.mutations import (
     read_node,
 )
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
-from pauk.graph.version_link import CONFIRMED, REL_TYPE
+from pauk.graph.version_link import CONFIRMED, HELD, REL_TYPE
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
@@ -310,6 +310,14 @@ def _fold_now(graph, db, members: list[str], actor: str) -> str:
     return "merged"
 
 
+def _version_edges(graph, members: list[str]) -> list[tuple[str, str]]:
+    """The IS_VERSION edges between two publications, whichever way they point."""
+    a, b = members
+    return [(edge_src, edge_tgt) for edge_src, edge_tgt in ((a, b), (b, a))
+            if any(edge["type"] == REL_TYPE and edge["outgoing"] and edge["other_id"] == edge_tgt
+                   for edge in graph.fetch_node_relationships("Publication", edge_src))]
+
+
 def _settle_version(graph, members: list[str], verdict: str) -> str:
     """Put an answer about two publications on their IS_VERSION edge now.
 
@@ -320,15 +328,13 @@ def _settle_version(graph, members: list[str], verdict: str) -> str:
     Returns:
         "linked" or "unlinked", "no_edge" when there is no edge to confirm
         (folded or removed since; the answer still stands for the next
-        `pauk versions link`), or "waiting" when the graph cannot do it now.
+        `pauk versions link`), or "version_waiting" when the graph cannot do
+        it now.
     """
     if graph is None:
-        return "waiting"
-    a, b = members
+        return "version_waiting"
     try:
-        pairs = [(edge_src, edge_tgt) for edge_src, edge_tgt in ((a, b), (b, a))
-                 if any(edge["type"] == REL_TYPE and edge["outgoing"] and edge["other_id"] == edge_tgt
-                        for edge in graph.fetch_node_relationships("Publication", edge_src))]
+        pairs = _version_edges(graph, members)
         if verdict == review.DIFFERENT:
             graph.delete_relationships_batch("Publication", "Publication", REL_TYPE, pairs)
             return "unlinked"
@@ -339,7 +345,34 @@ def _settle_version(graph, members: list[str], verdict: str) -> str:
         return "linked"
     except (ServiceUnavailable, AuthError) as error:
         logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
-        return "waiting"
+        return "version_waiting"
+
+
+def _reopen_version(graph, members: list[str]) -> str:
+    """Undo `_settle_version` once its answer is taken back.
+
+    A confirmed edge goes back to held. A removed one cannot be put back
+    from here (its direction and evidence come from the rules), so it waits
+    for `pauk versions link`, which writes it again now that no answer
+    stands in the way.
+
+    Returns:
+        "reopened", "relink" when there is no edge until the next
+        `pauk versions link`, or "version_waiting" when the graph cannot do
+        it now.
+    """
+    if graph is None:
+        return "version_waiting"
+    try:
+        pairs = _version_edges(graph, members)
+        if not pairs:
+            return "relink"
+        graph.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
+                                         [(src, tgt, {"status": HELD}) for src, tgt in pairs])
+        return "reopened"
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("version answer for %s withdrawn, the graph did not answer: %s", members, error)
+        return "version_waiting"
 
 
 @router.post("/review/answer")
@@ -463,10 +496,12 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 
 
 @router.post("/review/withdraw")
-async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: StoresReady):
+async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
+                   _: CsrfChecked, __: StoresReady):
     """Take an answer back, leaving the question in the queue.
 
-    The question stays because a real run asked it.
+    The question stays because a real run asked it. A version answer has
+    already reached its edge, so the edge is taken back with it.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -478,5 +513,8 @@ async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: S
     if not dropped:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
     logger.info("%s withdrew the answer about %s %s", user.actor, kind, members)
-    return RedirectResponse(f"/review?tab={_tab(form.get('tab'), 'answered')}",
-                            status_code=status.HTTP_303_SEE_OTHER)
+    tab = _tab(form.get("tab"), "answered")
+    if kind == review.PUB_VERSION:
+        return RedirectResponse(f"/review?tab={tab}&done={_reopen_version(graph, members)}",
+                                status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(f"/review?tab={tab}", status_code=status.HTTP_303_SEE_OTHER)

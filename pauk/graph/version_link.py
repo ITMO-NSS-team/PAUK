@@ -144,10 +144,18 @@ def _ask_llm(config: Settings, mongo_db: Database, force: bool) -> tuple[int, in
         client.close()
 
 
-def _own(triples: set[tuple[str, str, str, str, str]]) -> set[tuple[str, str]]:
-    """The IS_VERSION pairs among override triples."""
-    return {(src_id, tgt_id) for src_label, rel_type, tgt_label, src_id, tgt_id in triples
-            if (src_label, rel_type, tgt_label) == ("Publication", REL_TYPE, "Publication")}
+def _own(triples: set[tuple[str, str, str, str, str]],
+         aliases: dict[str, str]) -> set[tuple[str, str]]:
+    """The IS_VERSION pairs among override triples, on the nodes they live on now.
+
+    An override names the ids it was made on; a fold since moved the edge to
+    the survivor, and the override has to follow it there or stop matching.
+    A pair folded into one node has no edge left to speak of.
+    """
+    pairs = {(aliases.get(src_id, src_id), aliases.get(tgt_id, tgt_id))
+             for src_label, rel_type, tgt_label, src_id, tgt_id in triples
+             if (src_label, rel_type, tgt_label) == ("Publication", REL_TYPE, "Publication")}
+    return {(src, tgt) for src, tgt in pairs if src != tgt}
 
 
 def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
@@ -161,18 +169,24 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # An edge deleted by hand is left out rather than written and taken
         # away again by the overrides: that would log a creation and a
         # deletion on every run, and readers would see it in between.
-        deleted = _own(tombstoned_relationships(mongo_db))
-        deleted_pairs = {frozenset(pair) for pair in deleted}
+        deleted_pairs = {frozenset(pair) for pair in _own(tombstoned_relationships(mongo_db), aliases)}
         report = [row for row in report
                   if frozenset((row["record_a"], row["record_b"])) not in deleted_pairs]
-        edges = plan_version_edges(rows, report, answers)
+        claimed = _own(claimed_relationships(mongo_db), aliases)
+        # The hand-made direction wins: writing the rules' one beside it
+        # would leave the pair pointing both ways.
+        edges = {pair: props for pair, props in plan_version_edges(rows, report, answers).items()
+                 if pair[::-1] not in claimed}
 
         existing = client.fetch_relationship_pairs("Publication", REL_TYPE, "Publication")
         # A pair a person called one work stays linked when the rules lose
-        # it: a retitled record does not make the answer wrong.
+        # it: a retitled record does not make the answer wrong. Unless the
+        # rules now point it the other way; the answer then rides on the
+        # new edge, and keeping the old one would link the pair twice.
         confirmed = {pair for pair in existing
-                     if answers.get(frozenset(pair)) == review.SAME and pair not in deleted}
-        stale = sorted(existing - set(edges) - _own(claimed_relationships(mongo_db)) - confirmed)
+                     if answers.get(frozenset(pair)) == review.SAME
+                     and frozenset(pair) not in deleted_pairs and pair[::-1] not in edges}
+        stale = sorted(existing - set(edges) - claimed - confirmed)
         written = removed = 0
         with actor_context("etl-pipeline", source="versions-graph"):
             for chunk in chunked(stale):

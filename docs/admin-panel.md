@@ -335,7 +335,9 @@ rules would rebuild the same group through the remaining records.
 **Skip and reverse.** "не знаю" (don't know) removes the question from the
 unseen tab without answering it. An answer that has not merged anything can be
 withdrawn with "передумать" (change my mind), and the question returns to the
-queue.
+queue. For two publications the `IS_VERSION` edge goes back with it: a
+confirmed one is held again, a removed one returns with the next
+`pauk versions link`.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record

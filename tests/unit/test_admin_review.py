@@ -1047,3 +1047,28 @@ class VersionQuestionTest(unittest.TestCase):
         self.assertNotIn(("Publication", "IS_VERSION", "Publication", "W1", "W2"),
                          self.graph.relationships)
         self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+
+    def withdraw(self):
+        csrf = self.body("answered").split('name="csrf" value="')[1].split('"')[0]
+        return self.client.post("/review/withdraw", data={
+            "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2"})
+
+    def test_withdrawing_same_puts_the_edge_back_on_hold(self):
+        self.answer("same")
+        response = self.withdraw()
+        self.assertIn("done=reopened", response.headers["location"])
+        edge = self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        self.assertEqual(edge["status"], "held")
+        self.assertIn("/nodes/Publication/W1", self.body())
+        self.assertEqual(review.version_decisions(self.db), {})
+
+    def test_withdrawing_different_waits_for_the_next_link(self):
+        self.answer("different")
+        response = self.withdraw()
+        self.assertIn("done=relink", response.headers["location"])
+        self.assertIn("/nodes/Publication/W1", self.body())
+
+    def test_a_graph_that_is_down_does_not_promise_a_merge(self):
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
+        response = self.answer("same")
+        self.assertIn("done=version_waiting", response.headers["location"])

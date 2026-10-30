@@ -365,7 +365,8 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     Unless no run ever asked it. A split writes answers about pairs the
     rules never held, and keeping one of those after withdrawal would leave
     a row in the queue with no reason and nothing to decide on. A held
-    question always says why it was held; that is what tells the two apart.
+    question always says why it was held, or for a version which bucket
+    linked the pair; that is what tells the two apart.
 
     Raises:
         ReviewError: The answer has already folded two records into one.
@@ -375,7 +376,8 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     if asked is not None and asked.get("applied_at"):
         # They are one node by now: dropping the answer strands both.
         raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
-    if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
+    evidence = (asked or {}).get("evidence") or {}
+    if asked is not None and not (evidence.get("held_because") or evidence.get("bucket")):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(
         {"_id": key},

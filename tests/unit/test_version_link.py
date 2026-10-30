@@ -140,6 +140,49 @@ class VersionLinkTest(unittest.TestCase):
         self.assertEqual(result["version_edges"], 0)
         self.assertEqual(self.db[review.COLLECTION].count_documents({}), 0)
 
+    def test_an_edge_added_by_hand_follows_a_folded_publication(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.nodes["Publication"]["W1"]["merged_ids"] = ["W9"]
+        # The fold moved W9 -> W2 over to the survivor; the claim still names W9.
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {}
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W9", "W2", LINK)
+        result = self.run_link()
+        self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
+        self.assertEqual(result["version_edges_removed"], 0)
+
+    def test_an_edge_deleted_by_hand_stays_deleted_after_a_fold(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        self.graph.nodes["Publication"]["W1"]["merged_ids"] = ["W9"]
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W9", "W2", DELETE)
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(self.db[review.COLLECTION].count_documents({}), 0)
+
+    def test_a_confirmed_pair_that_turns_around_keeps_one_edge(self):
+        # W1 has become the newer record, so the rules now point W2 at it.
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a", day="2026-06-01")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b", day="2026-01-01")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {
+            "bucket": "MISSED_BY_NORM", "status": "same"}
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.run_link()
+        edges = versions(self.graph)
+        self.assertEqual(set(edges), {("W2", "W1")})
+        self.assertEqual(edges[("W2", "W1")]["status"], "same")
+
+    def test_the_hand_made_direction_wins_over_the_rules(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a", day="2026-06-01")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b", day="2026-01-01")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {}
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W1", "W2", LINK)
+        self.run_link()
+        self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
+
     def test_a_verdict_follows_a_folded_publication(self):
         pub(self.graph, "W1", "Robust output feedback MPC: an interval observer approach",
             doi="10.1/a", journal="Automatica", venue_type="journal", day="2020-12-01")
