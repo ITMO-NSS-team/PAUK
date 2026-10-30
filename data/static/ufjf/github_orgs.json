@@ -1,0 +1,10 @@
+{
+  "comment": "GitHub organizations that belong to UFJF, for social_graph seeding. Only needed for organizations whose login or profile does not name UFJF as a word: 'ufjf-dcc' or 'CAS-IEEE-UFJF' are recognised without this list, 'peteletricaufjf' is not. Logins are matched case-insensitively.",
+  "organizations": [
+    {"login": "peteletricaufjf", "note": "PET Engenharia Elétrica, UFJF glued to the end of the login"},
+    {"login": "nipscernufjf", "note": "NIPS/CERN group, UFJF glued to the end of the login"},
+    {"login": "EquipeCapivaraUFJF", "note": "UFJF glued to the end of the login"},
+    {"login": "CSIEEEUFJF", "note": "IEEE Computer Society student branch, UFJF glued to the end of the login"},
+    {"login": "RASIEEEUFJF", "note": "IEEE Robotics and Automation Society student branch, UFJF glued to the end of the login"}
+  ]
+}
