@@ -74,6 +74,7 @@ from pauk.models import (
     VersionAuthor,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.membership import apply_membership, coalesce_authorships
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
     _abstract,
@@ -1177,6 +1178,10 @@ class DedupStage(EnrichmentStage):
                 if authorship not in authored:
                     authored.append(authorship)
             person.authored = authored
+            for source in person.membership_work_sources:
+                source.publication_id = id_map.get(source.publication_id, source.publication_id)
+            coalesce_authorships(person)
+            apply_membership(person)
         self.prepared.write_models("persons", people)
 
         repositories = list(self.prepared.read_models("repositories", Repository))
@@ -1337,6 +1342,7 @@ class DedupStage(EnrichmentStage):
                     canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
+            apply_membership(canonical)
             self._record_state(canonical, len(duplicates))
         if removed:
             people = [person for person in people if person.id not in removed]

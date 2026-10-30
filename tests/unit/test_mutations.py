@@ -1,6 +1,11 @@
 import unittest
 
-from pauk.graph.client import _merge_duplicate_properties
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+)
 from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -140,19 +145,15 @@ class FakeGraph:
     # against this fake end to end.
 
     def upsert_person_nodes_batch(self, nodes):
-        """Persons carry the sticky is_itmo rule of the real client.
-
-        A row arriving with is_itmo=False never downgrades a node that is
-        already ITMO.
-        """
+        """Apply the client's evidence-aware membership and merged-list rules."""
         self.calls.append("upsert_person_nodes_batch")
-        nodes = list(nodes)
-        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_itmo"))
-                  or bool(props.get("is_itmo"))
-                  for node_id, props in nodes}
-        self.upsert_nodes_batch("Person", nodes)
-        for node_id, is_itmo in sticky.items():
-            self.nodes[("Person", node_id)]["is_itmo"] = is_itmo
+        for node_id, props in nodes:
+            existing = self.nodes.get(("Person", node_id), {})
+            membership = _person_membership_update(existing, props, node_id)
+            clean = _preserve_merged_person_lists(existing, props)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self.upsert_nodes_batch("Person", [(node_id, clean)])
 
     def merge_publication_nodes_batch(self, merges):
         self.calls.append("merge_publication_nodes_batch")

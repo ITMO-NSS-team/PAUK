@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +21,34 @@ class Affiliation(BaseModel):
     ror: str | None = None
     years: list[int] = Field(default_factory=list)
     source: str
+    source_person_id: str | None = None
+    source_id: str | None = None
+
+
+class MembershipEvidence(BaseModel):
+    source: Literal["openalex_work", "orcid"]
+    source_person_id: str | None = None
+    ror: str
+    publication_id: str | None = None
+    source_id: str | None = None
+    position: int | None = None
+
+
+class MembershipOrcidSource(BaseModel):
+    """Successful source observations survive even when they contain no affiliations."""
+
+    source_id: str
+    source_person_id: str | None = None
+    observed_at: datetime | None = None
+
+
+class MembershipWorkSource(BaseModel):
+    publication_id: str
+    position: int | None = None
+    institution_rors: list[str] | None = None
+    institution_source_person_id: str | None = None
+    institution_source_id: str | None = None
+    institution_observed_at: datetime | None = None
 
 
 class Person(BaseModel):
@@ -29,6 +58,11 @@ class Person(BaseModel):
     openalex_id: str | None = None
     orcid: str | None = None
     is_itmo: bool
+    membership_status: Literal["supported", "unsupported", "unknown"] | None = None
+    membership_policy: str | None = None
+    membership_evidence: list[MembershipEvidence] = Field(default_factory=list)
+    membership_orcid_sources: list[MembershipOrcidSource] = Field(default_factory=list)
+    membership_work_sources: list[MembershipWorkSource] = Field(default_factory=list)
     name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None

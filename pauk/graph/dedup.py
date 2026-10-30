@@ -254,7 +254,6 @@ def dedup_graph_persons(
         # records. Serializing their defaults would erase fields never read.
         # The fold below merges the complete stored properties transactionally.
         canonical_nodes.append((canonical.id, {
-            "is_itmo": canonical.is_itmo,
             "name_variants": canonical.name_variants,
             "merged_ids": canonical.merged_ids,
         }))

@@ -15,9 +15,71 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from pauk.pipeline.membership import ITMO_ROR_ID, normalize_ror, source_observed_at
+
 # Row fields holding nested maps: Neo4j has no nested-map property type, so
 # they are stored as JSON text.
-JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year", "affiliations")
+JSON_TEXT_FIELDS = (
+    "funding", "versions", "counts_by_year", "affiliations", "membership_evidence", "membership_source_coverage"
+)
+
+
+def _membership_source_coverage(row: dict) -> list[dict]:
+    """Only complete original-source snapshots may retire earlier claims."""
+    works: dict[tuple[str, str], list[dict]] = {}
+    source_rows = list(row.get("membership_work_sources") or [])
+    represented = {
+        (source.get("institution_source_person_id"), source.get("institution_source_id"))
+        for source in source_rows
+    }
+    source_rows.extend(
+        authored for authored in row.get("authored") or []
+        if (authored.get("institution_source_person_id"), authored.get("institution_source_id")) not in represented
+    )
+    for authored in source_rows:
+        owner, work = authored.get("institution_source_person_id"), authored.get("institution_source_id")
+        if owner and work:
+            works.setdefault((owner, work), []).append(authored)
+    coverage = []
+    for (owner, work), records in works.items():
+        if any(item.get("institution_rors") is None for item in records):
+            continue
+        timestamps = [source_observed_at(item.get("institution_observed_at")) for item in records]
+        observed = min(timestamps).isoformat() if all(stamp is not None for stamp in timestamps) else None
+        coverage.append({"source": "openalex_work", "source_person_id": owner, "source_id": work,
+                         "observed_at": observed,
+                         "supports_itmo": any(ITMO_ROR_ID in item["institution_rors"] for item in records)})
+    state = (row.get("_processing") or row.get("processing") or {}).get("orcid") or {}
+    orcid = row.get("orcid")
+    if orcid and state.get("request_key") == orcid and state.get("status") in {"completed", "completed_empty"}:
+        source_states = [
+            item for item in row.get("membership_orcid_sources") or [] if item.get("source_id") == orcid
+        ]
+        owners = {
+            item.get("source_person_id") for item in [*(row.get("affiliations") or []),
+                                                       *(row.get("membership_evidence") or [])]
+            if item.get("source") == "orcid" and item.get("source_id") == orcid
+            and item.get("source_person_id") in {row["id"], *(row.get("merged_ids") or [])}
+        }
+        owners.update(item["source_person_id"] for item in source_states
+                      if item.get("source_person_id") in {row["id"], *(row.get("merged_ids") or [])})
+        owner = row["id"] if not row.get("merged_ids") else next(iter(owners)) if len(owners) == 1 else None
+        if owner:
+            observed_times = [source_observed_at(item.get("observed_at")) for item in source_states
+                              if item.get("source_person_id") == owner]
+            observed = max((stamp for stamp in observed_times if stamp is not None), default=None)
+            if observed is None:
+                observed = source_observed_at(state.get("finished_at"))
+            coverage.append({"source": "orcid", "source_person_id": owner, "source_id": orcid,
+                             "observed_at": observed.isoformat() if observed else None,
+                             "supports_itmo": any(
+                                 item.get("source") == "orcid" and item.get("source_id") == orcid
+                                 and item.get("source_person_id") == owner
+                                 and normalize_ror(item.get("ror")) == ITMO_ROR_ID
+                                 for item in [*(row.get("affiliations") or []),
+                                              *(row.get("membership_evidence") or [])]
+                             )})
+    return coverage
 
 
 @dataclass(frozen=True)
@@ -97,6 +159,10 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Person",
         prop_fields=(
             "is_itmo",
+            "membership_status",
+            "membership_policy",
+            "membership_evidence",
+            "membership_source_coverage",
             "openalex_id",
             "orcid",
             "name_raw",
@@ -144,7 +210,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "affiliation_source", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding",
+                 "institution_rors", "institution_source_person_id", "institution_source_id"),
             ),
             RelSpec(
                 "contributed_to",
@@ -159,6 +226,10 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Person",
         prop_fields=(
             "is_itmo",
+            "membership_status",
+            "membership_policy",
+            "membership_evidence",
+            "membership_source_coverage",
             "openalex_id",
             "orcid",
             "name_raw",
@@ -204,7 +275,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "affiliation_source", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding",
+                 "institution_rors", "institution_source_person_id", "institution_source_id"),
             ),
         ),
     ),
@@ -332,6 +404,8 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     """
     node_id = row[spec.id_field]
     props = {k: row[k] for k in spec.prop_fields if row.get(k) is not None}
+    if spec.labels == "Person" and "authored" in row:
+        props["membership_source_coverage"] = _membership_source_coverage(row)
     for key in JSON_TEXT_FIELDS:
         if isinstance(props.get(key), (list, dict)):
             props[key] = json.dumps(props[key], ensure_ascii=False)

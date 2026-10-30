@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.pipeline.normalize import ITMO_ROR_ID
+from pauk.pipeline.membership import apply_membership, normalize_ror, orcid_source_owner, refresh_orcid_membership
 from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
@@ -20,7 +20,7 @@ def _openalex_affiliations(payload: dict) -> list[Affiliation]:
         if institution.get("display_name"):
             affiliations.append(Affiliation(
                 name=institution["display_name"],
-                ror=(institution.get("ror") or "").rstrip("/").rsplit("/", 1)[-1] or None,
+                ror=normalize_ror(institution.get("ror")),
                 years=[int(year) for year in entry.get("years") or []],
                 source="openalex",
             ))
@@ -30,7 +30,7 @@ def _openalex_affiliations(payload: dict) -> list[Affiliation]:
         if institution.get("display_name"):
             affiliations.append(Affiliation(
                 name=institution["display_name"],
-                ror=(institution.get("ror") or "").rstrip("/").rsplit("/", 1)[-1] or None,
+                ror=normalize_ror(institution.get("ror")),
                 source="openalex",
             ))
     return affiliations
@@ -115,7 +115,7 @@ def _orcid_affiliations(record: dict) -> list[Affiliation]:
             disambiguated = organization.get("disambiguated-organization") or {}
             ror = None
             if (disambiguated.get("disambiguation-source") or "").upper() == "ROR":
-                ror = (disambiguated.get("disambiguated-organization-identifier") or "").rstrip("/").rsplit("/", 1)[-1]
+                ror = normalize_ror(disambiguated.get("disambiguated-organization-identifier"))
             start = ((employment.get("start-date") or {}).get("year") or {}).get("value")
             end = ((employment.get("end-date") or {}).get("year") or {}).get("value")
             years = []
@@ -128,12 +128,14 @@ def _orcid_affiliations(record: dict) -> list[Affiliation]:
 
 
 def _merge_affiliations(*sources: list[Affiliation]) -> list[Affiliation]:
-    merged: dict[tuple[str, str], Affiliation] = {}
+    merged: dict[tuple, Affiliation] = {}
     for affiliations in sources:
         for affiliation in affiliations:
-            existing = merged.get((affiliation.name, affiliation.source))
+            key = (affiliation.name, affiliation.source, affiliation.ror,
+                   affiliation.source_person_id, affiliation.source_id)
+            existing = merged.get(key)
             if existing is None:
-                merged[(affiliation.name, affiliation.source)] = affiliation
+                merged[key] = affiliation
                 continue
             existing.years = sorted({*existing.years, *affiliation.years})
             existing.ror = existing.ror or affiliation.ror
@@ -303,15 +305,22 @@ class PersonsStage(EnrichmentStage):
                                 value = _github_login(url) if field == "github" else url
                                 if value and not getattr(person, field):
                                     setattr(person, field, value)
-                            person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
+                            refresh_orcid_membership(
+                                person, _orcid_affiliations(payload), orcid_source_owner(person, key), key,
+                                observed_at=datetime.now(UTC),
+                            )
                         person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
                     except Exception as exc:
                         person.processing[source] = ProcessingState(status=ProcessingStatus.FAILED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC), error=redact_text(exc))
-                person.is_itmo = person.is_itmo or any(a.ror == ITMO_ROR_ID for a in person.affiliations)
+                apply_membership(person)
                 self._fill_missing_affiliations(person, publications)
                 self._save_person(person)
                 changed += 1
+
+            # Completed source requests must not skip a newer membership policy.
+            apply_membership(person)
+            self._save_person(person)
 
         return {"persons": changed, "crossref": crossref_changed}
