@@ -64,7 +64,9 @@ def _capture_work_membership(person: Person) -> None:
 def _update_authorship_summary(person: Person) -> None:
     for row in person.authored:
         sources = [source for source in person.membership_work_sources
-                   if (source.publication_id, source.position) == (row.publication_id, row.position)]
+                   if (source.publication_id, source.position) == (row.publication_id, row.position)
+                   and (row.institution_source_person_id is None
+                        or source.institution_source_person_id == row.institution_source_person_id)]
         if not sources:
             continue
         rors = sorted({ror for source in sources for ror in source.institution_rors or []})
@@ -80,32 +82,40 @@ def coalesce_authorships(person: Person) -> None:
     """Keep one display slot while retaining every original work's source state."""
     _capture_work_membership(person)
     versions: dict[tuple[str, str], dict[str, set[int | None]]] = {}
-    source_positions: set[tuple[str, int | None]] = set()
+    source_positions: set[tuple[str, str, int | None]] = set()
     for source in person.membership_work_sources:
         owner, work = source.institution_source_person_id, source.institution_source_id
         if owner is None or work is None:
             continue
         versions.setdefault((source.publication_id, owner), {}).setdefault(work, set()).add(source.position)
-        source_positions.add((source.publication_id, source.position))
+        source_positions.add((source.publication_id, owner, source.position))
     display_positions = {
-        (publication_id, position)
-        for (publication_id, _owner), works in versions.items()
+        (publication_id, owner, position)
+        for (publication_id, owner), works in versions.items()
         for position in works[publication_id if publication_id in works else next(iter(works))]
     }
-    authored: dict[tuple[str, int | None], Authorship] = {}
+    authored: list[Authorship] = []
+    known_indices: dict[tuple[str, str, int | None], int] = {}
     for row in person.authored:
-        key = (row.publication_id, row.position)
+        owner = row.institution_source_person_id
+        key = (row.publication_id, owner, row.position) if owner is not None else None
         if key in source_positions and key not in display_positions:
             continue
-        if key not in authored:
-            authored[key] = row
+        if key is None:
+            if row not in authored:
+                authored.append(row)
             continue
-        current = authored[key]
+        index = known_indices.get(key)
+        if index is None:
+            known_indices[key] = len(authored)
+            authored.append(row)
+            continue
+        current = authored[index]
         current.is_corresponding = current.is_corresponding or row.is_corresponding
         if row.affiliation and (not current.affiliation or current.affiliation_source and not row.affiliation_source):
             current.affiliation = row.affiliation
             current.affiliation_source = row.affiliation_source
-    person.authored = list(authored.values())
+    person.authored = authored
     _update_authorship_summary(person)
 
 

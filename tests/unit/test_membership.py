@@ -8,6 +8,7 @@ from pauk.pipeline.membership import (
     POLICY_VERSION,
     apply_membership,
     authorship_institution_rors,
+    coalesce_authorships,
     evaluate_membership,
     normalize_ror,
     orcid_source_owner,
@@ -17,6 +18,18 @@ from pauk.pipeline.membership import (
 
 
 class MembershipTest(unittest.TestCase):
+    def test_coalescing_keeps_distinct_original_authors_on_one_publication(self):
+        person = Person(id="A1", is_itmo=False, merged_ids=["A2"], authored=[
+            Authorship(publication_id="W1", position=1, is_corresponding=True,
+                       institution_source_person_id="A1", institution_source_id="W1"),
+            Authorship(publication_id="W1", position=1, is_corresponding=False,
+                       institution_source_person_id="A2", institution_source_id="W1"),
+        ])
+        coalesce_authorships(person)
+        self.assertEqual([row.is_corresponding for row in person.authored], [True, False])
+        self.assertEqual([row.institution_source_person_id for row in person.authored], ["A1", "A2"])
+        self.assertEqual({row.institution_source_person_id for row in person.membership_work_sources}, {"A1", "A2"})
+
     def test_legacy_true_is_unknown_and_retained(self):
         person = Person(id="A1", is_itmo=True)
         self.assertIsNone(person.membership_status)
