@@ -15,6 +15,7 @@ from pauk.models import Person, Publication
 from pauk.pipeline.stages.github_match import hold_reason
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
 
@@ -672,6 +673,48 @@ class GitHubChoiceTest(unittest.TestCase):
     def test_a_yes_naming_nobody_is_refused(self):
         self.assertEqual(self.answer("same").status_code, 400)
         self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_confirming_the_rendered_choice_preserves_it_and_clears_the_disagreement(self):
+        note = 'Checked the profile & publications: "same author"'
+        self.assertEqual(self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": "coder42", "verdict": "choose", "chosen": "A1", "note": note,
+        }).status_code, 303)
+        review.record_disputed(self.db, [{
+            "status": "disputed", "login": "coder42", "person": "A2",
+            "rule": "email_exact",
+        }])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303, response.text)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["chosen"], "A1")
+        self.assertEqual(answer["note"], note)
+        self.assertEqual(answer["actor"], "user:roman")
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1"}): review.SAME,
+            frozenset({"coder42", "A2"}): review.DIFFERENT,
+        })
+
+    def test_a_stale_none_form_replaces_a_choice_saved_from_another_form(self):
+        page = self.client.get("/review")
+        stale_form = RenderedForms(page.text).with_button("никто из них")
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+
+        response = self.client.post(stale_form["action"], data=stale_form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["verdict"], review.DIFFERENT)
+        self.assertNotIn("chosen", answer)
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1", "A2"}): review.DIFFERENT,
+        })
 
 
 class StaffChoiceTest(unittest.TestCase):

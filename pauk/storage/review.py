@@ -332,6 +332,8 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                   "decided_at": moment},
          # An answer settles what a skip postponed and what the rules disputed.
          "$unset": {"skipped_at": "", "skipped_by": "",
+                    # A binary answer replaces a choice made from an older form.
+                    "chosen": "",
                     "auto_resolved_at": "", "auto_resolution": "",
                     "disputed_at": "", "disputed_rule": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
@@ -637,7 +639,7 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
     for row in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": True}}
                                    ).sort("decided_at", 1):
         answers = [(row["members"], row["verdict"])]
-        if row.get("chosen"):
+        if row["verdict"] == SAME and row.get("chosen"):
             # The "yes" last: an author folded into the chosen one is the chosen one.
             answers = [*(([row["login"], member], DIFFERENT) for member in row["members"]
                          if member not in (row["login"], row["chosen"])),

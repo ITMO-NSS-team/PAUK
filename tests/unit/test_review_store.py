@@ -155,6 +155,28 @@ class VerdictTest(unittest.TestCase):
         self.assertFalse(review.mark_applied(self.db, review.PAIR, ["A1", "A2"]))
 
 
+class AccountChoiceTransitionsTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A1")
+
+    def test_a_refusal_removes_the_previous_choice(self):
+        answer = review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"],
+                                       review.DIFFERENT)
+
+        self.assertNotIn("chosen", answer)
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"A1", "A2", "coder42"}): review.DIFFERENT,
+        })
+
+    def test_a_legacy_refusal_does_not_apply_its_leftover_choice(self):
+        self.db[review.COLLECTION].update_one({}, {"$set": {"verdict": review.DIFFERENT}})
+
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"A1", "A2", "coder42"}): review.DIFFERENT,
+        })
+
+
 class DecisionsTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]

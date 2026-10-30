@@ -176,7 +176,13 @@
           <input type="hidden" name="kind" value="{{ row.kind }}">
           <input type="hidden" name="members" value="{{ row.members|join(',') }}">
           <input type="hidden" name="tab" value="{{ tab }}">
+          {% if row.is_choice and row.verdict == "same" %}
+          <input type="hidden" name="verdict" value="choose">
+          <input type="hidden" name="login" value="{{ row.login }}">
+          <input type="hidden" name="chosen" value="{{ row.chosen }}">
+          {% else %}
           <input type="hidden" name="verdict" value="{{ row.verdict }}">
+          {% endif %}
           <input type="hidden" name="note" value="{{ row.note }}">
           <button type="submit" class="ghost">оставить как есть</button>
         </form>
