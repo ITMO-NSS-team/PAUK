@@ -15,6 +15,8 @@ from pauk.pipeline.membership import (
     apply_membership,
     authorship_institution_rors,
     authorship_snapshot_is_current,
+    coalesce_authorships,
+    iter_work_membership,
     reconcile_authorship_snapshot,
     refresh_authorship_membership,
     source_observed_at,
@@ -194,6 +196,7 @@ def _merge_person(base: Person, extra: Person) -> Person:
             base.emails.append(address)
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
+    coalesce_authorships(base)
     apply_membership(base)
     return base
 
@@ -231,7 +234,10 @@ class OpenAlexNormalizer:
         if work_ids:
             person_ids.update(
                 row["id"] for row in self.prepared.db.persons.find(
-                    {"authored.institution_source_id": {"$in": sorted(work_ids)}}, {"id": 1},
+                    {"$or": [
+                        {"authored.institution_source_id": {"$in": sorted(work_ids)}},
+                        {"membership_work_sources.institution_source_id": {"$in": sorted(work_ids)}},
+                    ]}, {"id": 1},
                 ) if row.get("id")
             )
         publications: OrderedDict[str, Publication] = OrderedDict(
@@ -260,7 +266,7 @@ class OpenAlexNormalizer:
         }
         source_people: dict[str, set[str]] = {}
         for person in persons.values():
-            for authored in person.authored:
+            for authored in iter_work_membership(person):
                 if authored.institution_source_id:
                     source_people.setdefault(authored.institution_source_id, set()).add(person.id)
         for envelope in envelopes:
@@ -380,11 +386,6 @@ class OpenAlexNormalizer:
                         row
                         for row in person.authored
                         if row.publication_id == publication_id and row.position == position
-                        and (row.institution_source_id in {None, work_id} or institution_rors is None)
-                        and (
-                            row.institution_source_person_id == source_person_id
-                            or row.institution_source_person_id is None and not person.merged_ids
-                        )
                     ),
                     None,
                 )
@@ -407,6 +408,7 @@ class OpenAlexNormalizer:
                     existing_authorship.affiliation = authorship_record.affiliation
                     existing_authorship.affiliation_source = None
         for person in persons.values():
+            coalesce_authorships(person)
             apply_membership(person)
         self.prepared.write_models("publications", publications.values())
         self.prepared.write_models("persons", persons.values())

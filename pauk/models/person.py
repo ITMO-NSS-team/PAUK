@@ -42,6 +42,15 @@ class MembershipOrcidSource(BaseModel):
     observed_at: datetime | None = None
 
 
+class MembershipWorkSource(BaseModel):
+    publication_id: str
+    position: int | None = None
+    institution_rors: list[str] | None = None
+    institution_source_person_id: str | None = None
+    institution_source_id: str | None = None
+    institution_observed_at: datetime | None = None
+
+
 class Person(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -53,6 +62,7 @@ class Person(BaseModel):
     membership_policy: str | None = None
     membership_evidence: list[MembershipEvidence] = Field(default_factory=list)
     membership_orcid_sources: list[MembershipOrcidSource] = Field(default_factory=list)
+    membership_work_sources: list[MembershipWorkSource] = Field(default_factory=list)
     name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None

@@ -27,7 +27,16 @@ JSON_TEXT_FIELDS = (
 def _membership_source_coverage(row: dict) -> list[dict]:
     """Only complete original-source snapshots may retire earlier claims."""
     works: dict[tuple[str, str], list[dict]] = {}
-    for authored in row.get("authored") or []:
+    source_rows = list(row.get("membership_work_sources") or [])
+    represented = {
+        (source.get("institution_source_person_id"), source.get("institution_source_id"))
+        for source in source_rows
+    }
+    source_rows.extend(
+        authored for authored in row.get("authored") or []
+        if (authored.get("institution_source_person_id"), authored.get("institution_source_id")) not in represented
+    )
+    for authored in source_rows:
         owner, work = authored.get("institution_source_person_id"), authored.get("institution_source_id")
         if owner and work:
             works.setdefault((owner, work), []).append(authored)

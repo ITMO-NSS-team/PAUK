@@ -246,6 +246,40 @@ class GraphMembershipTest(unittest.TestCase):
         _, (_, props) = extract_node(row, person_spec(row))
         self.assertEqual(json.loads(props["membership_source_coverage"]), [])
 
+    def test_folded_publication_keeps_both_original_membership_sources(self):
+        original = {
+            "publication_id": "W113", "position": 1, "institution_source_person_id": "A1",
+            "institution_source_id": "W113", "institution_rors": [],
+            "institution_observed_at": "2026-10-29T00:00:00Z",
+        }
+        duplicate = {**original, "institution_source_id": "W114", "institution_rors": [ITMO_ROR_ID]}
+        row = {"id": "A1", "is_itmo": True, "authored": [original],
+               "membership_work_sources": [original, duplicate]}
+        _, (_, props) = extract_node(row, person_spec(row))
+        coverage = {item["source_id"]: item for item in json.loads(props["membership_source_coverage"])}
+        self.assertEqual(set(coverage), {"W113", "W114"})
+        self.assertFalse(coverage["W113"]["supports_itmo"])
+        self.assertTrue(coverage["W114"]["supports_itmo"])
+        edges = extract_relationships(row, person_spec(row))
+        self.assertEqual(len(edges[("Person", "Publication", "AUTHORED", "id")]), 1)
+        self.assertNotIn("membership_work_sources", props)
+
+    def test_source_ledger_correction_wins_over_old_display_authorship(self):
+        old_display = {
+            "publication_id": "W113", "position": 1, "institution_source_person_id": "A1",
+            "institution_source_id": "W114", "institution_rors": [ITMO_ROR_ID],
+            "institution_observed_at": "2026-10-29T00:00:00Z",
+        }
+        corrected = {**old_display, "institution_rors": [], "institution_observed_at": "2026-10-30T00:00:00Z"}
+        row = {"id": "A1", **assessed("unsupported"), "authored": [old_display],
+               "membership_work_sources": [corrected]}
+        _, (_, props) = extract_node(row, person_spec(row))
+        result = _person_membership_update(with_coverage("supported", "W114"), props, "A1")
+        self.assertFalse(result["is_itmo"])
+        self.assertEqual(json.loads(result["membership_evidence"]), [])
+        replay = _person_membership_update(result, with_coverage("supported", "W114"), "A1")
+        self.assertFalse(replay["is_itmo"])
+
 
 if __name__ == "__main__":
     unittest.main()

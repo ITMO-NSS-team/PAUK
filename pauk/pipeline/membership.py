@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from pauk.models.person import Affiliation, MembershipEvidence, MembershipOrcidSource, Person
+from pauk.models.person import Affiliation, MembershipEvidence, MembershipOrcidSource, MembershipWorkSource, Person
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
 
@@ -42,8 +42,75 @@ class MembershipResult:
     policy: str = POLICY_VERSION
 
 
+def iter_work_membership(person: Person) -> list[MembershipWorkSource | Authorship]:
+    represented = {
+        (row.institution_source_person_id, row.institution_source_id or row.publication_id)
+        for row in person.membership_work_sources
+    }
+    displays = {(row.publication_id, row.position) for row in person.membership_work_sources}
+    return [*person.membership_work_sources, *[
+        row for row in person.authored
+        if (row.institution_source_person_id, row.institution_source_id or row.publication_id) not in represented
+        and not (row.institution_source_id is None and (row.publication_id, row.position) in displays)
+    ]]
+
+
+def _capture_work_membership(person: Person) -> None:
+    for row in iter_work_membership(person):
+        if isinstance(row, Authorship):
+            person.membership_work_sources.append(MembershipWorkSource.model_validate(row.model_dump()))
+
+
+def _update_authorship_summary(person: Person) -> None:
+    for row in person.authored:
+        sources = [source for source in person.membership_work_sources
+                   if (source.publication_id, source.position) == (row.publication_id, row.position)]
+        if not sources:
+            continue
+        rors = sorted({ror for source in sources for ror in source.institution_rors or []})
+        row.institution_rors = rors if rors or all(source.institution_rors is not None for source in sources) else None
+        owners = {source.institution_source_person_id for source in sources}
+        works = {source.institution_source_id for source in sources}
+        row.institution_source_person_id = next(iter(owners)) if len(owners) == 1 else None
+        row.institution_source_id = next(iter(works)) if len(works) == 1 else None
+        row.institution_observed_at = sources[0].institution_observed_at if len(sources) == 1 else None
+
+
+def coalesce_authorships(person: Person) -> None:
+    """Keep one display slot while retaining every original work's source state."""
+    _capture_work_membership(person)
+    versions: dict[tuple[str, str], dict[str, set[int | None]]] = {}
+    source_positions: set[tuple[str, int | None]] = set()
+    for source in person.membership_work_sources:
+        owner, work = source.institution_source_person_id, source.institution_source_id
+        if owner is None or work is None:
+            continue
+        versions.setdefault((source.publication_id, owner), {}).setdefault(work, set()).add(source.position)
+        source_positions.add((source.publication_id, source.position))
+    display_positions = {
+        (publication_id, position)
+        for (publication_id, _owner), works in versions.items()
+        for position in works[publication_id if publication_id in works else next(iter(works))]
+    }
+    authored: dict[tuple[str, int | None], Authorship] = {}
+    for row in person.authored:
+        key = (row.publication_id, row.position)
+        if key in source_positions and key not in display_positions:
+            continue
+        if key not in authored:
+            authored[key] = row
+            continue
+        current = authored[key]
+        current.is_corresponding = current.is_corresponding or row.is_corresponding
+        if row.affiliation and (not current.affiliation or current.affiliation_source and not row.affiliation_source):
+            current.affiliation = row.affiliation
+            current.affiliation_source = row.affiliation_source
+    person.authored = list(authored.values())
+    _update_authorship_summary(person)
+
+
 def refresh_authorship_membership(
-    person: Person, row: Authorship, raw_authorship: dict,
+    person: Person, row: Authorship | MembershipWorkSource, raw_authorship: dict,
     source_person_id: str, source_work_id: str,
     observed_at: datetime | None = None,
     *, snapshot_accepted: bool = False,
@@ -56,6 +123,19 @@ def refresh_authorship_membership(
         if source_observed_at(observed_at) == source_observed_at(row.institution_observed_at) and rors != row.institution_rors:
             logger.warning("Conflicting equal-time authorship snapshot for %s / %s", source_person_id, source_work_id)
         return
+    if isinstance(row, Authorship) and row.institution_source_id is None and not any(
+        (source.publication_id, source.position) == (row.publication_id, row.position)
+        for source in person.membership_work_sources
+    ):
+        row.institution_source_person_id = source_person_id
+        row.institution_source_id = source_work_id
+    _capture_work_membership(person)
+    source_row = next((entry for entry in person.membership_work_sources
+                       if (entry.institution_source_person_id, entry.institution_source_id, entry.position)
+                       == (source_person_id, source_work_id, row.position)), None)
+    if source_row is None:
+        source_row = MembershipWorkSource(publication_id=row.publication_id, position=row.position)
+        person.membership_work_sources.append(source_row)
     person.membership_evidence = [
         claim for claim in person.membership_evidence
         if not (
@@ -65,10 +145,12 @@ def refresh_authorship_membership(
             and claim.position == row.position
         )
     ]
-    row.institution_rors = rors
-    row.institution_source_person_id = source_person_id
-    row.institution_source_id = source_work_id
-    row.institution_observed_at = observed_at
+    source_row.publication_id = row.publication_id
+    source_row.institution_rors = rors
+    source_row.institution_source_person_id = source_person_id
+    source_row.institution_source_id = source_work_id
+    source_row.institution_observed_at = observed_at
+    _update_authorship_summary(person)
 
 
 def source_observed_at(value: object) -> datetime | None:
@@ -87,7 +169,7 @@ def authorship_snapshot_is_current(
 ) -> bool:
     incoming = source_observed_at(observed_at)
     previous = [
-        stamp for row in person.authored
+        stamp for row in iter_work_membership(person)
         if row.institution_source_person_id == source_person_id and row.institution_source_id == source_work_id
         and (stamp := source_observed_at(row.institution_observed_at)) is not None
     ]
@@ -100,13 +182,14 @@ def reconcile_authorship_snapshot(
     *, complete: bool,
 ) -> None:
     """Retire superseded membership claims without deleting authorship history."""
+    _capture_work_membership(person)
     owners = {owner for owner, _ in slots}
     current_owners = {
-        row.institution_source_person_id for row in person.authored
+        row.institution_source_person_id for row in person.membership_work_sources
         if row.institution_source_id == source_work_id and row.institution_source_person_id is not None
         and authorship_snapshot_is_current(person, row.institution_source_person_id, source_work_id, observed_at)
     }
-    for row in person.authored:
+    for row in person.membership_work_sources:
         owner = row.institution_source_person_id
         if row.institution_source_id != source_work_id or owner is None:
             continue
@@ -187,9 +270,10 @@ def evaluate_membership(person: Person) -> MembershipResult:
     Successful source refreshes retract their own claims before evaluation.
     Legacy booleans and incomplete source coverage never prove a negative.
     """
+    work_sources = iter_work_membership(person)
     refreshed_work_keys = {
         (row.institution_source_person_id, row.institution_source_id or row.publication_id, row.position)
-        for row in person.authored if row.institution_rors is not None
+        for row in work_sources if row.institution_rors is not None
     }
     evidence = [
         row.model_copy(deep=True) for row in person.membership_evidence
@@ -197,7 +281,7 @@ def evaluate_membership(person: Person) -> MembershipResult:
         and not (row.source == "openalex_work"
                  and (row.source_person_id, row.source_id, row.position) in refreshed_work_keys)
     ]
-    for row in person.authored:
+    for row in work_sources:
         if any(normalize_ror(ror) == ITMO_ROR_ID for ror in row.institution_rors or []):
             claim = MembershipEvidence(
                 source="openalex_work", source_person_id=row.institution_source_person_id,
@@ -222,8 +306,8 @@ def evaluate_membership(person: Person) -> MembershipResult:
         and orcid_state.status in {ProcessingStatus.COMPLETED, ProcessingStatus.COMPLETED_EMPTY}
         and orcid_state.request_key == person.orcid
     )
-    work_complete = bool(person.authored) and all(
-        row.institution_rors is not None for row in person.authored
+    work_complete = bool(work_sources) and all(
+        row.institution_rors is not None for row in work_sources
     )
     legacy_positive = person.is_itmo and person.membership_status in {None, "unknown"}
     if work_complete and orcid_complete and not person.merged_ids and not legacy_positive:

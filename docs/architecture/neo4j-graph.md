@@ -51,9 +51,10 @@ the main fields, at no extra request
 ([pipeline/repositories.md](pipeline/repositories.md)).
 
 `AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
-`is_corresponding`. It also carries institution RORs and the original work
-and author IDs for membership evidence; an unknown institution list differs
-from an explicitly empty one. `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
+`is_corresponding`. It also carries institution RORs and source IDs when one
+source supplies the edge. After publication dedup, the person node's source
+coverage retains each original work version separately; an unknown institution
+list differs from an explicitly empty one. `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
 `context` (a list), `page_number` (a list; `0` means the abstract, because
 Neo4j cannot store `null` inside an array property, so the sentinel is not
 `None`; see [pipeline/code-links.md](pipeline/code-links.md)), the parallel

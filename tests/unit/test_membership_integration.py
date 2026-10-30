@@ -424,6 +424,70 @@ class MembershipGraphParityTest(unittest.TestCase):
         self.assertEqual(index.pub_ids, set())
 
 
+class PublicationMembershipFoldTest(unittest.TestCase):
+    setUp = MembershipIntegrationTest.setUp
+    work = MembershipIntegrationTest.work
+    normalize = MembershipIntegrationTest.normalize
+
+    def folded_work_versions(self):
+        for work_id in ("W1", "W2"):
+            payload = self.work(work_id, institutions=[{"ror": ITMO_ROR_ID}])
+            payload.update(doi="https://doi.org/10.1234/one-publication", title="One publication")
+            self.normalize(payload)
+        mapping = DedupStage(self.prepared, self.raw, self.config)._dedup_publications()
+        self.assertEqual(mapping, {"W2": "W1"})
+        return next(self.prepared.read_models("persons", Person))
+
+    def test_publication_fold_has_one_authorship_but_keeps_both_original_sources(self):
+        person = self.folded_work_versions()
+        self.assertEqual([(a.publication_id, a.position, a.institution_source_person_id)
+                          for a in person.authored], [("W1", 1, "A1")])
+        self.assertEqual({(e.source_person_id, e.source_id) for e in person.membership_evidence},
+                         {("A1", "W1"), ("A1", "W2")})
+        self.assertTrue(person.is_itmo)
+
+    def test_correcting_one_folded_work_source_preserves_the_other_claim(self):
+        self.folded_work_versions()
+        corrected = self.work("W2", institutions=[])
+        corrected.update(doi="https://doi.org/10.1234/one-publication", title="One publication")
+        person = self.normalize(corrected)
+        self.assertEqual({(e.source_person_id, e.source_id) for e in person.membership_evidence},
+                         {("A1", "W1")})
+        self.assertTrue(person.is_itmo)
+        self.assertEqual([(a.publication_id, a.position) for a in person.authored], [("W1", 1)])
+
+    def test_reordered_author_in_two_versions_has_one_display_and_independent_sources(self):
+        works = []
+        for work_id in ("W1", "W2"):
+            payload = self.work(work_id, institutions=[{"ror": ITMO_ROR_ID}])
+            payload["authorships"].append({"author": {"id": "A2", "display_name": "Other Author"},
+                                            "institutions": []})
+            if work_id == "W2":
+                payload["authorships"].reverse()
+            payload.update(doi="https://doi.org/10.1234/one-publication", title="One publication")
+            self.normalize(payload)
+            works.append(payload)
+        self.assertEqual(DedupStage(self.prepared, self.raw, self.config)._dedup_publications(), {"W2": "W1"})
+        person = next(p for p in self.prepared.read_models("persons", Person) if p.id == "A1")
+        self.assertEqual({(e.source_id, e.position) for e in person.membership_evidence},
+                         {("W1", 1), ("W2", 2)})
+        self.assertEqual([a.publication_id for a in person.authored], ["W1"])
+        works[1]["authorships"][1]["institutions"] = []
+        self.normalize(works[1])
+        person = next(p for p in self.prepared.read_models("persons", Person) if p.id == "A1")
+        self.assertEqual({(e.source_id, e.position) for e in person.membership_evidence}, {("W1", 1)})
+        self.assertTrue(person.is_itmo)
+        self.assertEqual([a.publication_id for a in person.authored], ["W1"])
+
+    def test_repeated_author_positions_within_one_raw_work_remain_distinct(self):
+        payload = self.work(institutions=[{"ror": ITMO_ROR_ID}])
+        payload["authorships"].append({"author": {"id": "A1", "display_name": "Alex Sample"},
+                                        "institutions": []})
+        person = self.normalize(payload)
+        self.assertEqual([(a.publication_id, a.position) for a in person.authored], [("W1", 1), ("W1", 2)])
+        self.assertEqual({(e.source_id, e.position) for e in person.membership_evidence}, {("W1", 1)})
+
+
 class SharedAuthorshipMembershipTest(unittest.TestCase):
     setUp = MembershipIntegrationTest.setUp
 
