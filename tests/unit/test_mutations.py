@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta
 
 from pauk.graph.client import _merge_duplicate_properties
 from pauk.graph.extract import NODE_REGISTRY
@@ -38,7 +39,7 @@ class FakeGraph:
 
     def _tick(self) -> str:
         self.clock += 1
-        return f"2026-08-14T10:00:{self.clock:02d}"
+        return (datetime(2026, 8, 14, 10) + timedelta(seconds=self.clock)).isoformat()
 
     def add(self, label: str, node_id: str, **props):
         self.nodes[(label, node_id)] = {"id": node_id, "updated_at": self._tick(), **props}
@@ -56,13 +57,29 @@ class FakeGraph:
                         if k not in ("id", "created_at", "updated_at")})
             row["updated_at"] = self._tick()
 
+    def update_node_properties(self, label, node_id, properties, expected_updated_at=None):
+        row = self.nodes.get((label, node_id))
+        if row is None:
+            return None, None
+        before = dict(row)
+        if expected_updated_at is not None and str(before.get("updated_at")) != str(expected_updated_at):
+            return before, None
+        self.upsert_nodes_batch(label, [(node_id, properties)])
+        return before, dict(self.nodes[label, node_id])
+
     def delete_nodes_batch(self, label, ids, detach=True):
         self.calls.append("delete_nodes_batch")
         removed = 0
         for node_id in ids:
-            attached = [key for key in self.relationships
-                        if (key[0] == label and key[3] == node_id)
-                        or (key[2] == label and key[4] == node_id)]
+            props = self.nodes.get((label, node_id), {})
+            attached = []
+            for key in self.relationships:
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
+                target = node_id if match_prop == "id" else props.get(match_prop)
+                if ((src_label == label and src_id == node_id)
+                        or (tgt_label == label and tgt_id == target)):
+                    attached.append(key)
             if attached and not detach:
                 continue
             if self.nodes.pop((label, node_id), None) is not None:

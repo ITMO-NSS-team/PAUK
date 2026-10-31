@@ -1,9 +1,10 @@
-"""Integration tests for the delete paths against a real Neo4j instance.
+"""Integration tests for manual mutations against a real Neo4j instance.
 
 Deletion is the one part of the manual-edit layer a fake client cannot
 vouch for: `delete_nodes_batch` builds a `collect` + `FOREACH` query whose
 validity only a real server can confirm, and the "refuse to delete a
 connected node" guard is enforced by Neo4j itself, not by our Python.
+Version checks also need real concurrent transactions to verify locking.
 
 Skipped unless testcontainers is installed and Docker is reachable:
     uv run --with pytest --with mongomock --with "testcontainers[neo4j]" \
@@ -14,8 +15,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from itertools import permutations, product
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
 import mongomock
@@ -23,7 +26,7 @@ import mongomock
 from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
-from pauk.graph.mutations import merge_nodes
+from pauk.graph.mutations import NotFound, VersionConflict, merge_nodes, update_node
 from pauk.graph.unmerge import split_person
 from pauk.models import Person
 from pauk.pipeline.stages.dedup import DedupStage
@@ -101,6 +104,79 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_reading_a_node_that_is_not_there(self):
         self.assertIsNone(_client.fetch_node_properties("Person", "nobody"))
+
+
+class ConcurrentNodeUpdatesIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n").consume()
+        _client.upsert_nodes_batch("Person", [("A1", {"name_ru": "Иван"})])
+
+    def test_only_one_save_can_use_the_same_version(self):
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+        barrier = Barrier(2, timeout=10)
+
+        class RacingClient:
+            def __getattr__(self, name):
+                return getattr(_client, name)
+
+            def fetch_node_properties(self, label, node_id):
+                before = _client.fetch_node_properties(label, node_id)
+                barrier.wait()
+                return before
+
+            def update_node_properties(self, *args):
+                barrier.wait()
+                return _client.update_node_properties(*args)
+
+        def save(value):
+            try:
+                update_node(RacingClient(), "Person", "A1", {"name_ru": value}, seen)
+                return True
+            except VersionConflict:
+                return False
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(save, ["Пётр", "Иоанн"]))
+
+        self.assertEqual(sorted(results), [False, True])
+        current = _client.fetch_node_properties("Person", "A1")
+        self.assertEqual(current["name_ru"], ["Пётр", "Иоанн"][results.index(True)])
+        self.assertGreater(current["updated_at"], seen)
+        self.assertNotIn("__pauk_edit_lock", current)
+
+    def test_a_deleted_node_is_not_recreated_by_an_update(self):
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+
+        class DeletedClient:
+            def __getattr__(self, name):
+                return getattr(_client, name)
+
+            def fetch_node_properties(self, label, node_id):
+                before = _client.fetch_node_properties(label, node_id)
+                _client.delete_nodes_batch(label, [node_id])
+                return before
+
+            def update_node_properties(self, label, node_id, *args):
+                _client.delete_nodes_batch(label, [node_id])
+                return _client.update_node_properties(label, node_id, *args)
+
+        with self.assertRaises(NotFound):
+            update_node(DeletedClient(), "Person", "A1", {"name_ru": "Пётр"}, seen)
+
+        self.assertIsNone(_client.fetch_node_properties("Person", "A1"))
+
+    def test_a_version_always_advances_even_when_the_clock_is_behind_it(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n:Person {id: 'A1'}) "
+                        "SET n.updated_at = datetime('2100-01-01T00:00:00Z')").consume()
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+
+        updated = update_node(_client, "Person", "A1", {"name_ru": "Пётр"}, seen)
+
+        self.assertGreater(updated["updated_at"], seen)
+        with self.assertRaises(VersionConflict):
+            update_node(_client, "Person", "A1", {"name_ru": "Иоанн"}, seen)
 
 
 class MergePreservationAgainstRealGraphTest(unittest.TestCase):
