@@ -1,7 +1,3 @@
-# PAUK on one host. Run from the repository root:
-#   docker compose --env-file <secrets>/pauk.env -f deploy/compose.yml up -d
-# Paths and secrets come from that env file; see deploy/.env.example.
-
 x-logging: &docker-logs
   driver: json-file
   options: {max-size: "10m", max-file: "1"}
@@ -28,11 +24,9 @@ x-app-env: &app-env
 
 services:
   mongo:
-    # 4.x: the host CPU has no AVX, which mongo 5+ requires.
     image: mongo:4.4
     command: [--wiredTigerCacheSizeGB, "${MONGO_CACHE_GB:-6}", --logpath, /logs/mongod.log, --logappend]
     environment:
-      # Setting a root user is what makes the image start mongod with --auth.
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
@@ -59,7 +53,6 @@ services:
       NEO4J_dbms_security_procedures_allowlist: apoc.*,gds.*
     volumes:
       - ${PAUK_HOME}/db/neo4j/data:/data
-      # APOC and GDS jars of the same version, not downloaded at start.
       - ${PAUK_HOME}/db/neo4j/plugins:/plugins
       - ${PAUK_HOME}/logs/neo4j:/logs
     ports: ["7474:7474", "7687:7687"]
@@ -91,7 +84,6 @@ services:
   worker:
     <<: *app
     command: [pauk, admin, worker]
-    # SIGTERM finishes the job in hand; a publish can take minutes.
     stop_grace_period: 5m
     environment:
       <<: *app-env
@@ -99,7 +91,7 @@ services:
       OPENALEX_API_KEY: ${OPENALEX_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_PROXY_URL: ${OPENROUTER_PROXY_URL:-}
-      PAUK_LLM_MODEL: ${PAUK_LLM_MODEL:-}
+      PAUK_LLM_MODEL: ${PAUK_LLM_MODEL:-qwen/qwen-2.5-72b-instruct}
       PAUK_AUTHOR_NAMES_CONCURRENCY: ${PAUK_AUTHOR_NAMES_CONCURRENCY:-8}
       PAUK_PERSON_RESOLUTION_CONCURRENCY: ${PAUK_PERSON_RESOLUTION_CONCURRENCY:-8}
       GITHUB_TOKEN: ${GITHUB_TOKEN}
@@ -107,8 +99,6 @@ services:
       PAUK_RUSSIAN_NAMES_FILE: /private/russian_names.csv
       PAUK_REPORTS_DIR: /reports
     extra_hosts: ["host.docker.internal:host-gateway"]
-    # A dead worker process ends the container and the restart policy brings
-    # it back; this checks what it cannot do without: reaching Mongo.
     healthcheck:
       test: [CMD, python, -c, "import os, pymongo; pymongo.MongoClient(os.environ['MONGO_URI'], serverSelectionTimeoutMS=5000).admin.command('ping')"]
       interval: 60s
@@ -124,6 +114,45 @@ services:
       - ${PAUK_ESSDATA}/runs/${PAUK_STAND}/osa:/app/data/osa
       - ${PAUK_ESSDATA}/reports/${PAUK_STAND}:/reports
       - uv-cache:/home/pauk/.cache/uv
+
+  ops:
+    profiles: [ops]
+    build:
+      context: ..
+      dockerfile: deploy/ops.Dockerfile
+      additional_contexts:
+        paukbase: service:admin
+    image: pauk-ops:local
+    restart: unless-stopped
+    stop_grace_period: 10m
+    logging: *docker-logs
+    environment:
+      <<: *app-env
+      PAUK_HOME: ${PAUK_HOME}
+      PAUK_ESSDATA: ${PAUK_ESSDATA}
+      PAUK_STAND: ${PAUK_STAND}
+      PAUK_OPS_STATE: ${PAUK_HOME}/ops
+      PAUK_ENV_FILE: ${PAUK_HOME}/secrets/pauk.env
+      PAUK_COMPOSE_PROJECT: ${PAUK_COMPOSE_PROJECT:-deploy}
+      PAUK_PAGES_SCRIPT: ${PAUK_PAGES_SCRIPT:-}
+      PAUK_SERVICE: ops
+      MONGO_BACKUP_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_PROXY_URL: ${OPENROUTER_PROXY_URL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PAUK_HOME}:${PAUK_HOME}
+      - ${PAUK_HOME}/code:${PAUK_HOME}/code:ro
+      - ${PAUK_HOME}/secrets:${PAUK_HOME}/secrets:ro
+      - ${PAUK_ESSDATA}:${PAUK_ESSDATA}
+      - ${PAUK_HOME}/logs/ops:/logs
+    ports: ["8506:8506"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8506/ops/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   site:
     image: nginx:1.27.5-alpine
@@ -142,5 +171,4 @@ services:
       retries: 3
 
 volumes:
-  # OSA's environment, installed by uvx on the first report run.
   uv-cache:
