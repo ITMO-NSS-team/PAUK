@@ -481,9 +481,13 @@ Things worth knowing:
 
 - **Concurrent edits to one record are rejected.** If the record changed while
   the form was open, saving fails instead of silently losing the other edit;
-  the page returns with the current values.
+  the page returns with the current values. Version comparison and update
+  run under one Neo4j write lock. A record deleted meanwhile is not recreated.
 - **Undoing a deletion decision restores the record at once**, with all
   fields: a snapshot is stored in the decision when the record is deleted.
+- **Undoing an unlink restores the relationship's properties**, including
+  author position and link evidence. The panel snapshots them before unlinking;
+  Neo4j sets fresh service timestamps when the relationship is recreated.
 - **Creating a record with the id of a deleted one clears the deletion mark**,
   otherwise the next publish would remove it again.
 - **The audit log and manual decisions are different things.** The log is
@@ -566,9 +570,12 @@ ones and holds a lock meanwhile, so run it when no jobs are running.
 
 ### Known limitations
 
-- An unlinked relationship is restored from the decision itself, not from
-  history: the decision stores the relationship, the log only records that it
-  appeared and disappeared.
+- Relationship deletion decisions made before property snapshots existed,
+  or outside the panel without a snapshot, restore only the endpoints. A later
+  publish can supply the properties again if the prepared data still has them.
+- Undoing a successful node deletion restores its fields, not its incident
+  relationships. Their snapshot is currently kept in memory only for rolling
+  back a failed deletion; publishing rebuilds edges still present in prepared data.
 - Source history appears on the record card and nowhere else; there is no
   "all changed rows" list, you start from a concrete record.
 - A run stops at the next seam, not instantly. Inside a stage the request is
@@ -593,18 +600,54 @@ Handled from both sides:
   and the graph stays untouched;
 - **if Mongo fails between the two writes**, the graph write is rolled back.
 
+Each decision is committed in one Mongo command, including the original
+field values, operation and claim marker. There is no separate read after a
+successful write. If Mongo loses the reply, the panel checks the decision's
+write token: a confirmed commit succeeds; a confirmed failure permits graph
+rollback. If the result cannot be checked, the response reports uncertainty
+and leaves the graph in place, since the decision may already be committed.
+Repeated contention exhausts a bounded attempt budget; after a successful
+rollback the panel reports a conflict (409), rather than a Mongo outage.
+
+Field edits carry the version returned by Neo4j into the decision write, in
+both the panel and CLI. Mongo merges fields in graph-version order, even when
+requests arrive out of order: each field keeps its newest value and its
+earliest known original for undo. Independent fields are merged separately;
+the actor and note follow the latest graph edit. UTC normalization preserves
+Neo4j's nanosecond precision.
+
+Creation, deletion and undo advance the decision's `generation`. A field edit
+reads that counter before changing the graph; a delayed write from an older
+state is rejected instead of reactivating a cancelled decision or replacing
+a deletion. A new edit after undo starts with only the newly edited fields.
+
 This covers every edit that leaves a decision behind: field change, node
 deletion, linking and unlinking, creation and restoration.
 
-The rollback for creation is pessimistic: it deletes the node even though
-usually there was no deletion mark and the node would have been fine. Only the
-database that is currently down could say, and a node that vanishes on the next
-publish is worse.
+Before unlinking, the panel reads the relationship's properties. A failed
+decision write restores them from memory; a successful write stores the same
+snapshot in Mongo for the later undo button. Empty properties are a valid
+snapshot, and the target keeps its original addressing key (`id`, `url` or
+`login`).
 
-A rollback is visible in the audit log next to the edit. One case remains where
-even that fails (both databases down at once); then the response says
-explicitly that the edit stayed in the graph without a decision and the next
-publish will remove it.
+Before deleting a node with its relationships, the panel snapshots both
+incoming and outgoing edges, including their properties. If recording the
+deletion fails, it recreates the node first and then those edges. An unknown
+relationship type or a missing addressing key refuses deletion before the
+graph changes, since the allowed mutations could not restore that edge.
+
+Field rollback also checks the version its own write produced. If another
+editor saved since then, compensation refuses to overwrite that newer edit
+and reports an incomplete rollback.
+
+Creation records its claim and replaces any old deletion decision atomically.
+If the claim definitely failed, rollback removes the new node: without the
+claim, reconciliation could remove it later anyway.
+
+A rollback is visible in the audit log next to the edit when the audit store
+is available. If graph restoration also fails, the response explicitly reports
+the incomplete rollback. An unconfirmed Mongo write is reported separately;
+it is never described as a successful rollback.
 
 ## Linking nodes
 
