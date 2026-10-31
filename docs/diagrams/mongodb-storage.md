@@ -69,8 +69,8 @@ for the first time.
 
 ## Why a write is not a plain upsert
 
-By contract each stage reads the group's **whole** working set for an entity,
-mutates it and writes the **whole** set back. Steps 2 and 3 enforce that: if a
+`write_models` replaces the group's **whole** working set for an entity.
+Callers using that path must supply the complete set. Steps 2 and 3 enforce it: if a
 row was in the group's working set but is not reconfirmed this time (folded by
 the dedup stage, renamed by re-normalization), the group's claim on it is
 removed, and a document left with no group is deleted, so it does not linger in

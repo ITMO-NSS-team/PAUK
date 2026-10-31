@@ -173,9 +173,10 @@ asks for confirmation; `--yes` skips it.
 pauk admin prune [--apply] [--limit N]
 ```
 
-`publish graph` only adds. A row deleted from Mongo, or a link a row stopped
-asserting, stays in the graph forever. This command finds such leftovers
-and, with `--apply`, removes them. Without `--apply` it prints the list and
+`publish graph` adds and updates, synchronizes confirmed `MENTIONS_LINK` and
+`IMPLEMENTS` relationships, folds duplicates and reapplies manual deletions.
+Other stale records and relationships need reconciliation. This command finds
+those leftovers and, with `--apply`, removes them. Without `--apply` it prints the list and
 changes nothing; `--limit` (default 20) caps how many of each kind are
 printed.
 
@@ -248,7 +249,8 @@ Runs OSA on every repository of the snapshot that has no report yet, except
 third-party ones (cited, never `IMPLEMENTS`, no ITMO contributor), and
 writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
 `reports/index.json`. Repository ids limit the run, `--force` regenerates
-existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.
+existing reports. Needs `OPENROUTER_API_KEY` and OpenRouter access; on the
+server use `OPENROUTER_PROXY_URL`. The worker image includes `uvx`.
 Exits non-zero if any report failed. `PAUK_REPORTS_DIR` sets another folder.
 See [reports.md](reports.md).
 
