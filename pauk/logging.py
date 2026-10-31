@@ -67,7 +67,8 @@ def configure_logging(verbose: bool = False, service: str | None = None) -> None
     """Console output always; a file in PAUK_LOG_DIR as well when it is set.
 
     The file handler reopens its file after logrotate moves it away, so the
-    rotation needs no signal to the process.
+    rotation needs no signal to the process. Neo4j driver notifications are
+    suppressed below ERROR unless verbose logging is enabled.
     """
     service = service or os.getenv("PAUK_SERVICE") or DEFAULT_SERVICE
     root = logging.getLogger()
@@ -91,8 +92,6 @@ def configure_logging(verbose: bool = False, service: str | None = None) -> None
     logging.getLogger(HTTP_TRACE_LOGGER).setLevel(logging.DEBUG if verbose else logging.WARNING)
     for name in QUIET_THIRD_PARTY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-    # The driver's notifications (Cypher deprecation/perf hints) stay noisy at
-    # WARNING, so drop them further.
     if not verbose:
         logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 

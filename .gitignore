@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache
 .ruff_cache
+.playwright-cli/
 *.py[cod]
 *$py.class
 *.so
@@ -11,7 +12,6 @@ __pycache__/
 !data/static/**
 data/static/*.draft.json
 
-# Official staff records — personal data, never committed.
 data/static/russian_names.csv
 
 data/cache/*
@@ -32,9 +32,10 @@ data/gui/public/*
 data/reports/
 docs/reports/
 
-
 *.egg-info/
 dist/
+dist-public/
+output/playwright/
 build/
 
 .env

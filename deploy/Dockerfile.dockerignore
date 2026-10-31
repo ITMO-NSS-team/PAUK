@@ -4,9 +4,8 @@
 **/__pycache__
 **/node_modules
 pauk/gui/web/dist
-docs/plans
+pauk/gui/web/dist-public
 
-# Runtime data comes in through mounts; only the catalogs kept in git ship.
 data/*
 !data/static
 data/static/russian_names.csv
