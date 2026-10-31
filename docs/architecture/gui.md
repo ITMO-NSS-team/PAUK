@@ -4,8 +4,8 @@
 site, and how the site itself is organized.
 
 **Files:** the `pauk/gui/graph_builder/` package (`builder.py`,
-`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`,
-`grants.py`, `public.py`, `config.py`, tests in `tests/`) and the site in
+`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`, `public.py`,
+`grants.py`, `config.py`, tests in `tests/`) and the site in
 `pauk/gui/web/`.
 
 Of the `pauk/gui` chain, only `pauk/cache/export.py` touches Neo4j;
@@ -28,27 +28,15 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 - `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
   fields that the site loads lazily after the map.
 
-Every run writes two variants of all four files:
-
-- `data/gui/private/`: full names and personal fields (email, ORCID, GitHub,
-  Google Scholar, degree, affiliations, name variants, record timestamps).
-  Only for the lab server behind the VPN.
-- `data/gui/public/`: for GitHub Pages. `public.py::to_public` rewrites the
-  private data rather than hiding anything in the site: author names become
-  the surname's first letters plus initials ("Иванов Иван Иванович" to
-  "Ив… И. И.", "Ли Анна" to "Л… А."; free text is read surname first), author
-  keys are renumbered (`a0`, `a1`, ...: the real ones are OpenAlex ids or
-  `manual_person_<surname>_<name>`), and every row is cut to a whitelist.
-  `authors-detail.json` keeps only `pub_roles`; `versions` is dropped from
-  publications, emails are cut out of abstracts, and an abstract scraped
-  together with the publisher's author block (ORCID links) is dropped. A field added to the builder later stays out of `public/`
-  until it is added to a whitelist there on purpose.
-  `tests/unit/test_gui_public.py` checks the written files for given names,
-  personal values, original keys and private or service field names.
-
-The build runs in stages, one module each:
-`authorship.py` (who wrote what), `departments.py`, `layout.py`, `nodes.py`,
-`edges.py`.
+Both folders contain all four files. `private/` keeps full names and personal
+fields. `public.py::to_public` rewrites the public variant: masked labels,
+sequential author keys, consistent remapped edges, whitelisted fields and
+abstracts without emails or scraped author blocks. The source snapshot and
+private output remain intact. `npm run build:public` selects `data/gui/public`
+and emits `dist-public` with relative URLs; the default build uses private
+files. `scripts/publish_pages.sh` validates and uploads the public data for
+GitHub Pages. The layout stages are `authorship.py`, `departments.py`,
+`layout.py`, `nodes.py` and `edges.py`.
 
 **External authors.** The export takes every `Person` (with `is_itmo`) and
 every `AUTHORED`. A publication reaches the map if it has at least one ITMO
@@ -140,39 +128,17 @@ by exactly one function (`COORD_MIN`/`COORD_MAX`, `STRANDED_JITTER`/
 
 ## `pauk/gui/web/`: the site
 
-TypeScript + Vite; the map uses Sigma.js (graphology). The build mode picks
-the variant (`vite.config.ts`):
+TypeScript + Vite; the map uses Sigma.js (graphology).
+`vite.config.ts::publicDir` points at `data/gui/private/`, so the data is
+picked up both by `npm run dev` and by the build.
 
 ```bash
 cd pauk/gui/web
 npm install
-npm run dev            # local, private data
-npm run build          # dist/: lab server site with data/gui/private
-npm run dev:public     # local, public data
-npm run build:public   # dist-public/: GitHub Pages site with data/gui/public
+npm run dev        # local
+npm run build      # dist/: static files together with the data
 npm test && npm run typecheck && npm run lint
 ```
-
-The public build uses relative URLs (`base: "./"`), because Pages serves it
-from `/PAUK/`, and writes to `dist-public/`, so it never overwrites the lab
-server's `dist/`. OSA reports (`reports/`) are not part of `data/gui/public`;
-they describe public repositories only and are added to the published site by
-`scripts/publish_pages.sh`. A plain `npm run build:public` has no report
-buttons.
-
-**Publishing to GitHub Pages** (https://itmo-nss-team.github.io/PAUK/):
-
-```bash
-pauk gui build                  # both variants
-scripts/publish_pages.sh        # needs gh with write access to the repo
-```
-
-The script packs `data/gui/public/*.json` plus the reports, uploads the
-archive to the `pages-data` release (the data is never committed) and runs
-`.github/workflows/pages.yml` on `main`, which builds the site from main's
-code with `npm run build:public` and deploys it. The `github-pages`
-environment only accepts deployments from `main`, so the workflow has to be
-merged there before the first run.
 
 Layers in `src/` (import order is enforced by eslint-boundaries: a layer may
 import only from itself and the layers below): `contracts` (JSON shapes,
@@ -189,4 +155,23 @@ health) page of the admin panel (`pauk/admin/health.py`); see
 `p.is_itmo`, not a label; `tests/unit/test_checks.py` checks every label and
 relationship type in the queries against the schema.
 
-Deployment to the lab server is described in [deploy.md](deploy.md).
+On the server, the worker writes these files under `~/pauk/gui/itmo/`, while
+nginx reads a separate built site at `~/pauk/site/itmo/main/`. A data rebuild
+does not publish a release. Publishing must also make generated files readable
+by nginx; atomic JSON output starts with mode 600. See [deploy.md](deploy.md).
+
+## `ops.html`: operations interface
+
+The separate Vite entry `src/app/ops.ts` mounts `features/operations/`.
+It reuses the map's themes and branding, with top navigation for service
+status, backups, site releases and operation logs. It reads open `/api/ops/` endpoints without accounts or sessions and does not
+simulate results.
+The dedicated OPS image builds without map data and serves `/ops/` from FastAPI.
+The map remains a separate nginx service. See [ops.md](ops.md) for execution,
+permissions and deployment configuration.
+
+Backup dates use Moscow calendar days; labels refresh with server polling.
+Unsupported mobile devices see a desktop-only screen and do not poll the API.
+`npm run build` emits both `dist/index.html` and `dist/ops.html` for local checks;
+production OPS and map builds select only their own entry.
+Visual rules and screen rationale: [../design/ops.md](../design/ops.md).

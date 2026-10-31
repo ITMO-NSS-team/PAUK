@@ -40,6 +40,14 @@ Thin wrappers, each knowing only its own API. All inherit from
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 
+## Logging
+
+`OpenRouterClient` logs individual requests at DEBUG. Repeated failures are
+throttled per kind: the first and every hundredth occurrence are warnings;
+the rest remain visible with `--verbose`. Use stage summaries and progress
+for INFO-level monitoring. File and container log formatting and redaction
+are configured by `pauk/logging.py`.
+
 ## PDF-Crawler-Service is not in this package
 
 Fallback PDF download by DOI through the external

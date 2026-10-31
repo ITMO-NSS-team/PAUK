@@ -20,7 +20,7 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 | Node | Unique key | Labels |
 |---|---|---|
-| Person | `id` (bare OpenAlex author ID) | `Person` |
+| Person | `id` (OpenAlex author ID or deterministic local fallback) | `Person` |
 | Department | `id` (the catalog `uid`) | `Department` |
 | Organization | `id` and `name_en` (both unique) | `Organization` |
 | Publication | `id` (bare OpenAlex work ID) | `Publication` |
@@ -86,11 +86,11 @@ is created only to a repository present in the prepared `repositories`
 collection: the social graph walks uncited repositories too but does not
 store them, and a relationship cannot point at a missing node.
 
-The evidence the matcher decides on (`GitHubProfile.emails`, `commit_names`,
-`repos`, and `Person.emails`) is not published to the graph. These are
-working data for matching and also real people's addresses; they stay in the
-prepared rows and in the `github_matches.jsonl` journal. Of the collected
-profile, only `company` goes into the graph.
+`Person.email` and `Person.emails` are published to the graph. Profile fields
+`login`, `name`, `html_url`, `description`, `location`, `company` and `type`
+are published from `GitHubProfile`. Matcher evidence `GitHubProfile.emails`,
+`commit_names` and `repos` stays in Mongo and the `github_matches.jsonl`
+journal; it is not in the profile's graph-property whitelist.
 
 A person always has the single label `:Person`; ITMO membership is the
 boolean property `is_itmo`, not a label. The property is sticky: the same

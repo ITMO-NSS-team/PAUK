@@ -18,12 +18,12 @@ The "Writes" column is the one thing worth knowing before you run a script.
 
 | Script | What it does | Writes |
 |---|---|---|
-| `deploy.sh` | Builds the site locally from the current branch, rsyncs it to the server and restarts the `screen` session that serves it. It does **not** regenerate the map data and does no `git pull` on the server; see [deploy.md](deploy.md) | server |
-| `publish_pages.sh` | Uploads the public map data (`data/gui/public` plus the OSA reports) to the `pages-data` release and runs the GitHub Pages workflow; see [gui.md](gui.md) | GitHub Pages |
-| `serve_static.py` | Serves the site on the server: `http.server` plus ready-made `.gz` files for browsers that accept gzip. Started by `deploy.sh` | no |
-| `mongo-up.sh` | Idempotent (re)start of the `pauk-mongo` container on the server | server |
-| `systemd/` | Unit files `pauk-admin.service` (admin panel) and `pauk-worker.service` (`pauk admin worker`); installation is in [../admin-panel.md](../admin-panel.md) | no |
-| `snapshot_mongo.py` | Dumps prepared collections to Extended JSON, one file per collection, with a manifest and sha256 | no, read-only |
+| `publish_pages.sh` | Validates public map data, uploads the `pages-data` release asset and waits for the Pages workflow; see [ops.md](ops.md) | GitHub release and deployment |
+| `deploy.sh` | Legacy screen-based publication to `~/pauk-gui`; does not update the Compose site. Do not use for the active deployment; see [deploy.md](deploy.md) | server |
+| `serve_static.py` | Legacy static server used by `deploy.sh`; the active site uses nginx | no |
+| `mongo-up.sh` | Legacy standalone Mongo container manager; do not run alongside the active Compose Mongo service | server |
+| `systemd/` | Legacy panel/worker units; not used by the Compose deployment | no |
+| `snapshot_mongo.py` | Reads prepared collections into Extended JSON with a manifest and sha256; not a full MongoDB backup | output files only |
 
 `snapshot_mongo.py` is the rollback point. Take a snapshot before any
 operation that overwrites prepared data; it also prepares the input for the
