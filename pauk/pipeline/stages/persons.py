@@ -303,6 +303,10 @@ class PersonsStage(EnrichmentStage):
                                 value = _github_login(url) if field == "github" else url
                                 if value and not getattr(person, field):
                                     setattr(person, field, value)
+                                if (field == "github" and value and person.github_match
+                                        and person.github and value.casefold() == person.github.casefold()):
+                                    # ORCID now confirms this independently of account matching.
+                                    person.github_match.github = None
                             person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
                         person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC))

@@ -274,12 +274,26 @@ Why a separate layer instead of calling `Neo4jClient` from a handler:
   validation, would drift apart.
 - **Concurrent editors.** `update_node` accepts the `updated_at` the editor
   saw when opening the record and rejects the write if the node has changed
-  since. Otherwise two people silently overwrite each other, and the audit
-  shows two legitimate edits.
+  since. `update_node_properties` takes a write lock before reading that
+  version and keeps comparison and update in one Neo4j transaction. It uses
+  `MATCH`, so a concurrently deleted node cannot be recreated by an edit.
+  Before/after images for auditing come from that same transaction. The
+  temporary lock property is removed before reading the node's properties;
+  it never appears in committed data. This follows Neo4j's documented
+  [write-lock pattern](https://neo4j.com/docs/operations-manual/current/database-internals/concurrent-data-access/#_lost_updates).
 
 Service fields (`id`, `created_at`, `updated_at`) cannot be edited: `client.py`
 sets them itself, and they are excluded from the editable list, otherwise
 `pauk admin schema` would promise a field every write rejects.
+Manual updates advance `updated_at` even if the clock has not moved past its
+previous value, so two saves cannot accidentally reuse the same version.
+
+For cascade-delete compensation, `snapshot_relationships` reads all incident
+edges before deletion and converts them to `create_relationship` arguments.
+The target key comes from each relationship's specification: `CONTRIBUTED_TO`
+uses a repository's `id`, while `MENTIONS_LINK` uses its `url`. Edge properties
+are preserved except DB-owned timestamps. The panel keeps this snapshot in
+memory and restores the node before reconnecting its edges if Mongo fails.
 
 `merge_nodes` appends `merged_ids` to the canonical node **before** folding:
 without that, `fetch_merged_id_map` cannot hold the duplicate down, and the
@@ -316,6 +330,35 @@ decisions are reapplied after every publish and every graph dedup.
 | `auto_value` | what the field held before the first edit, for the conflicts screen |
 | `snapshot` | for a deletion, every field the node carried, so restoring does not depend on the audit feed |
 | `active` | cleared on undo; the document stays so the panel can show that an edit existed |
+| `write_id` | unique token for a complete decision change; detects concurrent writes and confirms a commit after a lost reply |
+| `graph_version` | latest graph edit represented in the decision; orders actor and note |
+| `field_versions` | latest graph version for each manually edited field |
+| `auto_value_versions` | earliest graph version for each versioned original value; absent for legacy originals |
+| `generation` | changes on creation, deletion and undo; rejects pending field writes from a previous decision state |
+
+Decision fields, the first `auto_value`, operation, claim marker and metadata
+are saved together by `find_one_and_update`, which also returns the stored
+document. `_write_decision` checks the previous `write_id`; a concurrent
+change causes a fresh read and retry rather than overwriting its decision.
+`MAX_DECISION_WRITE_ATTEMPTS` caps contention at five total attempts,
+including the first. Exhaustion reports a conflict, not a database outage.
+Network errors are verified separately rather than retried by this loop.
+Legacy documents gain a token on their next change. Publication updates to
+`source_value` remain separate and are not replaced by the decision write.
+
+The panel and CLI read `override_generation` before updating a node, then pass
+it and the returned `updated_at` into `record_override`. `_field_updates`
+merges each field independently: newest graph version for the value, oldest
+for its original. Versions are UTC ISO strings retaining nanoseconds, so
+Mongo delivery order and timestamp truncation cannot reverse successive
+edits. A Mongo conflict rebuilds the merge from the current decision.
+
+The generation defaults to zero on legacy documents. Lifecycle changes advance
+it and clear version markers; a pending edit with the previous generation is
+refused. Editing after an inactive decision starts fresh fields, originals and
+source values instead of reviving cancelled fields. Legacy originals without
+versions remain trusted; their timestamps cannot be reconstructed. Calls
+without graph metadata retain the existing arrival-order behavior.
 
 Applying (`apply_overrides`) must be idempotent: the value is compared with
 what is already in the graph and no write is made if they match. Otherwise
@@ -350,6 +393,12 @@ reason as node tombstones. The decision key is the five-tuple `(source label,
 type, target label, source id, target id)`, where the target id is in the form
 the loader looks it up by: `url` for a repository, `login` for a GitHub
 profile.
+
+The panel also saves the deleted relationship's properties in `snapshot`.
+Both compensation after a Mongo write failure and the later undo button pass
+them back to `create_relationship`. `created_at` and `updated_at` are excluded:
+the graph assigns new timestamps on recreation. Legacy decisions without a
+snapshot restore a bare edge until publishing supplies its properties again.
 
 Order in the CLI matters: the edit goes to the graph first and only then is
 recorded as a decision. Otherwise a rejected edit (version conflict or

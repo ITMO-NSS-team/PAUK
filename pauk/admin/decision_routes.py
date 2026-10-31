@@ -77,6 +77,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                                     "добавленную вручную связь снимают на карточке записи")
             triple = (str(form["src_label"]), str(form["rel_type"]), str(form["tgt_label"]))
             src_id, tgt_id = str(form["src_id"]), str(form["target_id"])
+            snapshot = decisions.deleted_relationship_properties(db, *triple, src_id, tgt_id)
             dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id,
                                                        only_op=DELETE)
         else:
@@ -105,7 +106,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                 update_node(graph, label, node_id, back)
                 restored = "field"
         elif op == DELETE and kind == "rel":
-            create_relationship(graph, *triple, src_id, tgt_id)
+            create_relationship(graph, *triple, src_id, tgt_id, snapshot)
             restored = "link"
         elif op == DELETE and snapshot:
             create_node(graph, label, node_id,

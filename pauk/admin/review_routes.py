@@ -57,8 +57,8 @@ TABS = {
 RULES = {
     "orcid": "совпал ORCID",
     "staff_catalog": "одна запись в каталоге сотрудников",
-    "name_variant": "имя одного значится вариантом имени другого",
-    "same_name": "одинаковое имя, и есть чем подтвердить",
+    "name_variant": "имя одного есть среди вариантов имени другого",
+    "same_name": "одинаковое имя и есть подтверждение",
     "manual": "решение человека",
 }
 
@@ -66,14 +66,17 @@ WORDS = {
     "only one person is ITMO-affiliated": "только один из двоих в ИТМО",
     "no shared coauthors": "нет общих соавторов",
     "single-token display name": "имя из одного слова",
-    "name is given as initials": "имя дано инициалами",
+    "name is given as initials": "имя указано инициалами",
     "identical name with nothing corroborating it": "одинаковое имя, ничем не подтверждено",
-    "the name matches exactly and nothing else backs it":
-        "имя совпадает целиком, больше ничего не подтверждает",
+    # Beside the signals column, which already says the name matched.
+    "the name matches exactly and nothing else backs it": "кроме имени, подтверждений нет",
     "a similar name and a shared publication, nothing more":
-        "похожее имя и общая публикация, больше ничего",
+        "кроме похожего имени и общей статьи, подтверждений нет",
+    "several authors fit this account equally well": "одинаково подходят несколько авторов",
+    "answered before, but the question did not name every author that fits":
+        "уже отвечали, но тогда в вопросе были не все подходящие авторы",
     "the catalog holds several people under this name":
-        "каталог знает нескольких человек с таким именем",
+        "каталог имеет нескольких человек с таким именем",
 }
 
 
@@ -98,13 +101,14 @@ def _reason_words(reason: str) -> str:
 
 #: What each github signal says, for the column that explains a match.
 SIGNALS = {
-    "email_exact": "тот же адрес",
+    "email_exact": "совпала почта",
     "name_exact": "имя совпадает целиком",
+    "name_alternative": "имя совпадает с вариантом из OpenAlex",
     "name_fuzzy": "имя похоже",
-    "itmo_email": "адрес в домене ИТМО",
+    "itmo_email": "почта на itmo.ru",
     "login_surname": "фамилия в логине",
     "owner": "владелец репозитория",
-    "org_itmo": "состоит в организации ИТМО",
+    "org_itmo": "репозиторий организации ИТМО",
     "itmo_profile": "ИТМО указан в профиле",
 }
 
@@ -130,6 +134,9 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     login = evidence.get("login")
     # In a staff question only the person has a card to open.
     person = row.get("person") or evidence.get("person")
+    # Several authors fit one account, each for reasons of their own.
+    signals = {candidate["person"]: candidate.get("signals") or []
+               for candidate in evidence.get("candidates") or []} if _is_choice(row) else {}
     shown = []
     for index, member in enumerate(row["members"]):
         # An answer given before the question has no names to pair with.
@@ -145,8 +152,17 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
                      else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
+            # A person's facts come from the graph; an account's from its profile.
+            "facts": (evidence.get("profile") or {}) if account else {},
+            "signals": [SIGNALS.get(name, name) for name in signals.get(member, [])],
         })
-    return shown
+    # The account on top: sorted ids can put it between two people.
+    return sorted(shown, key=lambda who: not who["account"])
+
+
+def _is_choice(row: dict) -> bool:
+    """Whether an account question names several authors to choose from."""
+    return row["kind"] == review.GITHUB and len(row["members"]) > 2
 
 
 def _shown(row: dict, back: str = "") -> dict:
@@ -163,7 +179,9 @@ def _shown(row: dict, back: str = "") -> dict:
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
+        "is_choice": _is_choice(row),
         "chosen": row.get("chosen"),
+        "login": evidence.get("login"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
         "people": _people(row, evidence,
@@ -235,7 +253,8 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
         return rows
     for row in rows:
         for person in row["people"]:
-            person["facts"] = facts.get(person["id"], {})
+            if not person["account"] and not person["record"]:
+                person["facts"] = facts.get(person["id"], {})
     return rows
 
 
@@ -316,6 +335,18 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
+        elif verdict == "choose" and kind == review.GITHUB:
+            # The answer names an author; "none of them" comes as "different".
+            login = str(form.get("login", ""))
+            if login not in members:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "не указано, о каком аккаунте вопрос")
+            chosen = str(form.get("chosen", "")).strip()
+            if not chosen:
+                return back("Отметьте, чей это аккаунт.")
+            review.record_account_choice(db, login,
+                                         [member for member in members if member != login],
+                                         chosen, actor=user.actor, note=note)
         elif verdict == "choose":
             # Not a yes or no: the answer names a record. Empty means none fits.
             person = str(form.get("person", ""))

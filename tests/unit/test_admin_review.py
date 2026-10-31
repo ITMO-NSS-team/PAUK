@@ -12,8 +12,10 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.models import Person, Publication
+from pauk.pipeline.stages.github_match import hold_reason
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
 
@@ -193,6 +195,12 @@ class ReviewPageTest(unittest.TestCase):
     def test_the_count_agrees_with_its_noun(self):
         self.assertEqual(_reason_words("group spans 5 distinct email values"),
                          "в группе 5 разных значений поля email")
+
+    def test_every_reason_the_account_matcher_gives_is_in_russian(self):
+        for reason in (hold_reason(["name_exact"]), hold_reason(["name_fuzzy"]),
+                       hold_reason(["name_exact"], ambiguous=True),
+                       hold_reason(["name_exact"], contested=True)):
+            self.assertNotEqual(_reason_words(reason), reason, reason)
 
     def test_the_reason_is_shown_in_russian(self):
         self.sign_in()
@@ -390,7 +398,7 @@ class DisputedTabTest(unittest.TestCase):
 
     def test_the_tab_shows_what_the_rules_now_say(self):
         body = self.body()
-        self.assertIn("одинаковое имя, и есть чем подтвердить", body)
+        self.assertIn("одинаковое имя и есть подтверждение", body)
         self.assertIn("разные люди", body)
 
     def test_the_answer_is_shown_as_still_in_force(self):
@@ -519,6 +527,7 @@ class GitHubQuestionTest(unittest.TestCase):
         review.record_held(self.db, [{
             "status": "held", "login": "XieN-N", "person": "A5140754163",
             "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
+            "profile": {"name": "Stanislav Shtuka", "company": None, "location": "Vladivostok"},
             "score": 0.6, "signals": ["name_exact"],
             "repos": ["https://github.com/screemix/Wikontic"],
             "held_because": ["the name matches exactly and nothing else backs it"],
@@ -545,6 +554,18 @@ class GitHubQuestionTest(unittest.TestCase):
         body = self.body()
         self.assertIn("%23q-github_person-A5140754163-XieN-N", body)
         self.assertIn('<tr id="q-github_person-A5140754163-XieN-N">', body)
+
+    def test_the_account_shows_its_profile_and_its_login_once(self):
+        body = self.body()
+        self.assertIn("Vladivostok", body)
+        self.assertNotIn("XieN-N на GitHub", body)
+
+    def test_the_graph_does_not_wipe_the_accounts_profile(self):
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: FakePanelGraph()
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.assertIn("Vladivostok", client.get("/review").text)
 
     def test_the_account_points_at_github_and_the_person_at_their_card(self):
         # Sending a login to /nodes/Person would open a card for a node that
@@ -587,6 +608,113 @@ class GitHubQuestionTest(unittest.TestCase):
             "members": "A5140754163,XieN-N", "verdict": "same"})
         self.assertIn("привяжется на следующем сборе",
                       self.client.get("/review", params={"tab": "answered"}).text)
+
+
+class GitHubChoiceTest(unittest.TestCase):
+    """An account several authors fit, answered by naming the one it belongs to."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "login": "coder42", "person": "A1", "name_raw": "Ivan Petrov",
+            "url": "https://github.com/coder42", "signals": ["name_exact"], "repos": [],
+            "candidates": [{"person": "A1", "name_raw": "Ivan Petrov", "signals": ["name_exact"]},
+                           {"person": "A2", "name_raw": "Ivan Petrov", "signals": ["name_exact"]}],
+            "held_because": ["the name matches exactly and nothing else backs it"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def answer(self, verdict, chosen="", login="coder42"):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": login, "verdict": verdict, "chosen": chosen})
+
+    def test_the_authors_are_offered_and_the_account_is_not(self):
+        body = self.client.get("/review").text
+        offered = re.findall(r'name="chosen" value="([^"]+)"', body)
+        self.assertEqual(offered, ["A1", "A2"])
+        self.assertIn('name="login" value="coder42"', body)
+        self.assertNotIn('value="same"', body)
+
+    def test_the_account_comes_before_the_people(self):
+        body = self.client.get("/review").text
+        account = body.index('href="https://github.com/coder42"')
+        self.assertLess(account, body.index("/nodes/Person/A1"))
+        self.assertLess(account, body.index("/nodes/Person/A2"))
+
+    def test_choosing_records_the_author(self):
+        self.assertEqual(self.answer("choose", "A2").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A2"}): review.SAME,
+                          frozenset({"coder42", "A1"}): review.DIFFERENT})
+
+    def test_choosing_nobody_sends_the_form_back(self):
+        self.assertIn("problem=", self.answer("choose").headers["location"])
+        self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_an_author_outside_the_question_is_refused(self):
+        self.assertEqual(self.answer("choose", "A9").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_the_account_has_to_be_one_of_the_members(self):
+        self.assertEqual(self.answer("choose", "A2", login="").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_none_of_them_refuses_every_author(self):
+        self.assertEqual(self.answer("different").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A1", "A2"}): review.DIFFERENT})
+
+    def test_a_yes_naming_nobody_is_refused(self):
+        self.assertEqual(self.answer("same").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_confirming_the_rendered_choice_preserves_it_and_clears_the_disagreement(self):
+        note = 'Checked the profile & publications: "same author"'
+        self.assertEqual(self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": "coder42", "verdict": "choose", "chosen": "A1", "note": note,
+        }).status_code, 303)
+        review.record_disputed(self.db, [{
+            "status": "disputed", "login": "coder42", "person": "A2",
+            "rule": "email_exact",
+        }])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303, response.text)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["chosen"], "A1")
+        self.assertEqual(answer["note"], note)
+        self.assertEqual(answer["actor"], "user:roman")
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1"}): review.SAME,
+            frozenset({"coder42", "A2"}): review.DIFFERENT,
+        })
+
+    def test_a_stale_none_form_replaces_a_choice_saved_from_another_form(self):
+        page = self.client.get("/review")
+        stale_form = RenderedForms(page.text).with_button("никто из них")
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+
+        response = self.client.post(stale_form["action"], data=stale_form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["verdict"], review.DIFFERENT)
+        self.assertNotIn("chosen", answer)
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1", "A2"}): review.DIFFERENT,
+        })
 
 
 class StaffChoiceTest(unittest.TestCase):
