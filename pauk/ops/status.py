@@ -27,6 +27,18 @@ class TokenIssue(ValueError):
     """A credential problem distinct from network availability."""
 
 
+def published_ports(row: dict) -> str:
+    """Format host ports reported by Compose, collapsing contiguous ranges."""
+    ports = sorted({item["PublishedPort"] for item in row.get("Publishers") or [] if item.get("PublishedPort")})
+    ranges = []
+    for port in ports:
+        if ranges and port == ranges[-1][-1] + 1:
+            ranges[-1].append(port)
+        else:
+            ranges.append([port])
+    return ", ".join(str(group[0]) if len(group) == 1 else f"{group[0]}-{group[-1]}" for group in ranges) or "—"
+
+
 def observed(engine: Engine):
     services, checks, storage = [], [], []
     error = ""
@@ -60,6 +72,7 @@ def observed(engine: Engine):
                     healthy=good,
                     status="Работает" if good else row.get("Health") or row.get("State") or "Недоступен",
                     version=row.get("Image", "—"),
+                    ports=published_ports(row),
                     cpu=stat.get("CPUPerc", "—"),
                     memory=stat.get("MemUsage", "—").split(" / ")[0],
                 )
@@ -67,7 +80,7 @@ def observed(engine: Engine):
     except Exception:
         error = "Не удалось прочитать состояние Docker"
         services = [
-            dict(name=name, role=role, icon=icon, healthy=False, status="Нет данных", version="—", cpu="—", memory="—")
+            dict(name=name, role=role, icon=icon, healthy=False, status="Нет данных", version="—", ports="—", cpu="—", memory="—")
             for name, role, icon in SERVICES.values()
         ]
     for name, path in (("Локальный диск", engine.config.home), ("essdata · общее", engine.config.essdata)):

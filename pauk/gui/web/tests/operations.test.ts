@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialState } from "../src/features/operations/data";
 import { mountOperations } from "../src/features/operations";
-import { renderSite, renderStatus } from "../src/features/operations/view";
+import { renderBackups, renderSite, renderStatus } from "../src/features/operations/view";
 
 afterEach(() => {
   window.dispatchEvent(new Event("pagehide"));
@@ -24,6 +24,7 @@ describe("operations", () => {
     state.services = [
       {
         name: "<script>bad</script>",
+        ports: "8520-8529",
         role: "test",
         version: "test",
         cpu: "—",
@@ -37,7 +38,30 @@ describe("operations", () => {
     const html = renderStatus(state);
     expect(html).toContain("&lt;script&gt;bad&lt;/script&gt;");
     expect(html).toContain("&lt;failed&gt;");
+    expect(html).toContain("8520-8529");
     expect(html).not.toContain("Все работают");
+  });
+
+  it("lists legacy archives without offering managed restore or deletion", () => {
+    const state = initialState();
+    state.backups = [
+      {
+        id: "old",
+        name: "old",
+        created: "2026-01-01T00:00:00Z",
+        size: "1 ГБ",
+        managed: false,
+        components: ["Neo4j"],
+        verified: false,
+        restored: false,
+      },
+    ];
+    const html = renderBackups(state);
+    expect(html).toContain("Старый формат");
+    expect(html).toContain("Neo4j");
+    expect(html).toContain("Ручное восстановление");
+    expect(html).not.toContain('data-action="restore-backup"');
+    expect(html).not.toContain('data-action="delete-backup"');
   });
 
   it("loads desktop statuses without credentials or an account menu", async () => {

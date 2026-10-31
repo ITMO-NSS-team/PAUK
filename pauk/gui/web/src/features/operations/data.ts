@@ -2,6 +2,8 @@ export type Page = "status" | "backups" | "site" | "operations";
 export type OperationState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Backup {
+  managed: boolean;
+  components: string[];
   id: string;
   name: string;
   created: string;
@@ -33,6 +35,7 @@ export interface Operation {
 }
 
 export interface Service {
+  ports: string;
   name: string;
   role: string;
   icon: string;

@@ -172,3 +172,12 @@ isolated MongoDB 4.4 and Neo4j 2026.05.0 containers:
 `PAUK_TEST_OPS_RESTORE=1 uv run python -m unittest tests.integration.test_ops_restore`.
 It creates a uniquely named Compose project and removes its containers and
 temporary data on exit. Never use working databases as a test fixture.
+
+Existing directories under the active stand's dump root are also listed when
+they contain legacy database archives or collection exports. These rows show
+their actual components and file modification time. They are read-only in OPS;
+restoration requires the original procedure because they lack an OPS manifest
+and credential fingerprint. Other stands stay in their own dump roots.
+
+The journal has no automatic retention limit. SQLite records and log files
+stay on disk; the API and UI return the latest 200 operations.

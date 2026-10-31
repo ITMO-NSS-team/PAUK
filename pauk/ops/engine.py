@@ -365,20 +365,56 @@ class Engine:
         raise RuntimeError("Базы не прошли проверку после восстановления")
 
     def backups(self) -> list[dict]:
+        """List managed copies and older database archives without modifying them."""
         result = []
         self.config.dumps.mkdir(parents=True, exist_ok=True)
-        for path in sorted(self.config.dumps.iterdir(), reverse=True):
+        for path in self.config.dumps.iterdir():
+            if not path.is_dir() or path.is_symlink():
+                continue
             try:
                 _, manifest = self.manifest(path.name)
                 result.append(
                     {
                         **{key: manifest[key] for key in ("id", "name", "created", "verified", "restored")},
                         "size": size(sum((path / file).stat().st_size for file in FILES)),
+                        "managed": True,
+                        "components": ["MongoDB", "Neo4j", "system", "manifest"],
                     }
                 )
-            except (OSError, ValueError, KeyError):
                 continue
-        return result
+            except (OSError, ValueError, KeyError):
+                pass
+            try:
+                assets = [
+                    file for file in path.rglob("*")
+                    if file.is_file() and not file.is_symlink()
+                    and file.name.endswith((".dump", ".archive.gz", ".jsonl", ".bson", ".bson.gz", ".db", ".sqlite", ".sqlite3", ".data.tar.gz"))
+                ]
+                if not assets:
+                    continue
+                components = set()
+                for file in assets:
+                    if file.name == "system.dump":
+                        components.add("system")
+                    elif file.name.endswith(".dump"):
+                        components.add("Neo4j")
+                    elif file.name.endswith((".db", ".sqlite", ".sqlite3")):
+                        components.add("SQLite")
+                    elif file.name.endswith(".jsonl"):
+                        components.add("экспорт MongoDB")
+                    elif file.name.endswith(".data.tar.gz"):
+                        components.add("архив данных")
+                    else:
+                        components.add("MongoDB")
+                result.append(dict(
+                    id=path.name, name=path.name,
+                    created=datetime.fromtimestamp(max(file.stat().st_mtime for file in assets), ZoneInfo("UTC")).isoformat(),
+                    size=size(sum(file.stat().st_size for file in assets)),
+                    verified=False, restored=False, managed=False, components=sorted(components),
+                ))
+            except OSError:
+                continue
+        return sorted(result, key=lambda row: row["created"], reverse=True)
 
     def releases(self) -> list[dict]:
         self.config.releases.mkdir(parents=True, exist_ok=True)
@@ -571,7 +607,7 @@ class Engine:
         elif action == "restore-backup":
             self.restore(item)
         elif action == "delete-backup":
-            if len(self.backups()) <= 1:
+            if sum(copy["managed"] for copy in self.backups()) <= 1:
                 raise ValueError("Последнюю копию удалять нельзя")
             path, _ = self.manifest(item)
             self.stage("Удаление выбранной копии")

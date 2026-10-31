@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from pauk.ops.app import build
 from pauk.ops.config import Config
 from pauk.ops.engine import FILES, Engine, checksum, compress_assets, directory, write_json
+from pauk.ops.status import published_ports
 from pauk.ops.store import Store
 from pauk.settings import Settings
 
@@ -181,6 +182,37 @@ class OperationsTest(OperationsFixture, unittest.TestCase):
             self.assertRaisesRegex(ValueError, "Учётные данные"),
         ):
             self.engine.restore("backup1")
+
+    def test_legacy_archives_are_visible_without_restore_permissions(self):
+        self.backup()
+        old = self.config.dumps / "before-compose"
+        old.mkdir()
+        (old / "mongo.archive.gz").write_bytes(b"mongo")
+        (old / "neo4j.dump").write_bytes(b"neo4j")
+        (old / "system.dump").write_bytes(b"system")
+        (old / "dump.log").write_text("not a backup")
+        exported = self.config.dumps / "collections"
+        exported.mkdir()
+        (exported / "repositories.jsonl").write_text("{}")
+        empty = self.config.dumps / "notes"
+        empty.mkdir()
+        (empty / "README.md").write_text("notes")
+        (self.config.dumps / "external").symlink_to(old)
+        rows = {row["id"]: row for row in self.engine.backups()}
+        self.assertEqual(set(rows), {"backup1", "before-compose", "collections"})
+        self.assertTrue(rows["backup1"]["managed"])
+        self.assertFalse(rows["before-compose"]["managed"])
+        self.assertEqual(set(rows["before-compose"]["components"]), {"MongoDB", "Neo4j", "system"})
+        self.assertEqual(rows["collections"]["components"], ["экспорт MongoDB"])
+        self.assertFalse((old / "manifest.json").exists())
+        with self.assertRaisesRegex(ValueError, "Последнюю копию"):
+            self.engine.execute("delete-backup", {"id": "backup1"})
+
+    def test_host_ports_use_observed_publishers_and_collapse_ranges(self):
+        publishers = [{"PublishedPort": port} for port in [8520, 8521, 8522, 8522, 8506, 0]]
+        self.assertEqual(published_ports({"Publishers": publishers}), "8506, 8520-8522")
+        self.assertEqual(published_ports({"Publishers": None}), "—")
+        self.assertEqual(published_ports({}), "—")
 
     def test_last_backup_cannot_be_deleted(self):
         path = self.backup()
