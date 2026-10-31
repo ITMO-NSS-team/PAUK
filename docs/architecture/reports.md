@@ -22,7 +22,7 @@ pauk reports build github_a_b   # just these ids; --force regenerates
 ## Settings
 
 `pauk/reports/settings.py::ReportsSettings`, apart from the project-wide
-`Settings`: the pinned OSA version, the model and its context window, the
+`Settings`: the pinned OSA version, the context window, the
 languages, parallel runs, timeouts, degraded-run markers, the LFS and proxy
 bypass config, and `out_dir` from `PAUK_REPORTS_DIR` (relative to the repository root; unset
 means `data/gui/private/reports`). Compose sets it to `/reports`, a shared
@@ -31,6 +31,10 @@ site build is needed. A local build can link the report folder at
 `data/gui/private/reports`. After regenerating `index.json`, ensure nginx can
 read it: `AtomicWriter` creates it with mode 600. Publication requires readable
 assets, normally mode 644; see [deploy.md](deploy.md#static-site-and-reports).
+The model is project-wide: `Settings.reports_model` (`PAUK_REPORTS_MODEL`).
+`context_window` is sized for the default model; lower it for a model with a
+smaller window. A model change leaves existing PDFs as they are: run with
+`--force` to regenerate them.
 
 ## Which repositories
 

@@ -103,10 +103,10 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual({a["key"] for a in detail["authors"]}, {"A1", "E1"})
 
     def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
-        # graph-data.json is shared across build variants (public/private is
-        # decided by file location, see builder.py), and the map label uses
+        # GraphDataBuilder builds the private variant; the map label uses
         # author_label(..., public=False): the full surname ("Иванов") and, with
-        # no patronymic in this fixture, the full first name too.
+        # no patronymic in this fixture, the full first name too. The public
+        # one is masked afterwards, see tests/unit/test_gui_public.py.
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         self.assertEqual(summary["authors"][0]["label"], "Иванов Иван")
 
@@ -155,15 +155,16 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
 
 class WriteSiteDataTest(unittest.TestCase):
-    def test_personal_author_detail_only_goes_to_private(self):
+    def test_both_variants_get_all_four_files_and_only_private_keeps_the_real_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             snapshot = Path(tmp) / "snapshot.json"
             write_snapshot(snapshot, BuildGraphDataIntegrationTest._sample_db())
             write_site_data(snapshot, Path(tmp) / "gui", seed=1)
 
-            public = {p.name for p in (Path(tmp) / "gui" / "public").iterdir()}
-            private = {p.name for p in (Path(tmp) / "gui" / "private").iterdir()}
-            self.assertEqual(public, {"graph-data.json", "repos-detail.json", "pubs-detail.json", "authors-detail.json"})
-            self.assertEqual(private, public)
-            graph = json.loads((Path(tmp) / "gui" / "private" / "graph-data.json").read_text(encoding="utf-8"))
-            self.assertEqual([a["key"] for a in graph["authors"]], ["A1"])
+            files = {"graph-data.json", "authors-detail.json", "repos-detail.json", "pubs-detail.json"}
+            for variant in ("public", "private"):
+                self.assertEqual({p.name for p in (Path(tmp) / "gui" / variant).iterdir()}, files)
+            private = json.loads((Path(tmp) / "gui" / "private" / "graph-data.json").read_text(encoding="utf-8"))
+            public = json.loads((Path(tmp) / "gui" / "public" / "graph-data.json").read_text(encoding="utf-8"))
+            self.assertEqual([a["key"] for a in private["authors"]], ["A1"])
+            self.assertEqual([a["key"] for a in public["authors"]], ["a0"])

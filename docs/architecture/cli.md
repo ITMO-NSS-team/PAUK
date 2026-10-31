@@ -263,4 +263,6 @@ pauk gui build [--cache <snapshot>] [--out-dir <folder>] [--seed 42]
 Snapshot to layout to JSON for the `pauk/gui/web` site
 (`pauk/gui/graph_builder/builder.py::write_site_data`). By default it takes
 the newest snapshot from `cache_dir` and writes to `gui_dir`
-(`data/gui/{public,private}`). See [gui.md](gui.md).
+(`data/gui/{public,private}`): `private/` for the lab server, `public/`
+(masked names, no personal or service fields) for GitHub Pages. See
+[gui.md](gui.md).

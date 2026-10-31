@@ -7,9 +7,10 @@ The stage logic lives in `authorship.py`, `departments.py`, `layout.py`,
   `graph-data.json`) and "detail" (extended fields `pauk/gui/web` loads lazily).
   Departments have no detail file.
 - Output is plain JSON, read by `core/data.ts::loadGraphData()`.
-- The private variant keeps full data; `public.py::to_public` masks names,
-  renumbers author keys and whitelists fields for GitHub Pages. Both variants
-  contain all four JSON files; the Vite build mode chooses their directory.
+- Two variants from one build: `private/` (lab server, full names and personal
+  fields) and `public/` (GitHub Pages), which `public.py::to_public` rewrites
+  from the private one: masked names, renumbered author keys, whitelisted
+  fields only. The site picks one by build mode (`vite.config.ts`).
 """
 
 from __future__ import annotations
@@ -138,6 +139,7 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
     db = read_snapshot(snapshot)
     summary, detail = GraphDataBuilder(db, seed=seed).build()
     public_summary, public_detail = to_public(summary, detail, db["persons"])
+
     for folder, (graph, details) in ((private_dir, (summary, detail)), (public_dir, (public_summary, public_detail))):
         dump_json(graph, folder / "graph-data.json")
         for kind, rows in details.items():
