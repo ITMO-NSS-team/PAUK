@@ -163,7 +163,7 @@ class WriteSiteDataTest(unittest.TestCase):
 
             public = {p.name for p in (Path(tmp) / "gui" / "public").iterdir()}
             private = {p.name for p in (Path(tmp) / "gui" / "private").iterdir()}
-            self.assertEqual(public, {"graph-data.json", "repos-detail.json", "pubs-detail.json"})
-            self.assertEqual(private, public | {"authors-detail.json"})
+            self.assertEqual(public, {"graph-data.json", "repos-detail.json", "pubs-detail.json", "authors-detail.json"})
+            self.assertEqual(private, public)
             graph = json.loads((Path(tmp) / "gui" / "private" / "graph-data.json").read_text(encoding="utf-8"))
             self.assertEqual([a["key"] for a in graph["authors"]], ["A1"])

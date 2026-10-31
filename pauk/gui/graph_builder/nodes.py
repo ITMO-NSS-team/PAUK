@@ -83,8 +83,11 @@ def author_label(
     surname, first, second = surname or "", first or "", second or ""
     if not surname:
         return ""
-    if public and len(surname) > 3:
-        surname = surname[:3] + ".."
+    if public:
+        letters = surname.strip()
+        masked = f"{letters[:1 if len(letters) <= 3 else 2]}…"
+        initials = " ".join(_initial(part.strip(".")) for part in (first, second) if part.strip("."))
+        return f"{masked} {initials}" if initials else masked
     if first and second:
         return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
     if second:  # only the patronymic survived - treat it as the initial
