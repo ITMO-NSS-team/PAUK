@@ -63,7 +63,7 @@ def build_publication(entity_id: str, records: list[PublicationSourceRecord],
             "mentions_links", "merged_ids", "processing",
         ):
             setattr(publication, name, deepcopy(getattr(existing, name)))
-        if reset_enrichment and records != existing.source_records:
+        if reset_enrichment and ranked != existing.source_records:
             # Every publication enrichment consumes bibliographic data or
             # source PDF evidence, so it must be recomputed after a real
             # source-record change. An identical record never reaches here.

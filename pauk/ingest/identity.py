@@ -14,6 +14,12 @@ from .contracts import IncomingAuthor, IncomingPublication
 class IdentityConflict(RuntimeError):
     """Two exact identifiers point at different canonical entities."""
 
+    def __init__(self, message: str, *, owners: set[str] | None = None,
+                 identifiers: list[ExternalIdentifier] | None = None) -> None:
+        super().__init__(message)
+        self.owners = frozenset(owners or ())
+        self.identifiers = tuple(identifiers or ())
+
 
 class IdentityStore:
     COLLECTION = "identity_keys"
@@ -70,6 +76,7 @@ class IdentityResolver:
     def __init__(self, db) -> None:
         self.db = db
         self.keys = IdentityStore(db)
+        self._legacy_publications_by_doi: dict[str, list[dict]] | None = None
 
     @staticmethod
     def _new_id(prefix: str) -> str:
@@ -91,26 +98,29 @@ class IdentityResolver:
         if not doi:
             return None
         normalized = normalize_external_value("doi", doi)
-        rows = list(self.db.publications.find(
-            {"identifiers.normalized_key": f"doi:{normalized}"},
-            {"id": 1, "merged_ids": 1, "type": 1, "publication_date": 1,
-             "year": 1, "title": 1, "journal": 1, "abstract": 1, "pdf_urls": 1},
-        ))
-        # Compatibility scan for rows that predate identifiers. This is used
-        # only until migration backfills the indexed identity collection.
-        known = {row.get("id") for row in rows}
-        for legacy in self.db.publications.find(
-            {"doi": {"$ne": None}},
-            {"id": 1, "doi": 1, "merged_ids": 1, "type": 1,
-             "publication_date": 1, "year": 1, "title": 1, "journal": 1,
-             "abstract": 1, "pdf_urls": 1},
-        ):
-            if (
-                normalize_external_value("doi", legacy.get("doi") or "") == normalized
-                and legacy.get("id") not in known
-            ):
-                rows.append(legacy)
-                known.add(legacy.get("id"))
+        # Compatibility rows are indexed once per normalization run. After
+        # migration every DOI lookup is served by identity_keys and this map
+        # stays empty; a batch of new DOI values no longer scans Mongo once
+        # per work.
+        if self._legacy_publications_by_doi is None:
+            self._legacy_publications_by_doi = {}
+            legacy_rows = self.db.publications.find(
+                {
+                    "doi": {"$ne": None},
+                    "$or": [
+                        {"schema_version": {"$exists": False}},
+                        {"schema_version": {"$lt": 2}},
+                    ],
+                },
+                {"id": 1, "doi": 1, "merged_ids": 1, "type": 1,
+                 "publication_date": 1, "year": 1, "title": 1, "journal": 1,
+                 "abstract": 1, "pdf_urls": 1},
+            )
+            for legacy in legacy_rows:
+                key = normalize_external_value("doi", legacy.get("doi") or "")
+                if key:
+                    self._legacy_publications_by_doi.setdefault(key, []).append(legacy)
+        rows = self._legacy_publications_by_doi.get(normalized, [])
         if not rows:
             return None
         ids = {row.get("id") for row in rows}
@@ -201,7 +211,10 @@ class IdentityResolver:
 
     def person_id(self, incoming: IncomingAuthor, source: str, record_key: str, *,
                   legacy: bool = False) -> str:
-        identifiers = list(incoming.identifiers)
+        identifiers = [
+            identifier for identifier in incoming.identifiers
+            if identifier.scheme != "occurrence"
+        ]
         if incoming.source_author_id and not any(item.scheme == source for item in identifiers):
             identifiers.append(ExternalIdentifier(
                 scheme=source,
@@ -217,6 +230,40 @@ class IdentityResolver:
             self.keys.lookup("person", occurrence.normalized_key)
             or self._person_by_identifier(occurrence)
         )
+        identifiers = sorted(
+            {item.normalized_key: item for item in identifiers}.values(),
+            key=lambda item: (
+                0 if item.scheme == "orcid" else 1 if item.scheme == source else 2,
+                item.normalized_key,
+            ),
+        )
+        stable_owners = {
+            owner
+            for identifier in identifiers
+            if (owner := self.keys.lookup("person", identifier.normalized_key)
+                or self._person_by_identifier(identifier))
+        }
+        if len(stable_owners) > 1:
+            incoming.identifiers = identifiers
+            raise IdentityConflict(
+                f"author identifiers point at different people: {sorted(stable_owners)}",
+                owners=stable_owners,
+                identifiers=identifiers,
+            )
+        stable_owner = next(iter(stable_owners), None)
+        if stable_owner and occurrence_owner and occurrence_owner != stable_owner:
+            if not self.keys.reassign_if_owner(
+                "person", occurrence, occurrence_owner, stable_owner
+            ):
+                occurrence_owner = self.keys.lookup("person", occurrence.normalized_key)
+                if occurrence_owner != stable_owner:
+                    raise IdentityConflict(
+                        f"author occurrence is already owned by {occurrence_owner}",
+                        owners={stable_owner, occurrence_owner} - {None},
+                        identifiers=[*identifiers, occurrence],
+                    )
+            else:
+                occurrence_owner = stable_owner
         if (not identifiers or occurrence_owner) and not any(
             item.normalized_key == occurrence.normalized_key for item in identifiers
         ):
@@ -228,14 +275,7 @@ class IdentityResolver:
                 item.normalized_key,
             ),
         )
-        owners = {
-            owner
-            for identifier in identifiers
-            if (owner := self.keys.lookup("person", identifier.normalized_key)
-                or self._person_by_identifier(identifier))
-        }
-        if len(owners) > 1:
-            raise IdentityConflict(f"author identifiers point at different people: {sorted(owners)}")
+        owners = stable_owners or ({occurrence_owner} if occurrence_owner else set())
         provisional = not owners and not legacy
         if owners:
             entity_id = next(iter(owners))
@@ -273,6 +313,25 @@ class IdentityResolver:
                 provisional = False
             claimed_identifiers.append(identifier)
         return entity_id
+
+    def person_occurrence_id(
+        self,
+        incoming: IncomingAuthor,
+        record_key: str,
+    ) -> str:
+        """Quarantine one conflicted author occurrence without stopping its batch."""
+        occurrence = ExternalIdentifier(
+            scheme="occurrence",
+            value=f"{record_key}:{incoming.position}",
+        )
+        entity_id = (
+            self.keys.lookup("person", occurrence.normalized_key)
+            or self._person_by_identifier(occurrence)
+            or self._new_id("per")
+        )
+        owner = self.keys.claim("person", occurrence, entity_id)
+        incoming.identifiers = [occurrence]
+        return owner
 
     def publication(self, entity_id: str) -> Publication | None:
         row = self.db.publications.find_one({"id": entity_id}, {"_id": False, "groups": False, "_version": False})

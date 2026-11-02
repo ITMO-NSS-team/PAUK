@@ -52,7 +52,9 @@ from pauk.graph.mutations import (
     node_relationships,
     read_node,
     read_relationship,
+    restore_node,
     search_nodes,
+    snapshot_fields,
     snapshot_relationships,
     update_node,
 )
@@ -267,9 +269,9 @@ async def restore(label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "не сохранилось данных, чтобы восстановить эту запись")
     try:
-        create_node(graph, label, node_id,
-                    {name: value for name, value in fields.items()
-                     if name in NODE_FIELDS[label]})
+        restore_node(graph, label, node_id,
+                     {name: value for name, value in fields.items()
+                      if name in NODE_FIELDS[label]})
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     _record(undo=lambda: delete_node(graph, label, node_id),
@@ -329,13 +331,12 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
     try:
         # Snapshot first: after the delete there is nothing left to read.
         snapshot = read_node(graph, label, node_id)
-        kept = {name: value for name, value in snapshot.items()
-                if name in NODE_FIELDS[label] and value is not None}
+        kept = snapshot_fields(label, snapshot)
         relationships = snapshot_relationships(graph, label, node_id, snapshot) if cascade else []
         delete_node(graph, label, node_id, cascade=cascade)
 
         def undo():
-            create_node(graph, label, node_id, kept)
+            restore_node(graph, label, node_id, kept)
             for relationship in relationships:
                 create_relationship(graph, **relationship)
 

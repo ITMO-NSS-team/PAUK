@@ -217,6 +217,14 @@ command; see [version-candidates.md](version-candidates.md). Records the
 older title rule had folded are taken apart by
 `scripts/split_publication_versions.py`.
 
+### Manual publication decisions
+
+Manual publication answers are folded with their negative constraints. If
+`A=B` and `B=C` but `A!=C`, the second positive edge is not allowed to create
+an `A-B-C` component. After any person fold, both global `identity_keys` and
+person ids embedded in publication source/version author ledgers are repointed
+to the survivor.
+
 ## Repositories
 
 The same `github_id` means the same repository even if the URLs have diverged

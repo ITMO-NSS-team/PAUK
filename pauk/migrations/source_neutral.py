@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from pauk.graph.extract import JSON_TEXT_FIELDS
 from pauk.ingest.aggregate import build_publication
 from pauk.ingest.identity import IdentityStore
 from pauk.models import ExternalIdentifier, Person, Publication, PublicationSourceRecord
 from pauk.models.relations import Authorship
 from pauk.pipeline.normalize import _merge_person
-from pauk.pipeline.stages.dedup import merge_rank
+from pauk.pipeline.stages.dedup import _merge_publication, merge_rank
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 
 
@@ -47,6 +49,7 @@ class SourceNeutralMigration:
         self.person_alias_counts = Counter(self.person_aliases.values())
         self.graph_publications = list(graph_publications or [])
         self.graph_persons = list(graph_persons or [])
+        self._legacy_authors_by_publication: dict[str, list[dict]] | None = None
 
     def _publication_rows(self) -> list[dict]:
         cursor = self.db.publications.find({})
@@ -60,8 +63,7 @@ class SourceNeutralMigration:
             cursor = cursor.batch_size(self.batch_size)
         return list(cursor)
 
-    @staticmethod
-    def _record_for_legacy(row: dict) -> PublicationSourceRecord | None:
+    def _record_for_legacy(self, row: dict) -> PublicationSourceRecord | None:
         publication_id = row.get("id") or row.get("_id")
         if not str(publication_id).startswith("W"):
             return None
@@ -79,10 +81,42 @@ class SourceNeutralMigration:
             year=row.get("year"),
             pdf_urls=row.get("pdf_urls") or [],
             abstract=row.get("abstract"),
+            authors=self._legacy_source_authors(str(publication_id)),
             metadata={
                 "funding": row.get("funding") or [],
             },
         )
+
+    def _legacy_source_authors(self, publication_id: str) -> list[dict]:
+        if self._legacy_authors_by_publication is not None:
+            return [dict(author) for author in self._legacy_authors_by_publication.get(
+                publication_id,
+                [],
+            )]
+        by_publication: dict[str, list[dict]] = defaultdict(list)
+        rows = self.db.persons.find(
+            {"authored": {"$ne": []}},
+            {"id": 1, "name_raw": 1, "authored": 1},
+        )
+        for row in rows:
+            for authorship in row.get("authored") or []:
+                authored_publication = authorship.get("publication_id")
+                if not authored_publication:
+                    continue
+                by_publication[authored_publication].append({
+                    "person_id": row.get("id") or row.get("_id"),
+                    "name": row.get("name_raw"),
+                    "position": authorship.get("position"),
+                    "is_corresponding": bool(authorship.get("is_corresponding", False)),
+                })
+        for authors in by_publication.values():
+            authors.sort(key=lambda author: (
+                author["position"] is None,
+                author["position"] or 0,
+                author["person_id"],
+            ))
+        self._legacy_authors_by_publication = dict(by_publication)
+        return [dict(author) for author in by_publication.get(publication_id, [])]
 
     def _publication_model(self, row: dict) -> Publication:
         clean = {k: v for k, v in row.items() if k not in {"_id", "groups", "_version"}}
@@ -97,6 +131,16 @@ class SourceNeutralMigration:
                     scheme=legacy.source, value=legacy.source_id,
                     normalized_key=legacy.key, url=legacy.source_url,
                 ))
+        elif publication.id.startswith("W"):
+            own_record = next(
+                (
+                    record for record in publication.source_records
+                    if record.key == f"openalex:{publication.id}"
+                ),
+                None,
+            )
+            if own_record is not None and not own_record.authors:
+                own_record.authors = self._legacy_source_authors(publication.id)
         if publication.doi:
             doi = ExternalIdentifier(scheme="doi", value=publication.doi)
             if doi.normalized_key not in {item.normalized_key for item in publication.identifiers}:
@@ -533,6 +577,7 @@ class SourceNeutralMigration:
             for key, value in properties.items()
             if key in Person.model_fields and key not in {"created_at", "enriched_at"}
         }
+        self._decode_graph_json(clean, Person.model_fields)
         person_id = str(clean["id"])
         clean.update({
             "schema_version": 2,
@@ -550,6 +595,7 @@ class SourceNeutralMigration:
             for key, value in properties.items()
             if key in Publication.model_fields
         }
+        self._decode_graph_json(clean, Publication.model_fields)
         publication_id = str(clean["id"])
         source = "openalex" if publication_id.startswith("W") else "manual"
         authors = []
@@ -585,6 +631,19 @@ class SourceNeutralMigration:
         })
         return Publication.model_validate(clean)
 
+    @staticmethod
+    def _decode_graph_json(values: dict, model_fields: dict) -> None:
+        """Turn Neo4j's JSON-text properties back into model values."""
+        for field in JSON_TEXT_FIELDS:
+            if field not in model_fields or not isinstance(values.get(field), str):
+                continue
+            try:
+                values[field] = json.loads(values[field])
+            except json.JSONDecodeError as error:
+                raise MigrationBlocked(
+                    f"invalid JSON in graph property {field}: {error.msg}"
+                ) from error
+
     def _import_graph_legacy_entities(self) -> int:
         changed = 0
         for row in self.graph_persons:
@@ -618,6 +677,7 @@ class SourceNeutralMigration:
             for author in publication.source_records[0].authors:
                 self._add_legacy_authorship(author.person_id, publication.id, author)
             changed += 1
+        self._legacy_authors_by_publication = None
         return changed
 
     def _add_legacy_authorship(self, person_id: str, publication_id: str, author) -> None:
@@ -813,13 +873,15 @@ class SourceNeutralMigration:
             if not canonical:
                 continue
             groups = list(canonical.get("groups") or [])
-            merged_ids = list(canonical.get("merged_ids") or [])
+            publication = self._publication_model(canonical)
+            merged_ids = list(publication.merged_ids)
             source_records = list(canonical.get("source_records") or [])
-            identifiers = list(canonical.get("identifiers") or [])
             for duplicate_id in duplicate_ids:
                 duplicate = self.db.publications.find_one({"id": duplicate_id})
                 if not duplicate:
                     continue
+                duplicate_publication = self._publication_model(duplicate)
+                _merge_publication(publication, duplicate_publication)
                 groups = list(dict.fromkeys([*groups, *(duplicate.get("groups") or [])]))
                 merged_ids = list(dict.fromkeys([
                     *merged_ids, *(duplicate.get("merged_ids") or []), duplicate_id,
@@ -830,33 +892,31 @@ class SourceNeutralMigration:
                     if current is None or self._source_record_score(item) > self._source_record_score(current):
                         by_key[item["key"]] = item
                 source_records = list(by_key.values())
-                by_identifier = {item["normalized_key"]: item for item in identifiers}
-                for item in duplicate.get("identifiers") or []:
-                    by_identifier.setdefault(item["normalized_key"], item)
-                identifiers = list(by_identifier.values())
-                self._rewrite_references(duplicate_id, canonical_id)
-                self.db.publications.delete_one({"_id": duplicate["_id"]})
-                merged += 1
-            combined = dict(canonical)
-            combined.update({
-                "groups": groups,
-                "merged_ids": merged_ids,
-                "source_records": source_records,
-                "source_keys": list(dict.fromkeys(item["key"] for item in source_records)),
-                "sources": list(dict.fromkeys(item["source"] for item in source_records)),
-                "identifiers": identifiers,
-            })
-            publication = self._publication_model(combined)
-            if publication.source_records:
-                publication = build_publication(
-                    canonical_id,
-                    publication.source_records,
-                    publication,
-                    reset_enrichment=False,
+                publication.merged_ids = merged_ids
+                publication.source_records = [
+                    PublicationSourceRecord.model_validate(item)
+                    for item in source_records
+                ]
+                if publication.source_records:
+                    publication = build_publication(
+                        canonical_id,
+                        publication.source_records,
+                        publication,
+                        reset_enrichment=False,
+                    )
+                update = publication.model_dump(mode="json", by_alias=True)
+                update["groups"] = groups
+                # Persist the complete survivor before changing references or
+                # deleting its duplicate. A stopped phase can then replay the
+                # duplicate safely without having lost its only copy.
+                self.db.publications.update_one(
+                    {"_id": canonical["_id"]},
+                    {"$set": update},
                 )
-            update = publication.model_dump(mode="json", by_alias=True)
-            update["groups"] = groups
-            self.db.publications.update_one({"_id": canonical["_id"]}, {"$set": update})
+                self._rewrite_references(duplicate_id, canonical_id)
+                merged += self.db.publications.delete_one(
+                    {"_id": duplicate["_id"]},
+                ).deleted_count
         return merged
 
     @staticmethod

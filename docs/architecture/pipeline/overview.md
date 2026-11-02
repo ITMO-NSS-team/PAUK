@@ -46,13 +46,26 @@ OpenAlex parsing remains in `OpenAlexAdapter`; `OpenAlexNormalizer` is a
 compatibility facade over the common orchestrator. A v1 raw envelope keeps
 legacy W/A ids, while v2 envelopes allocate `pub_…`/`per_…`. Authors without
 stable identifiers use a source-record-and-position occurrence key; names
-are no longer identity keys for v2 data.
+are no longer identity keys for v2 data. If exact identifiers on one author
+occurrence point to different existing people, that occurrence is isolated
+under its occurrence key and the conflicting owners are put in `review_pairs`;
+the rest of the normalization batch continues.
 
 Canonical record precedence is article, other types, preprint; then newest
 date, completeness and stable record key. Empty scalar fields fall through
 to the next record, while list fields are unions. A real record change clears
 dependent enrichment state centrally; an identical re-normalization is a
-no-op.
+no-op. Source-record comparison is order-independent, so refreshing one record
+of a multi-source publication does not repeatedly clear PDF/code enrichment.
+During the dual-read window, attaching a new DOI-matched record to an
+unmigrated `W…` publication first projects the legacy publication and its
+existing authorships into an OpenAlex source record. Rebuilding the aggregate
+therefore cannot drop authors that are absent from the new provider's record.
+Only schema-v1 people use the legacy OpenAlex-id canonicalisation path; a
+schema-v2 `per_…` person keeps that internal id on every repeat run.
+
+Title/author similarity is review-only and ignores empty or `Untitled`
+placeholder titles, matching the dedup stage's placeholder rules.
 
 ## `normalize.py`: OpenAlex compatibility parsing
 

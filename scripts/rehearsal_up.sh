@@ -42,8 +42,7 @@ else
     # Snapshots taken before the manifest existed. Same list as
     # snapshot_mongo.DEFAULT, and the check below says so if it is wrong.
     COLLECTIONS=(publications persons departments organizations
-                 repositories repo_links github_profiles identity_keys
-                 pdfs review_pairs graph_overrides migration_state)
+                 repositories repo_links github_profiles)
 fi
 
 missing=()

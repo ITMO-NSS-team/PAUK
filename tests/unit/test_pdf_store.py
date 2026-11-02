@@ -70,6 +70,7 @@ class PdfStoreTest(unittest.TestCase):
         store = PdfStore(self.db, self.pdf_dir)
         self.assertTrue(store.exists("openalex:W1"))
         self.assertEqual(store.read("openalex:W1"), b"legacy")
+        self.assertEqual(store.cache_identity("openalex:W1"), store.cache_identity("W1"))
 
     def test_pointer_filename_cannot_escape_pdf_directory(self):
         outside = self.pdf_dir.parent / "outside.pdf"

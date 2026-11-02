@@ -939,7 +939,13 @@ def _person_answers(db: Database, aliases: dict[str, str],
         if len(members) < 2:
             # Both sides are the same person by now: the question is moot.
             continue
-        found[members] = row["verdict"], row
+        verdict = row["verdict"]
+        # Distinct historical questions can collapse onto one pair after a
+        # third record is merged. A direct "different" answer must keep
+        # vetoing that pair instead of depending on Mongo iteration order.
+        previous = found.get(members)
+        if previous is None or verdict == DIFFERENT or previous[0] != DIFFERENT:
+            found[members] = verdict, row
     return found
 
 

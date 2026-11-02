@@ -356,6 +356,12 @@ uses a repository's `id`, while `MENTIONS_LINK` uses its `url`. Edge properties
 are preserved except DB-owned timestamps. The panel keeps this snapshot in
 memory and restores the node before reconnecting its edges if Mongo fails.
 
+New `Publication` nodes cannot be created in the graph editor: they must enter
+through raw data, an adapter and identity resolution. Restoration is a separate
+operation and remains available for a publication deleted in the editor; it
+recreates the node from the audited tombstone rather than inventing identity or
+provenance.
+
 `merge_nodes` appends `merged_ids` to the canonical node **before** folding:
 without that, `fetch_merged_id_map` cannot hold the duplicate down, and the
 next publish would create it again. The operation is irreversible: the
