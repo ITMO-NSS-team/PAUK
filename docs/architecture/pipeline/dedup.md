@@ -118,7 +118,8 @@ and Qwen merge proposals. Missing evidence alone is not a separation rule.
 Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
 `PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
 `PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`
-and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Defaults are defined in
+and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. The model default is in
+`pauk/settings.py`, the threshold defaults are in
 `pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
 not an additional merge threshold. Missing/invalid responses go to review.
 Cache keys include the model, prompt and evidence, but not the transient pair

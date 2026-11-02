@@ -41,8 +41,8 @@ export function buildSearchIndex(
       author.label_en,
       authorDetails.get(author.key)?.name_ru,
       authorDetails.get(author.key)?.name_en,
-      ...(authorDetails.get(author.key)?.name_variants.openalex ?? []),
-      ...(authorDetails.get(author.key)?.name_variants.orcid ?? []),
+      ...(authorDetails.get(author.key)?.name_variants?.openalex ?? []),
+      ...(authorDetails.get(author.key)?.name_variants?.orcid ?? []),
     ]),
   }));
 

@@ -298,9 +298,13 @@ class DepartmentAssigner:
         n_auth = Counter(g(d) for d in assignment.author_dept.values())
         n_pub = Counter(g(assignment.pub_primary[p]) for p in authorship.pub_ids)
         n_repo = Counter(g(assignment.repo_dept[r["id"]]) for r in db["repositories"])
-        # Other spellings of a department's name (catalog variants), used only
-        # for search on the site, never shown.
-        variants = {row["id"]: name_list(row.get("name_variants")) for row in db.get("departments", [])}
+        # Other spellings of a department's name, used only for search on the
+        # site, never shown. Context aliases are generic only across
+        # universities, and the site holds one, so they are safe to search by.
+        variants = {
+            row["id"]: list(dict.fromkeys(name_list(row.get("name_variants")) + name_list(row.get("context_aliases"))))
+            for row in db.get("departments", [])
+        }
 
         # One row per real department, in sorted order.
         departments = [

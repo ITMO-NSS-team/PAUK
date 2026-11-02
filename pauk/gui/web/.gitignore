@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-public/
 *.local
 
 # Настоящий снепшот графа теперь живёт вне pauk/gui/web/ — см. data/gui/ и
