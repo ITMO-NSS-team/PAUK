@@ -2,18 +2,35 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
 from pauk.redaction import redact_url
+from pauk.settings import (
+    CROSSREF_PUBLIC_CONCURRENCY,
+    CROSSREF_PUBLIC_RPS,
+    OPENALEX_PUBLIC_RPS,
+    ORCID_RPS,
+)
+
+from .rate_limit import HostRateLimiter, RateLimit
 
 logger = logging.getLogger(__name__)
 
 LONG_WAIT_SECONDS = 10.0
+
+PUBLIC_LIMITS = {
+    "api.openalex.org": RateLimit(OPENALEX_PUBLIC_RPS),
+    "pub.orcid.org": RateLimit(ORCID_RPS),
+    "api.crossref.org": RateLimit(CROSSREF_PUBLIC_RPS, CROSSREF_PUBLIC_CONCURRENCY),
+}
+RATE_LIMITER = HostRateLimiter()
 
 
 class HttpRequestError(requests.RequestException):
@@ -39,10 +56,16 @@ class HttpClient:
 
     RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
-    def __init__(self, timeout: int, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, timeout: int, headers: dict[str, str] | None = None, *,
+        rate_limits: dict[str, RateLimit] | None = None,
+        rate_limiter: HostRateLimiter | None = None,
+    ) -> None:
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update(headers or {})
+        self.rate_limits = PUBLIC_LIMITS | (rate_limits or {})
+        self.rate_limiter = rate_limiter if rate_limiter is not None else RATE_LIMITER
 
     def get_json(self, url: str, *, params: dict[str, Any] | None = None, retries: int = 3) -> dict[str, Any]:
         """Send a GET request and return its decoded JSON object."""
@@ -76,7 +99,7 @@ class HttpClient:
 
         for attempt in range(retries + 1):
             try:
-                response = self.session.request(method, url, **request_kwargs)
+                response = self._send(method, url, request_kwargs, attempt)
             except requests.RequestException as exc:
                 if attempt == retries:
                     raise HttpRequestError(method, safe_url, cause_type=type(exc).__name__) from None
@@ -98,6 +121,75 @@ class HttpClient:
                 ) from None
             return response
         raise RuntimeError(f"unreachable retry state for {redact_url(url)}")
+
+    def _send(self, method: str, url: str, kwargs: dict, attempt: int) -> requests.Response:
+        """Admit each redirect separately, using Requests' prepared next request."""
+        prepared = None
+        history = []
+        while True:
+            current_url = prepared.url if prepared is not None else url
+            try:
+                host = urlsplit(current_url).hostname or ""
+            except ValueError:
+                host = ""
+            limit = self.rate_limits.get(host)
+            if prepared is not None and limit is not None:
+                previous = urlsplit(history[-1].url)
+                current = urlsplit(current_url)
+                if host in PUBLIC_LIMITS and (previous.scheme, previous.netloc) != (current.scheme, current.netloc):
+                    # Requests may have stripped credentials at the origin boundary.
+                    limit = limit.stricter(PUBLIC_LIMITS[host])
+            if prepared is None and limit is None:
+                return self.session.request(method, url, **kwargs)
+            with self.rate_limiter.slot(host, limit):
+                if prepared is None:
+                    response = self.session.request(method, url, allow_redirects=False, **kwargs)
+                else:
+                    send_kwargs = self.session.merge_environment_settings(prepared.url, {}, None, None, None)
+                    response = self.session.send(
+                        prepared, timeout=kwargs["timeout"], allow_redirects=False, **send_kwargs,
+                    )
+                if limit is not None:
+                    self._observe_limit(host, response, attempt)
+            following = getattr(response, "next", None) if getattr(response, "is_redirect", False) else None
+            if following is None:
+                if history:
+                    response.history = history
+                return response
+            history.append(response)
+            if len(history) > self.session.max_redirects:
+                response.close()
+                raise requests.TooManyRedirects
+            prepared = following
+
+    def _observe_limit(self, host: str, response: requests.Response, attempt: int) -> None:
+        count = self._positive_header(response, "X-Rate-Limit-Limit")
+        interval = re.fullmatch(r"([\d.]+)s", response.headers.get("X-Rate-Limit-Interval", ""))
+        seconds = self._positive_number(interval[1]) if interval is not None else None
+        rate = count / seconds if count is not None and seconds is not None else None
+        concurrency = self._positive_header(response, "X-Concurrency-Limit")
+        self.rate_limiter.restrict(
+            host, requests_per_second=rate if rate is not None and math.isfinite(rate) and rate > 0 else None,
+            max_concurrent=int(concurrency) if concurrency is not None and concurrency.is_integer() else None,
+        )
+        if response.status_code in (429, 503) or (
+            response.status_code in self.RETRYABLE_STATUS_CODES and response.headers.get("Retry-After")
+        ):
+            delay = self._retry_delay(response, attempt)
+            if delay is not None:
+                self.rate_limiter.pause(host, delay)
+
+    @staticmethod
+    def _positive_number(value: str | None) -> float | None:
+        try:
+            number = float(value) if value is not None else 0
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) and number > 0 else None
+
+    @classmethod
+    def _positive_header(cls, response: requests.Response, name: str) -> float | None:
+        return cls._positive_number(response.headers.get(name))
 
     @staticmethod
     def _safe_request_url(method: str, url: str, params: dict[str, Any] | None) -> str:

@@ -203,7 +203,8 @@ def _cmd_collect(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
         count = Collector(
-            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key,
+                           requests_per_second=settings.openalex_rps), RawStore(db, group)
         ).collect(_selector(args))
         _log_result("collect", group, {"raw_works": count})
 
