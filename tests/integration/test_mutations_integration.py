@@ -26,12 +26,14 @@ import mongomock
 from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
+from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import NotFound, VersionConflict, merge_nodes, update_node
 from pauk.graph.unmerge import split_person
-from pauk.models import Person
+from pauk.models import GitHubProfile, Person
 from pauk.pipeline.stages.dedup import DedupStage
+from pauk.pipeline.stages.github_match import GitHubMatchStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, review
 
 try:
     from testcontainers.community.neo4j import Neo4jContainer
@@ -104,6 +106,48 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_reading_a_node_that_is_not_there(self):
         self.assertIsNone(_client.fetch_node_properties("Person", "nobody"))
+
+
+class GitHubMatchPublicationIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n").consume()
+
+    def test_rechoosing_an_account_removes_properties_from_the_real_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory))
+            db = mongomock.MongoClient()["pauk_test"]
+            prepared = PreparedStore(db, "sample")
+            prepared.write_models("persons", [Person(id=pid, is_itmo=True, name_raw="Ivan Petrov")
+                                               for pid in ("A1", "A2")])
+            prepared.write_models("github_profiles", [GitHubProfile(
+                id="github_coder42", login="coder42", type="user", name="Ivan Petrov",
+                emails=["account@lab.test"],
+            )])
+            stage = GitHubMatchStage(prepared, RawStore(db, "sample"), config)
+            stage.run()
+            for chosen in ("A1", "A2"):
+                review.record_account_choice(db, "coder42", ["A1", "A2"], chosen)
+                stage.run()
+                load_prepared_rows(_client, {filename: list(prepared.read_rows(entity))
+                                             for entity, filename in ENTITY_FILES.items()})
+                self.assertEqual(_client.fetch_node_properties("Person", chosen)["github"], "coder42")
+
+            previous = _client.fetch_node_properties("Person", "A1")
+            self.assertNotIn("github", previous)
+            self.assertNotIn("email", previous)
+            self.assertNotIn("github_match", previous)
+            self.assertEqual(_client.fetch_node_properties("Person", "A2")["email"], "account@lab.test")
+
+    def test_a_partial_person_row_keeps_unrelated_graph_properties(self):
+        _client.upsert_person_nodes_batch([("A1", {"github": "known-login", "email": "source@lab.test"})])
+
+        load_prepared_rows(_client, {"persons.jsonl": [{"id": "A1", "is_itmo": True,
+                                                      "github": None, "email": None}]})
+
+        person = _client.fetch_node_properties("Person", "A1")
+        self.assertEqual(person["github"], "known-login")
+        self.assertEqual(person["email"], "source@lab.test")
 
 
 class ConcurrentNodeUpdatesIntegrationTest(unittest.TestCase):

@@ -1,5 +1,7 @@
 import re
+import tempfile
 import unittest
+from pathlib import Path
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -11,10 +13,10 @@ from pauk.admin.review_routes import _reason_words
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
-from pauk.models import Person, Publication
-from pauk.pipeline.stages.github_match import hold_reason
+from pauk.models import GitHubProfile, Person, Publication
+from pauk.pipeline.stages.github_match import GitHubMatchStage, hold_reason
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, review
+from pauk.storage import PreparedStore, RawStore, review
 from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
@@ -715,6 +717,37 @@ class GitHubChoiceTest(unittest.TestCase):
         self.assertEqual(review.github_decisions(self.db), {
             frozenset({"coder42", "A1", "A2"}): review.DIFFERENT,
         })
+
+    def test_rechoosing_from_rendered_forms_removes_the_old_owners_published_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory))
+            prepared = PreparedStore(self.db, "sample")
+            prepared.write_models("persons", [Person(id=pid, is_itmo=True, name_raw="Ivan Petrov")
+                                               for pid in ("A1", "A2")])
+            prepared.write_models("github_profiles", [GitHubProfile(
+                id="github_coder42", login="coder42", name="Ivan Petrov", type="user",
+                emails=["account@lab.test"],
+            )])
+            stage = GitHubMatchStage(prepared, RawStore(self.db, "sample"), config)
+            graph = FakePanelGraph()
+
+            for chosen in ("A1", "A2"):
+                if chosen == "A2":
+                    page = self.client.get("/review", params={"tab": "answered"})
+                    withdraw = RenderedForms(page.text).with_button("передумать")
+                    self.assertEqual(self.client.post(withdraw["action"], data=withdraw["fields"]).status_code, 303)
+                page = self.client.get("/review")
+                form = RenderedForms(page.text).with_button("это его аккаунт")
+                form["fields"]["chosen"] = chosen
+                self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+                stage.run()
+                load_prepared_rows(graph, {filename: list(prepared.read_rows(entity))
+                                           for entity, filename in ENTITY_FILES.items()})
+                self.assertEqual(graph.nodes["Person", chosen]["github"], "coder42")
+
+            self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+            self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
+            self.assertEqual(graph.nodes["Person", "A2"]["email"], "account@lab.test")
 
 
 class StaffChoiceTest(unittest.TestCase):

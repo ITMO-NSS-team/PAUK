@@ -1,9 +1,12 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .processing import ProcessingState
 from .relations import Authorship, Contribution
+
+GitHubMatchField = Literal["github", "email"]
 
 
 class Affiliation(BaseModel):
@@ -37,6 +40,7 @@ class GitHubMatchState(BaseModel):
     github: str | None = None
     email: str | None = None
     contributed_to: list[Contribution] = Field(default_factory=list)
+    cleared_fields: list[GitHubMatchField] = Field(default_factory=list)
 
 
 class Person(BaseModel):

@@ -198,7 +198,8 @@ def _merge_person(base: Person, extra: Person) -> Person:
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
     if tracked:
-        apply_matches(base, matches)
+        apply_matches(base, matches,
+                      cleared_fields=extra.github_match.cleared_fields if extra.github_match else ())
     return base
 
 

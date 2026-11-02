@@ -317,6 +317,10 @@ def load_prepared_rows(
     for row in rows_by_file.get("persons.jsonl") or ():
         spec = person_spec(row)
         _labels, node = extract_node(row, spec)
+        # Explicit withdrawals must reach SET += as nulls; an unknown source value must not erase the graph.
+        for field in (row.get("github_match") or {}).get("cleared_fields") or ():
+            if field in ("github", "email") and row.get(field) is None:
+                node[1][field] = None
         person_nodes.append(node)
         for merged_id in row.get("merged_ids") or []:
             person_merges.append((merged_id, row["id"]))

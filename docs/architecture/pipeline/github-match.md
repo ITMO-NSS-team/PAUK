@@ -155,6 +155,11 @@ over independent sources: `github`, `email` and `contributed_to`. Applying and
 retracting these additions lives in `pipeline/github_matches.py`; the stage and
 person merging reuse it. No extra Mongo collection or graph property is involved.
 
+`cleared_fields` records explicit withdrawals of `github` or `email`. Mongo
+unsets cleared properties, so their absence alone cannot distinguish a
+withdrawal from an unknown source value. The markers survive repeat runs and
+person merges; supplying a new value removes the corresponding marker.
+
 The matcher compares authors without its own earlier additions. An address copied
 from an account is therefore never independent proof that the account belongs to
 that author. For selected persons, a repeat run retracts the old additions and
@@ -183,8 +188,11 @@ Rows written before this tracking existed have no recoverable provenance here.
 An explicit refusal still clears the named GitHub login. Their existing addresses
 and contributions are retained: removing those requires a separate repair based on
 surviving source data, rather than guessing which stage supplied them.
+Withdrawals already saved without `cleared_fields` also need an earlier revision
+to recover their intent; an empty current value alone is not enough.
 
-Publishing updates the changed node properties. As with other source removals,
+Publishing sends marked withdrawals as nulls to remove the old Neo4j properties;
+ordinary unknown values leave graph properties intact. As with other source removals,
 old `CONTRIBUTED_TO` edges are removed by the existing reconcile operation
 (`pauk admin prune`, or "Сверка с источником" in the panel); publishing alone
 does not remove them. Manual relationship claims remain protected there.

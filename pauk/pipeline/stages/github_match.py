@@ -523,7 +523,7 @@ class GitHubMatchStage(EnrichmentStage):
             if refused:
                 # Explicit refusals also cover logins saved before provenance was tracked.
                 person.github = None
-            apply_matches(person, [*assigned, *retained])
+            apply_matches(person, [*assigned, *retained], cleared_fields=("github",) if refused else ())
             filled_emails += previous_email is None and person.email is not None
             state = person.processing.get(self.name)
             person.processing[self.name] = ProcessingState(

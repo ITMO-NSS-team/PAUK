@@ -33,6 +33,42 @@ class GitHubMatchEffectsTest(unittest.TestCase):
         retract_matches(self.person)
 
         self.assertEqual(self.person.email, "account@lab.test")
+        self.assertEqual(self.person.github_match.cleared_fields, ["github"])
+
+    def test_withdrawals_survive_storage_and_repeated_empty_results(self):
+        apply_matches(self.person, [self.match])
+        retract_matches(self.person)
+        apply_matches(self.person, [])
+        self.person = Person.model_validate(self.person.model_dump(mode="json"))
+
+        retract_matches(self.person)
+        apply_matches(self.person, [])
+
+        self.assertEqual(self.person.github_match.cleared_fields, ["email", "github"])
+
+    def test_reapplying_the_match_cancels_its_pending_withdrawals(self):
+        apply_matches(self.person, [self.match])
+        retract_matches(self.person)
+
+        apply_matches(self.person, [self.match])
+
+        self.assertEqual(self.person.github_match.cleared_fields, [])
+        self.assertEqual(self.person.github, "coder42")
+        self.assertEqual(self.person.email, "account@lab.test")
+
+    def test_merging_keeps_withdrawals_from_either_source(self):
+        for removed_first in (False, True):
+            with self.subTest(removed_first=removed_first):
+                removed = Person(id="A1", is_itmo=True)
+                apply_matches(removed, [self.match])
+                retract_matches(removed)
+                independent = Person(id="A2", is_itmo=True, email="source@lab.test")
+                base, extra = (removed, independent) if removed_first else (independent, removed)
+
+                _merge_person(base, extra)
+
+                self.assertEqual(base.github_match.cleared_fields, ["github"])
+                self.assertEqual(base.email, "source@lab.test")
 
     def test_a_shared_contribution_stays_while_another_account_supports_it(self):
         second = GitHubMatchResult(login="second", contributed_to=[self.contribution])

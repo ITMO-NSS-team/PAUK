@@ -6,6 +6,8 @@ from pathlib import Path
 
 import mongomock
 
+from pauk.graph.jsonl_loader import load_prepared_rows
+from pauk.graph.load import ENTITY_FILES
 from pauk.models import Contribution, GitHubProfile, Person, Repository
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages import social_graph
@@ -24,6 +26,7 @@ from pauk.pipeline.stages.github_match import (
 )
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore, review
+from tests.unit.test_admin_nodes import FakePanelGraph
 
 
 def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), other=(),
@@ -523,6 +526,12 @@ class GitHubReviewTest(unittest.TestCase):
         result = GitHubMatchStage(self.prepared, self.raw, self.config, selection=selection).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
+    def publish(self, graph):
+        load_prepared_rows(graph, {
+            filename: list(self.prepared.read_rows(entity))
+            for entity, filename in ENTITY_FILES.items()
+        })
+
     def unsure(self):
         """A name that matches exactly and nothing else backing it up."""
         return ([person("A1", "Stanislav Shtuka")],
@@ -726,6 +735,9 @@ class GitHubReviewTest(unittest.TestCase):
 
     def test_rechoosing_an_account_removes_the_previous_owners_generated_fields(self):
         repo = self.applied_account_choice()
+        graph = FakePanelGraph()
+        self.publish(graph)
+        self.assertEqual(graph.nodes["Person", "A1"]["github"], "coder42")
         review.withdraw(self.db, review.GITHUB, ["A1", "A2", "coder42"])
         review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
 
@@ -738,6 +750,11 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(people["A2"].email, "account@lab.test")
         self.assertEqual(people["A2"].contributed_to,
                          [Contribution(repository_id=repo.id, role="owner")])
+        self.publish(graph)
+        self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+        self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
+        self.assertEqual(graph.nodes["Person", "A2"]["github"], "coder42")
+        self.assertEqual(graph.nodes["Person", "A2"]["email"], "account@lab.test")
 
     def test_rechoosing_preserves_the_previous_owners_independent_fields(self):
         repo = self.applied_account_choice(independent=True)
@@ -761,8 +778,41 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertIsNone(people["A1"].email)
         self.assertEqual(people["A1"].contributed_to, [])
 
+    def test_repeated_matching_before_publish_keeps_the_withdrawal(self):
+        self.applied_account_choice()
+        graph = FakePanelGraph()
+        self.publish(graph)
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        self.rerun_stage()
+        self.rerun_stage()
+
+        self.publish(graph)
+        self.publish(graph)
+
+        self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+        self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
+        self.assertEqual(graph.nodes["Person", "A2"]["github"], "coder42")
+
+    def test_choosing_back_before_publish_keeps_the_current_owner(self):
+        self.applied_account_choice()
+        graph = FakePanelGraph()
+        self.publish(graph)
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        self.rerun_stage()
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A1")
+        self.rerun_stage()
+
+        self.publish(graph)
+
+        self.assertEqual(graph.nodes["Person", "A1"]["github"], "coder42")
+        self.assertEqual(graph.nodes["Person", "A1"]["email"], "account@lab.test")
+        self.assertIsNone(graph.nodes["Person", "A2"].get("github"))
+        self.assertIsNone(graph.nodes["Person", "A2"].get("email"))
+
     def test_withdrawing_a_choice_does_not_use_the_copied_email_as_evidence(self):
         self.applied_account_choice()
+        graph = FakePanelGraph()
+        self.publish(graph)
         review.withdraw(self.db, review.GITHUB, ["A1", "A2", "coder42"])
 
         result, people = self.rerun_stage()
@@ -771,6 +821,9 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(result["github_review"], 1)
         self.assertTrue(all(author.github is None and author.email is None
                             and not author.contributed_to for author in people.values()))
+        self.publish(graph)
+        self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+        self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
 
     def test_a_scoped_rechoice_leaves_the_old_owner_until_their_own_run(self):
         self.applied_account_choice()

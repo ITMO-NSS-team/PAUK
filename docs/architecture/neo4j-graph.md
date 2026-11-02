@@ -92,6 +92,11 @@ working data for matching and also real people's addresses; they stay in the
 prepared rows and in the `github_matches.jsonl` journal. Of the collected
 profile, only `company` goes into the graph.
 
+An explicit `github` or `email` withdrawal in `Person.github_match.cleared_fields`
+is published as a null property update. This removes the old graph value even
+after Mongo has unset the field. Unmarked missing or null values remain unknown
+source data and do not erase graph properties. The withdrawal markers stay in Mongo.
+
 A person always has the single label `:Person`; ITMO membership is the
 boolean property `is_itmo`, not a label. The property is sticky: the same
 author can be ITMO in one group and external in another, but `is_itmo` only
