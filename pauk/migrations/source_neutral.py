@@ -222,6 +222,19 @@ class SourceNeutralMigration:
 
     def _person_canonical(self, members: list[dict]) -> tuple[str | None, list[str]]:
         ids = {row.get("id") or row.get("_id") for row in members}
+        declared_owners = [
+            row.get("id") or row.get("_id")
+            for row in members
+            if (ids - {row.get("id") or row.get("_id")}).intersection(
+                row.get("merged_ids") or []
+            )
+        ]
+        # A prior attempt may already have persisted the survivor and then
+        # stopped before repointing every identity key. Its merged_ids is the
+        # durable commit marker; honour it instead of treating the temporary
+        # old/new key ownership as a fresh conflict.
+        if len(declared_owners) == 1:
+            return declared_owners[0], []
         identifiers_by_member = [self._person_model(row).identifiers for row in members]
         identifier_counts: dict[str, int] = defaultdict(int)
         for identifiers in identifiers_by_member:
@@ -772,17 +785,24 @@ class SourceNeutralMigration:
                     duplicate_id,
                 ]))
                 groups = list(dict.fromkeys([*groups, *(duplicate_row.get("groups") or [])]))
+                canonical.identifiers = list({
+                    identifier.normalized_key: identifier
+                    for identifier in canonical.identifiers
+                }.values())
+                canonical.authored = self._merge_authorships(canonical.authored)
+                update = canonical.model_dump(mode="json", by_alias=True)
+                update["groups"] = groups
+                # The survivor is the commit record for this one duplicate.
+                # Write it before either references or the only remaining
+                # copy of the duplicate can disappear.
+                self.db.persons.update_one(
+                    {"_id": canonical_row["_id"]},
+                    {"$set": update},
+                )
                 self._repoint_person_references(duplicate_id, canonical_id)
-                self.db.persons.delete_one({"_id": duplicate_row["_id"]})
-                merged += 1
-            canonical.identifiers = list({
-                identifier.normalized_key: identifier
-                for identifier in canonical.identifiers
-            }.values())
-            canonical.authored = self._merge_authorships(canonical.authored)
-            update = canonical.model_dump(mode="json", by_alias=True)
-            update["groups"] = groups
-            self.db.persons.update_one({"_id": canonical_row["_id"]}, {"$set": update})
+                merged += self.db.persons.delete_one(
+                    {"_id": duplicate_row["_id"]},
+                ).deleted_count
         return merged
 
     def _repoint_graph_person_aliases(self) -> int:

@@ -281,7 +281,7 @@ def dedup_graph_publications(
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
     decisions = decisions or {}
-    pairs, pair_rules = _keyed_pairs(
+    automatic_pairs, pair_rules = _keyed_pairs(
         rows,
         (
             (lambda row: _norm_doi(row.get("doi")), "doi"),
@@ -291,13 +291,51 @@ def dedup_graph_publications(
              else None, "title"),
         ),
     )
-    for members, verdict in decisions.items():
-        if verdict != review.SAME or len(members) != 2:
+    manual_same = [
+        tuple(sorted(members))
+        for members, verdict in decisions.items()
+        if verdict == review.SAME and len(members) == 2 and members <= by_id.keys()
+    ]
+    manual_different = {
+        members
+        for members, verdict in decisions.items()
+        if verdict == review.DIFFERENT and len(members) == 2
+    }
+    parent = {publication_id: publication_id for publication_id in by_id}
+    component = {publication_id: {publication_id} for publication_id in by_id}
+
+    def find(publication_id: str) -> str:
+        while parent[publication_id] != publication_id:
+            parent[publication_id] = parent[parent[publication_id]]
+            publication_id = parent[publication_id]
+        return publication_id
+
+    def union(first: str, second: str) -> None:
+        first_root, second_root = find(first), find(second)
+        if first_root == second_root:
+            return
+        survivor, removed = sorted((first_root, second_root))
+        parent[removed] = survivor
+        component[survivor].update(component.pop(removed))
+
+    accepted_pairs = list(automatic_pairs)
+    for first, second in automatic_pairs:
+        union(first, second)
+    # Match the prepared-data dedup contract: positive answers are applied
+    # edge by edge, but none may create a transitive component containing a
+    # pair an operator explicitly separated.
+    for first, second in sorted(manual_same):
+        combined = component[find(first)] | component[find(second)]
+        if any(rejected <= combined for rejected in manual_different):
+            logger.warning(
+                "graph dedup: publication merge %s/%s contradicts a 'different' answer",
+                first,
+                second,
+            )
             continue
-        first, second = sorted(members)
-        if first in by_id and second in by_id:
-            pairs.append((first, second))
-            pair_rules[frozenset((first, second))] = "manual"
+        union(first, second)
+        accepted_pairs.append((first, second))
+        pair_rules[frozenset((first, second))] = "manual"
 
     merges: list[tuple[str, str]] = []
     canonical_updates: list[tuple[str, dict]] = []
@@ -326,7 +364,7 @@ def dedup_graph_publications(
                         "shared_authors": shared,
                         "held_because": "same title and author without DOI",
                     })
-    for members in _grouped(pairs):
+    for members in _grouped(accepted_pairs):
         member_ids = set(members)
         ranked = sorted(
             (by_id[member] for member in members),

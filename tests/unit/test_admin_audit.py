@@ -263,6 +263,47 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(self.graph.nodes[("Publication", "W9")]["title"], "Paper")
 
+    def test_publication_delete_and_restore_preserves_identity_and_provenance(self):
+        publication_id = "pub_source_neutral"
+        expected = {
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1","source":"manual","source_id":"work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        }
+        self.graph.nodes[("Publication", publication_id)] = {
+            "id": publication_id,
+            **expected,
+        }
+        csrf = self.sign_in()
+
+        response = self.client.post(
+            f"/nodes/Publication/delete/{publication_id}",
+            data={"csrf": csrf},
+        )
+
+        self.assertEqual(response.status_code, 303)
+        decision = self.db.graph_overrides.find_one({
+            "_id": f"node:Publication:{publication_id}",
+        })
+        self.assertEqual(decision["snapshot"], expected)
+
+        response = self.client.post(
+            f"/nodes/Publication/restore/{publication_id}",
+            data={"csrf": csrf},
+        )
+
+        self.assertEqual(response.status_code, 303)
+        restored = self.graph.nodes[("Publication", publication_id)]
+        self.assertEqual(
+            {name: restored[name] for name in expected},
+            expected,
+        )
+
     def test_restoring_withdraws_the_tombstone(self):
         # Without this the next publish would delete the node a second
         # time, and the restore would look like it silently failed.

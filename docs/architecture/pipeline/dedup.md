@@ -131,8 +131,11 @@ questions. Existing operator decisions remain authoritative.
 Before prepared-person merges, complete source rows are preserved in
 `person_merge_sources`. Failure to preserve any participant aborts before the
 merge writes. Unmerge uses these durable copies when live rows were removed or
-already aggregate the returning person, and restores prepared rows as well as
-the graph so the next publish keeps the split.
+already aggregate the returning person. It restores the prepared rows before
+changing the graph, gives exclusive `identity_keys` back to the returning
+person and repairs `person_id` in publication source/version author ledgers.
+The next normalize or publish therefore keeps the split instead of immediately
+folding the person back into the survivor.
 
 ## Publications
 

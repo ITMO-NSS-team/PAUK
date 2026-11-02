@@ -140,7 +140,9 @@ preservation idempotent; `(person_id, saved_at)` supports newest-first lookup.
 These snapshots are separate from `revisions` and are not removed by revision
 trimming. Unmerge prefers independent live rows, falling back to compatible
 pre-merge snapshots for deleted or aggregated rows. It also restores prepared
-rows and their groups so a later publish does not silently reapply the fold.
+rows and their groups, returns exclusive identity keys to their original
+owners, and repairs source-record/version author ownership so a later normalize
+or publish does not silently reapply the fold.
 If the live aggregate contains later content changes not explained by its source
 snapshots, undo refuses before mutation rather than overwriting that enrichment.
 Missing historical originals cannot be reconstructed without a surviving copy.

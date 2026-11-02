@@ -274,9 +274,13 @@ Why a separate layer instead of calling `Neo4jClient` from a handler:
   `f"MERGE (n:{label} ...)"` as a string. While the source of those strings
   is our own literals, that is fine; once the source is an HTTP request,
   the lack of a whitelist becomes an injection. The whitelists (`NODE_FIELDS`,
-  `RELATIONSHIPS`) are derived from `extract.py::NODE_REGISTRY` rather than
-  rewritten beside it: a field the loader does not publish cannot be set by
-  hand either.
+  `NODE_SNAPSHOT_FIELDS`, `RELATIONSHIPS`) are derived from
+  `extract.py::NODE_REGISTRY` rather than rewritten beside it. `NODE_FIELDS`
+  contains only properties an operator may edit. `NODE_SNAPSHOT_FIELDS`
+  additionally contains pipeline-owned identity and provenance properties,
+  so deleting and restoring a node preserves them without making them
+  manually editable. A field the loader does not publish cannot be set by
+  hand or restored from an untrusted snapshot.
 - **The same rules for all callers.** A CLI and a web form, each with its own
   validation, would drift apart.
 - **Concurrent editors.** `update_node` accepts the `updated_at` the editor
@@ -327,7 +331,7 @@ decisions are reapplied after every publish and every graph dedup.
 | `fields` | what to set; **merged** with what is already stored, not replacing it |
 | `created` | the record was created by hand; unlike `op`, a delete does not overwrite it, and restoring uses it to bring the claim back |
 | `auto_value` | what the field held before the first edit, for the conflicts screen |
-| `snapshot` | for a deletion, every field the node carried, so restoring does not depend on the audit feed |
+| `snapshot` | for a deletion, every restorable field the node carried, including read-only identity and provenance, so restoring does not depend on the audit feed |
 | `active` | cleared on undo; the document stays so the panel can show that an edit existed |
 
 Applying (`apply_overrides`) must be idempotent: the value is compared with

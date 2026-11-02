@@ -17,6 +17,7 @@ from pauk.graph.mutations import (
     merge_nodes,
     read_node,
     restore_node,
+    snapshot_fields,
     update_node,
     validate_fields,
     validate_relationship,
@@ -315,9 +316,47 @@ class NodeEditTest(unittest.TestCase):
         with self.assertRaisesRegex(MutationError, "raw -> adapter"):
             create_node(self.graph, "Publication", "W9", {"title": "Paper"})
         restored = restore_node(
-            self.graph, "Publication", "W9", {"title": "Paper"},
+            self.graph,
+            "Publication",
+            "W9",
+            {
+                "title": "Paper",
+                "schema_version": 2,
+                "identifiers": [{"scheme": "manual", "value": "work-1"}],
+                "source_records": [{
+                    "key": "manual:work-1",
+                    "source": "manual",
+                    "source_id": "work-1",
+                }],
+                "sources": ["manual"],
+                "source_keys": ["manual:work-1"],
+                "openalex_url": "",
+                "versions": [],
+            },
         )
         self.assertEqual(restored["title"], "Paper")
+        self.assertEqual(restored["schema_version"], 2)
+        self.assertIn("manual:work-1", restored["source_records"])
+
+    def test_publication_snapshot_keeps_read_only_provenance(self):
+        snapshot = snapshot_fields("Publication", {
+            "id": "pub_source_neutral",
+            "updated_at": "2026-11-03T10:00:00",
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        })
+
+        self.assertNotIn("id", snapshot)
+        self.assertNotIn("updated_at", snapshot)
+        self.assertEqual(snapshot["schema_version"], 2)
+        self.assertEqual(snapshot["source_keys"], ["manual:work-1"])
+        self.assertIn("manual:work-1", snapshot["source_records"])
 
     def test_updating_changes_only_the_fields_given(self):
         updated = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
