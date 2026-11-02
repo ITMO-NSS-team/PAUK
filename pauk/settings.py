@@ -26,13 +26,14 @@ class Settings:
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
+    llm_model: str = os.getenv("PAUK_LLM_MODEL") or "qwen/qwen-2.5-72b-instruct"
+    person_resolution_model: str = (
+        os.getenv("PAUK_PERSON_RESOLUTION_MODEL") or "qwen/qwen3-next-80b-a3b-instruct"
+    )
+    reports_model: str = os.getenv("PAUK_REPORTS_MODEL") or "anthropic/claude-haiku-5.5"
     person_resolution_enabled: bool = os.getenv(
         "PAUK_PERSON_RESOLUTION_ENABLED", "true"
     ).lower() in ("1", "true", "yes")
-    person_resolution_model: str = os.getenv(
-        "PAUK_PERSON_RESOLUTION_MODEL", "qwen/qwen3-next-80b-a3b-instruct"
-    )
     person_resolution_logreg_model_path: Path = _path_setting(
         "PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH",
         ROOT_DIR / "pauk" / "graph" / "artifacts" / "person_resolution_logreg.pkl",

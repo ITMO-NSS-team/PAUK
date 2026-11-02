@@ -118,15 +118,24 @@ class ProxyEnvTest(unittest.TestCase):
         self.assertIn("github.com", env["NO_PROXY"].split(","))
 
     def test_the_runner_and_the_spend_check_get_the_proxy_from_settings(self):
-        self.assertEqual(osa.OsaRunner("k", Path("o"), "http://proxy:3128").env["https_proxy"], "http://proxy:3128")
+        runner = osa.OsaRunner("k", Path("o"), "http://proxy:3128", model="m")
+        self.assertEqual(runner.env["https_proxy"], "http://proxy:3128")
         config = replace(Settings(), openrouter_proxy_url="http://proxy:3128")
         self.assertEqual(builder.ReportsBuilder(config).llm.session.proxies["https"], "http://proxy:3128")
+
+    def test_the_spend_check_and_every_osa_run_use_the_reports_model_from_settings(self):
+        config = replace(Settings(), reports_model="vendor/reports-model")
+        reports = builder.ReportsBuilder(config)
+        self.assertEqual(reports.llm.model, "vendor/reports-model")
+        with patch("pauk.reports.builder.OsaRunner") as runner:
+            reports._run_all([], {}, Path("out"), workers=1)
+        self.assertEqual(runner.call_args.kwargs["model"], "vendor/reports-model")
 
 
 class OsaCommandTest(unittest.TestCase):
     def test_report_only_through_openrouter_with_the_pinned_tool_model_and_window(self):
         defaults = ReportsSettings()
-        command = osa.OsaRunner("k", Path("o")).command("https://github.com/a/one", "English")
+        command = osa.OsaRunner("k", Path("o"), model="vendor/model").command("https://github.com/a/one", "English")
         self.assertEqual(command[:4], ["uvx", "--from", defaults.osa_package, "osa-tool"])
         self.assertTrue(defaults.osa_package.startswith("osa_tool=="))
         for flag in ("--report", "--web-mode", "--no-fork", "--no-pull-request", "--delete-dir"):
@@ -134,24 +143,28 @@ class OsaCommandTest(unittest.TestCase):
         self.assertEqual(command[command.index("-r") + 1], "https://github.com/a/one")
         self.assertEqual(command[command.index("--mode") + 1], "advanced")
         self.assertEqual(command[command.index("--api") + 1], "openai")
-        self.assertEqual(command[command.index("--model") + 1], defaults.model)
+        self.assertEqual(command[command.index("--model") + 1], "vendor/model")
         self.assertEqual(command[command.index("--context-window") + 1], str(defaults.context_window))
         self.assertEqual(command[command.index("--artefacts-language") + 1], "English")
 
     def test_context_window_stays_under_the_haiku_price_step(self):
         self.assertLess(ReportsSettings().context_window, 100_000)
 
-    def test_the_command_follows_the_settings(self):
-        settings = ReportsSettings(osa_package="osa_tool==9.9", model="m", context_window=1000)
-        command = osa.OsaRunner("k", Path("o"), settings=settings).command("u", "English")
+    def test_the_command_follows_the_settings_and_the_model(self):
+        settings = ReportsSettings(osa_package="osa_tool==9.9", context_window=1000)
+        command = osa.OsaRunner("k", Path("o"), settings=settings, model="m").command("u", "English")
         self.assertEqual(command[2], "osa_tool==9.9")
         self.assertEqual(command[command.index("--model") + 1], "m")
         self.assertEqual(command[command.index("--context-window") + 1], "1000")
 
+    def test_the_model_cannot_be_passed_positionally(self):
+        with self.assertRaises(TypeError):
+            osa.OsaRunner("k", Path("o"), "http://proxy:3128", ReportsSettings(), "m")
+
 
 class OsaRunnerTest(FakeOsaTestCase):
     def run_osa(self, settings=None):
-        runner = osa.OsaRunner("secret", self.osa_dir, settings=settings or ReportsSettings())
+        runner = osa.OsaRunner("secret", self.osa_dir, settings=settings or ReportsSettings(), model="m")
         return runner.run("github_a_one", "https://github.com/a/one", "en", "English", self.out_dir / "en" / "a.pdf")
 
     def test_a_successful_run_moves_only_the_report_and_cleans_up(self):
@@ -161,7 +174,7 @@ class OsaRunnerTest(FakeOsaTestCase):
         self.assertFalse((self.osa_dir / "tmp" / "en" / "github_a_one").exists())
 
     def test_osa_gets_the_key_lfs_off_and_a_wide_console_and_its_output_is_logged(self):
-        self.assertEqual(osa.OsaRunner("secret", self.osa_dir).env["COLUMNS"], "400")
+        self.assertEqual(osa.OsaRunner("secret", self.osa_dir, model="m").env["COLUMNS"], "400")
         self.run_osa()
         log = (self.osa_dir / "logs" / "en" / "github_a_one.log").read_text()
         self.assertIn("key=secret lfs=cat", log)
@@ -209,7 +222,7 @@ class OsaRunnerTest(FakeOsaTestCase):
 
     def test_a_stop_while_osa_is_being_started_still_reaches_it(self):
         self.mode = "hang"
-        runner = osa.OsaRunner("secret", self.osa_dir, settings=ReportsSettings(run_timeout=20))
+        runner = osa.OsaRunner("secret", self.osa_dir, settings=ReportsSettings(run_timeout=20), model="m")
         popen = subprocess.Popen
         stopper = threading.Thread(target=runner.stop)
 
@@ -225,7 +238,7 @@ class OsaRunnerTest(FakeOsaTestCase):
         self.assertLess(time.monotonic() - started, 10)
 
     def test_a_stop_before_osa_is_started_starts_nothing(self):
-        runner = osa.OsaRunner("secret", self.osa_dir)
+        runner = osa.OsaRunner("secret", self.osa_dir, model="m")
         rmtree = osa.shutil.rmtree
 
         def stop_while_preparing(*args, **kwargs):
@@ -239,7 +252,7 @@ class OsaRunnerTest(FakeOsaTestCase):
 
     def test_stop_ends_runs_in_flight_and_refuses_new_ones(self):
         self.mode = "hang"
-        runner = osa.OsaRunner("secret", self.osa_dir)
+        runner = osa.OsaRunner("secret", self.osa_dir, model="m")
         results = []
         worker = threading.Thread(target=lambda: results.append(
             runner.run("github_a_one", "u", "en", "English", self.out_dir / "en" / "a.pdf")
