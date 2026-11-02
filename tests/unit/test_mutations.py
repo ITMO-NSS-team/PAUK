@@ -16,6 +16,7 @@ from pauk.graph.mutations import (
     delete_relationship,
     merge_nodes,
     read_node,
+    restore_node,
     update_node,
     validate_fields,
     validate_relationship,
@@ -309,6 +310,14 @@ class NodeEditTest(unittest.TestCase):
         # Otherwise "create" would quietly become "overwrite".
         with self.assertRaises(MutationError):
             create_node(self.graph, "Person", "A1", {"name_en": "Someone else"})
+
+    def test_a_deleted_publication_can_be_restored_but_not_invented(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "W9", {"title": "Paper"})
+        restored = restore_node(
+            self.graph, "Publication", "W9", {"title": "Paper"},
+        )
+        self.assertEqual(restored["title"], "Paper")
 
     def test_updating_changes_only_the_fields_given(self):
         updated = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})

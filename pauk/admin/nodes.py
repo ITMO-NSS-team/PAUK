@@ -51,6 +51,7 @@ from pauk.graph.mutations import (
     folded_into,
     node_relationships,
     read_node,
+    restore_node,
     search_nodes,
     update_node,
 )
@@ -253,9 +254,9 @@ async def restore(label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "не сохранилось данных, чтобы восстановить эту запись")
     try:
-        create_node(graph, label, node_id,
-                    {name: value for name, value in fields.items()
-                     if name in NODE_FIELDS[label]})
+        restore_node(graph, label, node_id,
+                     {name: value for name, value in fields.items()
+                      if name in NODE_FIELDS[label]})
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     _record(undo=lambda: delete_node(graph, label, node_id),
@@ -319,7 +320,7 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
                 if name in NODE_FIELDS[label] and value is not None}
         delete_node(graph, label, node_id, cascade=cascade)
         # Without the tombstone the next publish brings the record back.
-        _record(undo=lambda: create_node(graph, label, node_id, kept),
+        _record(undo=lambda: restore_node(graph, label, node_id, kept),
                 write=lambda: record_override(
                     db, label, node_id, "delete", actor=user.actor,
                     note=str(form.get("note", "")).strip(), snapshot=kept))

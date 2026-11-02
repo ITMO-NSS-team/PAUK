@@ -696,10 +696,20 @@ class CodeLinksStage(EnrichmentStage):
             *pub.merged_ids,
             *(version.openalex_id for version in pub.versions),
         ])
-        cached_versions = [
-            pdf_id for pdf_id in version_ids
-            if pdf_id != primary_id and self.pdf_store.exists(pdf_id)
-        ]
+        cached_versions = []
+        seen_files = (
+            {self.pdf_store.cache_identity(primary_id)}
+            if self.pdf_store.exists(primary_id)
+            else set()
+        )
+        for pdf_id in version_ids:
+            if pdf_id == primary_id or not self.pdf_store.exists(pdf_id):
+                continue
+            cache_identity = self.pdf_store.cache_identity(pdf_id)
+            if cache_identity in seen_files:
+                continue
+            seen_files.add(cache_identity)
+            cached_versions.append(pdf_id)
         # An already cached version makes a new download of a missing survivor unnecessary.
         if cached_versions and not self.pdf_store.exists(primary_id):
             pages, occurrences, error = [], [], None

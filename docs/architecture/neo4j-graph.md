@@ -288,6 +288,12 @@ Service fields (`id`, `created_at`, `updated_at`) cannot be edited: `client.py`
 sets them itself, and they are excluded from the editable list, otherwise
 `pauk admin schema` would promise a field every write rejects.
 
+New `Publication` nodes cannot be created in the graph editor: they must enter
+through raw data, an adapter and identity resolution. Restoration is a separate
+operation and remains available for a publication deleted in the editor; it
+recreates the node from the audited tombstone rather than inventing identity or
+provenance.
+
 `merge_nodes` appends `merged_ids` to the canonical node **before** folding:
 without that, `fetch_merged_id_map` cannot hold the duplicate down, and the
 next publish would create it again. The operation is irreversible: the

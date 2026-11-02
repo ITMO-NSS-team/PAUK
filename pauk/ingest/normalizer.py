@@ -13,14 +13,15 @@ from pauk.models import (
     SourceAuthor,
 )
 from pauk.storage import PreparedStore, RawStore
-from pauk.storage.review import record_publication_pair
+from pauk.storage.review import record_held, record_publication_pair
 
 from .aggregate import build_publication
 from .contracts import IncomingPublication, RawEnvelope
-from .identity import IdentityResolver
+from .identity import IdentityConflict, IdentityResolver
 from .registry import AdapterRegistry, built_in_registry
 
 logger = logging.getLogger(__name__)
+PLACEHOLDER_TITLES = {"", "untitled"}
 
 
 class PublicationNormalizer:
@@ -32,6 +33,7 @@ class PublicationNormalizer:
         self.prepared = prepared
         self.registry = registry or built_in_registry()
         self.identities = IdentityResolver(prepared.db)
+        self._legacy_authors_by_publication: dict[str, list[SourceAuthor]] | None = None
 
     def _incoming(self, source: str) -> list[tuple[RawEnvelope, IncomingPublication]]:
         latest: OrderedDict[str, tuple[RawEnvelope, IncomingPublication]] = OrderedDict()
@@ -82,7 +84,14 @@ class PublicationNormalizer:
 
             if NOT_A_PERSON_NAME.search(person.name_raw or ""):
                 continue
-            canonical_id = person.openalex_id or person.id.removeprefix("itmo_").removeprefix("external_")
+            legacy_person = (
+                person.schema_version < 2
+                or person.id.startswith(("itmo_", "external_"))
+            )
+            canonical_id = (
+                person.openalex_id
+                or person.id.removeprefix("itmo_").removeprefix("external_")
+            ) if legacy_person else person.id
             person.id = canonical_id
             existing = canonical_people.get(canonical_id)
             if existing:
@@ -118,6 +127,65 @@ class PublicationNormalizer:
                 if owner != person.id:
                     logger.warning("identity key %s already belongs to %s", identifier.normalized_key, owner)
 
+    def _legacy_source_authors(self, publication_id: str) -> list[SourceAuthor]:
+        if self._legacy_authors_by_publication is not None:
+            return deepcopy(self._legacy_authors_by_publication.get(publication_id, []))
+        by_publication: dict[str, list[SourceAuthor]] = {}
+        rows = self.prepared.db.persons.find(
+            {"authored": {"$ne": []}},
+            {"_id": False, "groups": False, "_version": False},
+        )
+        for row in rows:
+            person = Person.model_validate(row)
+            for authorship in person.authored:
+                by_publication.setdefault(authorship.publication_id, []).append(SourceAuthor(
+                    person_id=person.id,
+                    name=person.name_raw,
+                    position=authorship.position,
+                    identifiers=person.identifiers,
+                    is_corresponding=authorship.is_corresponding,
+                ))
+        for authors in by_publication.values():
+            authors.sort(key=lambda author: (
+                author.position is None,
+                author.position or 0,
+                author.person_id,
+            ))
+        self._legacy_authors_by_publication = by_publication
+        return deepcopy(by_publication.get(publication_id, []))
+
+    def _ensure_legacy_source_record(self, publication: Publication) -> None:
+        """Keep a legacy OpenAlex work lossless until migration has run."""
+        if not publication.id.startswith("W"):
+            return
+        record_key = f"openalex:{publication.id}"
+        record = next(
+            (item for item in publication.source_records if item.key == record_key),
+            None,
+        )
+        if record is None:
+            record = PublicationSourceRecord(
+                key=record_key,
+                source="openalex",
+                source_id=publication.id,
+                source_url=publication.openalex_url,
+                title=publication.title,
+                type=publication.type,
+                fields=publication.fields,
+                journal=publication.journal,
+                doi=publication.doi,
+                publication_date=publication.publication_date,
+                year=publication.year,
+                pdf_urls=publication.pdf_urls,
+                abstract=publication.abstract,
+                metadata={
+                    "funding": [item.model_dump(mode="json") for item in publication.funding],
+                },
+            )
+            publication.source_records.append(record)
+        if not record.authors:
+            record.authors = self._legacy_source_authors(publication.id)
+
     def run(self, source: str = "openalex") -> dict[str, int]:
         batches = self._incoming(source)
         publications: OrderedDict[str, Publication] = OrderedDict(
@@ -139,6 +207,7 @@ class PublicationNormalizer:
             )
             existing = publications.get(publication_id) or self.identities.publication(publication_id)
             if existing:
+                self._ensure_legacy_source_record(existing)
                 publications[publication_id] = existing
             previous_record = next(
                 (record for record in existing.source_records if record.key == incoming.record_key),
@@ -147,10 +216,20 @@ class PublicationNormalizer:
 
             source_authors: list[SourceAuthor] = []
             for author in incoming.authors:
-                person_id = self.identities.person_id(
-                    author, incoming.source, incoming.record_key,
-                    legacy=envelope.schema_version < 2,
-                )
+                source_identifiers = None
+                try:
+                    person_id = self.identities.person_id(
+                        author, incoming.source, incoming.record_key,
+                        legacy=envelope.schema_version < 2,
+                    )
+                except IdentityConflict as error:
+                    if len(error.owners) < 2:
+                        raise
+                    source_identifiers = list(error.identifiers)
+                    self._record_author_identity_conflict(error, persons)
+                    person_id = self.identities.person_occurrence_id(
+                        author, incoming.record_key,
+                    )
                 person_id = next(
                     (row.id for row in persons.values() if person_id in row.merged_ids),
                     person_id,
@@ -192,7 +271,7 @@ class PublicationNormalizer:
                     person_id=person_id,
                     name=author.name,
                     position=author.position,
-                    identifiers=author.identifiers,
+                    identifiers=source_identifiers or author.identifiers,
                     affiliation=author.affiliation,
                     is_corresponding=author.is_corresponding,
                 ))
@@ -242,6 +321,12 @@ class PublicationNormalizer:
                 if NOT_A_PERSON_NAME.search(person.name_raw or ""):
                     continue
                 persons.setdefault(person.id, person)
+            previous_authorships = {
+                (person.id, authorship.publication_id): deepcopy(authorship)
+                for person in persons.values()
+                for authorship in person.authored
+                if authorship.publication_id in affected
+            }
             for person in persons.values():
                 person.authored = [item for item in person.authored if item.publication_id not in affected]
             for publication_id in sorted(affected):
@@ -252,10 +337,17 @@ class PublicationNormalizer:
                         if person is None:
                             continue
                         persons[person.id] = person
+                        previous = previous_authorships.get((person.id, publication_id))
                         authorship = Authorship(
                             publication_id=publication_id,
                             position=author.position or 0,
-                            affiliation=author.affiliation,
+                            affiliation=author.affiliation or (
+                                previous.affiliation if previous else None
+                            ),
+                            affiliation_source=(
+                                None if author.affiliation
+                                else previous.affiliation_source if previous else None
+                            ),
                             is_corresponding=author.is_corresponding,
                         )
                         if not any(
@@ -269,6 +361,35 @@ class PublicationNormalizer:
         self.prepared.write_models("persons", persons.values())
         return {"publications": len(publications), "persons": len(persons)}
 
+    def _record_author_identity_conflict(
+        self,
+        error: IdentityConflict,
+        persons: OrderedDict[str, Person],
+    ) -> None:
+        owners = sorted(error.owners)
+        names = [
+            (persons.get(owner) or self.identities.person(owner) or Person(
+                id=owner, is_itmo=False,
+            )).name_raw
+            for owner in owners
+        ]
+        evidence = {
+            "status": "held",
+            "held_because": "source author identifiers point at different people",
+            "identifiers": [identifier.normalized_key for identifier in error.identifiers],
+        }
+        if len(owners) == 2:
+            row = {
+                **evidence,
+                "person_a": owners[0],
+                "name_a": names[0],
+                "person_b": owners[1],
+                "name_b": names[1],
+            }
+        else:
+            row = {**evidence, "persons": owners, "names": names}
+        record_held(self.prepared.db, [row])
+
     def _record_title_reviews(self, publications: OrderedDict[str, Publication],
                               affected: set[str]) -> None:
         by_title: dict[str, list[Publication]] = {}
@@ -276,6 +397,8 @@ class PublicationNormalizer:
             if publication.doi:
                 continue
             title = " ".join(publication.title.casefold().split())
+            if title in PLACEHOLDER_TITLES:
+                continue
             by_title.setdefault(title, []).append(publication)
         author_ids = {
             publication.id: {

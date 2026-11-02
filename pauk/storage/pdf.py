@@ -50,6 +50,10 @@ class PdfStore:
     def exists(self, record_key: str) -> bool:
         return self._path(record_key).exists()
 
+    def cache_identity(self, record_key: str) -> str:
+        """Stable identity of the file a record key currently resolves to."""
+        return str(self._path(record_key).resolve())
+
     def read(self, record_key: str) -> bytes:
         """Bytes for an id already known to exist (see `exists`)."""
         return self._path(record_key).read_bytes()

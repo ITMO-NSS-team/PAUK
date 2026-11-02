@@ -971,6 +971,8 @@ def _merge_publication(base: Publication, extra: Publication,
     ])
     base.code_url = json.dumps(code_urls, ensure_ascii=False) if code_urls else None
     base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
+    if base.full_text is None:
+        base.full_text = extra.full_text
     base.source_records = list({
         record.key: record for record in [*base.source_records, *extra.source_records]
     }.values())
@@ -1153,7 +1155,7 @@ class DedupStage(EnrichmentStage):
                                              author.position, author.person_id))
         refreshed = self._refresh_version_ledger(publications, version_authors, known_persons)
 
-        pairs = self._pairs_by_key(publications, in_scope, (
+        automatic_pairs = self._pairs_by_key(publications, in_scope, (
             lambda publication: _norm_doi(publication.doi),
             lambda publication: (
                 title
@@ -1172,6 +1174,12 @@ class DedupStage(EnrichmentStage):
             publication_aliases,
             kinds=(review.PUBLICATION,),
         )
+        manual_same: list[tuple[str, str]] = []
+        manual_different = {
+            members
+            for members, verdict in publication_answers.items()
+            if verdict == review.DIFFERENT and len(members) == 2
+        }
         for members, verdict in publication_answers.items():
             if verdict != review.SAME or len(members) != 2:
                 continue
@@ -1181,10 +1189,48 @@ class DedupStage(EnrichmentStage):
                 and second in by_id
                 and (in_scope is None or {first, second} & in_scope)
             ):
-                pairs.append((first, second))
+                manual_same.append((first, second))
+
+        parent = {publication_id: publication_id for publication_id in by_id}
+        component = {publication_id: {publication_id} for publication_id in by_id}
+
+        def find(publication_id: str) -> str:
+            while parent[publication_id] != publication_id:
+                parent[publication_id] = parent[parent[publication_id]]
+                publication_id = parent[publication_id]
+            return publication_id
+
+        def union(first: str, second: str) -> None:
+            first_root, second_root = find(first), find(second)
+            if first_root == second_root:
+                return
+            survivor, removed = sorted((first_root, second_root))
+            parent[removed] = survivor
+            component[survivor].update(component.pop(removed))
+
+        # DOI identity remains automatic. Human title-based answers are
+        # added one by one and may not create a component containing a
+        # directly rejected pair.
+        for first, second in automatic_pairs:
+            union(first, second)
+        for first, second in sorted(manual_same):
+            combined = component[find(first)] | component[find(second)]
+            if any(rejected <= combined for rejected in manual_different):
+                logger.warning(
+                    "dedup: publication merge %s/%s contradicts a 'different' answer",
+                    first,
+                    second,
+                )
+                continue
+            union(first, second)
+        publication_groups = [
+            sorted(members)
+            for members in component.values()
+            if len(members) > 1
+        ]
 
         id_map: dict[str, str] = {}
-        for members in _grouped(pairs):
+        for members in publication_groups:
             member_ids = set(members)
             ranked = sorted(
                 (by_id[member] for member in members),
@@ -1288,6 +1334,36 @@ class DedupStage(EnrichmentStage):
                     publication.processing.pop("link_relevance", None)
             self.prepared.write_models("publications", publications)
         self.prepared.write_models("repositories", repositories)
+
+    def _repoint_person_references(self, id_map: dict[str, str]) -> None:
+        """Rewrite identity and provenance references to merged people."""
+        for duplicate_id, canonical_id in id_map.items():
+            self.prepared.db.identity_keys.update_many(
+                {"entity": "person", "entity_id": duplicate_id},
+                {"$set": {"entity_id": canonical_id}},
+            )
+        for publication in self.prepared.db.publications.find({
+            "$or": [
+                {"source_records.authors.person_id": {"$in": list(id_map)}},
+                {"versions.authors.person_id": {"$in": list(id_map)}},
+            ]
+        }):
+            changed = False
+            for field in ("source_records", "versions"):
+                for record in publication.get(field) or []:
+                    for author in record.get("authors") or []:
+                        canonical_id = id_map.get(author.get("person_id"))
+                        if canonical_id:
+                            author["person_id"] = canonical_id
+                            changed = True
+            if changed:
+                self.prepared.db.publications.update_one(
+                    {"_id": publication["_id"]},
+                    {"$set": {
+                        "source_records": publication.get("source_records") or [],
+                        "versions": publication.get("versions") or [],
+                    }},
+                )
 
     def _dedup_repositories(self) -> dict[str, str]:
         """Fold repository rows that GitHub considers one repository."""
@@ -1396,6 +1472,7 @@ class DedupStage(EnrichmentStage):
             [person.id for canonical, duplicates in groups for person in (canonical, *duplicates)],
         )
         removed: set[str] = set()
+        id_map: dict[str, str] = {}
         for canonical, duplicates in groups:
             for duplicate in duplicates:
                 logger.info("dedup: merging %s (%s) into %s (%s)",
@@ -1405,8 +1482,10 @@ class DedupStage(EnrichmentStage):
                     canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
+                id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
         if removed:
+            self._repoint_person_references(id_map)
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
         # Which answers this fold carried out. Read off the rows rather than

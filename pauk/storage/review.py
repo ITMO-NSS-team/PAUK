@@ -600,7 +600,14 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
         if len(members) < 2:
             # Both sides are the same person by now: the question is moot.
             continue
-        found[members] = row["verdict"]
+        verdict = row["verdict"]
+        # Distinct historical questions can collapse onto one pair after a
+        # third record is merged. A direct "different" answer must keep
+        # vetoing that pair instead of depending on Mongo iteration order.
+        if found.get(members) == DIFFERENT or verdict == DIFFERENT:
+            found[members] = DIFFERENT
+        else:
+            found[members] = verdict
     return found
 
 

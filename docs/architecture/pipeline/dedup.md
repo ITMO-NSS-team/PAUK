@@ -165,6 +165,12 @@ processing state so the next run judges all contexts together. The last fully
 calculated `code_url` and `Repository.publication_ids` are kept until the
 retry succeeds, as they are on a transient LLM failure.
 
+Manual publication answers are folded with their negative constraints. If
+`A=B` and `B=C` but `A!=C`, the second positive edge is not allowed to create
+an `A-B-C` component. After any person fold, both global `identity_keys` and
+person ids embedded in publication source/version author ledgers are repointed
+to the survivor.
+
 ## Repositories
 
 The same `github_id` means the same repository even if the URLs have diverged

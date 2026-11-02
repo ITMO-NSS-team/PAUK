@@ -155,6 +155,9 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
 def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
+    shared_coauthors = evidence.get("shared_coauthors")
+    if shared_coauthors is None and "shared_authors" in evidence:
+        shared_coauthors = len(evidence["shared_authors"])
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.
@@ -186,8 +189,7 @@ def _shown(row: dict, back: str = "") -> dict:
                 else evidence.get("held_because") or []
             )
         ],
-        "shared_coauthors": evidence.get("shared_coauthors")
-                              or len(evidence.get("shared_authors") or []),
+        "shared_coauthors": shared_coauthors,
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
         "input_route": evidence.get("input_route"),

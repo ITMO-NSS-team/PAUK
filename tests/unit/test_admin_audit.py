@@ -234,6 +234,35 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual(node["url"], "https://x.test")
         self.assertEqual(node["host"], "x.test")
 
+    def test_a_deleted_publication_can_be_restored(self):
+        from pauk.graph.overrides import record_override
+
+        self.db[feed.COLLECTION].insert_one(
+            entry(
+                entity_type="Publication",
+                entity_id="W9",
+                change_kind="deleted",
+                diff={"id": ["W9", None], "title": ["Paper", None]},
+            ),
+        )
+        record_override(
+            self.db,
+            "Publication",
+            "W9",
+            "delete",
+            actor="user:roman",
+            snapshot={"title": "Paper"},
+        )
+        csrf = self.sign_in()
+
+        response = self.client.post(
+            "/nodes/Publication/restore/W9",
+            data={"csrf": csrf},
+        )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Publication", "W9")]["title"], "Paper")
+
     def test_restoring_withdraws_the_tombstone(self):
         # Without this the next publish would delete the node a second
         # time, and the restore would look like it silently failed.

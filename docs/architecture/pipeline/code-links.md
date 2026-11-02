@@ -198,6 +198,10 @@ and sets `failed`; evidence from a successfully reread PDF is replaced rather
 than mixed with stale evidence. URL spellings differing only by HTTP/HTTPS,
 case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
 
+During the compatibility release, `openalex:W…` and legacy `W….pdf` may resolve
+to the same file. Cached candidates are deduplicated by the resolved file path,
+so that file contributes text and occurrences only once.
+
 ## Statuses
 
 - No PDF candidates and (the crawler is off, or the publication has no `doi`):

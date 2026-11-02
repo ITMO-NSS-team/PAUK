@@ -284,8 +284,18 @@ def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[di
     return rows
 
 
+def _insert_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
+    """Insert a missing node after its caller has established why it is allowed."""
+    validate_fields(label, props)
+    if client.fetch_node_properties(label, node_id) is not None:
+        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
+    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
+    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
+    return read_node(client, label, node_id)
+
+
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
-    """Add a node the pipeline does not know about.
+    """Add a new node the pipeline does not know about.
 
     Such a node survives publishing: the loader only touches ids it has
     rows for, so a hand-made id is never overwritten.
@@ -295,16 +305,21 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
         MutationError: A node with this id already exists; creating it
             again would silently turn into an update.
     """
-    validate_fields(label, props)
     if label == "Publication":
         raise MutationError(
             "Publication nodes are created by raw -> adapter -> identity resolution, not in Neo4j"
         )
-    if client.fetch_node_properties(label, node_id) is not None:
-        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
-    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
-    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
-    return read_node(client, label, node_id)
+    return _insert_node(client, label, node_id, props)
+
+
+def restore_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
+    """Restore a deleted node from an audited snapshot.
+
+    This is deliberately separate from ``create_node``: publications cannot
+    be invented in Neo4j, but an existing publication deleted in the editor
+    must remain recoverable from its tombstone.
+    """
+    return _insert_node(client, label, node_id, props)
 
 
 def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
