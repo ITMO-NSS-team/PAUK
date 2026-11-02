@@ -12,6 +12,7 @@ from pauk.models import ExternalIdentifier, Person, Publication, PublicationSour
 from pauk.models.relations import Authorship
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages.dedup import _merge_publication, merge_rank
+from pauk.storage.identity_refs import repoint_person_references
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 
 
@@ -855,31 +856,7 @@ class SourceNeutralMigration:
         return list(by_key.values())
 
     def _repoint_person_references(self, duplicate_id: str, canonical_id: str) -> None:
-        self.db.identity_keys.update_many(
-            {"entity": "person", "entity_id": duplicate_id},
-            {"$set": {"entity_id": canonical_id}},
-        )
-        for publication in self.db.publications.find({
-            "$or": [
-                {"source_records.authors.person_id": duplicate_id},
-                {"versions.authors.person_id": duplicate_id},
-            ]
-        }):
-            changed = False
-            for field in ("source_records", "versions"):
-                for record in publication.get(field) or []:
-                    for author in record.get("authors") or []:
-                        if author.get("person_id") == duplicate_id:
-                            author["person_id"] = canonical_id
-                            changed = True
-            if changed:
-                self.db.publications.update_one(
-                    {"_id": publication["_id"]},
-                    {"$set": {
-                        "source_records": publication.get("source_records") or [],
-                        "versions": publication.get("versions") or [],
-                    }},
-                )
+        repoint_person_references(self.db, {duplicate_id: canonical_id})
 
     def _merge_doi_duplicates(self) -> int:
         merged = 0

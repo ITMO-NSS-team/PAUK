@@ -74,6 +74,7 @@ from pauk.models import (
     Repository,
     VersionAuthor,
 )
+from pauk.models.identity import normalize_external_value
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
@@ -82,8 +83,10 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
+from pauk.pipeline.publication_components import publication_merge_components
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.identity_refs import repoint_person_references
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import deduplicate_repo_urls, normalize_repo_url
@@ -103,10 +106,6 @@ CANDIDATES_FILENAME = "dedup_candidates.jsonl"
 # normalize.py stores works without a title under this placeholder; it says
 # nothing about the work, so it must never be treated as a shared title.
 PLACEHOLDER_TITLES = {"", "untitled"}
-
-DOI_PREFIXES = ("https://doi.org/", "http://doi.org/",
-                "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
-
 
 def _publication_rank_key(publication_type: str | None, publication_date_ordinal: int,
                           author_count: int, publication_id: str) -> tuple[int, int, int, str]:
@@ -137,10 +136,7 @@ def _norm_name(name: str | None) -> str:
 
 def _norm_doi(doi: str | None) -> str | None:
     """Bare lowercase DOI, so a resolver prefix never splits one work."""
-    value = _norm(doi)
-    for prefix in DOI_PREFIXES:
-        value = value.removeprefix(prefix)
-    return value.rstrip("/") or None
+    return normalize_external_value("doi", doi or "") or None
 
 
 def _variant_set(person: Person) -> set[str]:
@@ -1174,60 +1170,18 @@ class DedupStage(EnrichmentStage):
             publication_aliases,
             kinds=(review.PUBLICATION,),
         )
-        manual_same: list[tuple[str, str]] = []
-        manual_different = {
-            members
-            for members, verdict in publication_answers.items()
-            if verdict == review.DIFFERENT and len(members) == 2
-        }
-        for members, verdict in publication_answers.items():
-            if verdict != review.SAME or len(members) != 2:
-                continue
-            first, second = sorted(members)
-            if (
-                first in by_id
-                and second in by_id
-                and (in_scope is None or {first, second} & in_scope)
-            ):
-                manual_same.append((first, second))
-
-        parent = {publication_id: publication_id for publication_id in by_id}
-        component = {publication_id: {publication_id} for publication_id in by_id}
-
-        def find(publication_id: str) -> str:
-            while parent[publication_id] != publication_id:
-                parent[publication_id] = parent[parent[publication_id]]
-                publication_id = parent[publication_id]
-            return publication_id
-
-        def union(first: str, second: str) -> None:
-            first_root, second_root = find(first), find(second)
-            if first_root == second_root:
-                return
-            survivor, removed = sorted((first_root, second_root))
-            parent[removed] = survivor
-            component[survivor].update(component.pop(removed))
-
-        # DOI identity remains automatic. Human title-based answers are
-        # added one by one and may not create a component containing a
-        # directly rejected pair.
-        for first, second in automatic_pairs:
-            union(first, second)
-        for first, second in sorted(manual_same):
-            combined = component[find(first)] | component[find(second)]
-            if any(rejected <= combined for rejected in manual_different):
-                logger.warning(
-                    "dedup: publication merge %s/%s contradicts a 'different' answer",
-                    first,
-                    second,
-                )
-                continue
-            union(first, second)
-        publication_groups = [
-            sorted(members)
-            for members in component.values()
-            if len(members) > 1
-        ]
+        publication_groups, _accepted_manual, rejected_manual = publication_merge_components(
+            by_id,
+            automatic_pairs,
+            publication_answers,
+            scope=in_scope,
+        )
+        for first, second in rejected_manual:
+            logger.warning(
+                "dedup: publication merge %s/%s contradicts a 'different' answer",
+                first,
+                second,
+            )
 
         id_map: dict[str, str] = {}
         for members in publication_groups:
@@ -1337,33 +1291,7 @@ class DedupStage(EnrichmentStage):
 
     def _repoint_person_references(self, id_map: dict[str, str]) -> None:
         """Rewrite identity and provenance references to merged people."""
-        for duplicate_id, canonical_id in id_map.items():
-            self.prepared.db.identity_keys.update_many(
-                {"entity": "person", "entity_id": duplicate_id},
-                {"$set": {"entity_id": canonical_id}},
-            )
-        for publication in self.prepared.db.publications.find({
-            "$or": [
-                {"source_records.authors.person_id": {"$in": list(id_map)}},
-                {"versions.authors.person_id": {"$in": list(id_map)}},
-            ]
-        }):
-            changed = False
-            for field in ("source_records", "versions"):
-                for record in publication.get(field) or []:
-                    for author in record.get("authors") or []:
-                        canonical_id = id_map.get(author.get("person_id"))
-                        if canonical_id:
-                            author["person_id"] = canonical_id
-                            changed = True
-            if changed:
-                self.prepared.db.publications.update_one(
-                    {"_id": publication["_id"]},
-                    {"$set": {
-                        "source_records": publication.get("source_records") or [],
-                        "versions": publication.get("versions") or [],
-                    }},
-                )
+        repoint_person_references(self.prepared.db, id_map)
 
     def _dedup_repositories(self) -> dict[str, str]:
         """Fold repository rows that GitHub considers one repository."""

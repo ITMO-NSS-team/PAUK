@@ -184,6 +184,63 @@ class ArchivedPersonMergeTest(UnmergeTest):
         )
         self.assertEqual(resolved, "A2")
 
+    def test_identity_owner_conflict_refuses_before_restoring_prepared_rows(self):
+        self.seed_pair()
+        self.prepared_fold()
+        self.db.identity_keys.insert_one({
+            "_id": "person:openalex:A2",
+            "entity": "person",
+            "scheme": "openalex",
+            "normalized_value": "A2",
+            "entity_id": "per_third_party",
+        })
+        graph_before = deepcopy((self.graph.nodes, self.graph.relationships))
+        prepared_before = list(self.db.persons.find())
+
+        with self.assertRaisesRegex(NothingToRebuild, "owned by per_third_party"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertEqual((self.graph.nodes, self.graph.relationships), graph_before)
+        self.assertEqual(list(self.db.persons.find()), prepared_before)
+
+    def test_interrupted_graph_split_can_resume_while_fold_marker_remains(self):
+        self.seed_pair()
+        self.prepared_fold()
+
+        with patch(
+            "pauk.graph.unmerge._take_off",
+            side_effect=RuntimeError("interrupted"),
+        ), self.assertRaisesRegex(RuntimeError, "interrupted"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertIn(("Person", "A2"), self.graph.nodes)
+        self.assertIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertNotIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
+
+    def test_override_failure_leaves_graph_split_resumable(self):
+        self.seed_pair()
+        self.prepared_fold()
+
+        with patch(
+            "pauk.graph.unmerge.apply_overrides",
+            side_effect=RuntimeError("override interrupted"),
+        ), self.assertRaisesRegex(RuntimeError, "override interrupted"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertIn(("Person", "A2"), self.graph.nodes)
+        self.assertIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertNotIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
+
     def test_later_enrichment_is_not_silently_replaced_by_an_old_snapshot(self):
         self.seed_pair()
         self.prepared_fold()

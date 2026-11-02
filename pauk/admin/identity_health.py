@@ -29,9 +29,15 @@ def collect(db) -> list[dict]:
     publication_ids = {row.get("id") for row in publications}
     people = list(db.persons.find({}, {"id": 1, "identifiers": 1}))
     people_ids = {row.get("id") for row in people}
+    identity_keys = {
+        row["_id"]: row
+        for row in db.identity_keys.find({}, {
+            "entity": 1, "entity_id": 1, "scheme": 1,
+        })
+    }
 
     bad_identity_keys = 0
-    for row in db.identity_keys.find({}, {"entity": 1, "entity_id": 1, "scheme": 1}):
+    for row in identity_keys.values():
         entity = row.get("entity")
         known = publication_ids if entity == "publication" else people_ids if entity == "person" else set()
         expected_prefix = f"{entity}:{row.get('scheme')}:"
@@ -46,7 +52,7 @@ def collect(db) -> list[dict]:
                 if not normalized_key:
                     bad_identity_keys += 1
                     continue
-                identity = db.identity_keys.find_one({"_id": f"{entity}:{normalized_key}"})
+                identity = identity_keys.get(f"{entity}:{normalized_key}")
                 bad_identity_keys += not identity or identity.get("entity_id") != row.get("id")
 
     dois: Counter[str] = Counter()
@@ -79,7 +85,7 @@ def collect(db) -> list[dict]:
     dangling_source_authors = 0
     for publication in publications:
         for record in publication.get("source_records") or []:
-            identity = db.identity_keys.find_one({"_id": f"publication:{record.get('key')}"})
+            identity = identity_keys.get(f"publication:{record.get('key')}")
             orphan_records += not identity or identity.get("entity_id") != publication.get("id")
             dangling_source_authors += sum(
                 bool(author.get("person_id")) and author.get("person_id") not in people_ids

@@ -563,6 +563,17 @@ def _preserve_pdf_occurrences(
     return occurrences_by_url
 
 
+def _tag_pdf_occurrences(
+    page_occurrences: list[dict[str, list[LinkOccurrence]]],
+    pdf_id: str,
+) -> None:
+    """Attach one source-record cache identity to extracted occurrences."""
+    for page_found in page_occurrences:
+        for found in page_found.values():
+            for occurrence in found:
+                occurrence.pdf_id = pdf_id
+
+
 def _archived_repository_url(publication: Publication) -> str | None:
     """The repository a software or dataset deposit is an archive of.
 
@@ -717,10 +728,7 @@ class CodeLinksStage(EnrichmentStage):
             pages, occurrences, error = self._primary_pdf_pages(pub, primary_id)
         self.parsed_pdf_ids = {primary_id} if pages else set()
         self.failed_pdf_ids = {primary_id} if error else set()
-        for page_found in occurrences:
-            for found in page_found.values():
-                for occurrence in found:
-                    occurrence.pdf_id = primary_id
+        _tag_pdf_occurrences(occurrences, primary_id)
         # Merged records can retain a more complete cached PDF than the survivor.
         errors = [error] if error else []
         for pdf_id in cached_versions:
@@ -731,10 +739,7 @@ class CodeLinksStage(EnrichmentStage):
                 errors.append(f"{pdf_id}: {redact_text(exc)}")
                 continue
             self.parsed_pdf_ids.add(pdf_id)
-            for page_found in version_occurrences:
-                for found in page_found.values():
-                    for occurrence in found:
-                        occurrence.pdf_id = pdf_id
+            _tag_pdf_occurrences(version_occurrences, pdf_id)
             pages.extend(version_pages)
             occurrences.extend(version_occurrences)
         # A canonical journal record can have only a DOI (and the crawler
@@ -756,10 +761,7 @@ class CodeLinksStage(EnrichmentStage):
                     pages.extend(fallback_pages)
                     occurrences.extend(fallback_occurrences)
                     self.parsed_pdf_ids.add(record_key)
-                    for page_found in fallback_occurrences:
-                        for found in page_found.values():
-                            for occurrence in found:
-                                occurrence.pdf_id = record_key
+                    _tag_pdf_occurrences(fallback_occurrences, record_key)
                     # Failed higher-ranked records are equivalent to failed
                     # URL candidates inside one record once a usable source
                     # record succeeds.
@@ -776,10 +778,7 @@ class CodeLinksStage(EnrichmentStage):
                 errors.append(primary_error)
             if primary_pages:
                 self.parsed_pdf_ids.add(primary_id)
-                for page_found in primary_occurrences:
-                    for found in page_found.values():
-                        for occurrence in found:
-                            occurrence.pdf_id = primary_id
+                _tag_pdf_occurrences(primary_occurrences, primary_id)
                 pages.extend(primary_pages)
                 occurrences.extend(primary_occurrences)
         return pages, occurrences, "; ".join(errors) or None

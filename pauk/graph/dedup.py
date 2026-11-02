@@ -30,6 +30,7 @@ from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.person_resolution import OpenRouterResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
+from pauk.pipeline.publication_components import publication_merge_components
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
@@ -291,50 +292,18 @@ def dedup_graph_publications(
              else None, "title"),
         ),
     )
-    manual_same = [
-        tuple(sorted(members))
-        for members, verdict in decisions.items()
-        if verdict == review.SAME and len(members) == 2 and members <= by_id.keys()
-    ]
-    manual_different = {
-        members
-        for members, verdict in decisions.items()
-        if verdict == review.DIFFERENT and len(members) == 2
-    }
-    parent = {publication_id: publication_id for publication_id in by_id}
-    component = {publication_id: {publication_id} for publication_id in by_id}
-
-    def find(publication_id: str) -> str:
-        while parent[publication_id] != publication_id:
-            parent[publication_id] = parent[parent[publication_id]]
-            publication_id = parent[publication_id]
-        return publication_id
-
-    def union(first: str, second: str) -> None:
-        first_root, second_root = find(first), find(second)
-        if first_root == second_root:
-            return
-        survivor, removed = sorted((first_root, second_root))
-        parent[removed] = survivor
-        component[survivor].update(component.pop(removed))
-
-    accepted_pairs = list(automatic_pairs)
-    for first, second in automatic_pairs:
-        union(first, second)
-    # Match the prepared-data dedup contract: positive answers are applied
-    # edge by edge, but none may create a transitive component containing a
-    # pair an operator explicitly separated.
-    for first, second in sorted(manual_same):
-        combined = component[find(first)] | component[find(second)]
-        if any(rejected <= combined for rejected in manual_different):
-            logger.warning(
-                "graph dedup: publication merge %s/%s contradicts a 'different' answer",
-                first,
-                second,
-            )
-            continue
-        union(first, second)
-        accepted_pairs.append((first, second))
+    publication_groups, accepted_manual, rejected_manual = publication_merge_components(
+        by_id,
+        automatic_pairs,
+        decisions,
+    )
+    for first, second in rejected_manual:
+        logger.warning(
+            "graph dedup: publication merge %s/%s contradicts a 'different' answer",
+            first,
+            second,
+        )
+    for first, second in accepted_manual:
         pair_rules[frozenset((first, second))] = "manual"
 
     merges: list[tuple[str, str]] = []
@@ -364,7 +333,7 @@ def dedup_graph_publications(
                         "shared_authors": shared,
                         "held_because": "same title and author without DOI",
                     })
-    for members in _grouped(accepted_pairs):
+    for members in publication_groups:
         member_ids = set(members)
         ranked = sorted(
             (by_id[member] for member in members),

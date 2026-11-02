@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from pymongo.database import Database
 
@@ -116,7 +117,17 @@ def _folded_side(client, members: list[str]) -> tuple[str, str, dict]:
     live = {node_id: client.fetch_node_properties("Person", node_id) for node_id in set(members)}
     present = sorted(node_id for node_id, props in live.items() if props is not None)
     if len(present) == 2:
-        raise MutationError("both records are in the graph; nothing was folded")
+        partial = [
+            canonical_id
+            for canonical_id in present
+            if next(node_id for node_id in present if node_id != canonical_id)
+            in (live[canonical_id].get("merged_ids") or [])
+        ]
+        if len(partial) != 1:
+            raise MutationError("both records are in the graph; nothing was folded")
+        canonical_id = partial[0]
+        duplicate_id = next(node_id for node_id in present if node_id != canonical_id)
+        return duplicate_id, canonical_id, live[canonical_id]
     if not present:
         raise NotFound(f"neither {' nor '.join(sorted(set(members)))} is a node any more")
     canonical_id = present[0]
@@ -176,7 +187,14 @@ def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) ->
         means the other end is not published, which is the same thing that
         happens on a publish.
     """
-    restore_node(client, "Person", node_id, snapshot_fields("Person", props))
+    restored = snapshot_fields("Person", props)
+    if client.fetch_node_properties("Person", node_id) is None:
+        restore_node(client, "Person", node_id, restored)
+    else:
+        # A prior split may have stopped after recreating the node but before
+        # removing the survivor's copied edges. Reapplying its source state is
+        # safe and lets the same split finish.
+        client.upsert_nodes_batch("Person", [(node_id, restored)])
     dropped = tombstoned_relationships(db)
     given_back = 0
     for (src_label, tgt_label, rel_type, match_field), rels in edges.items():
@@ -224,13 +242,19 @@ def _source_author_identifier_keys(author: dict) -> set[str]:
     return keys
 
 
-def _restore_person_references(
+@dataclass
+class _PersonReferenceRestore:
+    identity_updates: list[tuple[str, ExternalIdentifier, bool]]
+    publication_updates: list[tuple[object, dict]]
+
+
+def _plan_person_reference_restore(
     db: Database,
     duplicate_id: str,
     canonical_id: str,
     duplicate_row: dict,
     remaining_rows: list[dict],
-) -> None:
+) -> _PersonReferenceRestore:
     """Reverse the prepared dedup's identity/provenance repointing.
 
     The operation is idempotent so an interrupted split can repeat it. Keys
@@ -315,7 +339,15 @@ def _restore_person_references(
         if update:
             publication_updates.append((publication["_id"], update))
 
-    for document_id, identifier, missing in identity_updates:
+    return _PersonReferenceRestore(identity_updates, publication_updates)
+
+
+def _apply_person_reference_restore(
+    db: Database,
+    plan: _PersonReferenceRestore,
+    duplicate_id: str,
+) -> None:
+    for document_id, identifier, missing in plan.identity_updates:
         if missing:
             db.identity_keys.insert_one({
                 "_id": document_id,
@@ -329,7 +361,7 @@ def _restore_person_references(
                 {"_id": document_id},
                 {"$set": {"entity_id": duplicate_id}},
             )
-    for publication_id, update in publication_updates:
+    for publication_id, update in plan.publication_updates:
         db.publications.update_one({"_id": publication_id}, {"$set": update})
 
 
@@ -516,30 +548,42 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
             if not groups:
                 raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
             prepared_updates.append((groups, content | restored))
-    # Restore Mongo first. If the process stops after this point, a publish
-    # can finish rebuilding the graph; the reverse order would leave a live
-    # graph node whose source still claims it is folded.
-    for groups, row in prepared_updates:
-        for group in groups:
-            PreparedStore(db, group).upsert_rows("persons", [row])
-    _restore_person_references(
+    reference_restore = _plan_person_reference_restore(
         db,
         duplicate_id,
         canonical_id,
         duplicate_row,
         sources,
     )
-    if patch:
-        # The plain upsert: `is_itmo` is sticky in the person one.
-        client.upsert_nodes_batch("Person", [(canonical_id, patch)])
+    # Restore Mongo first. If the process stops after this point, a publish
+    # can finish rebuilding the graph; the reverse order would leave a live
+    # graph node whose source still claims it is folded.
+    for groups, row in prepared_updates:
+        for group in groups:
+            PreparedStore(db, group).upsert_rows("persons", [row])
+    _apply_person_reference_restore(db, reference_restore, duplicate_id)
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0
     if complete:
         _restore_corresponding(client, canonical_id, duplicate_edges, canonical_edges)
-    # Last, as in a publish: rebuilding a node from its source row is the
-    # one thing that can bury a hand-made correction under what the source
-    # says.
+    if patch:
+        # Refresh source-owned fields while retaining the fold marker. If
+        # overrides fail below, the next invocation can still recognize and
+        # finish this split.
+        source_patch = {key: value for key, value in patch.items() if key != "merged_ids"}
+        if source_patch:
+            client.upsert_nodes_batch("Person", [(canonical_id, source_patch)])
+    # As in a publish, rebuilding a node from its source row can bury a
+    # hand-made correction, so overrides must precede the commit marker.
     apply_overrides(client, db)
+    if patch and "merged_ids" in patch:
+        # Removing the folded id commits the graph half of the split. Every
+        # earlier operation is idempotent, so an interruption before this
+        # write leaves the operation resumable.
+        client.upsert_nodes_batch(
+            "Person",
+            [(canonical_id, {"merged_ids": patch["merged_ids"]})],
+        )
     logger.info("split %s back out of %s: %d edge(s) given back, %d taken off",
                 duplicate_id, canonical_id, given_back, taken_off)
     return {"duplicate": duplicate_id, "canonical": canonical_id,

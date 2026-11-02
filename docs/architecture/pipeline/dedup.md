@@ -4,7 +4,8 @@
 repositories, and how dedup within a group differs from dedup across the whole
 graph.
 
-**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`.
+**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`,
+`pauk/pipeline/publication_components.py`.
 
 Collapses prepared-layer records that describe the same real entity: a person,
 a publication or a repository. It runs after every stage that loads anything,
@@ -136,7 +137,9 @@ already aggregate the returning person. It restores the prepared rows before
 changing the graph, gives exclusive `identity_keys` back to the returning
 person and repairs `person_id` in publication source/version author ledgers.
 The next normalize or publish therefore keeps the split instead of immediately
-folding the person back into the survivor.
+folding the person back into the survivor. Graph restoration keeps the folded
+id on the survivor until the returning node, its edges and manual overrides
+are restored; that final marker write makes an interrupted split resumable.
 
 ## Publications
 
