@@ -35,7 +35,7 @@ from pauk.pipeline.stages.link_relevance import (
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PdfStore, PreparedStore, RawStore
 
 
 def _make_pdf_bytes(pages_text: list[str]) -> bytes:
@@ -85,6 +85,36 @@ class StagesTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+
+    def test_source_key_and_legacy_id_do_not_parse_the_same_pdf_twice(self):
+        config = Settings(data_dir=self.root / "data", pdf_crawler_url="")
+        config.pdf_dir.mkdir(parents=True)
+        (config.pdf_dir / "W1.pdf").write_bytes(
+            _make_pdf_bytes(["Code: https://github.com/org/repo"]),
+        )
+        stage = CodeLinksStage(
+            PreparedStore(self.db, "sample"),
+            RawStore(self.db, "sample"),
+            config=config,
+        )
+        stage.pdf_store = PdfStore(self.db, config.pdf_dir)
+        publication = Publication(
+            id="W1",
+            title="Paper",
+            schema_version=2,
+            merged_ids=["W1"],
+            source_records=[{
+                "source": "openalex",
+                "source_id": "W1",
+                "pdf_urls": ["https://example.org/paper.pdf"],
+            }],
+        )
+
+        pages, occurrences, error = stage._pdf_pages(publication)
+
+        self.assertIsNone(error)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(occurrences), 1)
 
     def test_code_links_marks_empty_and_found_results(self):
         prepared = PreparedStore(self.db, "sample")

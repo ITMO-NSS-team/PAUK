@@ -26,12 +26,19 @@ from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# Set by client.py itself on every write; not editable from outside.
-RESERVED_FIELDS = frozenset({"id", "created_at", "updated_at"})
+# Identity and provenance are owned by raw -> adapter -> resolver. Editing
+# them directly in Neo4j would bypass the global identity index and be lost
+# on the next publish. Restoration is different: it must put these fields
+# back exactly as the pipeline published them.
+RESERVED_FIELDS = frozenset({
+    "id", "created_at", "updated_at", "schema_version", "identifiers",
+    "source_records", "sources", "source_keys", "openalex_url", "versions",
+})
+SERVICE_FIELDS = frozenset({"id", "created_at", "updated_at"})
 
 
-def _build_node_fields() -> dict[str, frozenset[str]]:
-    """label -> the properties the loader publishes for it.
+def _build_node_property_fields() -> dict[str, frozenset[str]]:
+    """Label -> restorable properties the loader publishes for it.
 
     Person appears in the registry twice (ITMO and external) with the same
     base label, so the two field lists are unioned.
@@ -39,8 +46,10 @@ def _build_node_fields() -> dict[str, frozenset[str]]:
     fields: dict[str, set[str]] = {}
     for spec in NODE_REGISTRY.values():
         fields.setdefault(spec.labels.split(":")[0], set()).update(spec.prop_fields)
-    # The database owns created_at, so `admin schema` must not advertise it.
-    return {label: frozenset(names - RESERVED_FIELDS) for label, names in fields.items()}
+    return {
+        label: frozenset(names - SERVICE_FIELDS)
+        for label, names in fields.items()
+    }
 
 
 def _build_relationships() -> dict[tuple[str, str, str], str]:
@@ -57,7 +66,11 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
     return relationships
 
 
-NODE_FIELDS = _build_node_fields()
+NODE_SNAPSHOT_FIELDS = _build_node_property_fields()
+NODE_FIELDS = {
+    label: frozenset(names - RESERVED_FIELDS)
+    for label, names in NODE_SNAPSHOT_FIELDS.items()
+}
 RELATIONSHIPS = _build_relationships()
 
 # What the search box looks at: explicit, since these go into Cypher.
@@ -176,6 +189,26 @@ def validate_fields(label: str, props: dict) -> None:
             f"(known: {', '.join(sorted(NODE_FIELDS[label]))})")
 
 
+def validate_snapshot_fields(label: str, props: dict) -> None:
+    """Accept pipeline-owned properties only for restoring an existing node."""
+    validate_label(label)
+    unknown = props.keys() - NODE_SNAPSHOT_FIELDS[label]
+    if unknown:
+        raise UnknownEntity(
+            f"{label}: unknown snapshot field(s) {', '.join(sorted(unknown))}"
+        )
+
+
+def snapshot_fields(label: str, props: dict) -> dict:
+    """Keep the complete restorable node state, including provenance."""
+    validate_label(label)
+    return {
+        name: value
+        for name, value in props.items()
+        if name in NODE_SNAPSHOT_FIELDS[label] and value is not None
+    }
+
+
 def validate_relationship(src_label: str, rel_type: str, tgt_label: str) -> str:
     """Check the triple is one the graph actually has, and return the match property."""
     try:
@@ -279,8 +312,28 @@ def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[di
     return rows
 
 
+def _insert_node(
+    client: Neo4jClient,
+    label: str,
+    node_id: str,
+    props: dict,
+    *,
+    restoring: bool = False,
+) -> dict:
+    """Insert a missing node after its caller has established why it is allowed."""
+    if restoring:
+        validate_snapshot_fields(label, props)
+    else:
+        validate_fields(label, props)
+    if client.fetch_node_properties(label, node_id) is not None:
+        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
+    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
+    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
+    return read_node(client, label, node_id)
+
+
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
-    """Add a node the pipeline does not know about.
+    """Add a new node the pipeline does not know about.
 
     Such a node survives publishing: the loader only touches ids it has
     rows for, so a hand-made id is never overwritten.
@@ -290,12 +343,21 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
         MutationError: A node with this id already exists; creating it
             again would silently turn into an update.
     """
-    validate_fields(label, props)
-    if client.fetch_node_properties(label, node_id) is not None:
-        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
-    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
-    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
-    return read_node(client, label, node_id)
+    if label == "Publication":
+        raise MutationError(
+            "Publication nodes are created by raw -> adapter -> identity resolution, not in Neo4j"
+        )
+    return _insert_node(client, label, node_id, props)
+
+
+def restore_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
+    """Restore a deleted node from an audited snapshot.
+
+    This is deliberately separate from ``create_node``: publications cannot
+    be invented in Neo4j, but an existing publication deleted in the editor
+    must remain recoverable from its tombstone.
+    """
+    return _insert_node(client, label, node_id, props, restoring=True)
 
 
 def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,

@@ -7,7 +7,8 @@ before any other note in `architecture/`.
 **Files:** nothing specific: an overview across all of `pauk/`; see the links
 below for the details of each subpackage.
 
-PAUK collects ITMO publications from OpenAlex, enriches them with data from
+PAUK collects ITMO publications through typed source adapters (currently
+OpenAlex), enriches them with data from
 external sources (Crossref, ORCID, GitHub), finds links to code in them, and
 loads the result into Neo4j. `pauk/gui/` reads the graph and draws an
 interactive map.
@@ -20,10 +21,10 @@ The same flow as a detailed Mermaid diagram:
 [`../diagrams/pipeline-flow.md`](../diagrams/pipeline-flow.md).
 
 ```
-OpenAlex API
+Source API (OpenAlex today)
   |  pauk collect
 MongoDB: raw                                 RawStore, append-only
-  |  pauk normalize
+  |  pauk normalize                          adapter -> identity resolver -> aggregate builder
 MongoDB: publications/persons/...            PreparedStore, 7 collections
   |  pauk enrich [stage]                     persons -> departments -> code_links -> link_relevance ->
   |                                          emails -> repositories -> repo_people -> dedup ->
@@ -58,6 +59,7 @@ graph, not files on disk.
 | Package | What it does | Details |
 |---|---|---|
 | `pauk/models/` | pydantic schema of the prepared rows | [models.md](models.md) |
+| `pauk/ingest/` | source adapters, identity resolution and aggregate building | [pipeline/overview.md](pipeline/overview.md) |
 | `pauk/sources/` | HTTP clients for external APIs | [sources.md](sources.md) |
 | `pauk/storage/` | raw and prepared data in MongoDB | [storage.md](storage.md) |
 | `pauk/pipeline/` | collect, normalize, enrich, dedup | [pipeline/overview.md](pipeline/overview.md) |

@@ -31,7 +31,43 @@ group without re-crawling the period.
 Collection skips ids already stored (`known_ids`), so a second `collect` over
 the same selection does not duplicate raw records.
 
-## `normalize.py::OpenAlexNormalizer`
+## `ingest/`: adapters and source-neutral normalization
+
+`PublicationNormalizer` reads a versioned raw envelope, looks up its provider
+in the explicit built-in `AdapterRegistry`, and calls a `PublicationAdapter`.
+The adapter only returns `IncomingPublication`/`IncomingAuthor`; it cannot
+write prepared rows or processing state. `IdentityResolver` then routes exact
+source ids and normalized DOI/ORCID keys through the global `identity_keys`
+collection. `aggregate.build_publication` recomputes canonical fields from
+the full `PublicationSourceRecord` ledger. Unknown providers fail before any
+prepared or identity write.
+
+OpenAlex parsing remains in `OpenAlexAdapter`; `OpenAlexNormalizer` is a
+compatibility facade over the common orchestrator. A v1 raw envelope keeps
+legacy W/A ids, while v2 envelopes allocate `pub_…`/`per_…`. Authors without
+stable identifiers use a source-record-and-position occurrence key; names
+are no longer identity keys for v2 data. If exact identifiers on one author
+occurrence point to different existing people, that occurrence is isolated
+under its occurrence key and the conflicting owners are put in `review_pairs`;
+the rest of the normalization batch continues.
+
+Canonical record precedence is article, other types, preprint; then newest
+date, completeness and stable record key. Empty scalar fields fall through
+to the next record, while list fields are unions. A real record change clears
+dependent enrichment state centrally; an identical re-normalization is a
+no-op. Source-record comparison is order-independent, so refreshing one record
+of a multi-source publication does not repeatedly clear PDF/code enrichment.
+During the dual-read window, attaching a new DOI-matched record to an
+unmigrated `W…` publication first projects the legacy publication and its
+existing authorships into an OpenAlex source record. Rebuilding the aggregate
+therefore cannot drop authors that are absent from the new provider's record.
+Only schema-v1 people use the legacy OpenAlex-id canonicalisation path; a
+schema-v2 `per_…` person keeps that internal id on every repeat run.
+
+Title/author similarity is review-only and ignores empty or `Untitled`
+placeholder titles, matching the dedup stage's placeholder rules.
+
+## `normalize.py`: OpenAlex compatibility parsing
 
 Turns `openalex_works` (raw, MongoDB) into `Publication` and `Person` rows.
 Beyond the plain mapping it does the following:
@@ -54,7 +90,7 @@ Beyond the plain mapping it does the following:
   author entities for them. A keyword regex (`association`, `committee`,
   `consortium`, ...), plus e-mail and URL patterns, keeps them from becoming a
   `Person`.
-- **Local id for an unidentified author** (`_fallback_person_id`): a fresh
+- **Legacy local id for an unidentified author** (`_fallback_person_id`): a v1
   record can arrive with `author.id = null` but a name and often an ORCID.
   Instead of losing the authorship it gets a deterministic id (the ORCID if
   present, otherwise a hash of the name) that `dedup` can later fold into the

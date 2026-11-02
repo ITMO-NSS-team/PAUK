@@ -3,7 +3,7 @@
 **What it covers:** which entities and fields exist in the prepared layer
 and what each field means.
 
-**Files:** `pauk/models/publication.py`, `person.py`, `department.py`,
+**Files:** `pauk/models/identity.py`, `publication.py`, `person.py`, `department.py`,
 `organization.py`, `repository.py`, `relations.py`, `processing.py`,
 `__init__.py`.
 
@@ -14,7 +14,12 @@ the relation-like models.
 
 ## `publication.py`
 
-- **`Publication`**: id is the OpenAlex work ID without the URL prefix.
+- **`Publication`**: `id` is an opaque PAUK identity. Existing rows keep their
+  `W…` ids; newly ingested rows use `pub_<uuid4>`.
+  - `identifiers` holds normalized external identifiers. `source_records`
+    keeps every provider-owned bibliographic record; `sources` and
+    `source_keys` are indexed projections of that ledger. `schema_version=2`
+    marks rows governed by this identity model.
   - `type` is the OpenAlex work type (`article`, `preprint`, `software`,
     `dataset`, ...); `code_links.py` uses it, for example, to detect
     archived Zenodo deposits ([pipeline/code-links.md](pipeline/code-links.md)).
@@ -30,7 +35,11 @@ the relation-like models.
   - `versions` and `merged_ids` are the merge ledger (below).
   - `pdf_urls` are unique candidates from `best_oa_location` and `locations`,
     in load order; they are combined on re-normalization and dedup.
-- **`PublicationVersion`**: one OpenAlex record folded into this publication
+- **`PublicationSourceRecord`** is the source-neutral replacement for the
+  OpenAlex-only version ledger. It owns its title, DOI, venue, type, dates,
+  subjects, PDFs, abstract, authors and metadata. Canonical fields are a
+  deterministic projection of all records.
+- **`PublicationVersion`**: compatibility projection of an OpenAlex record
   by dedup: a preprint, a record version, or a duplicate from OpenAlex
   reindexing. It keeps the title, DOI, journal, date, abstract and authors of
   **that specific record**, so merging loses no source; everything stays
@@ -48,8 +57,9 @@ the relation-like models.
   platforms (Zenodo, SSRN) often omit a coauthor's affiliation on a given
   work; `PersonsStage` then picks the affiliation for that year from the
   author's own OpenAlex/ORCID records instead of what the work says.
-- **`Person`**: id is the bare OpenAlex author ID (one person, one node; there
-  is no `itmo_*`/`external_*` split).
+- **`Person`**: `id` is opaque. Existing rows keep bare OpenAlex ids; new
+  people use `per_<uuid4>`. `identifiers` owns OpenAlex/ORCID/occurrence
+  identity; `openalex_id` remains a transition compatibility field.
   - `is_itmo` is a boolean, not a label. At least one ITMO affiliation
     anywhere makes the person ITMO for good: the property is "sticky" (see
     `graph/client.py::upsert_person_nodes_batch`).

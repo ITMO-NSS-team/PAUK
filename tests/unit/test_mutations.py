@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from pauk.graph.client import _merge_duplicate_properties
@@ -15,6 +16,8 @@ from pauk.graph.mutations import (
     delete_relationship,
     merge_nodes,
     read_node,
+    restore_node,
+    snapshot_fields,
     update_node,
     validate_fields,
     validate_relationship,
@@ -309,6 +312,52 @@ class NodeEditTest(unittest.TestCase):
         with self.assertRaises(MutationError):
             create_node(self.graph, "Person", "A1", {"name_en": "Someone else"})
 
+    def test_a_deleted_publication_can_be_restored_but_not_invented(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "W9", {"title": "Paper"})
+        restored = restore_node(
+            self.graph,
+            "Publication",
+            "W9",
+            {
+                "title": "Paper",
+                "schema_version": 2,
+                "identifiers": [{"scheme": "manual", "value": "work-1"}],
+                "source_records": [{
+                    "key": "manual:work-1",
+                    "source": "manual",
+                    "source_id": "work-1",
+                }],
+                "sources": ["manual"],
+                "source_keys": ["manual:work-1"],
+                "openalex_url": "",
+                "versions": [],
+            },
+        )
+        self.assertEqual(restored["title"], "Paper")
+        self.assertEqual(restored["schema_version"], 2)
+        self.assertIn("manual:work-1", restored["source_records"])
+
+    def test_publication_snapshot_keeps_read_only_provenance(self):
+        snapshot = snapshot_fields("Publication", {
+            "id": "pub_source_neutral",
+            "updated_at": "2026-11-03T10:00:00",
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        })
+
+        self.assertNotIn("id", snapshot)
+        self.assertNotIn("updated_at", snapshot)
+        self.assertEqual(snapshot["schema_version"], 2)
+        self.assertEqual(snapshot["source_keys"], ["manual:work-1"])
+        self.assertIn("manual:work-1", snapshot["source_records"])
+
     def test_updating_changes_only_the_fields_given(self):
         updated = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
         self.assertEqual(updated["name_ru"], "Иванов И. И.")
@@ -439,9 +488,48 @@ class StoredShapeTest(unittest.TestCase):
         self.assertEqual(node["name_variants"], ["I. Petrov"])
 
     def test_creating_a_node_encodes_the_same_fields(self):
-        created = create_node(self.graph, "Publication", "W9",
-                              {"title": "paper", "funding": [{"funder": "RSF"}]})
-        self.assertIsInstance(created["funding"], str)
+        created = create_node(self.graph, "Person", "P9",
+                              {"name_raw": "Researcher", "affiliations": [{"name": "ITMO"}]})
+        self.assertIsInstance(created["affiliations"], str)
+
+    def test_publication_must_be_created_through_ingestion(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "pub_manual", {"title": "paper"})
+
+
+class SourceProvenanceMergeTest(unittest.TestCase):
+    def test_graph_fold_unions_source_provenance_by_stable_key(self):
+        canonical = {
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": json.dumps([
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "catalog", "source_id": "P1", "key": "catalog:P1"},
+            ]),
+        }
+        duplicate = {
+            "sources": ["archive"],
+            "source_keys": ["archive:A1"],
+            "identifiers": json.dumps([
+                {"scheme": "archive", "value": "A1", "normalized_key": "archive:A1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "archive", "source_id": "A1", "key": "archive:A1"},
+            ]),
+        }
+        merged = _merge_duplicate_properties("Publication", canonical, duplicate)
+        self.assertEqual(merged["sources"], ["catalog", "archive"])
+        self.assertEqual(merged["source_keys"], ["catalog:P1", "archive:A1"])
+        self.assertEqual(
+            {item["normalized_key"] for item in json.loads(merged["identifiers"])},
+            {"catalog:P1", "archive:A1"},
+        )
+        self.assertEqual(
+            {item["key"] for item in json.loads(merged["source_records"])},
+            {"catalog:P1", "archive:A1"},
+        )
 
 
 class MergeChainTest(unittest.TestCase):

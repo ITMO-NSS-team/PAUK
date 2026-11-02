@@ -6,6 +6,9 @@ from unittest.mock import patch
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
+from pauk.ingest.contracts import IncomingAuthor
+from pauk.ingest.identity import IdentityResolver
+from pauk.models import Publication
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -112,6 +115,131 @@ class ArchivedPersonMergeTest(UnmergeTest):
             self.assertEqual(self.graph.nodes[("Person", identifier)]["emails"], [email])
             edge = self.graph.relationships[("Person", "AUTHORED", "Publication", identifier, "W1")]
             self.assertEqual(edge["is_corresponding"], corresponding)
+
+    def test_split_restores_identity_keys_and_source_record_authors(self):
+        first = person("A1", "Ivan Smirnov", works=["W1"], orcid="0000-1")
+        second = person("A2", "I. Smirnov", works=["W2"], orcid="0000-1")
+        self.publish(first, second)
+        self.prepared.write_models("publications", [
+            Publication(
+                id=publication_id,
+                title=publication_id,
+                schema_version=2,
+                source_records=[{
+                    "key": f"openalex:{publication_id}",
+                    "source": "openalex",
+                    "source_id": publication_id,
+                    "title": publication_id,
+                    "authors": [{
+                        "person_id": person_id,
+                        "name": name,
+                        "position": 1,
+                        "identifiers": [{"scheme": "openalex", "value": person_id}],
+                    }],
+                }],
+            )
+            for publication_id, person_id, name in (
+                ("W1", "A1", "Ivan Smirnov"),
+                ("W2", "A2", "I. Smirnov"),
+            )
+        ])
+        self.db.identity_keys.insert_many([
+            {
+                "_id": f"person:openalex:{person_id}",
+                "entity": "person",
+                "scheme": "openalex",
+                "normalized_value": person_id,
+                "entity_id": person_id,
+            }
+            for person_id in ("A1", "A2")
+        ])
+
+        self.prepared_fold()
+        self.assertEqual(
+            self.db.identity_keys.find_one({"_id": "person:openalex:A2"})["entity_id"],
+            "A1",
+        )
+        folded = self.db.publications.find_one({"id": "W2"})
+        self.assertEqual(folded["source_records"][0]["authors"][0]["person_id"], "A1")
+        self.assertEqual(folded["versions"][0]["authors"][0]["person_id"], "A1")
+
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertEqual(
+            self.db.identity_keys.find_one({"_id": "person:openalex:A2"})["entity_id"],
+            "A2",
+        )
+        restored = self.db.publications.find_one({"id": "W2"})
+        self.assertEqual(restored["source_records"][0]["authors"][0]["person_id"], "A2")
+        self.assertEqual(restored["versions"][0]["authors"][0]["person_id"], "A2")
+        resolved = IdentityResolver(self.db).person_id(
+            IncomingAuthor(
+                source_author_id="A2",
+                name="I. Smirnov",
+                position=1,
+                identifiers=[{"scheme": "openalex", "value": "A2"}],
+            ),
+            "openalex",
+            "openalex:W2",
+        )
+        self.assertEqual(resolved, "A2")
+
+    def test_identity_owner_conflict_refuses_before_restoring_prepared_rows(self):
+        self.seed_pair()
+        self.prepared_fold()
+        self.db.identity_keys.insert_one({
+            "_id": "person:openalex:A2",
+            "entity": "person",
+            "scheme": "openalex",
+            "normalized_value": "A2",
+            "entity_id": "per_third_party",
+        })
+        graph_before = deepcopy((self.graph.nodes, self.graph.relationships))
+        prepared_before = list(self.db.persons.find())
+
+        with self.assertRaisesRegex(NothingToRebuild, "owned by per_third_party"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertEqual((self.graph.nodes, self.graph.relationships), graph_before)
+        self.assertEqual(list(self.db.persons.find()), prepared_before)
+
+    def test_interrupted_graph_split_can_resume_while_fold_marker_remains(self):
+        self.seed_pair()
+        self.prepared_fold()
+
+        with patch(
+            "pauk.graph.unmerge._take_off",
+            side_effect=RuntimeError("interrupted"),
+        ), self.assertRaisesRegex(RuntimeError, "interrupted"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertIn(("Person", "A2"), self.graph.nodes)
+        self.assertIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertNotIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
+
+    def test_override_failure_leaves_graph_split_resumable(self):
+        self.seed_pair()
+        self.prepared_fold()
+
+        with patch(
+            "pauk.graph.unmerge.apply_overrides",
+            side_effect=RuntimeError("override interrupted"),
+        ), self.assertRaisesRegex(RuntimeError, "override interrupted"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertIn(("Person", "A2"), self.graph.nodes)
+        self.assertIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+        self.assertNotIn("A2", self.graph.nodes[("Person", "A1")]["merged_ids"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
 
     def test_later_enrichment_is_not_silently_replaced_by_an_old_snapshot(self):
         self.seed_pair()

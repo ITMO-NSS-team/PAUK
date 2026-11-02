@@ -51,6 +51,7 @@ export type LocaleKey =
   | "field.pubFields"
   | "field.abstract"
   | "field.openalexUrl"
+  | "field.sources"
   | "field.year"
   | "field.yearUnknown"
   | "field.unknownDept"
@@ -171,6 +172,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.pubFields": "Направления",
     "field.abstract": "Аннотация",
     "field.openalexUrl": "OpenAlex",
+    "field.sources": "Источники",
     "field.year": "Год",
     "field.yearUnknown": "неизвестен",
     "field.unknownDept": "—",
@@ -294,6 +296,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.pubFields": "Fields",
     "field.abstract": "Abstract",
     "field.openalexUrl": "OpenAlex",
+    "field.sources": "Sources",
     "field.year": "Year",
     "field.yearUnknown": "unknown",
     "field.unknownDept": "—",

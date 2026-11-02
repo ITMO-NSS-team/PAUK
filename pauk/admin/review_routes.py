@@ -118,6 +118,8 @@ def _asks(row: dict) -> str:
         return "аккаунт GitHub"
     if kind == review.STAFF:
         return "запись каталога"
+    if kind == review.PUBLICATION:
+        return "две публикации"
     return "две записи"
 
 
@@ -136,13 +138,14 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
         name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
+        node_label = "Publication" if row["kind"] == review.PUBLICATION else "Person"
         shown.append({
             "id": member,
             "name": name or member,
             # The card carries the way back; the search is the only other exit.
             "href": None if record else
                     (evidence.get("url") if account
-                     else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
+                     else f"/nodes/{node_label}/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
         })
@@ -152,6 +155,9 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
 def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
+    shared_coauthors = evidence.get("shared_coauthors")
+    if shared_coauthors is None and "shared_authors" in evidence:
+        shared_coauthors = len(evidence["shared_authors"])
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.
@@ -163,6 +169,7 @@ def _shown(row: dict, back: str = "") -> dict:
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
+        "is_publication": row["kind"] == review.PUBLICATION,
         "chosen": row.get("chosen"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
@@ -174,8 +181,15 @@ def _shown(row: dict, back: str = "") -> dict:
         # A degree is what tells two namesakes apart.
         "degrees": dict(zip(evidence.get("records") or [],
                             evidence.get("record_degrees") or [], strict=False)),
-        "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
-        "shared_coauthors": evidence.get("shared_coauthors"),
+        "reasons": [
+            _reason_words(reason)
+            for reason in (
+                [evidence.get("held_because")]
+                if isinstance(evidence.get("held_because"), str)
+                else evidence.get("held_because") or []
+            )
+        ],
+        "shared_coauthors": shared_coauthors,
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
         "input_route": evidence.get("input_route"),

@@ -14,9 +14,8 @@ from pauk.jobs.locks import Busy
 from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
-from pauk.pipeline.normalize import OpenAlexNormalizer
 from pauk.pipeline.runner import PipelineRunner
-from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
+from pauk.pipeline.selectors import IdSelector, IdsFileSelector, PeriodSelector, WorkSelector
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
@@ -28,13 +27,13 @@ logger = logging.getLogger("pauk.cli")
 
 
 def _selector(args):
-    if args.work:
-        return WorkSelector(args.work)
-    if args.works_file:
-        return WorksFileSelector(Path(args.works_file))
+    if args.record_id:
+        return IdSelector(args.record_id)
+    if args.ids_file:
+        return IdsFileSelector(Path(args.ids_file))
     if args.date_from and args.date_to:
         return PeriodSelector(args.date_from, args.date_to)
-    raise SystemExit("provide --work, --works-file, or both --from and --to")
+    raise SystemExit("provide --id/--work, --ids-file/--works-file, or both --from and --to")
 
 
 def _group(args) -> str:
@@ -77,13 +76,15 @@ def _add_pipeline_parsers(sub: argparse._SubParsersAction) -> None:
     """Register the pipeline subcommands: run, collect, normalize, enrich, publish, dedup."""
     for name in ("run", "collect"):
         p = sub.add_parser(name)
-        p.add_argument("--work")
-        p.add_argument("--works-file")
+        p.add_argument("--source", default="openalex")
+        p.add_argument("--id", "--work", dest="record_id")
+        p.add_argument("--ids-file", "--works-file", dest="ids_file")
         p.add_argument("--from", dest="date_from")
         p.add_argument("--to", dest="date_to")
         p.add_argument("--name")
     p = sub.add_parser("normalize")
     p.add_argument("--group", required=True)
+    p.add_argument("--source", default="openalex")
     p = sub.add_parser("enrich")
     p.add_argument("stage", nargs="?", default="all")
     p.add_argument(
@@ -196,11 +197,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def _cmd_run(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
-        _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
+        _log_result("run", group, PipelineRunner(settings, group, db).run(
+            _selector(args), source=args.source,
+        ))
 
 
 def _cmd_collect(args) -> None:
     with _mongo_db() as db:
+        if args.source != "openalex":
+            raise SystemExit(f"collection is not implemented for source {args.source!r}")
         group = _group(args)
         count = Collector(
             OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
@@ -211,7 +216,9 @@ def _cmd_collect(args) -> None:
 def _cmd_normalize(args) -> None:
     with _mongo_db() as db:
         group = validate_group(args.group)
-        result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
+        from pauk.ingest.normalizer import PublicationNormalizer
+
+        result = PublicationNormalizer(RawStore(db, group), PreparedStore(db, group)).run(args.source)
         _log_result("normalize", group, result)
 
 

@@ -27,6 +27,7 @@ from pauk.graph.mutations import (
     delete_relationship,
     merge_nodes,
     read_node,
+    snapshot_fields,
     update_node,
 )
 from pauk.graph.overrides import (
@@ -413,8 +414,7 @@ def _delete(args, client, db, actor: str) -> None:
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
         record_override(db, args.label, args.id, "delete", actor=actor, note=args.note or "",
-                        snapshot={name: value for name, value in snapshot.items()
-                                  if name in NODE_FIELDS[args.label] and value is not None})
+                        snapshot=snapshot_fields(args.label, snapshot))
     logger.info("deleted %d node(s)", removed)
 
 

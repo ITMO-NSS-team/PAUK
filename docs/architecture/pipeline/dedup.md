@@ -4,7 +4,8 @@
 repositories, and how dedup within a group differs from dedup across the whole
 graph.
 
-**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`.
+**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`,
+`pauk/pipeline/publication_components.py`.
 
 Collapses prepared-layer records that describe the same real entity: a person,
 a publication or a repository. It runs after every stage that loads anything,
@@ -132,17 +133,23 @@ questions. Existing operator decisions remain authoritative.
 Before prepared-person merges, complete source rows are preserved in
 `person_merge_sources`. Failure to preserve any participant aborts before the
 merge writes. Unmerge uses these durable copies when live rows were removed or
-already aggregate the returning person, and restores prepared rows as well as
-the graph so the next publish keeps the split.
+already aggregate the returning person. It restores the prepared rows before
+changing the graph, gives exclusive `identity_keys` back to the returning
+person and repairs `person_id` in publication source/version author ledgers.
+The next normalize or publish therefore keeps the split instead of immediately
+folding the person back into the survivor. Graph restoration keeps the folded
+id on the survivor until the returning node, its edges and manual overrides
+are restored; that final marker write makes an interrupted split resumable.
 
 ## Publications
 
-One work reaches OpenAlex by several routes: a preprint and a version of
-record, a dataset or software deposit, a re-indexed duplicate of one DOI. Rows
-sharing a DOI or a title are one publication. The merge is lossless: each
-record is folded into `versions` (`PublicationVersion`: the title, DOI,
-journal, date, abstract and authors of that particular record), so every place
-the work appeared stays available on the surviving row.
+One work can reach PAUK through several source records: a preprint and a
+version of record, a dataset or software deposit, or a re-indexed duplicate.
+Rows sharing a normalized DOI are merged automatically. Title matching is an
+automatic rule only for legacy schema-v1 rows; schema-v2 rows with the same
+title and a shared author are written to `review_pairs` and remain separate.
+The source-neutral ledger is `source_records`; OpenAlex entries are also
+dual-written to legacy `versions` for the transition release.
 
 The representative of the surviving row: `article` > other types (including a
 missing type) > `preprint`; on a tie, the newer date, then more authors, then
@@ -164,6 +171,12 @@ combined `CodeLink` to `pending` and clear the publication's `link_relevance`
 processing state so the next run judges all contexts together. The last fully
 calculated `code_url` and `Repository.publication_ids` are kept until the
 retry succeeds, as they are on a transient LLM failure.
+
+Manual publication answers are folded with their negative constraints. If
+`A=B` and `B=C` but `A!=C`, the second positive edge is not allowed to create
+an `A-B-C` component. After any person fold, both global `identity_keys` and
+person ids embedded in publication source/version author ledgers are repointed
+to the survivor.
 
 ## Repositories
 

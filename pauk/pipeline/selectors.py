@@ -28,3 +28,9 @@ class WorksFileSelector:
         if not self.path.is_file():
             raise FileNotFoundError(f"works file not found: {self.path}")
         return [line.strip() for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+# Source-neutral names are the public vocabulary. The OpenAlex-era names
+# remain aliases so scripts and scheduled payloads do not break.
+IdSelector = WorkSelector
+IdsFileSelector = WorksFileSelector

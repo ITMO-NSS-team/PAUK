@@ -23,17 +23,24 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from pymongo.database import Database
 
-from pauk.models import Person
+from pauk.models import ExternalIdentifier, Person
 from pauk.pipeline.normalize import _merge_person
 from pauk.storage.person_merge_sources import snapshots
 from pauk.storage.prepared import PreparedStore
 
 from .client import _merge_duplicate_properties, chunked
 from .extract import extract_node, extract_relationships, person_spec
-from .mutations import RESERVED_FIELDS, MutationError, NotFound, create_node
+from .mutations import (
+    RESERVED_FIELDS,
+    MutationError,
+    NotFound,
+    restore_node,
+    snapshot_fields,
+)
 from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
 
 logger = logging.getLogger(__name__)
@@ -110,7 +117,17 @@ def _folded_side(client, members: list[str]) -> tuple[str, str, dict]:
     live = {node_id: client.fetch_node_properties("Person", node_id) for node_id in set(members)}
     present = sorted(node_id for node_id, props in live.items() if props is not None)
     if len(present) == 2:
-        raise MutationError("both records are in the graph; nothing was folded")
+        partial = [
+            canonical_id
+            for canonical_id in present
+            if next(node_id for node_id in present if node_id != canonical_id)
+            in (live[canonical_id].get("merged_ids") or [])
+        ]
+        if len(partial) != 1:
+            raise MutationError("both records are in the graph; nothing was folded")
+        canonical_id = partial[0]
+        duplicate_id = next(node_id for node_id in present if node_id != canonical_id)
+        return duplicate_id, canonical_id, live[canonical_id]
     if not present:
         raise NotFound(f"neither {' nor '.join(sorted(set(members)))} is a node any more")
     canonical_id = present[0]
@@ -170,8 +187,14 @@ def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) ->
         means the other end is not published, which is the same thing that
         happens on a publish.
     """
-    create_node(client, "Person", node_id,
-                {name: value for name, value in props.items() if name not in RESERVED_FIELDS})
+    restored = snapshot_fields("Person", props)
+    if client.fetch_node_properties("Person", node_id) is None:
+        restore_node(client, "Person", node_id, restored)
+    else:
+        # A prior split may have stopped after recreating the node but before
+        # removing the survivor's copied edges. Reapplying its source state is
+        # safe and lets the same split finish.
+        client.upsert_nodes_batch("Person", [(node_id, restored)])
     dropped = tombstoned_relationships(db)
     given_back = 0
     for (src_label, tgt_label, rel_type, match_field), rels in edges.items():
@@ -181,6 +204,165 @@ def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) ->
             given_back += client.upsert_relationships_batch(
                 src_label, tgt_label, rel_type, chunk, match_field)
     return given_back
+
+
+def _person_identifier_map(row: dict) -> dict[str, ExternalIdentifier]:
+    """Stable keys this source row assigned to one person."""
+    person = Person.model_validate(row)
+    identifiers = {item.normalized_key: item for item in person.identifiers}
+    inferred = (
+        ("openalex", person.openalex_id or (person.id if person.id.startswith("A") else None)),
+        ("orcid", person.orcid),
+    )
+    for scheme, value in inferred:
+        if not value:
+            continue
+        identifier = ExternalIdentifier(scheme=scheme, value=value)
+        identifiers.setdefault(identifier.normalized_key, identifier)
+    return identifiers
+
+
+def _authorship_claims(row: dict, publication_aliases: dict[str, str]) -> set[tuple[str, int]]:
+    return {
+        (
+            publication_aliases.get(authorship["publication_id"], authorship["publication_id"]),
+            authorship.get("position") or 0,
+        )
+        for authorship in row.get("authored") or []
+    }
+
+
+def _source_author_identifier_keys(author: dict) -> set[str]:
+    keys = set()
+    for raw in author.get("identifiers") or []:
+        try:
+            keys.add(ExternalIdentifier.model_validate(raw).normalized_key)
+        except (TypeError, ValueError):
+            continue
+    return keys
+
+
+@dataclass
+class _PersonReferenceRestore:
+    identity_updates: list[tuple[str, ExternalIdentifier, bool]]
+    publication_updates: list[tuple[object, dict]]
+
+
+def _plan_person_reference_restore(
+    db: Database,
+    duplicate_id: str,
+    canonical_id: str,
+    duplicate_row: dict,
+    remaining_rows: list[dict],
+) -> _PersonReferenceRestore:
+    """Reverse the prepared dedup's identity/provenance repointing.
+
+    The operation is idempotent so an interrupted split can repeat it. Keys
+    shared by both sides stay on the survivor; only identity facts exclusive
+    to the returning source row move back.
+    """
+    duplicate_identifiers = _person_identifier_map(duplicate_row)
+    remaining_identifier_keys = {
+        key
+        for row in remaining_rows
+        for key in _person_identifier_map(row)
+    }
+    returning_identifiers = {
+        key: identifier
+        for key, identifier in duplicate_identifiers.items()
+        if key not in remaining_identifier_keys
+    }
+
+    identity_updates = []
+    for key, identifier in returning_identifiers.items():
+        document_id = f"person:{key}"
+        current = db.identity_keys.find_one({"_id": document_id})
+        if current and current.get("entity_id") not in {canonical_id, duplicate_id}:
+            raise NothingToRebuild(
+                f"identity key {key} is now owned by {current.get('entity_id')}; "
+                "the split cannot take it back safely"
+            )
+        identity_updates.append((document_id, identifier, current is None))
+
+    publication_aliases = {
+        alias: row["id"]
+        for row in db.publications.find({}, {"id": 1, "merged_ids": 1})
+        for alias in [row["id"], *(row.get("merged_ids") or [])]
+    }
+    duplicate_claims = _authorship_claims(duplicate_row, publication_aliases)
+    remaining_claims = {
+        claim
+        for row in remaining_rows
+        for claim in _authorship_claims(row, publication_aliases)
+    }
+    exclusive_claims = duplicate_claims - remaining_claims
+    duplicate_names = {
+        " ".join(str(name).casefold().split())
+        for name in [duplicate_row.get("name_raw"), *(duplicate_row.get("name_variants") or [])]
+        if name
+    }
+    remaining_names = {
+        " ".join(str(name).casefold().split())
+        for row in remaining_rows
+        for name in [row.get("name_raw"), *(row.get("name_variants") or [])]
+        if name
+    }
+    publication_updates: list[tuple[object, dict]] = []
+    for publication in db.publications.find({}):
+        publication_id = publication["id"]
+        update = {}
+        for field in ("source_records", "versions"):
+            records = publication.get(field)
+            if not records:
+                continue
+            changed = False
+            for record in records:
+                for author in record.get("authors") or []:
+                    if author.get("person_id") != canonical_id:
+                        continue
+                    position = author.get("position") or 0
+                    author_name = " ".join(str(author.get("name") or "").casefold().split())
+                    identity_match = bool(
+                        _source_author_identifier_keys(author) & returning_identifiers.keys()
+                    )
+                    occurrence_match = (publication_id, position) in exclusive_claims
+                    name_match = (
+                        (publication_id, position) in duplicate_claims
+                        and author_name in duplicate_names
+                        and author_name not in remaining_names
+                    )
+                    if identity_match or occurrence_match or name_match:
+                        author["person_id"] = duplicate_id
+                        changed = True
+            if changed:
+                update[field] = records
+        if update:
+            publication_updates.append((publication["_id"], update))
+
+    return _PersonReferenceRestore(identity_updates, publication_updates)
+
+
+def _apply_person_reference_restore(
+    db: Database,
+    plan: _PersonReferenceRestore,
+    duplicate_id: str,
+) -> None:
+    for document_id, identifier, missing in plan.identity_updates:
+        if missing:
+            db.identity_keys.insert_one({
+                "_id": document_id,
+                "entity": "person",
+                "scheme": identifier.scheme,
+                "normalized_value": identifier.value,
+                "entity_id": duplicate_id,
+            })
+        else:
+            db.identity_keys.update_one(
+                {"_id": document_id},
+                {"$set": {"entity_id": duplicate_id}},
+            )
+    for publication_id, update in plan.publication_updates:
+        db.publications.update_one({"_id": publication_id}, {"$set": update})
 
 
 def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges: Edges) -> int:
@@ -366,22 +548,42 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
             if not groups:
                 raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
             prepared_updates.append((groups, content | restored))
-    if patch:
-        # The plain upsert: `is_itmo` is sticky in the person one.
-        client.upsert_nodes_batch("Person", [(canonical_id, patch)])
+    reference_restore = _plan_person_reference_restore(
+        db,
+        duplicate_id,
+        canonical_id,
+        duplicate_row,
+        sources,
+    )
+    # Restore Mongo first. If the process stops after this point, a publish
+    # can finish rebuilding the graph; the reverse order would leave a live
+    # graph node whose source still claims it is folded.
+    for groups, row in prepared_updates:
+        for group in groups:
+            PreparedStore(db, group).upsert_rows("persons", [row])
+    _apply_person_reference_restore(db, reference_restore, duplicate_id)
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0
     if complete:
         _restore_corresponding(client, canonical_id, duplicate_edges, canonical_edges)
-    # Publishing must see the split too, otherwise the surviving aggregate
-    # would silently fold the restored person again on the next publish.
-    for groups, row in prepared_updates:
-        for group in groups:
-            PreparedStore(db, group).upsert_rows("persons", [row])
-    # Last, as in a publish: rebuilding a node from its source row is the
-    # one thing that can bury a hand-made correction under what the source
-    # says.
+    if patch:
+        # Refresh source-owned fields while retaining the fold marker. If
+        # overrides fail below, the next invocation can still recognize and
+        # finish this split.
+        source_patch = {key: value for key, value in patch.items() if key != "merged_ids"}
+        if source_patch:
+            client.upsert_nodes_batch("Person", [(canonical_id, source_patch)])
+    # As in a publish, rebuilding a node from its source row can bury a
+    # hand-made correction, so overrides must precede the commit marker.
     apply_overrides(client, db)
+    if patch and "merged_ids" in patch:
+        # Removing the folded id commits the graph half of the split. Every
+        # earlier operation is idempotent, so an interruption before this
+        # write leaves the operation resumable.
+        client.upsert_nodes_batch(
+            "Person",
+            [(canonical_id, {"merged_ids": patch["merged_ids"]})],
+        )
     logger.info("split %s back out of %s: %d edge(s) given back, %d taken off",
                 duplicate_id, canonical_id, given_back, taken_off)
     return {"duplicate": duplicate_id, "canonical": canonical_id,

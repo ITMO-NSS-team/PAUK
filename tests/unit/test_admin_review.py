@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
-from pauk.admin.review_routes import _reason_words
+from pauk.admin.review_routes import _reason_words, _shown
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
@@ -32,6 +32,24 @@ class ReviewPageTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
+
+    def test_unrelated_question_does_not_invent_zero_coauthors(self):
+        row = {
+            "_id": "github_person:A1:ada",
+            "kind": review.GITHUB,
+            "members": ["A1", "ada"],
+            "evidence": {},
+        }
+        self.assertIsNone(_shown(row)["shared_coauthors"])
+
+    def test_explicit_zero_coauthors_is_preserved(self):
+        row = {
+            "_id": "person_pair:A1:A2",
+            "kind": review.PAIR,
+            "members": ["A1", "A2"],
+            "evidence": {"shared_coauthors": 0, "shared_authors": ["A3"]},
+        }
+        self.assertEqual(_shown(row)["shared_coauthors"], 0)
 
     def csrf(self):
         body = self.client.get("/review").text

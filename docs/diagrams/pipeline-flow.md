@@ -18,6 +18,7 @@ flowchart TD
 
     subgraph MONGO["MongoDB"]
         RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, github, github_user")]
+        IDS[("identity_keys<br/>source id, DOI, ORCID, occurrence")]
         PUB[("publications")]
         PER[("persons")]
         DEP[("departments, organizations")]
@@ -37,7 +38,8 @@ flowchart TD
     CLI_COLLECT["pauk collect"] -->|"GET works by ITMO ROR / id"| OA
     OA -->|"append: openalex_works"| RAW
 
-    CLI_NORM["pauk normalize"] -->|"reads the group's openalex_works<br/>+ get_models by id for cross-group references"| RAW
+    CLI_NORM["pauk normalize<br/>adapter → identity → aggregate"] -->|"reads versioned source envelopes"| RAW
+    CLI_NORM <--> IDS
     CLI_NORM -->|"write"| PUB
     CLI_NORM -->|"write"| PER
 

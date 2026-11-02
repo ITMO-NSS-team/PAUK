@@ -104,8 +104,18 @@ export interface PubDetail {
   fields: string[];
   funding: Funding[];
   versions?: unknown[];
+  sources?: string[];
+  source_keys?: string[];
+  source_links?: SourceLink[];
+  versions?: unknown[];
   openalex_url: string;
   abstract: string;
+}
+
+export interface SourceLink {
+  source: string;
+  key: string;
+  url: string;
 }
 
 export interface Funding {

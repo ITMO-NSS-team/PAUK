@@ -193,7 +193,11 @@ def _collect_payload(form) -> dict:
                                           date_to=date_to or None))
     except ValueError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    return {"group": group, "work_id": work_id or None,
+    source = str(form.get("source", "openalex")).strip().casefold()
+    if source != "openalex":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"сбор из источника {source!r} пока не реализован")
+    return {"group": group, "source": source, "work_id": work_id or None,
             "date_from": date_from or None, "date_to": date_to or None}
 
 
