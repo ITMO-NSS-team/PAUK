@@ -269,9 +269,7 @@ async def restore(label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "не сохранилось данных, чтобы восстановить эту запись")
     try:
-        restore_node(graph, label, node_id,
-                     {name: value for name, value in fields.items()
-                      if name in NODE_FIELDS[label]})
+        restore_node(graph, label, node_id, snapshot_fields(label, fields))
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     _record(undo=lambda: delete_node(graph, label, node_id),

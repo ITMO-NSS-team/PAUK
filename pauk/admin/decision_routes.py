@@ -17,10 +17,10 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import (
-    NODE_FIELDS,
     MutationError,
     create_relationship,
     restore_node,
+    snapshot_fields,
     update_node,
 )
 from pauk.graph.overrides import (
@@ -109,9 +109,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
             create_relationship(graph, *triple, src_id, tgt_id, snapshot)
             restored = "link"
         elif op == DELETE and snapshot:
-            restore_node(graph, label, node_id,
-                         {name: value for name, value in snapshot.items()
-                          if name in NODE_FIELDS[label]})
+            restore_node(graph, label, node_id, snapshot_fields(label, snapshot))
             restored = "node"
         apply_overrides(graph, db)
     except MutationError as error:

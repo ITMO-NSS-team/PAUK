@@ -28,7 +28,15 @@ from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
-from pauk.graph.mutations import NotFound, VersionConflict, merge_nodes, update_node
+from pauk.graph.mutations import (
+    NotFound,
+    VersionConflict,
+    delete_node,
+    merge_nodes,
+    restore_node,
+    snapshot_fields,
+    update_node,
+)
 from pauk.graph.unmerge import split_person
 from pauk.models import GitHubProfile, Person
 from pauk.pipeline.stages.dedup import DedupStage
@@ -121,6 +129,28 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_reading_a_node_that_is_not_there(self):
         self.assertIsNone(_client.fetch_node_properties("Person", "nobody"))
+
+    def test_publication_restore_preserves_read_only_provenance(self):
+        expected = {
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        }
+        _client.upsert_nodes_batch("Publication", [("pub_1", expected)])
+        snapshot = snapshot_fields(
+            "Publication",
+            _client.fetch_node_properties("Publication", "pub_1"),
+        )
+
+        self.assertEqual(delete_node(_client, "Publication", "pub_1"), 1)
+        restored = restore_node(_client, "Publication", "pub_1", snapshot)
+
+        self.assertEqual({name: restored[name] for name in expected}, expected)
 
 
 class GitHubMatchPublicationIntegrationTest(unittest.TestCase):
