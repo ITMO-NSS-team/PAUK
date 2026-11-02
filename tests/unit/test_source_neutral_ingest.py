@@ -534,6 +534,53 @@ class SourceNeutralIngestTest(unittest.TestCase):
         self.normalize()
         self.assertEqual(self.db.persons.count_documents({}), 3)
 
+    def test_openalex_identity_conflict_does_not_copy_stable_id_to_occurrence(self):
+        self.prepared.write_models("persons", [
+            Person(
+                id="per_source", schema_version=2, is_itmo=False,
+                identifiers=[{"scheme": "openalex", "value": "A1"}],
+                openalex_id="A1",
+            ),
+            Person(
+                id="per_orcid", schema_version=2, is_itmo=False,
+                identifiers=[{"scheme": "orcid", "value": "0000-0001-2345-6789"}],
+                orcid="0000-0001-2345-6789",
+            ),
+        ])
+        raw = RawStore(self.db, "openalex-conflict")
+        prepared = PreparedStore(self.db, "openalex-conflict")
+        raw.append(
+            "openalex_works",
+            {
+                "source_id": "W1",
+                "title": "Conflict",
+                "authors": [{
+                    "name": "Ada",
+                    "source_author_id": "A1",
+                    "orcid": "0000-0001-2345-6789",
+                }],
+            },
+            {},
+            provider="openalex",
+            record_key="openalex:W1",
+            schema_version=2,
+        )
+
+        PublicationNormalizer(
+            raw,
+            prepared,
+            AdapterRegistry([FakeAdapter("openalex")]),
+        ).run("openalex")
+
+        occurrence = self.db.persons.find_one({
+            "id": {"$nin": ["per_source", "per_orcid"]},
+        })
+        self.assertIsNone(occurrence.get("openalex_id"))
+        self.assertEqual(
+            occurrence["identifiers"][0]["scheme"],
+            "occurrence",
+        )
+
     def test_normalize_preserves_enriched_authorship_affiliation(self):
         self.append(
             "catalog", "P1", title="Paper",
@@ -620,6 +667,12 @@ class SourceNeutralIngestTest(unittest.TestCase):
             "mystery_publications", {"source_id": "M1"}, {},
             provider="mystery", record_key="mystery:M1", schema_version=2,
         )
+        with self.assertRaisesRegex(ValueError, "unknown raw provider"):
+            self.normalize("mystery")
+        self.assertEqual(self.db.publications.count_documents({}), 0)
+        self.assertEqual(self.db.identity_keys.count_documents({}), 0)
+
+    def test_unknown_empty_provider_also_fails_before_prepared_writes(self):
         with self.assertRaisesRegex(ValueError, "unknown raw provider"):
             self.normalize("mystery")
         self.assertEqual(self.db.publications.count_documents({}), 0)

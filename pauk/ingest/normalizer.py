@@ -36,6 +36,9 @@ class PublicationNormalizer:
         self._legacy_authors_by_publication: dict[str, list[SourceAuthor]] | None = None
 
     def _incoming(self, source: str) -> list[tuple[RawEnvelope, IncomingPublication]]:
+        # Validate the requested provider even when its raw group is empty.
+        # Otherwise a typo silently looks like a successful zero-row run.
+        self.registry.get(source)
         latest: OrderedDict[str, tuple[RawEnvelope, IncomingPublication]] = OrderedDict()
         # Adapt every row before identity resolution writes anything. An
         # unknown provider or malformed payload therefore fails atomically
@@ -237,7 +240,11 @@ class PublicationNormalizer:
                 person = persons.get(person_id) or self.identities.person(person_id) or Person(
                     id=person_id,
                     schema_version=2,
-                    openalex_id=author.source_author_id if incoming.source == "openalex" else None,
+                    openalex_id=(
+                        author.source_author_id
+                        if incoming.source == "openalex" and source_identifiers is None
+                        else None
+                    ),
                     is_itmo=author.is_itmo,
                     name_raw=author.name,
                 )
