@@ -187,7 +187,16 @@ every publish waiting on Busy. Then:
   and withdrawing it puts a confirmed edge back to `held` (a removed one comes
   back with the next `link`).
   An open question the rules no longer ask is dropped; an answered or
-  skipped one stays.
+  skipped one stays, and an answered pair is not asked again under the ids
+  of a fold since;
+- an answer of "different" removes a hand-added edge too.
+
+The panel changes the edge under the graph lock as well. Otherwise a `link`
+that read the answers before somebody clicked writes its plan over the
+answer: the edge comes back after "different". With the graph held, the
+answer waits in Mongo, the panel says so and queues a `versions` job (one,
+however many answers wait). `link` reads the answers once more right
+before it lets the lock go and applies the ones given while it ran.
 
 The edges belong to this command: no prepared row carries them, so a publish
 never writes them, and `pauk admin prune` leaves them alone
@@ -196,10 +205,12 @@ an edge between the two halves of the fold rather than turning it into a loop.
 The admin panel runs it as the `versions` job.
 
 `report` only reads the graph, needs no MongoDB and takes no lock. It writes
-the same pairs to the journal and leaves MEDIUM_FUZZY unrouted: the verdicts
-live in Mongo. `link` writes the journal too.
+the same pairs and leaves MEDIUM_FUZZY unrouted, since the verdicts live in
+Mongo. Its journal is `data/cache/version_candidates_report.jsonl`, so it
+does not overwrite the routed one `link` writes to
+`data/cache/version_candidates.jsonl`.
 
-The journal (`data/cache/version_candidates.jsonl` by default) is
+The journal is
 line-delimited JSON, like `dedup_candidates_graph.jsonl`: `status`,
 `entity`, `bucket`, `mergeable`, `record_a`/`record_b` and the signals the
 decision was based on. Lines are ordered by the `(record_a, record_b)` pair,

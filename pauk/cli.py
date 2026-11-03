@@ -173,7 +173,7 @@ def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("versions")
     versions_sub = p.add_subparsers(dest="versions_command", required=True)
     p = versions_sub.add_parser("report", help="report candidate version pairs the dedup stage did not catch")
-    p.add_argument("--output", type=Path, help="default: cache_dir/version_candidates.jsonl")
+    p.add_argument("--output", type=Path, help="default: cache_dir/version_candidates_report.jsonl")
     p = versions_sub.add_parser("link", help="write candidate version pairs into the graph as IS_VERSION")
     p.add_argument("--llm", action="store_true",
                    help="ask the LLM about MEDIUM_FUZZY pairs no earlier run asked about")

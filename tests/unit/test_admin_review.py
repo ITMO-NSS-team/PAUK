@@ -11,6 +11,9 @@ from pauk.admin.review_routes import _reason_words
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
+from pauk.graph.overrides import DELETE, record_relationship_override
+from pauk.jobs import locks, store
+from pauk.jobs.models import GRAPH, JobKind, JobState
 from pauk.models import Person, Publication
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
@@ -321,6 +324,17 @@ class FoldNowTest(unittest.TestCase):
         self.graph.add("Person", "A2")
         self.answer(verdict="different")
         self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
+
+    def test_a_held_graph_is_not_folded_under_a_running_job(self):
+        # A dedup that read both nodes before the click would write its own
+        # plan for them after it.
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        locks.acquire(self.db, GRAPH, "dedup-elsewhere")
+        response = self.answer()
+        self.assertIn("done=waiting", response.headers["location"])
+        self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
+        self.assertEqual(review.decisions(self.db), {frozenset({"A1", "A2"}): review.SAME})
 
 
 class FactsInTheRowTest(unittest.TestCase):
@@ -1119,3 +1133,24 @@ class VersionQuestionTest(unittest.TestCase):
         self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
         response = self.answer("same")
         self.assertIn("done=version_waiting", response.headers["location"])
+
+    def test_a_held_graph_keeps_the_edge_and_queues_one_run(self):
+        # A `versions link` holding the graph has read the answers already:
+        # an edge removed now would be written back by its plan.
+        locks.acquire(self.db, GRAPH, "versions-link-elsewhere")
+        response = self.answer("different")
+        self.assertIn("done=version_busy", response.headers["location"])
+        self.assertIn(("Publication", "IS_VERSION", "Publication", "W1", "W2"),
+                      self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+        self.answer("same")
+        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        self.assertEqual(job.state, JobState.QUEUED)
+        self.assertFalse(job.payload.get("llm"))
+
+    def test_same_on_an_edge_deleted_by_hand_says_it_stays_deleted(self):
+        del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W1", "W2", DELETE)
+        response = self.answer("same")
+        self.assertIn("done=no_edge_deleted", response.headers["location"])

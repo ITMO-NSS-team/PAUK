@@ -126,7 +126,8 @@ queue (`/review`, "Версии публикаций"). `--llm` asks the LLM
 about; `--force` asks again. The admin panel runs it as the `versions` job.
 
 `report` only reads the graph (MongoDB is not needed) and writes the journal
-(by default `data/cache/version_candidates.jsonl`); `link` writes it too.
+(by default `data/cache/version_candidates_report.jsonl`, MEDIUM_FUZZY
+unrouted); `link` writes its own routed one to `data/cache/version_candidates.jsonl`.
 See [pipeline/version-candidates.md](pipeline/version-candidates.md).
 
 ## `admin`: manual graph edits

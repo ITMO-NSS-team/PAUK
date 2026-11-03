@@ -93,6 +93,41 @@ def plan_version_edges(rows: list[dict], report: list[dict],
     return edges
 
 
+def settle_pair(client, current: list[tuple[str, str]], verdict: str | None,
+                planned: tuple[tuple[str, str], dict] | None = None) -> str:
+    """Put one answer about two publications, or its withdrawal, on their edge.
+
+    The panel calls it when somebody answers, and `pauk versions link` for
+    an answer that came in while it ran. The caller holds the graph:
+    otherwise a run that read the answers earlier writes its plan over this.
+
+    Args:
+        current: The pair's IS_VERSION edges as they are, either direction.
+        verdict: The answer now standing, None once it is withdrawn.
+        planned: The edge this run's rules give the pair, as
+            `plan_version_edges` names it. The panel has no plan, so a
+            removed edge waits for the next run there.
+
+    Returns:
+        "unlinked", "linked", "reopened", "no_edge" (an answer of "same" with
+        nothing to confirm) or "relink" (withdrawn, no edge to put back).
+    """
+    if verdict == review.DIFFERENT:
+        client.delete_relationships_batch("Publication", "Publication", REL_TYPE, current)
+        return "unlinked"
+    status = CONFIRMED if verdict == review.SAME else HELD
+    if current:
+        client.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
+                                          [(src, tgt, {"status": status}) for src, tgt in current])
+    elif planned is not None:
+        (src, tgt), props = planned
+        client.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
+                                          [(src, tgt, {**props, "status": status})])
+    else:
+        return "no_edge" if verdict == review.SAME else "relink"
+    return "linked" if verdict == review.SAME else "reopened"
+
+
 def run_version_link(config: Settings, mongo_db: Database, llm: bool = False,
                      force: bool = False) -> dict[str, int]:
     """Entry point for `pauk versions link`.
@@ -175,8 +210,7 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         claimed = _own(claimed_relationships(mongo_db), aliases)
         # The hand-made direction wins: writing the rules' one beside it
         # would leave the pair pointing both ways.
-        edges = {pair: props for pair, props in plan_version_edges(rows, report, answers).items()
-                 if pair[::-1] not in claimed}
+        edges = _unclaimed(plan_version_edges(rows, report, answers), claimed)
 
         existing = client.fetch_relationship_pairs("Publication", REL_TYPE, "Publication")
         # A pair a person called one work stays linked when the rules lose
@@ -186,7 +220,11 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         confirmed = {pair for pair in existing
                      if answers.get(frozenset(pair)) == review.SAME
                      and frozenset(pair) not in deleted_pairs and pair[::-1] not in edges}
-        stale = sorted(existing - set(edges) - claimed - confirmed)
+        # A hand-made edge is kept, but not over an answer of "different":
+        # the panel removes it when the answer is given, and only a graph
+        # that was down then leaves it for this run.
+        kept = {pair for pair in claimed if answers.get(frozenset(pair)) != review.DIFFERENT}
+        stale = sorted(existing - set(edges) - kept - confirmed)
         written = removed = 0
         with actor_context("etl-pipeline", source="versions-graph"):
             for chunk in chunked(stale):
@@ -194,8 +232,11 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for chunk in chunked([(src, tgt, props) for (src, tgt), props in sorted(edges.items())]):
                 written += client.upsert_relationships_batch("Publication", "Publication", REL_TYPE, chunk)
 
-        # Only what a person can usefully answer goes to the queue.
-        held_rows = [row for row in report if row["mergeable"]]
+        # Only what a person can usefully answer goes to the queue. An
+        # answered pair is not asked again: after a fold its answer sits
+        # under the old ids, and the new ones would open a second question.
+        held_rows = [row for row in report if row["mergeable"]
+                     and frozenset((row["record_a"], row["record_b"])) not in answers]
         asked = review.record_held(mongo_db, held_rows, source=review.GRAPH)
         retired = review.retire_versions(mongo_db, held_rows)
         config.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -207,12 +248,48 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
 
         with actor_context("etl-pipeline", source="versions-graph"):
             overrides = apply_overrides(client, mongo_db)
+            late = _settle_late_answers(client, mongo_db, aliases, answers, rows, report, claimed)
         return {
             "version_edges": written,
             "version_edges_removed": removed,
             "version_questions": asked,
             "version_questions_retired": retired,
+            "version_late_answers": late,
             **overrides,
         }
     finally:
         client.close()
+
+
+def _unclaimed(edges: dict[tuple[str, str], dict],
+               claimed: set[tuple[str, str]]) -> dict[tuple[str, str], dict]:
+    return {pair: props for pair, props in edges.items() if pair[::-1] not in claimed}
+
+
+def _settle_late_answers(client, mongo_db: Database, aliases: dict[str, str],
+                         answers: dict[frozenset[str], str], rows: list[dict],
+                         report: list[dict], claimed: set[tuple[str, str]]) -> int:
+    """Apply the answers given while this run was writing its plan.
+
+    The panel cannot touch the edges while the graph is held, so an answer
+    given since the run read them would be overwritten by a plan made
+    without it. Read again just before the lock goes; one given after this
+    finds the graph held too and queues a run of its own.
+
+    Returns:
+        How many pairs had their answer change during the run.
+    """
+    fresh = review.version_decisions(mongo_db, aliases)
+    changed = sorted((pair for pair in answers.keys() | fresh.keys()
+                      if answers.get(pair) != fresh.get(pair)), key=sorted)
+    if not changed:
+        return 0
+    existing = client.fetch_relationship_pairs("Publication", REL_TYPE, "Publication")
+    planned = {frozenset(pair): (pair, props)
+               for pair, props in _unclaimed(plan_version_edges(rows, report, fresh), claimed).items()}
+    for pair in changed:
+        a, b = sorted(pair)
+        current = [edge for edge in ((a, b), (b, a)) if edge in existing]
+        done = settle_pair(client, current, fresh.get(pair), planned.get(pair))
+        logger.info("versions: %s / %s answered during the run, %s", a, b, done)
+    return len(changed)

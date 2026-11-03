@@ -37,6 +37,9 @@ from .client import Neo4jClient
 logger = logging.getLogger(__name__)
 
 CANDIDATES_FILENAME = "version_candidates.jsonl"
+# The report's own journal: it routes MEDIUM_FUZZY without the stored LLM
+# verdicts, and in the link's file it would overwrite the routed one.
+REPORT_FILENAME = "version_candidates_report.jsonl"
 
 # MEDIUM_FUZZY is a third versions and two thirds sibling papers of one
 # group, and its title similarity does not tell them apart (the bucket study
@@ -656,7 +659,7 @@ def run_version_report(config: Settings, output: Path | None = None) -> Path:
     finally:
         client.close()
 
-    path = output or (config.cache_dir / CANDIDATES_FILENAME)
+    path = output or (config.cache_dir / REPORT_FILENAME)
     path.parent.mkdir(parents=True, exist_ok=True)
     with AtomicWriter(path) as fh:
         for row in report:

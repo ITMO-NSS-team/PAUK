@@ -195,6 +195,66 @@ class VersionLinkTest(unittest.TestCase):
         (row,) = versions(self.graph).values()
         self.assertEqual(row["bucket"], "MEDIUM_FUZZY_RELATED")
 
+    def answered_mid_run(self, answer):
+        """Run link with `answer()` called after it read the answers, before it writes."""
+        find = version_link.find_version_candidates
+
+        def find_then_answer(*args, **kwargs):
+            report = find(*args, **kwargs)
+            answer()
+            return report
+
+        with patch.object(version_link, "find_version_candidates", side_effect=find_then_answer):
+            return self.run_link()
+
+    def test_different_given_during_the_run_is_not_linked_back(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W2", "W1")] = {
+            "bucket": "MISSED_BY_NORM", "status": "held"}
+        result = self.answered_mid_run(lambda: review.record_verdict(
+            self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT))
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(result["version_late_answers"], 1)
+
+    def test_same_given_during_the_run_stays_confirmed(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        self.answered_mid_run(lambda: review.record_verdict(
+            self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME))
+        (row,) = versions(self.graph).values()
+        self.assertEqual(row["status"], "same")
+
+    def test_different_withdrawn_during_the_run_is_linked_again(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        review.record_held(self.db, [{"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+                                      "record_a": "W1", "record_b": "W2"}])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        self.answered_mid_run(lambda: review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"]))
+        (row,) = versions(self.graph).values()
+        self.assertEqual((row["bucket"], row["status"]), ("MISSED_BY_NORM", "held"))
+
+    def test_an_answered_pair_is_not_asked_again_after_a_fold(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        self.graph.nodes["Publication"]["W2"]["merged_ids"] = ["W9"]
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W9"], review.SAME)
+        self.run_link()
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        (row,) = versions(self.graph).values()
+        self.assertEqual(row["status"], "same")
+
+    def test_different_removes_an_edge_added_by_hand(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W3", "Lasers", doi="10.1/c")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W3")] = {}
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W1", "W3", LINK)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W3"], review.DIFFERENT)
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+
     def test_the_llm_is_asked_before_the_graph_is_held(self):
         pub(self.graph, "W1", "Robust output feedback MPC: an interval observer approach",
             doi="10.1/a", journal="Automatica", venue_type="journal", day="2020-12-01")
