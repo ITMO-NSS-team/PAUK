@@ -122,6 +122,10 @@ switch branches or deploy Python changes. Code deployment remains separate.
 The resulting build must include the map's required JSON files. Only the map
 entry is built; OPS is not included in a map release.
 
+A fresh snapshot export holds the shared graph lock and renews its lease
+until the export finishes. A failed renewal rejects the snapshot. Building
+from an existing snapshot does not require the graph lock.
+
 Builds are stored in `PAUK_ESSDATA/releases/<stand>/<id>/`, with `site/`, a separately retained `public/` dataset and
 `release.json`. nginx serves a local copy under `~/pauk/site/<stand>/releases/`.
 Precreated empty slot directories are initialized on first use; nonempty

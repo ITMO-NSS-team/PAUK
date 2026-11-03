@@ -25,6 +25,13 @@ reserved URI characters must be percent-encoded there. Root credentials
 remain the original values passed to the Mongo image. The server
 account uses `sudo docker`; locally use whichever Docker access is configured.
 
+The worker accepts the model, person resolution, concurrency and request
+timeout settings listed in `.env.example`. `PAUK_PERSON_RESOLUTION_ENABLED=false`
+disables person resolution. The logreg model path is inside the container;
+to use a custom file, place it under `$PAUK_HOME/private/` and set the path
+to `/private/<filename>`. The data, reports and Russian names paths are fixed
+to their container mounts in `compose.yml`.
+
 ## Folders
 
 Everything a container keeps lives on the host, in two roots:

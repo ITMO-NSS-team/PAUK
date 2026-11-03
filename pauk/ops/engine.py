@@ -22,11 +22,13 @@ from zoneinfo import ZoneInfo
 import requests
 
 from pauk.cache.graph_snapshot import latest_snapshot
-from pauk.jobs.locks import held
+from pauk.jobs.locks import LEASE_MINUTES, held, renew
+from pauk.jobs.models import GRAPH
 from pauk.ops.config import Config
 from pauk.ops.store import Store, now
 
 logger = logging.getLogger(__name__)
+GRAPH_RENEW_SECONDS = LEASE_MINUTES * 60 / 3
 
 FILES = ("mongo.archive.gz", "neo4j.dump", "system.dump")
 ACTIONS = {
@@ -79,6 +81,36 @@ def directory(root: Path, name: str) -> Path:
     if result.is_symlink() or result.resolve().parent != root.resolve():
         raise ValueError("Недопустимый путь")
     return result
+
+
+@contextmanager
+def export_graph_lock(db):
+    """Keep the graph lease alive while a snapshot export runs."""
+    owner = f"ops-export-{uuid4().hex}"
+    stopped = threading.Event()
+    lost = threading.Event()
+
+    def heartbeat():
+        while not stopped.wait(GRAPH_RENEW_SECONDS):
+            try:
+                if not renew(db, GRAPH, owner):
+                    lost.set()
+                    return
+            except Exception:
+                logger.exception("could not renew graph export lock")
+                lost.set()
+                return
+
+    with held(db, GRAPH, owner=owner):
+        thread = threading.Thread(target=heartbeat, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stopped.set()
+            thread.join()
+        if lost.is_set():
+            raise RuntimeError("Graph export lock renewal failed")
 
 
 class Engine:
@@ -466,11 +498,12 @@ class Engine:
         self.staging.add(generated)
         if fresh:
             snapshot = snapshots / f"graph_snapshot_ops-{name}.json"
-            self.command(
-                self.compose(
-                    "exec", "-T", "worker", "pauk", "cache", "export", "--output", f"/app/data/cache/{snapshot.name}"
+            with export_graph_lock(self.db):
+                self.command(
+                    self.compose(
+                        "exec", "-T", "worker", "pauk", "cache", "export", "--output", f"/app/data/cache/{snapshot.name}"
+                    )
                 )
-            )
         else:
             previous = self.store.get("last-snapshot")
             saved = directory(snapshots, previous) if previous else None
