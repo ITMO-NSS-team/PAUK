@@ -120,6 +120,16 @@ so the next question names only authors nobody has refused. If the rules alone
 would now link a refused author, the answer goes to the disputes instead.
 Answers given when an account was asked about one author at a time keep
 applying; where two answers cover one pair, the later one counts.
+Disputes use the same alias mapping and answer order. If an author was merged,
+the disagreement is attached to the original saved question; its members, answer
+and actor are preserved. An older answer superseded by a later one is not flagged.
+If that older question was already disputed, its obsolete flag is removed.
+"Оставить как есть" acknowledges the current evidence: identical results stay
+closed, while changed signals or evidence reopen the discrepancy. Confirmation
+forms carry an evidence token, so an old form cannot acknowledge a changed case.
+A run also closes a discrepancy when its current evidence no longer contradicts
+the answer, provided it evaluated that account and covered the author. A profile
+missing from this group, or an author outside the selection, keeps the earlier flag.
 
 A run also closes the open questions it has settled itself. Only for an account
 whose decision it wrote: a link a scoped run does not write leaves the account's
@@ -130,6 +140,9 @@ more, or when the question asked now names other authors, for instance after a
 namesake appeared. A closed question gets `auto_resolved_at` and no verdict, so
 it leaves the queue and comes back if a later run holds it again. Answered
 questions are never touched.
+Scoped runs create or refresh questions only when all named authors are selected.
+If a larger replacement question falls outside that scope, the earlier question
+stays open until a run can save its replacement.
 
 ## `confidence`
 

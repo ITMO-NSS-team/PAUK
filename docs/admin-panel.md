@@ -329,6 +329,10 @@ record. Neo4j is not needed to record an answer.
 evidence grows and a rule would now fire, the pair is not merged but goes to
 the "Расхождения" (Discrepancies) tab with the rule that fired. Any answer
 closes the discrepancy: confirm the old one or reverse it.
+For GitHub questions, "оставить как есть" keeps the same evidence out of this tab
+on repeat runs; changed evidence brings it back. A confirmation from an older
+version of the discrepancy asks you to reopen the page. Sending the same
+confirmation twice leaves the saved answer unchanged.
 
 **Whole groups cannot be answered.** A group is rejected because it certainly
 contains more than one person. You mark the ones who are the same person, and

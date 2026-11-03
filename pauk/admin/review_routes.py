@@ -206,6 +206,7 @@ def _shown(row: dict, back: str = "") -> dict:
         "skipped_by": row.get("skipped_by"),
         "applied_at": row.get("applied_at"),
         "disputed_at": row.get("disputed_at"),
+        "disputed_token": row.get("disputed_token"),
         "disputed_rule": RULES.get(row.get("disputed_rule"), row.get("disputed_rule")),
     }
 
@@ -318,6 +319,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     verdict = str(form.get("verdict", ""))
     tab = _tab(form.get("tab"), "pressing")
     note = str(form.get("note", "")).strip()
+    dispute_token = str(form.get("dispute_token", ""))
 
     def back(problem: str = "", done: str = ""):
         """To the queue, with a word about what happened.
@@ -346,7 +348,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                 return back("Отметьте, чей это аккаунт.")
             review.record_account_choice(db, login,
                                          [member for member in members if member != login],
-                                         chosen, actor=user.actor, note=note)
+                                         chosen, actor=user.actor, note=note, dispute_token=dispute_token)
         elif verdict == "choose":
             # Not a yes or no: the answer names a record. Empty means none fits.
             person = str(form.get("person", ""))
@@ -371,7 +373,8 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             review.record_split(db, members, same, actor=user.actor, note=note)
             return back(done="split")
         else:
-            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note)
+            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note,
+                                  dispute_token=dispute_token)
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s answered %s %s: %s", user.actor, kind, members, verdict)

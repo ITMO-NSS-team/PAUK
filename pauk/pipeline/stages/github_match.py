@@ -449,6 +449,7 @@ class GitHubMatchStage(EnrichmentStage):
                     verdicts.setdefault(login, {})[person_id] = verdict
 
         by_id = {person.id: person for person in people}
+        covered = {person.id for person in people if self.selected("persons", person.id)}
         repositories_by_url = {repository.url: repository for repository in repositories}
 
         def row_of(login: str, fit: Fit) -> dict:
@@ -481,7 +482,9 @@ class GitHubMatchStage(EnrichmentStage):
                     for fit in match.candidates]
                 decisions.append(chosen[login])
 
-        questions = self._answered(decisions, verdicts)
+        questions = [row for row in self._answered(decisions, verdicts)
+                     if {row["person"], *(candidate["person"] for candidate in row.get("candidates") or [])}
+                     <= covered]
 
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
@@ -536,11 +539,13 @@ class GitHubMatchStage(EnrichmentStage):
 
         self.prepared.write_models("persons", people)
         review.record_held(self.prepared.db, questions, source=review.STAGE)
-        review.record_disputed(self.prepared.db, questions)
+        review.record_disputed(self.prepared.db, questions, aliases=aliases,
+                               github_scope={login: covered for login in accounts})
         # A link counts only where it was written: a scoped run leaves the others alone.
-        covered = {person.id for person in people if self.selected("persons", person.id)}
+        asked = {row["login"] for row in questions if row["status"] == "held"}
         settled = {login: chosen.get(login) for login in accounts
-                   if login in linked or chosen.get(login, {}).get("decision") != "matched"}
+                   if login in linked or login in asked
+                   or chosen.get(login, {}).get("decision") not in ("matched", "review")}
         review.retire_github(self.prepared.db, settled, covered, aliases)
         # A file beside dedup's journal: it is read by people, not by the pipeline.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME

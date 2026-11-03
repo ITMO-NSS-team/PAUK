@@ -598,6 +598,41 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(review.github_decisions(self.db),
                          {frozenset({"XieN-N", "A1"}): review.SAME})
 
+    def test_a_disagreement_closes_when_current_evidence_no_longer_contradicts_the_answer(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage([person("A1", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="ITMO")])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+        self.run_stage(*self.unsure())
+
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        self.assertEqual(review.questions(self.db, answered=True)[0]["verdict"], review.DIFFERENT)
+
+    def test_a_group_without_the_profile_keeps_its_previous_disagreement(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage([person("A1", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="ITMO")])
+        self.prepared.write_models("github_profiles", [])
+
+        self.rerun_stage()
+
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+    def test_a_scoped_run_does_not_clear_a_disagreement_about_an_unselected_author(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage([person("A1", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="ITMO")])
+
+        self.run_stage([person("A1", "Stanislav Shtuka"), person("B1", "Boris Ivanov")],
+                       [profile("XieN-N", name="Stanislav Shtuka")],
+                       selection=PreparedSelection("persons", frozenset({"B1"})))
+
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
     def test_the_journal_marks_what_a_person_decided(self):
         # A row reading "rejected" beside signals that say otherwise needs
         # to say who overruled whom.
@@ -621,6 +656,28 @@ class GitHubReviewTest(unittest.TestCase):
         survivor.merged_ids = ["A1"]
         _, people = self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
         self.assertIsNone(people["A2"].github)
+
+    def test_a_disagreement_follows_a_refused_author_after_a_merge(self):
+        self.run_stage(*self.unsure())
+        answer = review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT,
+                                       actor="user:katya", note="different researcher")
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+
+        result, people = self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka",
+                                                           company="ITMO University")])
+
+        self.assertEqual(result["github_matched"], 0)
+        self.assertIsNone(people["A2"].github)
+        disputes = review.questions(self.db, disputed=True)
+        self.assertEqual(len(disputes), 1)
+        disputed = disputes[0]
+        self.assertEqual(disputed["_id"], answer["_id"])
+        self.assertEqual(disputed["members"], ["A1", "XieN-N"])
+        self.assertEqual(disputed["actor"], "user:katya")
+        self.assertEqual(disputed["note"], "different researcher")
+        self.assertEqual(disputed["verdict"], review.DIFFERENT)
+        self.assertIn("itmo_profile", disputed["disputed_rule"])
 
     def test_and_the_question_is_not_put_again(self):
         self.run_stage(*self.unsure())
@@ -1168,6 +1225,31 @@ class GitHubReviewTest(unittest.TestCase):
                        selection=PreparedSelection("persons", frozenset({"B1"})))
         (question,) = review.questions(self.db, answered=False)
         self.assertEqual(question["members"], ["A1", "XieN-N"])
+
+    def test_a_scoped_run_does_not_duplicate_an_unselected_authors_question_after_a_merge(self):
+        self.run_stage(*self.unsure())
+        (before,) = review.questions(self.db, answered=False)
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+
+        self.run_stage([survivor, person("B1", "Boris Ivanov")],
+                       [profile("XieN-N", name="Stanislav Shtuka")],
+                       selection=PreparedSelection("persons", frozenset({"B1"})))
+
+        questions = review.questions(self.db, answered=False)
+        self.assertEqual(len(questions), 1)
+        self.assertEqual(questions[0], before)
+
+    def test_a_scoped_run_keeps_the_old_question_until_it_can_write_the_expanded_one(self):
+        self.run_stage(*self.namesakes("A1"))
+        (before,) = review.questions(self.db, answered=False)
+
+        self.run_stage(*self.namesakes("A1", "A2"),
+                       selection=PreparedSelection("persons", frozenset({"A1"})))
+
+        questions = review.questions(self.db, answered=False)
+        self.assertEqual(len(questions), 1)
+        self.assertEqual(questions[0], before)
 
     def test_a_scoped_run_that_writes_no_link_keeps_the_accounts_questions(self):
         # The rules now give the account to A1, but a run limited to B1 writes nothing to A1.

@@ -1358,7 +1358,7 @@ class DedupStage(EnrichmentStage):
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
-        review.record_disputed(self.prepared.db, report)
+        review.record_disputed(self.prepared.db, report, aliases=folded_ids(people))
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:

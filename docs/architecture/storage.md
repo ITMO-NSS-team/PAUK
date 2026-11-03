@@ -180,6 +180,8 @@ again updates the document instead of creating a second one.
 | `applied_at` | when a "same" answer actually merged the records; empty while it waits for a run |
 | `chosen` | the catalog record or GitHub author picked by a positive choice; a binary answer clears a previous choice |
 | `skipped_at`, `skipped_by`, `disputed_at`, `disputed_rule` | the question was postponed; the rules changed their mind after a "different" answer |
+| `disputed_members`, `disputed_token` | the original members involved in a GitHub discrepancy and a fingerprint of its evidence |
+| `acknowledged_dispute_token` | the GitHub evidence a reviewer explicitly accepted with "оставить как есть" |
 
 An answer and its application are different things and live in different
 fields. Applying changes the graph once; the answer keeps all later runs in
@@ -191,6 +193,20 @@ Answer transitions belong to `review.py`. Replacing a choice with "different"
 clears `chosen` in the same Mongo update as the verdict. GitHub decisions also
 check the verdict before applying a choice, so an older document that still
 has `chosen` beside "different" cannot turn a refusal into a confirmation.
+GitHub disagreements resolve aliases through the same answer reader and mark
+the original question behind the effective refusal, including refusals implied
+by choosing another author. A newer answer takes precedence over an older one.
+Person-pair answers use the same source-question lookup after merges; both dedup
+passes supply their alias maps. When aliases collapse several answers to one
+pair, the most recent `decided_at` wins.
+
+GitHub confirmation checks the displayed evidence token in the same Mongo update
+as the answer. It closes identical future discrepancies; changed evidence needs
+another review. A repeated confirmation is a no-op. Ordinary answer forms do not
+acknowledge evidence they never displayed. Superseded discrepancy flags are retired
+without changing the old answer itself.
+The caller supplies the evaluated GitHub accounts and selected authors separately
+from the report: an empty report retracts old rule conflicts only inside that scope.
 
 `applied_at` is set by whoever merged: the panel (`mark_applied`) or a run
 (`mark_applied_merges`, which matches answers against the map of what was

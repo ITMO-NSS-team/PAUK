@@ -612,6 +612,53 @@ class GitHubQuestionTest(unittest.TestCase):
                       self.client.get("/review", params={"tab": "answered"}).text)
 
 
+    def test_a_refusal_after_a_merge_can_be_confirmed_from_the_disputed_tab(self):
+        original_id = "A5140754163"
+        with tempfile.TemporaryDirectory() as directory:
+            prepared = PreparedStore(self.db, "sample")
+            prepared.write_models("persons", [Person(id=original_id, is_itmo=True, name_raw="Stanislav Shtuka")])
+            account = GitHubProfile(id="github_XieN-N", login="XieN-N", type="user", name="Stanislav Shtuka")
+            prepared.write_models("github_profiles", [account])
+            stage = GitHubMatchStage(prepared, RawStore(self.db, "sample"), Settings(data_dir=Path(directory)))
+            stage.run()
+            refusal = RenderedForms(self.body()).with_button("не его")
+            self.assertEqual(self.client.post(refusal["action"], data=refusal["fields"]).status_code, 303)
+
+            prepared.write_models("persons", [Person(id="A2", is_itmo=True, name_raw="Stanislav Shtuka",
+                                                     merged_ids=[original_id])])
+            account.company = "ITMO University"
+            prepared.write_models("github_profiles", [account])
+            stage.run()
+
+            page = self.client.get("/review", params={"tab": "disputed"})
+            confirm = RenderedForms(page.text).with_button("оставить как есть")
+            self.assertEqual(set(confirm["fields"]["members"].split(",")), {original_id, "XieN-N"})
+            response = self.client.post(confirm["action"], data=confirm["fields"])
+
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+            self.assertEqual(review.github_decisions(self.db, {original_id: "A2"}),
+                             {frozenset({"A2", "XieN-N"}): review.DIFFERENT})
+            stage.run()
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+            prepared.write_models("persons", [Person(id="A3", is_itmo=True, name_raw="Stanislav Shtuka",
+                                                     merged_ids=[original_id, "A2"])])
+            stage.run()
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_stale_refusal_form_does_not_acknowledge_unseen_evidence(self):
+        form = RenderedForms(self.body()).with_button("не его")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        row = {"status": "disputed", "login": "XieN-N", "person": "A5140754163", "rule": "email_exact",
+               "evidence": {"email": ["new@lab.test"]}}
+        review.record_disputed(self.db, [row])
+
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        review.record_disputed(self.db, [row])
+
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+
 class GitHubChoiceTest(unittest.TestCase):
     """An account several authors fit, answered by naming the one it belongs to."""
 
@@ -717,6 +764,50 @@ class GitHubChoiceTest(unittest.TestCase):
         self.assertEqual(review.github_decisions(self.db), {
             frozenset({"coder42", "A1", "A2"}): review.DIFFERENT,
         })
+
+    def test_an_old_confirmation_cannot_acknowledge_new_evidence(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        row = {"status": "disputed", "login": "coder42", "person": "A2", "rule": "email_exact",
+               "signals": ["email_exact"], "evidence": {"email": ["first@lab.test"]}}
+        review.record_disputed(self.db, [row])
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+        row["evidence"]["email"] = ["new@lab.test"]
+        review.record_disputed(self.db, [row])
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        self.assertEqual(review.questions(self.db, answered=True)[0]["chosen"], "A1")
+
+    def test_a_confirmed_disagreement_reopens_only_when_its_evidence_changes(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        row = {"status": "disputed", "login": "coder42", "person": "A2", "rule": "email_exact",
+               "signals": ["email_exact"], "evidence": {"email": ["first@lab.test"]}}
+        review.record_disputed(self.db, [row])
+        form = RenderedForms(self.client.get("/review?tab=disputed").text).with_button("оставить как есть")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+
+        review.record_disputed(self.db, [row])
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        row["evidence"]["email"] = ["new@lab.test"]
+        review.record_disputed(self.db, [row])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+    def test_repeating_the_same_confirmation_does_not_rewrite_the_answer(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        review.record_disputed(self.db, [{"status": "disputed", "login": "coder42", "person": "A2",
+                                         "rule": "email_exact", "evidence": {"email": ["account@lab.test"]}}])
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        (before,) = review.questions(self.db, answered=True)
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.questions(self.db, answered=True), [before])
 
     def test_rechoosing_from_rendered_forms_removes_the_old_owners_published_fields(self):
         with tempfile.TemporaryDirectory() as directory:

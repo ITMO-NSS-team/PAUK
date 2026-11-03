@@ -1497,6 +1497,18 @@ class GraphPassReviewTest(unittest.TestCase):
         self.assertEqual(result["graph_persons_merged"], 1)
         self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
 
+    def test_the_whole_pass_disputes_the_original_refusal_after_a_merge(self):
+        self.publish([person("A2", "Ivan Smirnov", ["W1"], orcid="same", merged=("A1",)),
+                      person("B1", "Ivan Smirnov", ["W2"], orcid="same")])
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            result = graph_dedup.run_graph_dedup(self.config, self.db)
+
+        self.assertEqual(result["graph_persons_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+
     def test_and_writes_down_that_it_carried_them_out(self):
         # This pass leaves the prepared rows alone, so the pair it folds can
         # still be taken apart - but only if the queue knows it was folded.
@@ -1558,6 +1570,16 @@ class DisputedAnswerTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 0)
         remaining = {p.id for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(remaining, {"A1", "A2", "A3"})
+
+    def test_a_prepared_pass_disputes_the_original_refusal_after_a_merge(self):
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        result = self.run_stage([person("A2", "Ivan Smirnov", [], orcid="same", merged=("A1",)),
+                                 person("B1", "Ivan Smirnov", [], orcid="same")])
+
+        self.assertEqual(result["dedup_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
 
     def test_an_answered_pair_is_not_asked_again(self):
         self.run_stage(self.apart())
