@@ -19,11 +19,9 @@ from pauk.settings import (
     ORCID_RPS,
 )
 
-from .rate_limit import HostRateLimiter, RateLimit
+from .rate_limit import LONG_WAIT_SECONDS, HostRateLimiter, RateLimit
 
 logger = logging.getLogger(__name__)
-
-LONG_WAIT_SECONDS = 10.0
 
 PUBLIC_LIMITS = {
     "api.openalex.org": RateLimit(OPENALEX_PUBLIC_RPS),

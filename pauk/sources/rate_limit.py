@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+LONG_WAIT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -105,8 +110,12 @@ class HostRateLimiter:
             state = self._hosts.get(host)
         if state is not None:
             with state.condition:
-                state.paused_until = max(state.paused_until, self._clock() + seconds)
+                paused_until = self._clock() + seconds
+                extended = paused_until > state.paused_until
+                state.paused_until = max(state.paused_until, paused_until)
                 state.condition.notify_all()
+            if extended and seconds >= LONG_WAIT_SECONDS:
+                logger.warning("pausing requests to %s for %.0fs", host, seconds)
 
     def restrict(
         self, host: str, *, requests_per_second: float | None = None, max_concurrent: int | None = None

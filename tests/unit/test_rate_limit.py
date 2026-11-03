@@ -102,6 +102,40 @@ class HostRateLimiterTest(unittest.TestCase):
         with self.limiter.slot(self.host, self.limit):
             self.assertAlmostEqual(self.clock() - before, 3)
 
+    def test_logs_long_pause_once_for_all_waiting_requests(self):
+        for delay in (10, 300):
+            with self.subTest(delay=delay):
+                with self.assertLogs("pauk.sources.rate_limit", level="WARNING") as logs:
+                    self.limiter.pause(self.host, delay)
+                    before = self.clock()
+                    for _ in range(2):
+                        with self.limiter.slot(self.host, self.limit):
+                            pass
+                    self.assertGreaterEqual(self.clock() - before, delay)
+                self.assertEqual(len(logs.output), 1)
+                self.assertIn(self.host, logs.output[0])
+                self.assertIn(f"{delay}s", logs.output[0])
+
+    def test_short_pause_does_not_log(self):
+        with self.assertNoLogs("pauk.sources.rate_limit", level="WARNING"):
+            self.limiter.pause(self.host, 9.9)
+
+    def test_only_an_extended_pause_logs_again(self):
+        with self.assertLogs("pauk.sources.rate_limit", level="WARNING") as logs:
+            self.limiter.pause(self.host, 300)
+            self.limiter.pause(self.host, 300)
+            self.limiter.pause(self.host, 100)
+            self.clock.now += 100
+            self.limiter.pause(self.host, 300)
+        self.assertEqual(len(logs.output), 2)
+        before = self.clock()
+        with self.limiter.slot(self.host, self.limit):
+            self.assertAlmostEqual(self.clock() - before, 300)
+
+    def test_unknown_host_pause_does_not_log(self):
+        with self.assertNoLogs("pauk.sources.rate_limit", level="WARNING"):
+            self.limiter.pause("unknown.test", 300)
+
     def test_exception_releases_concurrency_slot(self):
         with self.assertRaises(RuntimeError), self.limiter.slot(self.host, self.limit):
             raise RuntimeError("request failed")

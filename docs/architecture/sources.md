@@ -59,6 +59,9 @@ On `429` or `503`, a shared host pause uses the existing retry delay parser
 retryable statuses also create a shared pause when they carry `Retry-After`.
 The pause also applies after the current caller exhausts its retries;
 it overlaps the caller's normal backoff.
+When a response starts or extends a pause of at least 10 seconds, the
+limiter logs which host must wait and for how long. The warning appears
+even if the current request has no retries left.
 
 `X-Rate-Limit-Limit` together with `X-Rate-Limit-Interval` in seconds, and
 `X-Concurrency-Limit`, can lower the host's ceilings. Malformed values are

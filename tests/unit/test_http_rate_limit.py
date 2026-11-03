@@ -210,6 +210,35 @@ class HttpRateLimitTest(unittest.TestCase):
         self.assertAlmostEqual(starts[1] - starts[0], 2)
         self.sleep.assert_called_once_with(2)
 
+    def test_last_attempt_logs_shared_pause_before_next_publication(self):
+        starts = []
+
+        def handler(_request):
+            starts.append(self.clock())
+            if len(starts) == 1:
+                return 503, {"Retry-After": "1"}, {}
+            if len(starts) == 2:
+                return 429, {"Retry-After": "300"}, {}
+            return 200, {}, {}
+
+        client = self.attach(CrossrefClient(5, "contact@example.org"), handler)
+        with (
+            self.assertLogs("pauk.sources.rate_limit", level="WARNING") as logs,
+            self.assertRaises(HttpRequestError),
+        ):
+            client.get_json("https://api.crossref.org/works/10.1234/a?api_key=secret", retries=1)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("api.crossref.org", logs.output[0])
+        self.assertIn("300s", logs.output[0])
+        self.assertNotIn("secret", logs.output[0])
+        self.assertNotIn("10.1234/a", logs.output[0])
+        self.sleep.assert_called_once_with(1)
+
+        with self.assertNoLogs("pauk.sources.rate_limit", level="WARNING"):
+            client.get_work("10.1234/b")
+        self.assertAlmostEqual(starts[2] - starts[1], 300)
+        self.sleep.assert_called_once_with(1)
+
     def test_http_date_retry_after_uses_existing_parser(self):
         now = datetime(2026, 11, 2, tzinfo=UTC)
         headers = {"Retry-After": format_datetime(now + timedelta(seconds=4), usegmt=True)}
