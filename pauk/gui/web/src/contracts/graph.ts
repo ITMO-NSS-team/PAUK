@@ -33,18 +33,20 @@ export interface Affiliation {
   source: string;
 }
 
+// The public build (pauk/gui/graph_builder/public.py) keeps only `key` and
+// `pub_roles`; every other field exists in the private build only.
 export interface AuthorDetail {
   key: string;
-  openalex_id: string;
-  name_ru: string;
-  name_en: string;
-  name_variants: { openalex: string[]; orcid: string[] };
-  degree: string;
-  github: string;
-  orcid: string;
-  google_scholar: string;
-  email: string;
-  affiliations: Affiliation[];
+  openalex_id?: string;
+  name_ru?: string;
+  name_en?: string;
+  name_variants?: { openalex: string[]; orcid: string[] };
+  degree?: string;
+  github?: string;
+  orcid?: string;
+  google_scholar?: string;
+  email?: string;
+  affiliations?: Affiliation[];
   pub_roles?: Record<string, PubRole>;
   created_at?: string;
   updated_at?: string;
@@ -101,7 +103,7 @@ export interface PubDetail {
   type: string;
   fields: string[];
   funding: Funding[];
-  versions: unknown[];
+  versions?: unknown[];
   openalex_url: string;
   abstract: string;
 }

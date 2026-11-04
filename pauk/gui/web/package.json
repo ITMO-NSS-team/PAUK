@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:public": "vite --mode public",
     "build": "vite build",
+    "build:public": "vite build --mode public",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

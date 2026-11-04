@@ -125,8 +125,9 @@ cd pauk/gui/web && npm install && npm run dev
   sizes and field stats; with `--table` and `--sample` it prints N sample rows.
 - `pauk gui build` reads the newest snapshot (`--cache` picks another) and writes
   the site data into `data/gui/public` and `data/gui/private` (`--out-dir` changes
-  the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
-  which holds personal fields, is written only to `private/`.
+  the base folder). `--seed` sets the layout seed (default 42). `private/` has full
+  names and personal fields (lab server); `public/` has names masked to the surname's first
+  letters plus initials and no personal or service fields (GitHub Pages, `scripts/publish_pages.sh`).
 - `pauk reports build [<repo id> ...]` runs [OSA](https://github.com/aimclub/OSA)
   on every repository of the newest snapshot that has no report yet, except
   repositories only cited as third-party code, and writes
