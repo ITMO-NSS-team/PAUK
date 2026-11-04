@@ -45,6 +45,7 @@ _GEMINI_DROPPED_VARS = (
     "GOOGLE_GEMINI_BASE_URL",
     "GOOGLE_VERTEX_BASE_URL",
     "GEMINI_CLI_USE_COMPUTE_ADC",
+    "GOOGLE_GENAI_USE_GCA",
 )
 _LIMIT_MARKERS = (
     "usage limit",
@@ -384,14 +385,15 @@ class GeminiCli:
 
     GEMINI_SYSTEM_MD replaces the built-in prompt with a file; a relative path resolves against the call's own
     temp directory. Tools that would need a confirmation are denied in headless mode. The message goes through
-    stdin and the fixed -p text is appended to it.
+    stdin and the fixed -p text is appended to it. GOOGLE_GENAI_USE_GCA is dropped: without a saved login it asks
+    on the terminal to open a browser, and each call would hang until its timeout instead of failing at once.
     """
 
     name = "gemini"
     executable = "gemini"
     default_model = ""
     dropped_vars = _GEMINI_DROPPED_VARS
-    extra_env = {"GEMINI_SYSTEM_MD": "system.md", "GOOGLE_GENAI_USE_GCA": "true", "NO_COLOR": "1"}
+    extra_env = {"GEMINI_SYSTEM_MD": "system.md", "NO_COLOR": "1"}
 
     def command(self, executable: str, model: str, workdir: Path) -> list[str]:
         return [
@@ -648,16 +650,18 @@ def parse_provider(provider: str) -> tuple[str, str]:
 
 
 def check_providers(config: Settings) -> None:
-    """Parse every LLM stage's provider setting, so that a typo stops a run at its start, not at the stage hours in.
+    """Check every LLM stage's provider, so that a typo or a missing CLI stops a run at its start, not hours in.
 
     Raises:
-        ValueError: a stage's provider setting does not parse (see parse_provider).
+        ValueError: a stage's provider setting does not parse (see parse_provider), or its CLI is not on PATH.
     """
     for stage in LLM_STAGES:
         try:
-            parse_provider(config.provider_for(stage))
+            name, _ = parse_provider(config.provider_for(stage))
         except ValueError as exc:
             raise ValueError(f"{stage}: {exc}") from None
+        if name != "openrouter" and not shutil.which(_CLIS[name].executable):
+            raise ValueError(f"{stage}: {_CLIS[name].executable} CLI not found")
 
 
 def llm_client(provider: str, *, timeout: int, api_key: str, openrouter_model: str, proxy_url: str = "") -> LlmClient:

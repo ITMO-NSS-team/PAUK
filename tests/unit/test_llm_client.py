@@ -381,13 +381,18 @@ class GeminiCliTest(unittest.TestCase):
         self.assertEqual(seen["command"][seen["command"].index("--extensions") + 1], "none")
         self.assertEqual(client.model, "gemini-cli/flash")
 
-    def test_keys_that_bill_an_api_are_dropped_and_the_login_is_used(self, _which):
-        parent = {"GEMINI_API_KEY": "k", "GOOGLE_API_KEY": "k", "GOOGLE_GENAI_USE_VERTEXAI": "true", "KEEP": "1"}
+    def test_keys_that_bill_an_api_or_force_a_browser_login_are_dropped(self, _which):
+        parent = {
+            "GEMINI_API_KEY": "k",
+            "GOOGLE_API_KEY": "k",
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "GOOGLE_GENAI_USE_GCA": "true",
+            "KEEP": "1",
+        }
         with patch.dict("os.environ", parent):
             _, _, seen = self.run_client(self.reply('{"ok": true}'))
 
         self.assertEqual({name for name in parent if name in seen["env"]}, {"KEEP"})
-        self.assertEqual(seen["env"]["GOOGLE_GENAI_USE_GCA"], "true")
 
     def test_a_quota_error_is_reported_as_a_subscription_limit(self, _which):
         reply = {"error": {"type": "TerminalQuotaError", "message": "You have exhausted your daily quota."}}
@@ -479,12 +484,30 @@ class LlmProviderTest(unittest.TestCase):
                 llm_client(provider, timeout=5, api_key="", openrouter_model="m")
 
     def test_a_provider_typo_is_caught_before_any_stage_runs(self):
-        check_providers(Settings(llm_provider="claude", person_resolution_provider="codex:gpt-x"))
+        with patch("pauk.sources.llm.shutil.which", return_value="/usr/bin/cli"):
+            check_providers(Settings(llm_provider="claude", person_resolution_provider="codex:gpt-x"))
 
         with self.assertRaisesRegex(ValueError, "^person_resolution: unknown LLM provider 'claud'"):
             check_providers(Settings(person_resolution_provider="claud"))
         with self.assertRaisesRegex(ValueError, "^author_names: codex needs a model"):
             check_providers(Settings(author_names_provider="codex"))
+
+    def test_a_missing_cli_is_caught_before_any_stage_runs(self):
+        with (
+            patch("pauk.sources.llm.shutil.which", return_value=None),
+            self.assertRaisesRegex(ValueError, "^link_relevance: gemini CLI not found"),
+        ):
+            check_providers(Settings(llm_provider="gemini:flash"))
+
+    def test_openrouter_needs_no_cli(self):
+        config = Settings(
+            llm_provider="openrouter",
+            link_relevance_provider="",
+            author_names_provider="",
+            person_resolution_provider="",
+        )
+        with patch("pauk.sources.llm.shutil.which", return_value=None):
+            check_providers(config)
 
     def test_a_stage_setting_wins_and_dedup_switches_only_by_its_own(self):
         config = Settings(llm_provider="claude", author_names_provider="openrouter", person_resolution_provider="")

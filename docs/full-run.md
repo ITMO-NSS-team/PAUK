@@ -60,7 +60,9 @@ model. `PAUK_LLM_PROVIDER` sets `link_relevance` and
 `author_names`; `PAUK_LINK_RELEVANCE_PROVIDER` and `PAUK_AUTHOR_NAMES_PROVIDER`
 override it for one stage. Person resolution switches only through
 `PAUK_PERSON_RESOLUTION_PROVIDER`. `run`, `enrich` and `dedup` check all three
-settings at start, so a typo stops the command before any stage runs.
+settings at start, so a typo or a CLI missing from `PATH` stops the command
+before any stage runs, even if the stage that needs it is not the one being
+run. Whether the CLI is signed in is not checked at start.
 
 This mode is for local runs by the owner of the subscription, on their own
 machine. Do not sign in to a subscription on a shared server or share its
@@ -69,8 +71,10 @@ Team runs go through OpenRouter.
 
 The CLI must be on `PATH` and signed in to the subscription: `claude auth
 status` shows `"authMethod": "claude.ai"`, `codex login status` shows a
-ChatGPT login; for Gemini, sign in once by running `gemini` and choosing the
-Google login, which caches it in `~/.gemini/`. PAUK starts the CLI without
+ChatGPT login. Gemini needs the `gemini` command from `@google/gemini-cli`
+(`npm i -g @google/gemini-cli`); Antigravity does not provide it. Sign in once
+by running `gemini` and choosing the Google login, which is saved in
+`~/.gemini/`; without it the calls fail. PAUK starts the CLI without
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and the other variables
 that would bill the API instead of the subscription. A CLI call times out after
 `PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C kills the CLIs that
