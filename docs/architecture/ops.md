@@ -134,12 +134,28 @@ unmanaged directories are preserved. Slot links are relative and replaced atomic
 644, including generated JSON. Builds include precompressed `.gz` assets
 for nginx `gzip_static`. Reports remain nginx's separate shared alias.
 
+Local release copies are prepared in a temporary directory on the same
+filesystem. Their directory entries and SHA-256 file hashes must match the
+source before they replace the destination. Existing copies are checked too;
+partial or corrupted copies are rebuilt. A failed copy leaves the previous
+destination intact, and an interrupted replacement is recovered on retry.
+
 The first main publication imports an existing ordinary `main/` directory
 into a saved release and retains the original directory. Publication checks
-`graph-data.json` through nginx. If that check fails, the previous main
+all four map JSON files through nginx. If that check fails, the previous main
 release is restored. Previous builds stay available in the archive. The
 rollback operation selects a saved build; it does not rebuild or restore a DB.
 Archive slots are explicitly started/stopped and limited to the eight ports.
+
+Slot changes also roll back if recording their SQLite state fails. At startup,
+OPS reconciles `live`, `preview` and archive settings with the actual relative
+links before it starts the operation runner. Interrupted operations remain
+failed; reconciliation does not replay publication or require MongoDB.
+Unexpected or broken links are reported in the status page and block site
+operations while backup operations remain available. A failure to restore or
+record a slot also produces an explicit error instead of displaying stale
+release state. Routine status polling checks only `graph-data.json`; release
+publication checks all four data files.
 
 GitHub Pages always links to <https://itmo-nss-team.github.io/PAUK/>.
 OPS uses `scripts/publish_pages.sh`, the repository's existing GitHub Pages

@@ -25,6 +25,7 @@ from pauk.cache.graph_snapshot import latest_snapshot
 from pauk.jobs.locks import LEASE_MINUTES, held, renew
 from pauk.jobs.models import GRAPH
 from pauk.ops.config import Config
+from pauk.ops.site_files import prepare_site_copy
 from pauk.ops.store import Store, now
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ class Engine:
         self.operation = None
         self.thread = None
         self.staging: set[Path] = set()
+        self.site_state_error: str | None = None
 
     def compose(self, *args: str) -> list[str]:
         return [
@@ -454,7 +456,9 @@ class Engine:
         for path in self.config.releases.iterdir():
             try:
                 if not path.is_symlink():
-                    result.append(json.loads((path / "release.json").read_text()))
+                    metadata = json.loads((path / "release.json").read_text())
+                    if isinstance(metadata, dict) and isinstance(metadata.get("id"), str):
+                        result.append(metadata)
             except (OSError, ValueError):
                 pass
         return result
@@ -478,16 +482,69 @@ class Engine:
         source, _ = self.release(release_id)
         destination = self.config.site / "releases" / release_id
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            shutil.copytree(source / "site", destination)
-        for file in destination.rglob("*"):
-            if file.is_symlink():
-                raise ValueError("Символические ссылки в сборке запрещены")
-            file.chmod(0o755 if file.is_dir() else 0o644)
-        destination.chmod(0o755)
+        prepare_site_copy(source / "site", destination)
         temporary = self.config.site / f".slot-{uuid4().hex}"
         temporary.symlink_to(Path("releases") / release_id)
         temporary.replace(target)
+
+    def reconcile_site(self):
+        """Record the actual slots without publishing or consulting MongoDB."""
+        values = {}
+        slots = [("main", "live"), ("preview", "preview")]
+        slots.extend((f"archive-{port}", f"archive-{port}") for port in range(8522, 8530))
+        errors = []
+        for slot, key in slots:
+            try:
+                path = self.config.site / slot
+                if slot == "main" and not path.exists() and not path.is_symlink():
+                    previous = self.store.get("live")
+                    if isinstance(previous, str) and previous.startswith("imported-"):
+                        backup = self.config.site / f".previous-main-{identifier(previous)}"
+                        if backup.is_dir() and not backup.is_symlink():
+                            backup.rename(path)
+                if path.is_symlink():
+                    target = Path(os.readlink(path))
+                    if len(target.parts) != 2 or target.parts[0] != "releases":
+                        raise RuntimeError(f"Недопустимая ссылка слота {slot}: {target}")
+                    release_id = identifier(target.parts[1])
+                    destination = self.config.site / target
+                    if destination.is_symlink() or not destination.is_dir():
+                        raise RuntimeError(f"Поврежденная ссылка слота {slot}: {target}")
+                    _, metadata = self.release(release_id)
+                    if not isinstance(metadata, dict) or metadata.get("id") != release_id:
+                        raise RuntimeError(f"Некорректные метаданные релиза {release_id}")
+                    values[key] = release_id
+                elif not path.exists() or (path.is_dir() and not any(path.iterdir())) or slot == "main" and path.is_dir():
+                    values[key] = None
+                else:
+                    raise RuntimeError(f"Неуправляемый слот {slot}: {path}")
+            except (OSError, ValueError, RuntimeError, KeyError) as error:
+                values[key] = None
+                errors.append(f"{slot}: {error}")
+        try:
+            self.store.set_many(values)
+        except Exception as error:
+            errors.append(f"Не удалось сохранить состояние сайта: {error}")
+        self.site_state_error = "; ".join(errors) or None
+
+    def switch_slot(self, slot: str, key: str, release_id: str | None, port: int | None = None):
+        """Restore the old slot if either verification or recording fails."""
+        if self.site_state_error:
+            raise RuntimeError(self.site_state_error)
+        previous = self.store.get(key)
+        try:
+            self.mount_slot(slot, release_id)
+            if port is not None:
+                self.http_check(port)
+            self.store.set(key, release_id)
+        except Exception:
+            try:
+                self.mount_slot(slot, previous)
+                self.store.set_many({key: previous})
+            except Exception as error:
+                self.site_state_error = f"Не удалось восстановить слот {slot}: {error}"
+                raise RuntimeError(self.site_state_error) from error
+            raise
 
     def prepare_data(self, name: str, fresh=True):
         self.stage("Подготовка данных карты")
@@ -575,23 +632,17 @@ class Engine:
         )
         write_json(path / "release.json", metadata)
         self.stage("Публикация превью и HTTP-проверка")
-        previous = self.store.get("preview")
-        try:
-            self.mount_slot("preview", release_id)
-            self.http_check(8521)
-        except Exception:
-            self.mount_slot("preview", previous)
-            raise
-        self.store.set("preview", release_id)
+        self.switch_slot("preview", "preview", release_id, 8521)
 
-    def http_check(self, port: int):
-        response = requests.get(f"http://site:{port}/graph-data.json", timeout=15)
-        response.raise_for_status()
-        response.json()
+    def http_check(self, port: int, full: bool = True):
+        names = ("graph-data", "authors-detail", "pubs-detail", "repos-detail") if full else ("graph-data",)
+        for name in names:
+            response = requests.get(f"http://site:{port}/{name}.json", timeout=15)
+            response.raise_for_status()
+            response.json()
 
     def publish(self, release_id: str):
         self.release(release_id)
-        previous = self.store.get("live")
         current = self.config.site / "main"
         if current.is_dir() and not current.is_symlink():
             imported = "imported-" + uuid4().hex[:8]
@@ -608,23 +659,26 @@ class Engine:
                     snapshot="Импортирован с сервера",
                 ),
             )
-            self.store.set("live", imported)
-            previous = imported
-            current.rename(self.config.site / (".previous-main-" + imported))
+            try:
+                self.store.set("live", imported)
+            except Exception:
+                self.reconcile_site()
+                raise
+            try:
+                current.rename(self.config.site / (".previous-main-" + imported))
+            except Exception:
+                self.reconcile_site()
+                raise
         self.stage("Переключение основного сайта")
-        try:
-            self.mount_slot("main", release_id)
-            self.http_check(8520)
-        except Exception:
-            if previous:
-                self.mount_slot("main", previous)
-            raise
-        self.store.set("live", release_id)
+        self.switch_slot("main", "live", release_id, 8520)
         if self.store.get("preview") == release_id:
-            self.mount_slot("preview", None)
-            self.store.set("preview", None)
+            self.switch_slot("preview", "preview", None)
 
     def execute(self, action: str, args: dict):
+        if self.site_state_error and action in (
+            "build-site", "publish", "rollback", "discard-preview", "start-archive", "stop-archive", "publish-pages"
+        ):
+            raise RuntimeError(self.site_state_error)
         item = args.get("id", "")
         if action == "create-backup":
             self.backup(args.get("name", "Резервная копия"))
@@ -650,26 +704,18 @@ class Engine:
         elif action in ("publish", "rollback"):
             self.publish(item)
         elif action == "discard-preview":
-            self.mount_slot("preview", None)
-            self.store.set("preview", None)
+            self.switch_slot("preview", "preview", None)
         elif action == "start-archive":
             port = int(args.get("port", 0))
             if port not in range(8522, 8530):
                 raise ValueError("Недопустимый порт")
             if self.store.get(f"archive-{port}"):
                 raise ValueError("Порт уже занят")
-            try:
-                self.mount_slot(f"archive-{port}", item)
-                self.http_check(port)
-            except Exception:
-                self.mount_slot(f"archive-{port}", None)
-                raise
-            self.store.set(f"archive-{port}", item)
+            self.switch_slot(f"archive-{port}", f"archive-{port}", item, port)
         elif action == "stop-archive":
             for port in range(8522, 8530):
                 if self.store.get(f"archive-{port}") == item:
-                    self.mount_slot(f"archive-{port}", None)
-                    self.store.set(f"archive-{port}", None)
+                    self.switch_slot(f"archive-{port}", f"archive-{port}", None)
         elif action == "publish-pages":
             script = self.config.pages_script
             if not script or not script.is_file():
@@ -752,6 +798,7 @@ class Engine:
             self.store.set("scheduled-day", day)
 
     def start(self):
+        self.reconcile_site()
         self.store.recover()
 
         def run():

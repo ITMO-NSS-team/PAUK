@@ -142,17 +142,19 @@ def observed(engine: Engine):
         ("MongoDB · подключение", lambda: engine.db.client.admin.command("ping")),
         ("Neo4j · запрос к графу", graph),
         ("Воркер · heartbeat", heartbeat),
-        ("Сайт · данные карты", lambda: engine.http_check(8520)),
+        ("Сайт · данные карты", lambda: engine.http_check(8520, full=False)),
         ("GitHub API", github),
         ("OpenRouter · соединение", openrouter),
     ]
     with ThreadPoolExecutor(max_workers=5) as pool:
         checks = list(pool.map(lambda item: check(*item), probes))
+    if engine.site_state_error:
+        error = "; ".join(filter(None, (error, engine.site_state_error)))
     releases = engine.releases()
     by_id = {release["id"]: release for release in releases}
-    live, preview = engine.store.get("live"), engine.store.get("preview")
+    live, preview = (None, None) if engine.site_state_error else (engine.store.get("live"), engine.store.get("preview"))
     installed = None
-    if not live and (engine.config.site / "main/index.html").is_file():
+    if not engine.site_state_error and not live and (engine.config.site / "main/index.html").is_file():
         installed = dict(
             id="installed",
             commit="—",
@@ -163,7 +165,10 @@ def observed(engine: Engine):
     archived = []
     for release in releases:
         if release["id"] not in (live, preview):
-            ports = [port for port in range(8522, 8530) if engine.store.get(f"archive-{port}") == release["id"]]
+            ports = [
+                port for port in range(8522, 8530)
+                if not engine.site_state_error and engine.store.get(f"archive-{port}") == release["id"]
+            ]
             archived.append({**release, **({"port": ports[0]} if ports else {})})
     return dict(
         services=services,

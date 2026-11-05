@@ -36,6 +36,14 @@ class Store:
         with self.connect() as db:
             db.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (key, json.dumps(value)))
 
+    def set_many(self, values: dict) -> None:
+        """Commit a complete observed site state in one transaction."""
+        with self.connect() as db:
+            db.executemany(
+                "INSERT OR REPLACE INTO settings VALUES (?,?)",
+                [(key, json.dumps(value)) for key, value in values.items()],
+            )
+
     def operations(self) -> list[dict]:
         with self.connect() as db:
             rows = db.execute("SELECT body FROM operations ORDER BY rowid DESC LIMIT 200").fetchall()
