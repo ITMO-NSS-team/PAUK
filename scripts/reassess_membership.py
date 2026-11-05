@@ -18,9 +18,19 @@ COLLECTIONS = ("persons", "publications", "person_merge_sources", "raw")
 
 def _preserve_source_metadata(original: list[dict], updated: list[dict], keys: tuple[str, ...]) -> list[dict]:
     rows = []
+    used = set()
     for row in updated:
-        matches = [old for old in original if all(old.get(key) == row.get(key) for key in keys)]
-        rows.append({**matches[0], **row} if len(matches) == 1 else row)
+        matches = [index for index, old in enumerate(original)
+                   if index not in used and all(old.get(key) == row.get(key) for key in keys)]
+        exact = [index for index in matches
+                 if all(original[index][key] == row[key] for key in original[index].keys() & row.keys())]
+        if len(matches) > 1 and not exact:
+            raise ValueError("ambiguous source rows: cannot preserve their metadata safely")
+        if matches:
+            index = exact[0] if exact else matches[0]
+            used.add(index)
+            row = {**original[index], **row}
+        rows.append(row)
     return rows
 
 

@@ -11,10 +11,15 @@ from bson import ObjectId, json_util
 
 from pauk.models import Person
 from pauk.pipeline.membership import ITMO_ROR_ID, POLICY_VERSION, apply_membership
-from scripts.reassess_membership import COLLECTIONS, write_plan
+from scripts.reassess_membership import COLLECTIONS, _preserve_source_metadata, write_plan
 
 
 class MembershipReassessmentPlanTest(unittest.TestCase):
+    def test_duplicate_source_rows_keep_distinct_metadata(self):
+        original = [{"publication_id": "W1", "position": 1, "extra": marker} for marker in ("first", "second")]
+        updated = [{"publication_id": "W1", "position": 1}] * 2
+        self.assertEqual(_preserve_source_metadata(original, updated, ("publication_id", "position")), original)
+
     def setUp(self):
         self.db = mongomock.MongoClient().membership_plan
         self.original = {
