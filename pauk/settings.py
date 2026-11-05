@@ -31,6 +31,8 @@ class Settings:
         os.getenv("PAUK_PERSON_RESOLUTION_MODEL") or "qwen/qwen3-next-80b-a3b-instruct"
     )
     reports_model: str = os.getenv("PAUK_REPORTS_MODEL") or "anthropic/claude-haiku-5.5"
+    claude_cli_model: str = os.getenv("PAUK_CLAUDE_CLI_MODEL") or "haiku"
+    codex_cli_model: str = os.getenv("PAUK_CODEX_CLI_MODEL", "")
     llm_provider: str = os.getenv("PAUK_LLM_PROVIDER", "openrouter")
     link_relevance_provider: str = os.getenv("PAUK_LINK_RELEVANCE_PROVIDER", "")
     author_names_provider: str = os.getenv("PAUK_AUTHOR_NAMES_PROVIDER", "")
@@ -70,11 +72,15 @@ class Settings:
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
 
     def provider_for(self, stage: str) -> str:
-        """LLM provider for a stage: its own setting, else PAUK_LLM_PROVIDER; dedup only by its own."""
+        """LLM provider for a stage: its own setting, else PAUK_LLM_PROVIDER; dedup only by its own.
+
+        A bare CLI name gets its model from claude_cli_model or codex_cli_model. Codex has no default: the CLI's
+        own changes between versions, so a bare "codex" with no model set stays bare and fails check_providers.
+        """
         own = getattr(self, f"{stage}_provider")
-        if stage == "person_resolution":
-            return own or "openrouter"
-        return own or self.llm_provider
+        provider = (own or "openrouter") if stage == "person_resolution" else (own or self.llm_provider)
+        model = {"claude": self.claude_cli_model, "codex": self.codex_cli_model}.get(provider.strip())
+        return f"{provider.strip()}:{model}" if model else provider
 
     @property
     def static_dir(self) -> Path:

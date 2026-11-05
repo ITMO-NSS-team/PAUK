@@ -395,14 +395,14 @@ class LlmProviderTest(unittest.TestCase):
         self.assertIsInstance(llm_client("openrouter", timeout=5, api_key="k", openrouter_model="m"), OpenRouterClient)
         models = {
             provider: llm_client(provider, timeout=5, api_key="", openrouter_model="m").model
-            for provider in ("claude", "claude:sonnet", "codex:gpt-x")
+            for provider in ("claude:sonnet", "codex:gpt-x")
         }
 
         self.assertEqual(
             models,
-            {"claude": "claude-cli/haiku", "claude:sonnet": "claude-cli/sonnet", "codex:gpt-x": "codex-cli/gpt-x"},
+            {"claude:sonnet": "claude-cli/sonnet", "codex:gpt-x": "codex-cli/gpt-x"},
         )
-        for provider in ("claud", "codex", "gemini:flash"):
+        for provider in ("claud", "claude", "codex", "gemini:flash"):
             with self.subTest(provider=provider), self.assertRaises(ValueError):
                 llm_client(provider, timeout=5, api_key="", openrouter_model="m")
 
@@ -413,7 +413,7 @@ class LlmProviderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "^person_resolution: unknown LLM provider 'claud'"):
             check_providers(Settings(person_resolution_provider="claud"))
         with self.assertRaisesRegex(ValueError, "^author_names: codex needs a model"):
-            check_providers(Settings(author_names_provider="codex"))
+            check_providers(Settings(author_names_provider="codex", codex_cli_model=""))
 
     def test_a_missing_cli_is_caught_before_any_stage_runs(self):
         with (
@@ -436,8 +436,27 @@ class LlmProviderTest(unittest.TestCase):
         config = Settings(llm_provider="claude", author_names_provider="openrouter", person_resolution_provider="")
 
         self.assertEqual(config.provider_for("author_names"), "openrouter")
-        self.assertEqual(config.provider_for("link_relevance"), "claude")
+        self.assertEqual(config.provider_for("link_relevance"), "claude:haiku")
         self.assertEqual(config.provider_for("person_resolution"), "openrouter")
+
+    def test_a_bare_cli_name_takes_its_model_from_the_settings(self):
+        config = Settings(
+            llm_provider="claude",
+            author_names_provider="claude:opus",
+            person_resolution_provider="codex",
+            claude_cli_model="sonnet",
+            codex_cli_model="gpt-x",
+        )
+
+        self.assertEqual(config.provider_for("link_relevance"), "claude:sonnet")
+        self.assertEqual(config.provider_for("author_names"), "claude:opus")
+        self.assertEqual(config.provider_for("person_resolution"), "codex:gpt-x")
+
+    def test_codex_without_a_model_in_the_settings_fails_the_start_check(self):
+        config = Settings(llm_provider="codex", codex_cli_model="")
+
+        with self.assertRaisesRegex(ValueError, "^link_relevance: codex needs a model"):
+            check_providers(config)
 
 
 class OpenRouterClientUsageTest(unittest.TestCase):

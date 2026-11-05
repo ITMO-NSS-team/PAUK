@@ -51,10 +51,12 @@ sixteen).
 
 `link_relevance`, `author_names` and person resolution in dedup can run
 through a subscription CLI instead of OpenRouter: `claude` (`claude -p` on a
-Claude subscription, Haiku by default) or `codex:<model>` (`codex exec` on a
-ChatGPT subscription; the model is required, because the CLI's default changes
-between versions and `~/.codex/config.toml` is ignored). Codex has not been
-measured on a full run yet. `claude:sonnet` picks another Claude model. There
+Claude subscription) or `codex` (`codex exec` on a ChatGPT subscription). The
+model comes from `PAUK_CLAUDE_CLI_MODEL` (Haiku by default) and
+`PAUK_CODEX_CLI_MODEL` (no default, because the CLI's own changes between
+versions and `~/.codex/config.toml` is ignored). `claude:sonnet` or
+`codex:<model>` picks a model for one setting. Codex has not been measured on a
+full run yet. There
 is no Gemini option: since June 2026 Gemini CLI serves no individual Google
 accounts, and Antigravity's terms do not support calling `agy` from third-party
 applications on consumer plans. Gemini models are available through OpenRouter. `PAUK_LLM_PROVIDER` sets `link_relevance` and

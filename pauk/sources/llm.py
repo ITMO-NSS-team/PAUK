@@ -252,7 +252,6 @@ class ClaudeCli:
 
     name = "claude"
     executable = "claude"
-    default_model = "haiku"
     dropped_vars = _CLAUDE_DROPPED_VARS
     extra_env = {"MAX_THINKING_TOKENS": "0"}
 
@@ -318,7 +317,6 @@ class CodexCli:
 
     name = "codex"
     executable = "codex"
-    default_model = ""
     dropped_vars = _CODEX_DROPPED_VARS
     extra_env = {"NO_COLOR": "1"}
 
@@ -539,13 +537,13 @@ LLM_STAGES = ("link_relevance", "author_names", "person_resolution")
 
 
 def parse_provider(provider: str) -> tuple[str, str]:
-    """The provider name and CLI model of a setting: "openrouter", "claude[:<model>]", "codex:<model>".
+    """The provider name and CLI model of a setting: "openrouter", "claude:<model>" or "codex:<model>".
 
     Raises:
-        ValueError: the name is unknown, or the CLI has no default model and none is given.
+        ValueError: the name is unknown, or a CLI comes without a model.
 
     Example:
-        >>> parse_provider(""), parse_provider("claude"), parse_provider("codex:gpt-5")
+        >>> parse_provider(""), parse_provider("claude:haiku"), parse_provider("codex:gpt-5")
         (('openrouter', ''), ('claude', 'haiku'), ('codex', 'gpt-5'))
     """
     name, _, model = provider.strip().partition(":")
@@ -555,9 +553,8 @@ def parse_provider(provider: str) -> tuple[str, str]:
         raise ValueError(
             f"unknown LLM provider {provider!r}, expected openrouter, {', '.join(_CLIS)} or <cli>:<model>"
         )
-    model = model or _CLIS[name].default_model
     if not model:
-        raise ValueError(f"{name} needs a model, e.g. {name}:<model>: its default changes with the CLI version")
+        raise ValueError(f"{name} needs a model, e.g. {name}:<model>")
     return name, model
 
 
