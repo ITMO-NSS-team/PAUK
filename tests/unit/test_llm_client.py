@@ -17,7 +17,6 @@ from pauk.sources.llm import (
     OPENROUTER_KEY_URL,
     ClaudeCli,
     CodexCli,
-    GeminiCli,
     OpenRouterClient,
     SubscriptionCliClient,
     _run_cli,
@@ -350,77 +349,6 @@ class CodexCliTest(unittest.TestCase):
         self.assertIn("timed out", client.last_error)
 
 
-@patch("pauk.sources.llm.shutil.which", return_value="/usr/bin/gemini")
-class GeminiCliTest(unittest.TestCase):
-    @staticmethod
-    def reply(response, **extra):
-        stats = {"models": {"gemini-2.5-flash": {"tokens": {"prompt": 800, "candidates": 25, "thoughts": 5}}}}
-        return {"session_id": "s", "response": response, "stats": stats, **extra}
-
-    def run_client(self, outcome, returncode=0, stderr=""):
-        client = SubscriptionCliClient(5, GeminiCli(), "flash")
-        seen = {}
-
-        def run_cli(command, prompt, env, timeout, cwd):
-            seen.update(command=command, prompt=prompt, env=env, cwd=cwd)
-            seen["system"] = (cwd / env["GEMINI_SYSTEM_MD"]).read_text(encoding="utf-8")
-            return returncode, outcome if isinstance(outcome, str) else json.dumps(outcome, indent=2), stderr
-
-        with patch("pauk.sources.llm._run_cli", side_effect=run_cli):
-            result = client.chat_json("user prompt", system_prompt="judge pairs")
-        return client, result, seen
-
-    def test_reads_the_response_and_token_usage(self, _which):
-        client, result, seen = self.run_client(self.reply('```json\n{"ok": true}\n```'))
-
-        self.assertEqual(result, {"ok": True})
-        self.assertEqual(client.last_usage, {"prompt_tokens": 800, "completion_tokens": 30})
-        self.assertEqual(seen["prompt"], "user prompt")
-        self.assertTrue(seen["system"].startswith("judge pairs"))
-        self.assertEqual(seen["command"][seen["command"].index("--model") + 1], "flash")
-        self.assertEqual(seen["command"][seen["command"].index("--extensions") + 1], "none")
-        self.assertEqual(client.model, "gemini-cli/flash")
-
-    def test_keys_that_bill_an_api_or_force_a_browser_login_are_dropped(self, _which):
-        parent = {
-            "GEMINI_API_KEY": "k",
-            "GOOGLE_API_KEY": "k",
-            "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "GOOGLE_GENAI_USE_GCA": "true",
-            "KEEP": "1",
-        }
-        with patch.dict("os.environ", parent):
-            _, _, seen = self.run_client(self.reply('{"ok": true}'))
-
-        self.assertEqual({name for name in parent if name in seen["env"]}, {"KEEP"})
-
-    def test_a_quota_error_is_reported_as_a_subscription_limit(self, _which):
-        reply = {"error": {"type": "TerminalQuotaError", "message": "You have exhausted your daily quota."}}
-        client, result, _ = self.run_client(reply, returncode=1)
-
-        self.assertIsNone(result)
-        self.assertTrue(client.last_error.startswith("subscription limit reached"))
-
-    def test_another_error_keeps_its_message(self, _which):
-        reply = {"error": {"type": "FatalAuthenticationError", "message": "Please set an Auth method"}}
-        client, result, _ = self.run_client(reply, returncode=41)
-
-        self.assertIsNone(result)
-        self.assertEqual(client.last_error, "CLI error: Please set an Auth method")
-
-    def test_output_that_is_not_json_is_a_failure_with_the_raw_text_kept(self, _which):
-        client, result, _ = self.run_client("Loaded cached credentials.", returncode=1)
-
-        self.assertIsNone(result)
-        self.assertEqual(client.last_response["_raw_text"], "Loaded cached credentials.")
-        self.assertIn("not JSON", client.last_error)
-
-    def test_a_notice_printed_before_the_json_is_skipped(self, _which):
-        client, result, _ = self.run_client("Loaded cached credentials.\n" + json.dumps(self.reply('{"ok": 1}')))
-
-        self.assertEqual(result, {"ok": 1})
-
-
 class RunCliTest(unittest.TestCase):
     def test_a_hung_process_is_killed_at_the_timeout(self):
         started = time.monotonic()
@@ -467,19 +395,14 @@ class LlmProviderTest(unittest.TestCase):
         self.assertIsInstance(llm_client("openrouter", timeout=5, api_key="k", openrouter_model="m"), OpenRouterClient)
         models = {
             provider: llm_client(provider, timeout=5, api_key="", openrouter_model="m").model
-            for provider in ("claude", "claude:sonnet", "codex:gpt-x", "gemini:flash")
+            for provider in ("claude", "claude:sonnet", "codex:gpt-x")
         }
 
         self.assertEqual(
             models,
-            {
-                "claude": "claude-cli/haiku",
-                "claude:sonnet": "claude-cli/sonnet",
-                "codex:gpt-x": "codex-cli/gpt-x",
-                "gemini:flash": "gemini-cli/flash",
-            },
+            {"claude": "claude-cli/haiku", "claude:sonnet": "claude-cli/sonnet", "codex:gpt-x": "codex-cli/gpt-x"},
         )
-        for provider in ("claud", "codex", "gemini"):
+        for provider in ("claud", "codex", "gemini:flash"):
             with self.subTest(provider=provider), self.assertRaises(ValueError):
                 llm_client(provider, timeout=5, api_key="", openrouter_model="m")
 
@@ -495,9 +418,9 @@ class LlmProviderTest(unittest.TestCase):
     def test_a_missing_cli_is_caught_before_any_stage_runs(self):
         with (
             patch("pauk.sources.llm.shutil.which", return_value=None),
-            self.assertRaisesRegex(ValueError, "^link_relevance: gemini CLI not found"),
+            self.assertRaisesRegex(ValueError, "^link_relevance: claude CLI not found"),
         ):
-            check_providers(Settings(llm_provider="gemini:flash"))
+            check_providers(Settings(llm_provider="claude"))
 
     def test_openrouter_needs_no_cli(self):
         config = Settings(

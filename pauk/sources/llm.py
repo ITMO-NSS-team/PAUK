@@ -38,15 +38,6 @@ _CLAUDE_DROPPED_VARS = (
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
 )
 _CODEX_DROPPED_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-_GEMINI_DROPPED_VARS = (
-    "GEMINI_API_KEY",
-    "GOOGLE_API_KEY",
-    "GOOGLE_GENAI_USE_VERTEXAI",
-    "GOOGLE_GEMINI_BASE_URL",
-    "GOOGLE_VERTEX_BASE_URL",
-    "GEMINI_CLI_USE_COMPUTE_ADC",
-    "GOOGLE_GENAI_USE_GCA",
-)
 _LIMIT_MARKERS = (
     "usage limit",
     "limit reached",
@@ -55,7 +46,6 @@ _LIMIT_MARKERS = (
     "too many requests",
     "429",
 )
-_GEMINI_LIMIT_MARKERS = ("resource_exhausted", "quota")
 
 logger = logging.getLogger(__name__)
 
@@ -380,84 +370,6 @@ class CodexCli:
         return CliReply(text, usage, None, raw)
 
 
-class GeminiCli:
-    """`gemini -p` on a Google account login, with extensions off and the system prompt replaced.
-
-    GEMINI_SYSTEM_MD replaces the built-in prompt with a file; a relative path resolves against the call's own
-    temp directory. Tools that would need a confirmation are denied in headless mode. The message goes through
-    stdin and the fixed -p text is appended to it. GOOGLE_GENAI_USE_GCA is dropped: without a saved login it asks
-    on the terminal to open a browser, and each call would hang until its timeout instead of failing at once.
-    """
-
-    name = "gemini"
-    executable = "gemini"
-    default_model = ""
-    dropped_vars = _GEMINI_DROPPED_VARS
-    extra_env = {"GEMINI_SYSTEM_MD": "system.md", "NO_COLOR": "1"}
-
-    def command(self, executable: str, model: str, workdir: Path) -> list[str]:
-        return [
-            executable,
-            "--prompt",
-            _JSON_ONLY,
-            "--output-format",
-            "json",
-            "--approval-mode",
-            "default",
-            "--extensions",
-            "none",
-            "--model",
-            model,
-        ]
-
-    def stdin(self, system: str, prompt: str, workdir: Path) -> str:
-        (workdir / "system.md").write_text(system, encoding="utf-8")
-        return prompt
-
-    def parse(self, returncode: int, stdout: str, stderr: str, workdir: Path) -> CliReply:
-        start = stdout.find("{")
-        try:
-            payload = json.loads(stdout[start:]) if start >= 0 else None
-        except json.JSONDecodeError:
-            payload = None
-        if not isinstance(payload, dict):
-            raw = {
-                "_returncode": returncode,
-                "_raw_text": stdout[:_RAW_TEXT_LIMIT],
-                "_stderr": stderr[:_RAW_TEXT_LIMIT],
-            }
-            return CliReply(None, None, f"exit {returncode}, output is not JSON", raw)
-        tokens = [
-            model.get("tokens") or {}
-            for model in ((payload.get("stats") or {}).get("models") or {}).values()
-            if isinstance(model, dict)
-        ]
-        usage = (
-            {
-                "prompt_tokens": sum(count.get("prompt") or 0 for count in tokens),
-                "completion_tokens": sum(
-                    (count.get("candidates") or 0) + (count.get("thoughts") or 0) for count in tokens
-                ),
-            }
-            if tokens
-            else None
-        )
-        failure = payload.get("error")
-        text = payload.get("response")
-        if failure or returncode != 0 or not isinstance(text, str):
-            failure = failure if isinstance(failure, dict) else {}
-            message = str(failure.get("message") or stderr.strip() or f"exit {returncode}")[-500:]
-            limited = (
-                failure.get("type") in ("TerminalQuotaError", "RetryableQuotaError")
-                or failure.get("code") == 429
-                or _limited(message)
-                or any(marker in message.lower() for marker in _GEMINI_LIMIT_MARKERS)
-            )
-            error = f"subscription limit reached: {message}" if limited else f"CLI error: {message}"
-            return CliReply(None, usage, error, payload)
-        return CliReply(text, usage, None, payload)
-
-
 def _last_token_counts(events: list[dict]) -> dict:
     """The last object in the event stream that carries input_tokens."""
     found: dict = {}
@@ -487,13 +399,13 @@ def _event_error(events: list[dict]) -> str:
 
 
 class SubscriptionCliClient:
-    """A model behind a subscription CLI (`claude -p`, `codex exec`, `gemini -p`), with OpenRouterClient's chat_json.
+    """A model behind a subscription CLI (`claude -p`, `codex exec`), with OpenRouterClient's chat_json.
 
     Variables that would bill an API instead of the subscription, or cap the reply, are dropped from the
     child's environment. Each call runs in its own temp directory.
     """
 
-    def __init__(self, timeout: int, backend: ClaudeCli | CodexCli | GeminiCli, model: str) -> None:
+    def __init__(self, timeout: int, backend: ClaudeCli | CodexCli, model: str) -> None:
         self.timeout = timeout
         self.backend = backend
         self.cli_model = model
@@ -622,12 +534,12 @@ def _run_cli(
     return process.returncode, stdout.decode("utf-8", "replace"), stderr.decode("utf-8", "replace")
 
 
-_CLIS = {"claude": ClaudeCli, "codex": CodexCli, "gemini": GeminiCli}
+_CLIS = {"claude": ClaudeCli, "codex": CodexCli}
 LLM_STAGES = ("link_relevance", "author_names", "person_resolution")
 
 
 def parse_provider(provider: str) -> tuple[str, str]:
-    """The provider name and CLI model of a setting: "openrouter", "claude[:<model>]", "<codex|gemini>:<model>".
+    """The provider name and CLI model of a setting: "openrouter", "claude[:<model>]", "codex:<model>".
 
     Raises:
         ValueError: the name is unknown, or the CLI has no default model and none is given.

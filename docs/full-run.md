@@ -51,12 +51,13 @@ sixteen).
 
 `link_relevance`, `author_names` and person resolution in dedup can run
 through a subscription CLI instead of OpenRouter: `claude` (`claude -p` on a
-Claude subscription, Haiku by default), `codex:<model>` (`codex exec` on a
-ChatGPT subscription) or `gemini:<model>` (`gemini -p` on a Google account
-login, e.g. `gemini:flash`). Codex and Gemini need the model, because the CLI's
-default changes between versions; `~/.codex/config.toml` is ignored. Neither
-has been measured on a full run yet. `claude:sonnet` picks another Claude
-model. `PAUK_LLM_PROVIDER` sets `link_relevance` and
+Claude subscription, Haiku by default) or `codex:<model>` (`codex exec` on a
+ChatGPT subscription; the model is required, because the CLI's default changes
+between versions and `~/.codex/config.toml` is ignored). Codex has not been
+measured on a full run yet. `claude:sonnet` picks another Claude model. There
+is no Gemini option: since June 2026 Gemini CLI serves no individual Google
+accounts, and Antigravity's terms do not support calling `agy` from third-party
+applications on consumer plans. Gemini models are available through OpenRouter. `PAUK_LLM_PROVIDER` sets `link_relevance` and
 `author_names`; `PAUK_LINK_RELEVANCE_PROVIDER` and `PAUK_AUTHOR_NAMES_PROVIDER`
 override it for one stage. Person resolution switches only through
 `PAUK_PERSON_RESOLUTION_PROVIDER`. `run`, `enrich` and `dedup` check all three
@@ -71,12 +72,9 @@ Team runs go through OpenRouter.
 
 The CLI must be on `PATH` and signed in to the subscription: `claude auth
 status` shows `"authMethod": "claude.ai"`, `codex login status` shows a
-ChatGPT login. Gemini needs the `gemini` command from `@google/gemini-cli`
-(`npm i -g @google/gemini-cli`); Antigravity does not provide it. Sign in once
-by running `gemini` and choosing the Google login, which is saved in
-`~/.gemini/`; without it the calls fail. PAUK starts the CLI without
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and the other variables
-that would bill the API instead of the subscription. A CLI call times out after
+ChatGPT login. PAUK starts the CLI without `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY` and the other variables that would bill the API instead of the
+subscription. A CLI call times out after
 `PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C kills the CLIs that
 are still running.
 
