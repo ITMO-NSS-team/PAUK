@@ -98,7 +98,7 @@ grows by 1:
     "version": 1,                   # the version number being archived
     "snapshot": {...},              # the full document as it was BEFORE replacement
     "replaced_by_group": "period-2024",
-    "replaced_at": "2026-08-12T...",
+    "replaced_at": "<UTC timestamp>",
 }
 ```
 
@@ -154,8 +154,8 @@ is idempotent and called when each command starts, next to
 `revisions` with zstd compression if they do not exist yet. They are the two
 heaviest collections: verbatim API responses and full row snapshots. An
 existing collection cannot change its compressor this way (WiredTiger takes
-it at creation); the command for a live database is in
-[admin-panel.md](../admin-panel.md). A server or test double that does not
+it at creation); live-database maintenance is described in
+[admin-panel.md](../admin-panel.md#mongo-compression). A server or test double that does not
 accept the option keeps the default compressor.
 
 ## `review.py`: questions a person answers
@@ -248,7 +248,9 @@ separate document for the corrective semantic retry too; its number is in
   snapshots (`pauk/cache/graph_snapshot.py`), the site data
   (`pauk/gui/graph_builder/builder.py`) and local journals such as the dedup
   candidates (`data/audit/<group>/dedup_candidates.jsonl`, path from
-  `Settings.audit_dir`). Text mode only (`mode="w", encoding="utf-8"`); it
+  `Settings.audit_dir`). Temporary files use mode 600, retained after
+  replacement; publishing generated JSON for another service requires setting
+  readable permissions. Text mode only (`mode="w", encoding="utf-8"`); it
   does not suit binary data.
 - **`atomic_write_bytes(target, data)`**: the same trick for bytes already in
   memory (PDFs from `PdfStore.save`).

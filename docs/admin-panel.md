@@ -12,8 +12,8 @@ in the UI, with an English gloss the first time.
 ### Start
 
 Databases first: the panel does not start without Mongo, and shows no graph
-without Neo4j. On a workstation they run in Docker and do not restart after a
-reboot:
+without Neo4j. For an existing workstation setup with standalone database
+containers:
 
 ```bash
 open -a Docker                              # macOS, if the daemon is not running
@@ -27,8 +27,8 @@ Then two processes, both from the repository root. The panel shows and edits;
 the worker executes what the buttons start:
 
 ```bash
-uv run uvicorn pauk.admin.app:build --factory --port 8600   # window 1
-uv run pauk admin worker                                    # window 2
+uv run pauk admin serve --host 127.0.0.1 --port 8600
+uv run pauk admin worker
 ```
 
 Open `http://127.0.0.1:8600`. Create an account first (the command prompts for
@@ -38,8 +38,8 @@ the password):
 uv run pauk admin user add <login> --role admin
 ```
 
-On the server the same processes run as systemd services (or screen sessions)
-on port 8505, see "On the server".
+On the server these processes run as Compose services `admin` and `worker`,
+with the panel on port 8505; see "On the server".
 
 ### Roles
 
@@ -74,23 +74,24 @@ Mongo the panel does not start and says so in the window it was started from.
 On the server, check that the processes are alive before restarting:
 
 ```bash
-systemctl status pauk-admin pauk-worker   # systemd
-screen -list                              # screen
+cd ~/pauk/code
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml ps
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml logs --since 30m admin worker
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
 ```
 
-`200` means the panel is up and the problem is the network or VPN. Empty
-output means start it again as described in "On the server". Do not restart
-the worker while it is running a job: that interrupts the run.
+`200` confirms that the login page responds. If it fails, inspect Compose
+status and logs before restarting. Check the job queue before stopping a worker.
 
 ### After a machine restart
 
-systemd services come back by themselves. Screen sessions do not survive a
-reboot: start the panel and the worker again. Accounts, answers, the audit
-log and sessions live in Mongo, so nobody has to log in again.
+On the server, Docker restarts the Compose containers unless they were
+explicitly stopped. Locally, start the databases and the two development
+processes again if they are not managed by Compose. Accounts, answers, audit
+records and sessions live in Mongo and survive process restarts.
 
-After a code change, **restart the panel**: it reloads templates by itself but
-not Python code.
+Deploy Python changes by rebuilding the PAUK image and recreating `admin`
+and `worker`; a plain container restart still runs the previous image.
 
 ## Setup
 
@@ -132,94 +133,34 @@ panel, so a panel started on a fresh database works but is slow.
 
 ### On the server
 
-The panel listens on its own address only, hence `--host 0.0.0.0`. On
-`einsteinium.nsslab` it uses port 8505.
-
-**As services.** They survive reboots and restart after a crash. The units are
-in `scripts/systemd/` and are installed once.
-
-First stop the old screen sessions, otherwise port 8505 stays busy and the
-service crash-loops:
+The checkout is `~/pauk/code`; services are defined in `deploy/compose.yml`
+and configured through `~/pauk/secrets/pauk.env`. The panel listens on
+`0.0.0.0:8505` inside the container, published on host port 8505.
 
 ```bash
-ssh asteb@einsteinium.nsslab
-screen -S pauk-admin -X quit
-screen -S pauk-worker -X quit
-screen -list                  # neither pauk-admin nor pauk-worker may remain
+cd ~/pauk/code
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml ps
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml logs --since 30m admin worker
+curl -fsS http://127.0.0.1:8505/login -o /dev/null
 ```
 
-Find where `uv` lives and put that path into both unit files instead of
-`/home/asteb/.local/bin/uv` (systemd does not read the shell profile and will
-not find a bare `uv`). Adjust `User=` and `WorkingDirectory=` if the repository
-is not in `/home/asteb/PAUK`.
+Create accounts inside the running service:
 
 ```bash
-cd ~/PAUK
-which uv
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml exec admin pauk admin user add <login> --role admin
 ```
 
-Before enabling, check that `uv` works without a shell profile, exactly as
-systemd will run it. It must print the help text, not "command not found" or a
-cache error:
+After an approved checkout update, apply it with `up -d --build` using the
+same env file and Compose path. The worker handles SIGTERM by finishing its
+current job; Docker allows five minutes before killing it. Prefer an idle
+queue for updates. A terminated job is reaped after its lease expires; inspect
+its state rather than assuming that a restart completed it.
 
-```bash
-sudo -u asteb env -i HOME=/home/asteb PATH=/usr/bin:/bin /home/asteb/.local/bin/uv run pauk --help
-```
-
-Install, verify the unit syntax (`systemd-analyze verify` prints nothing when
-all is well) and enable:
-
-```bash
-sudo cp scripts/systemd/pauk-admin.service scripts/systemd/pauk-worker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-systemd-analyze verify /etc/systemd/system/pauk-admin.service /etc/systemd/system/pauk-worker.service
-sudo systemctl enable --now pauk-admin pauk-worker
-```
-
-Check all three signals, not just one:
-
-```bash
-systemctl status pauk-admin pauk-worker                              # active (running)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login # 200
-journalctl -u pauk-worker -n 20 --no-pager                           # "worker ... started"
-```
-
-Day-to-day:
-
-```bash
-git pull && sudo systemctl restart pauk-admin pauk-worker   # deploy new code
-journalctl -u pauk-worker -f                                # what the worker is doing
-sudo systemctl stop pauk-worker                             # pause it
-```
-
-The worker does not stop instantly: SIGTERM means "finish the current job and
-exit". After 300 seconds (`TimeoutStopSec`) systemd kills it, and the next
-worker picks up the abandoned job when its lock lease expires. The panel must
-be restarted after every `git pull`.
-
-If a service does not start, the reason is in the journal
-(`journalctl -u pauk-admin -n 50 --no-pager`). Common causes: `command not
-found` (wrong `uv` path in `ExecStart`); `Address already in use` (old screen
-session still alive); a Mongo error (database not up yet; the service retries
-after five seconds).
-
-**As screen sessions.** Used until the units are installed; they do not
-survive a reboot. Run both from the repository root, otherwise `uv run` does
-not find the project and the session dies silently:
-
-```bash
-screen -dmS pauk-admin uv run uvicorn pauk.admin.app:build --factory --host 0.0.0.0 --port 8505
-screen -dmS pauk-worker uv run pauk admin worker
-screen -list
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
-```
-
-The only boundary here is the lab VPN. Passwords travel over plain HTTP, as do
-Mongo and Neo4j traffic on the same machine. If the panel ever leaves the VPN,
-it needs TLS and `PAUK_ADMIN_SECURE_COOKIE=1`.
-
-Sessions are stored in Mongo, not in process memory, so restarting the panel
-does not log anyone out.
+Access is through the lab VPN over HTTP. Enable TLS and
+`PAUK_ADMIN_SECURE_COOKIE=1` if the panel is exposed outside that boundary.
+Sessions live in Mongo, so a panel restart does not log users out. The full
+storage layout, service checks and site publication are in
+[architecture/deploy.md](architecture/deploy.md).
 
 ## Worker
 
@@ -263,8 +204,9 @@ and the selection. Publishing works on one group at a time; there is no
 Each step shows when it last completed, which answers the usual question
 "did anyone publish after the last collect?". The map rebuild writes both
 variants: `private/` with personal fields and `public/` without
-`authors-detail.json`. Deploying the site to the server is a separate step,
-`scripts/deploy.sh`.
+`authors-detail.json`. Publishing a built site is separate: nginx reads
+`~/pauk/site/itmo/main`, not the worker's generated data directory. See
+[deployment](architecture/deploy.md#static-site-and-reports).
 
 ### Two different dedups
 
@@ -283,9 +225,9 @@ Disputed pairs are not merged but held: written to
 `data/cache/dedup_candidates_graph.jsonl` with status `held` and a reason, and
 put in the "Спорные случаи" (Disputed cases) queue for a human answer.
 
-Rule-based merges cannot be undone, so the button asks for confirmation, like
-deleting a node. Only a pair merged by an answer in the queue can be split
-again (next section).
+The panel offers a split action for pairs merged through answers in the review
+queue. Other merges do not get that action; deduplication asks for confirmation
+before changing the graph.
 
 ## Review queue
 
@@ -337,11 +279,13 @@ queue.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record
-from its prepared row (node and all its relationships), strips from the
+from its independent prepared row or a durable pre-merge snapshot (node and
+all its relationships), strips from the
 surviving record what came only from the removed one, and records "different"
-so the next run does not merge them again. It works while the prepared row
-exists. The collect stage deletes rows it folded itself, so such pairs have no
-button and the panel says so. Merges done by dedup rules without a question
+so the next run does not merge them again. `person_merge_sources` preserves
+complete source rows before dedup removes them. The split restores prepared
+rows and group membership too; missing source data or later changes that cannot
+be reconciled make it refuse rather than overwrite enrichment. Merges done by dedup rules without a question
 and merges via `pauk admin merge` are not in the queue and cannot be undone
 from the panel.
 
@@ -506,9 +450,8 @@ query is bounded, and nobody needs last week's bad records.
 
 ### Reconcile with Mongo
 
-The graph does not converge to Mongo by itself. Publishing only adds, so a
-record deleted from Mongo, or a relationship a row no longer claims, is removed
-separately: with the "Сверка с источником" button on the "Пайплайн" page, or
+Publishing synchronizes confirmed code links and reapplies manual deletions.
+Other stale records and relationships need a separate reconciliation pass: with the "Сверка с источником" button on the "Пайплайн" page, or
 from the terminal:
 
 ```bash
@@ -543,20 +486,11 @@ trimmed.
 
 ### Mongo compression
 
-The heaviest collection is `raw`, the verbatim answers of external services. On
-a new database `pauk` creates it and `revisions` with zstd compression. An
-existing database cannot switch compressors, since WiredTiger takes it at
-creation time, except for new blocks:
-
-```bash
-docker exec pauk-mongo mongosh pauk --eval '
-  db.runCommand({collMod: "raw",
-    storageEngine: {wiredTiger: {configString: "block_compressor=zstd"}}});
-  db.runCommand({compact: "raw"});'
-```
-
-`collMod` changes the compressor for new blocks; `compact` rewrites the old
-ones and holds a lock meanwhile, so run it when no jobs are running.
+`ensure_indexes` creates new `raw` and `revisions` collections with zstd
+compression. Existing collections keep their creation-time compressor;
+changing it requires an explicit database maintenance operation. Do not run
+`compact` as a routine health check. See
+[storage.md](architecture/storage.md#mongopy).
 
 ### Known limitations
 
@@ -573,8 +507,8 @@ ones and holds a lock meanwhile, so run it when no jobs are running.
   `repositories`, `dedup` and `github_match`. Cancellation is checked where a
   stage reports progress, and these four do not use the shared counter; they
   notice the cancel on exit.
-- Publishing only adds: a row deleted from Mongo does not leave the graph by
-  itself. Reconcile removes it, and it has to be run, not waited for.
+- Publishing synchronizes confirmed code links and reapplies manual deletions.
+  Other rows deleted from Mongo require a separate reconciliation pass.
 
 ## Two databases, one edit
 
@@ -650,3 +584,10 @@ The audit log cannot fail the edit it describes. It is written after the change;
 a failing sink must not return an error from the middle of an operation when
 Neo4j is already updated. A lost entry goes to the application log in full and
 the operation continues.
+
+## Operations control plane
+
+The optional OPS service uses the same admin accounts on port 8506 at `/ops/`.
+It manages service observations, full database backups, site releases and
+operation logs; it is separate from this graph editor. Only accounts with the
+`admin` role can open OPS. Details: [architecture/ops.md](architecture/ops.md).

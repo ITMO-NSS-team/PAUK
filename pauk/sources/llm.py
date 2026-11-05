@@ -7,6 +7,8 @@ from typing import Any
 
 import requests
 
+from pauk.logging import Throttled
+
 from .base import HttpClient
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -16,6 +18,7 @@ _RAW_TEXT_LIMIT = 64 * 1024
 _TRANSIENT_RETRIES = 2
 
 logger = logging.getLogger(__name__)
+_warn = Throttled(logger)
 
 
 def _strip_code_fence(content: str) -> str:
@@ -71,16 +74,17 @@ class OpenRouterClient(HttpClient):
         None on: no API key, exhausted network/transient-HTTP retries,
         non-retryable status, empty content (reasoning models sometimes do
         this) or invalid JSON - the caller treats all of these as one failed
-        classification, not a crash. Every final failure is logged (warning)
-        with the reason, so a batch run shows exactly what went wrong instead
-        of a silent gap in results.
+        classification, not a crash. Every final failure is logged with the
+        reason: the first of each kind and every hundredth as a warning, the
+        rest at debug, so a batch run shows what went wrong without one line
+        per request.
         """
         self.last_usage = None
         self.last_response = None
         self.last_error = None
         if not self.api_key:
             self.last_error = "OPENROUTER_API_KEY not set"
-            logger.warning("OpenRouter: OPENROUTER_API_KEY not set, skipping request")
+            _warn.warning("no-key", "OpenRouter: OPENROUTER_API_KEY not set, skipping request")
             return None
         messages = []
         if system_prompt:
@@ -113,7 +117,7 @@ class OpenRouterClient(HttpClient):
                     )
                     continue
                 self.last_error = type(exc).__name__
-                logger.warning("OpenRouter: request to %s failed: %s", self.model, exc)
+                _warn.warning("request", "OpenRouter: request to %s failed: %s", self.model, exc)
                 return None
 
             delay = self._retry_delay(response, attempt)
@@ -128,7 +132,7 @@ class OpenRouterClient(HttpClient):
         try:
             payload = response.json()
         except ValueError:
-            logger.warning("OpenRouter: %s returned a non-JSON response body", self.model)
+            _warn.warning("non-json", "OpenRouter: %s returned a non-JSON response body", self.model)
             payload = {
                 "_http_status": response.status_code,
                 "_content_type": response.headers.get("Content-Type"),
@@ -139,11 +143,12 @@ class OpenRouterClient(HttpClient):
             response.raise_for_status()
         except requests.HTTPError:
             self.last_error = f"HTTP {response.status_code}"
-            logger.warning("OpenRouter: request to %s failed with HTTP %s", self.model, response.status_code)
+            _warn.warning("http", "OpenRouter: request to %s failed with HTTP %s", self.model, response.status_code)
             return None
         if not isinstance(payload, dict):
             self.last_error = f"OpenRouter response is {type(payload).__name__}, not an object"
-            logger.warning(
+            _warn.warning(
+                "envelope",
                 "OpenRouter: %s returned a %s response envelope, not an object",
                 self.model,
                 type(payload).__name__,
@@ -159,24 +164,24 @@ class OpenRouterClient(HttpClient):
             error = payload["error"]
             message = error.get("message") if isinstance(error, dict) else str(error or "")
             self.last_error = f"OpenRouter error: {message or 'unknown error'}"
-            logger.warning("OpenRouter: %s returned an error body: %s", self.model, message)
+            _warn.warning("error-body", "OpenRouter: %s returned an error body: %s", self.model, message)
             return None
         try:
             content = payload["choices"][0]["message"].get("content")
             if not content:
                 self.last_error = "empty model response"
-                logger.warning("OpenRouter: %s returned an empty response body", self.model)
+                _warn.warning("empty", "OpenRouter: %s returned an empty response body", self.model)
                 return None
             parsed = json.loads(_strip_code_fence(content))
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             self.last_error = f"could not parse model response: {type(exc).__name__}"
-            logger.warning("OpenRouter: could not parse %s's response: %s", self.model, exc)
+            _warn.warning("unparsable", "OpenRouter: could not parse %s's response: %s", self.model, exc)
             return None
         if not isinstance(parsed, dict):
             # response_format=json_object is meant to guarantee an object,
             # but not every model actually honors it (seen in the wild:
             # gpt-oss-20b wrapping the verdict in a list).
             self.last_error = f"model response is {type(parsed).__name__}, not an object"
-            logger.warning("OpenRouter: %s replied with %s, not a JSON object", self.model, type(parsed).__name__)
+            _warn.warning("not-object", "OpenRouter: %s replied with %s, not a JSON object", self.model, type(parsed).__name__)
             return None
         return parsed
