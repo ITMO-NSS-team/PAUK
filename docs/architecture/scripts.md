@@ -45,6 +45,15 @@ which a process started before `usermod -aG docker` does not have.
 
 ## Manual data additions
 
+`reassess_membership.py` prepares a reviewable membership correction plan.
+It accepts either a complete local JSONL snapshot (`--snapshot-dir`, containing
+`persons`, `publications`, `person_merge_sources`, and `raw`) or an explicit
+read-only Mongo connection (`--mongo-uri` and `--db`). It uses all source groups,
+keeps unknown cases unchanged, and writes `persons.jsonl` plus `summary.json`
+to a new `--out` directory. It never writes to MongoDB or Neo4j and does not
+read connection defaults from `.env`. Review and back up the data before
+applying the resulting plan through the normal import/publish workflow.
+
 | Script | What it does | Writes |
 |---|---|---|
 | `import_curated_repos.py` | Imports a human-labelled `title,repo_url` list into `Repository.publication_ids`, that is, into `IMPLEMENTS`. Two steps: `plan` only reads and saves its decision as JSON; `apply` writes exactly the reviewed plan | `apply`: Mongo |

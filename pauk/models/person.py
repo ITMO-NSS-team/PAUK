@@ -51,6 +51,16 @@ class MembershipWorkSource(BaseModel):
     institution_observed_at: datetime | None = None
 
 
+class MembershipOwnerSources(BaseModel):
+    """Inventory of one original person's known sources, independent of a run group."""
+
+    source_person_id: str
+    work_ids: list[str] | None = None
+    orcid_ids: list[str] | None = None
+    observed_at: datetime | None = None
+    policy: str = "itmo-membership-v1"
+
+
 class Person(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -63,6 +73,7 @@ class Person(BaseModel):
     membership_evidence: list[MembershipEvidence] = Field(default_factory=list)
     membership_orcid_sources: list[MembershipOrcidSource] = Field(default_factory=list)
     membership_work_sources: list[MembershipWorkSource] = Field(default_factory=list)
+    membership_owner_sources: list[MembershipOwnerSources] = Field(default_factory=list)
     name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None

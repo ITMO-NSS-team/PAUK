@@ -2,6 +2,7 @@ import unittest
 from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Authorship, Person
+from pauk.models.person import MembershipOwnerSources
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.membership import (
     ITMO_ROR_ID,
@@ -18,6 +19,15 @@ from pauk.pipeline.membership import (
 
 
 class MembershipTest(unittest.TestCase):
+    def inventory(self, person, orcids=()):
+        person.membership_owner_sources = [MembershipOwnerSources(
+            source_person_id=person.id, work_ids=[row.publication_id for row in person.authored],
+            orcid_ids=list(orcids),
+        )]
+        for row in person.authored:
+            row.institution_source_person_id = person.id
+            row.institution_source_id = row.publication_id
+
     def test_coalescing_keeps_distinct_original_authors_on_one_publication(self):
         person = Person(id="A1", is_itmo=False, merged_ids=["A2"], authored=[
             Authorship(publication_id="W1", position=1, is_corresponding=True,
@@ -56,6 +66,7 @@ class MembershipTest(unittest.TestCase):
 
     def test_known_empty_is_distinct_from_unknown(self):
         person = Person(id="A1", is_itmo=False, authored=[Authorship(publication_id="W1")])
+        self.inventory(person)
         self.assertEqual(evaluate_membership(person).status, "unknown")
         person.authored[0].institution_rors = []
         self.assertEqual(evaluate_membership(person).status, "unsupported")
@@ -64,8 +75,10 @@ class MembershipTest(unittest.TestCase):
         person = Person(id="A1", is_itmo=False, orcid="record", authored=[
             Authorship(publication_id="W1", institution_rors=[]),
         ])
+        self.inventory(person, ["record"])
         self.assertEqual(evaluate_membership(person).status, "unknown")
         person.processing["orcid"] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key="record")
+        refresh_orcid_membership(person, [], "A1", "record")
         self.assertEqual(evaluate_membership(person).status, "unsupported")
         person.merged_ids = ["A2"]
         self.assertEqual(evaluate_membership(person).status, "unknown")
@@ -73,6 +86,7 @@ class MembershipTest(unittest.TestCase):
     def test_correction_retracts_only_the_refreshed_source_slot(self):
         row = Authorship(publication_id="W1", position=1)
         person = Person(id="A1", is_itmo=False, authored=[row])
+        self.inventory(person)
         refresh_authorship_membership(person, row, {"institutions": [{"ror": ITMO_ROR_ID}]}, "A1", "W1")
         apply_membership(person)
         self.assertEqual(person.membership_status, "supported")
@@ -86,6 +100,7 @@ class MembershipTest(unittest.TestCase):
         row = Authorship(publication_id="W1", position=1, institution_rors=[ITMO_ROR_ID],
                          institution_source_person_id="A1", institution_source_id="W1")
         person = Person(id="A1", is_itmo=False, authored=[row])
+        self.inventory(person)
         apply_membership(person)
         row.institution_rors = []
         apply_membership(person)
@@ -114,6 +129,7 @@ class MembershipTest(unittest.TestCase):
 
     def test_orcid_success_supersedes_claims_while_another_owner_survives(self):
         person = Person(id="A1", is_itmo=False, authored=[Authorship(publication_id="W1", institution_rors=[])])
+        self.inventory(person, ["orcid-1"])
         affiliation = Affiliation(name="ITMO", ror=ITMO_ROR_ID, source="orcid")
         refresh_orcid_membership(person, [affiliation], "A1", "orcid-1")
         apply_membership(person)

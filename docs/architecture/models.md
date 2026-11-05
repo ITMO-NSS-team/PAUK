@@ -64,6 +64,11 @@ the relation-like models.
     ORCID refresh returns no qualifying employment.
     `membership_work_sources` retains each original work version's institution
     evidence when publication dedup leaves a single display authorship.
+  - `membership_owner_sources` is the inventory of expected original works
+    and ORCID records for each original person. Unknown inventories differ
+    from known empty lists. A negative result requires every owner and every
+    expected source to be accounted for; a completed assessment can therefore
+    clear an old positive flag, including on a merged person.
   - Russian name parts (`first_name_ru`, `second_name_ru`, `surname_ru`) and
     `name_ru`/`name_en` are filled by the `author_names` stage.
   - `email` is the one address shown on the card; `emails` are all known

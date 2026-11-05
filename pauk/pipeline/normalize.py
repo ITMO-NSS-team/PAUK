@@ -10,13 +10,16 @@ from hashlib import sha1
 from typing import TypeVar
 
 from pauk.models import Authorship, Funding, Person, Publication
+from pauk.models.person import MembershipOwnerSources
 from pauk.pipeline.membership import (
     ITMO_ROR_ID,
     apply_membership,
     authorship_institution_rors,
     authorship_snapshot_is_current,
     coalesce_authorships,
+    extend_owner_sources,
     iter_work_membership,
+    merge_owner_sources,
     reconcile_authorship_snapshot,
     refresh_authorship_membership,
     source_observed_at,
@@ -180,9 +183,18 @@ def _merge_person(base: Person, extra: Person) -> Person:
     incomplete. Scalar gaps and missing processing stages are filled from
     the extra row without replacing existing values.
     """
+    extra = deepcopy(extra)
+    for person in (base, extra):
+        inventoried = {row.source_person_id for row in person.membership_owner_sources}
+        for owner in {person.id, *person.merged_ids} - inventoried:
+            person.membership_owner_sources.append(MembershipOwnerSources(source_person_id=owner))
     base.is_itmo = base.is_itmo or extra.is_itmo
+    if base.id != extra.id:
+        base.merged_ids = list(dict.fromkeys([*base.merged_ids, extra.id, *extra.merged_ids]))
+    base.membership_owner_sources = merge_owner_sources(base.membership_owner_sources, extra.membership_owner_sources)
     for field in Person.model_fields:
-        if field in {"id", "openalex_id", "is_itmo", "processing"}:
+        if field in {"id", "openalex_id", "is_itmo", "processing", "membership_owner_sources",
+                     "membership_status", "membership_policy"}:
             continue
         current, incoming = getattr(base, field), getattr(extra, field)
         if isinstance(current, list):
@@ -361,12 +373,19 @@ class OpenAlexNormalizer:
                         openalex_id=openalex_id,
                         is_itmo=False,
                         name_raw=author.get("display_name"),
+                        membership_owner_sources=[MembershipOwnerSources(
+                            source_person_id=source_person_id, work_ids=[], orcid_ids=[], observed_at=observed_at,
+                        )],
                     ),
                 )
                 source_people.setdefault(work_id, set()).add(person_id)
                 if source_person_id not in current_owners:
                     continue
                 person.orcid = person.orcid or _short_id(author.get("orcid"))
+                extend_owner_sources(
+                    person, source_person_id, work_id=work_id,
+                    orcid_id=_short_id(author.get("orcid")), observed_at=observed_at,
+                )
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
                 authorship_record = Authorship(

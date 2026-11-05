@@ -3,7 +3,13 @@ from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.pipeline.membership import apply_membership, normalize_ror, orcid_source_owner, refresh_orcid_membership
+from pauk.pipeline.membership import (
+    apply_membership,
+    extend_owner_sources,
+    normalize_ror,
+    orcid_source_owner,
+    refresh_orcid_membership,
+)
 from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
@@ -247,6 +253,7 @@ class PersonsStage(EnrichmentStage):
                         matches = [p for p in authors if p.name_raw and p.name_raw.split()[-1].casefold() == family]
                         if orcid and len(matches) == 1 and not matches[0].orcid:
                             matches[0].orcid = orcid
+                            extend_owner_sources(matches[0], orcid_source_owner(matches[0], orcid), orcid_id=orcid)
                             matches_count += 1
                     publication.processing[self.crossref_name] = ProcessingState(
                         status=ProcessingStatus.COMPLETED if matches_count else ProcessingStatus.COMPLETED_EMPTY,
@@ -283,6 +290,8 @@ class PersonsStage(EnrichmentStage):
                             person.name_variants = list(dict.fromkeys([*person.name_variants,
                                                                        *(payload.get("display_name_alternatives") or [])]))
                             person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
+                            extend_owner_sources(person, orcid_source_owner(person, person.orcid or ""),
+                                                 orcid_id=person.orcid)
                             person.affiliations = _merge_affiliations(person.affiliations, _openalex_affiliations(payload))
                         else:
                             payload = request.get_record(key)

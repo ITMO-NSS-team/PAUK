@@ -6,8 +6,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from pauk.models.person import Affiliation, MembershipEvidence, MembershipOrcidSource, MembershipWorkSource, Person
-from pauk.models.processing import ProcessingStatus
+from pauk.models.person import (
+    Affiliation,
+    MembershipEvidence,
+    MembershipOrcidSource,
+    MembershipOwnerSources,
+    MembershipWorkSource,
+    Person,
+)
 from pauk.models.relations import Authorship
 
 ITMO_ROR_ID = "04txgxn49"
@@ -53,6 +59,75 @@ def iter_work_membership(person: Person) -> list[MembershipWorkSource | Authorsh
         if (row.institution_source_person_id, row.institution_source_id or row.publication_id) not in represented
         and not (row.institution_source_id is None and (row.publication_id, row.position) in displays)
     ]]
+
+
+def merge_owner_sources(
+    first: list[MembershipOwnerSources], second: list[MembershipOwnerSources],
+) -> list[MembershipOwnerSources]:
+    """An ordinary merge may extend an inventory but cannot certify missing history."""
+    merged: dict[str, MembershipOwnerSources] = {}
+    for source in [*first, *second]:
+        incoming = source.model_copy(deep=True)
+        if incoming.policy != POLICY_VERSION:
+            incoming.work_ids = incoming.orcid_ids = None
+        current = merged.get(incoming.source_person_id)
+        if current is None:
+            merged[incoming.source_person_id] = incoming
+            continue
+        for field in ("work_ids", "orcid_ids"):
+            old, new = getattr(current, field), getattr(incoming, field)
+            setattr(current, field, None if old is None or new is None else sorted(set(old) | set(new)))
+        stamps = [stamp for value in (current.observed_at, incoming.observed_at)
+                  if (stamp := source_observed_at(value)) is not None]
+        current.observed_at = max(stamps, default=None)
+    return [merged[owner] for owner in sorted(merged)]
+
+
+def extend_owner_sources(
+    person: Person, owner: str | None, *, work_id: str | None = None,
+    orcid_id: str | None = None, observed_at: datetime | None = None,
+) -> None:
+    """A partial refresh extends an existing inventory without inventing completeness."""
+    for source in person.membership_owner_sources:
+        if source.source_person_id != owner or source.policy != POLICY_VERSION:
+            continue
+        for field, value in (("work_ids", work_id), ("orcid_ids", orcid_id)):
+            inventory = getattr(source, field)
+            if inventory is not None and value and value not in inventory:
+                inventory.append(value)
+                inventory.sort()
+        stamp = source_observed_at(observed_at)
+        previous = source_observed_at(source.observed_at)
+        if stamp is not None and (previous is None or stamp > previous):
+            source.observed_at = stamp
+
+
+def membership_sources_complete(person: Person) -> bool:
+    """Prove negative coverage for every original owner, not just visible source rows."""
+    owners = {person.id, *person.merged_ids}
+    manifests = {row.source_person_id: row for row in merge_owner_sources(person.membership_owner_sources, [])}
+    if any(owner not in manifests for owner in owners):
+        return False
+    if any(manifests[owner].policy != POLICY_VERSION or manifests[owner].work_ids is None
+           or manifests[owner].orcid_ids is None for owner in owners):
+        return False
+    expected_works = {(owner, work) for owner in owners for work in manifests[owner].work_ids or []}
+    observed_works = set()
+    for row in iter_work_membership(person):
+        key = (row.institution_source_person_id, row.institution_source_id)
+        if key not in expected_works or row.institution_rors is None:
+            return False
+        observed_works.add(key)
+    if expected_works != observed_works:
+        return False
+    expected_orcids = {(owner, source) for owner in owners for source in manifests[owner].orcid_ids or []}
+    observed_orcids = {(row.source_person_id, row.source_id) for row in person.membership_orcid_sources}
+    if not expected_orcids <= observed_orcids or not observed_orcids <= expected_orcids:
+        return False
+    if person.orcid and not any(source == person.orcid for _, source in expected_orcids):
+        return False
+    return all((row.source_person_id, row.source_id) in expected_orcids
+               for row in person.affiliations if row.source == "orcid")
 
 
 def _capture_work_membership(person: Person) -> None:
@@ -126,6 +201,7 @@ def refresh_authorship_membership(
     *, snapshot_accepted: bool = False,
 ) -> None:
     """Replace only a source slot that actually supplied institution evidence."""
+    extend_owner_sources(person, source_person_id, work_id=source_work_id, observed_at=observed_at)
     rors = authorship_institution_rors(raw_authorship)
     if rors is None:
         return
@@ -245,6 +321,13 @@ def refresh_orcid_membership(
     *, observed_at: datetime | None = None,
 ) -> None:
     """A successful ORCID response supersedes this owner's earlier response."""
+    incoming = source_observed_at(observed_at)
+    previous = [stamp for row in person.membership_orcid_sources
+                if (row.source_person_id, row.source_id) == (source_person_id, source_id)
+                and (stamp := source_observed_at(row.observed_at)) is not None]
+    if previous and (incoming is None or incoming <= max(previous)):
+        return
+    extend_owner_sources(person, source_person_id, orcid_id=source_id, observed_at=observed_at)
     def belongs_to_source(owner: str | None, record: str | None) -> bool:
         if source_person_id is None:
             return owner is None and record == source_id
@@ -310,17 +393,7 @@ def evaluate_membership(person: Person) -> MembershipResult:
                 evidence.append(claim)
     if evidence:
         return MembershipResult("supported", True, evidence)
-    orcid_state = person.processing.get("orcid")
-    orcid_complete = not person.orcid or (
-        orcid_state is not None
-        and orcid_state.status in {ProcessingStatus.COMPLETED, ProcessingStatus.COMPLETED_EMPTY}
-        and orcid_state.request_key == person.orcid
-    )
-    work_complete = bool(work_sources) and all(
-        row.institution_rors is not None for row in work_sources
-    )
-    legacy_positive = person.is_itmo and person.membership_status in {None, "unknown"}
-    if work_complete and orcid_complete and not person.merged_ids and not legacy_positive:
+    if membership_sources_complete(person):
         return MembershipResult("unsupported", False, [])
     return MembershipResult("unknown", person.is_itmo, [])
 

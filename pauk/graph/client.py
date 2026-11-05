@@ -29,7 +29,8 @@ JSON_LIST_MERGE_FIELDS = {
 }
 
 MEMBERSHIP_FIELDS = {
-    "membership_status", "membership_policy", "membership_evidence", "membership_source_coverage"
+    "membership_status", "membership_policy", "membership_evidence", "membership_source_coverage",
+    "membership_owner_sources",
 }
 
 
@@ -43,6 +44,36 @@ def _membership_evidence(properties: dict) -> list[dict] | None:
     return value if isinstance(value, list) and all(isinstance(item, dict) for item in value) else None
 
 
+def _owner_sources(properties: dict) -> list[dict]:
+    rows = properties.get("membership_owner_sources", [])
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except (ValueError, TypeError):
+            return []
+    return rows if isinstance(rows, list) and all(isinstance(row, dict) for row in rows) else []
+
+
+def _negative_sources_complete(properties: dict) -> bool:
+    manifests = _owner_sources(properties)
+    owners = {row.get("source_person_id") for row in manifests}
+    scope = {properties.get("id"), *(properties.get("merged_ids") or [])} - {None}
+    if not manifests or not scope <= owners or None in owners or "" in owners:
+        return False
+    expected = set()
+    for row in manifests:
+        if row.get("policy") != POLICY_VERSION:
+            return False
+        for field, source in (("work_ids", "openalex_work"), ("orcid_ids", "orcid")):
+            identifiers = row.get(field)
+            if not isinstance(identifiers, list) or any(not isinstance(value, str) or not value for value in identifiers):
+                return False
+            expected.update((source, row["source_person_id"], value) for value in identifiers)
+    coverage = _source_coverage(properties)
+    # An observation outside the inventory proves that its assessment was partial.
+    return set(coverage) == expected and all(row.get("supports_itmo") is False for row in coverage.values())
+
+
 def _completed_membership(properties: dict) -> bool:
     evidence = _membership_evidence(properties)
     status = properties.get("membership_status")
@@ -54,7 +85,7 @@ def _completed_membership(properties: dict) -> bool:
                 item.get("source") in {"openalex_work", "orcid"}
                 and normalize_ror(item.get("ror")) == ITMO_ROR_ID for item in evidence
             ))
-            or (status == "unsupported" and not evidence)
+            or (status == "unsupported" and not evidence and _negative_sources_complete(properties))
         )
     )
 
@@ -114,10 +145,15 @@ def _merge_membership_properties(first: dict, second: dict) -> dict:
         return {}
     evidence, coverage = _source_membership_update(first, second)
     assessed = [_completed_membership(row) for row in (first, second)]
+    manifests = _union_values(_owner_sources(first), _owner_sources(second))
+    scope = {first.get("id"), second.get("id"),
+             *(first.get("merged_ids") or []), *(second.get("merged_ids") or [])} - {None}
+    combined = {"membership_owner_sources": manifests, "membership_source_coverage": coverage,
+                "merged_ids": sorted(scope)}
     if evidence and any(done and row.get("membership_status") == "supported"
                        for row, done in zip((first, second), assessed, strict=True)):
         status, is_itmo = "supported", True
-    elif all(assessed):
+    elif all(assessed) and _negative_sources_complete(combined):
         status, is_itmo = "unsupported", False
     else:
         status, is_itmo = "unknown", bool(first.get("is_itmo") or second.get("is_itmo"))
@@ -126,12 +162,14 @@ def _merge_membership_properties(first: dict, second: dict) -> dict:
         "membership_policy": POLICY_VERSION,
         "membership_evidence": json.dumps(evidence, ensure_ascii=False),
         "membership_source_coverage": json.dumps(coverage, ensure_ascii=False),
+        "membership_owner_sources": json.dumps(manifests, ensure_ascii=False),
         "is_itmo": is_itmo,
     }
 
 
 def _person_membership_update(stored: dict, incoming: dict, node_id: str) -> dict:
     """Only a complete assessment covering the live cluster may retract True."""
+    stored, incoming = {**stored, "id": node_id}, {**incoming, "id": node_id}
     stored_scope = {node_id, *(stored.get("merged_ids") or [])}
     incoming_scope = {node_id, *(incoming.get("merged_ids") or [])}
     before, after = _source_coverage(stored), _source_coverage(incoming)
@@ -139,13 +177,21 @@ def _person_membership_update(stored: dict, incoming: dict, node_id: str) -> dic
                          for claim in _membership_evidence(stored) or [])
     stale_source = any(key in before and not _covers_source(before, after, key) for key in after)
     evidence, coverage = _source_membership_update(stored, incoming)
+    inventory_covered = all(
+        any(new.get("source_person_id") == old.get("source_person_id") and all(
+            old.get(field) is None or isinstance(new.get(field), list)
+            and set(old[field]) <= set(new[field]) for field in ("work_ids", "orcid_ids")
+        ) for new in _owner_sources(incoming)) for old in _owner_sources(stored)
+    )
     if (_completed_membership(incoming) and stored_scope <= incoming_scope
-            and claims_covered and not stale_source):
+            and claims_covered and not stale_source and inventory_covered
+            and (incoming["membership_status"] == "supported" or before.keys() <= after.keys())):
         return {
             "membership_status": incoming["membership_status"],
             "membership_policy": POLICY_VERSION,
             "membership_evidence": json.dumps(evidence, ensure_ascii=False),
             "membership_source_coverage": json.dumps(coverage, ensure_ascii=False),
+            "membership_owner_sources": json.dumps(_owner_sources(incoming), ensure_ascii=False),
             "is_itmo": incoming["membership_status"] == "supported",
         }
     if (_completed_membership(stored) and incoming_scope <= stored_scope

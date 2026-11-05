@@ -20,6 +20,13 @@ def assessed(status, owner="A1"):
     return {
         "membership_status": status, "membership_policy": POLICY_VERSION,
         "membership_evidence": json.dumps(evidence), "is_itmo": status == "supported",
+        "membership_owner_sources": json.dumps([{
+            "source_person_id": owner, "work_ids": ["W1"], "orcid_ids": [], "policy": POLICY_VERSION,
+        }]),
+        "membership_source_coverage": json.dumps([{
+            "source": "openalex_work", "source_person_id": owner, "source_id": "W1",
+            "supports_itmo": status == "supported",
+        }]),
     }
 
 
@@ -29,6 +36,9 @@ def with_coverage(status, work="W1", date="2026-10-29T00:00:00+00:00"):
     for claim in evidence:
         claim.update(publication_id=work, source_id=work)
     properties["membership_evidence"] = json.dumps(evidence)
+    properties["membership_owner_sources"] = json.dumps([{
+        "source_person_id": "A1", "work_ids": [work], "orcid_ids": [], "policy": POLICY_VERSION,
+    }])
     properties["membership_source_coverage"] = json.dumps([{
         "source": "openalex_work", "source_person_id": "A1", "source_id": work,
         "observed_at": date, "supports_itmo": status == "supported",
@@ -271,7 +281,7 @@ class GraphMembershipTest(unittest.TestCase):
             "institution_observed_at": "2026-10-29T00:00:00Z",
         }
         corrected = {**old_display, "institution_rors": [], "institution_observed_at": "2026-10-30T00:00:00Z"}
-        row = {"id": "A1", **assessed("unsupported"), "authored": [old_display],
+        row = {"id": "A1", **with_coverage("unsupported", "W114"), "authored": [old_display],
                "membership_work_sources": [corrected]}
         _, (_, props) = extract_node(row, person_spec(row))
         result = _person_membership_update(with_coverage("supported", "W114"), props, "A1")

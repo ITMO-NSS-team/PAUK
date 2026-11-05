@@ -105,6 +105,12 @@ older import cannot withdraw a newer claim. Existing graph rows without this
 provenance need a full source re-evaluation before their historical membership
 can be corrected safely.
 
+`membership_owner_sources` is serialized as JSON alongside source coverage.
+Before clearing membership, the graph checks the complete owner inventory
+against observations and the live cluster. A partial import, missing owner,
+or older contradictory observation cannot clear the cluster's flag. Folding
+preserves the inventories; splitting restores them with their original owners.
+
 The department hierarchy is recursive: each `Department` is `PART_OF` exactly
 one parent, either another `Department` (`parent_id`) or a root
 `Organization` (`organization_id`). A chain such as department, faculty,

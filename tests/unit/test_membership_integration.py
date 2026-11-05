@@ -363,7 +363,9 @@ class MembershipGraphParityTest(unittest.TestCase):
 
     def unsupported(self, **fields):
         return {"is_itmo": False, "membership_status": "unsupported",
-                "membership_policy": POLICY_VERSION, "membership_evidence": [], **fields}
+                "membership_policy": POLICY_VERSION, "membership_evidence": [],
+                "membership_owner_sources": [{"source_person_id": "A1", "work_ids": [],
+                                               "orcid_ids": [], "policy": POLICY_VERSION}], **fields}
 
     def test_authoritative_downshift_and_stale_legacy_upsert_agree(self):
         for graph, person in self.graphs():

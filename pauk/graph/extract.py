@@ -20,7 +20,8 @@ from pauk.pipeline.membership import ITMO_ROR_ID, normalize_ror, source_observed
 # Row fields holding nested maps: Neo4j has no nested-map property type, so
 # they are stored as JSON text.
 JSON_TEXT_FIELDS = (
-    "funding", "versions", "counts_by_year", "affiliations", "membership_evidence", "membership_source_coverage"
+    "funding", "versions", "counts_by_year", "affiliations", "membership_evidence", "membership_source_coverage",
+    "membership_owner_sources",
 )
 
 
@@ -48,7 +49,8 @@ def _membership_source_coverage(row: dict) -> list[dict]:
         observed = min(timestamps).isoformat() if all(stamp is not None for stamp in timestamps) else None
         coverage.append({"source": "openalex_work", "source_person_id": owner, "source_id": work,
                          "observed_at": observed,
-                         "supports_itmo": any(ITMO_ROR_ID in item["institution_rors"] for item in records)})
+                         "supports_itmo": any(normalize_ror(ror) == ITMO_ROR_ID
+                                              for item in records for ror in item["institution_rors"])})
     state = (row.get("_processing") or row.get("processing") or {}).get("orcid") or {}
     orcid = row.get("orcid")
     if orcid and state.get("request_key") == orcid and state.get("status") in {"completed", "completed_empty"}:
@@ -79,6 +81,33 @@ def _membership_source_coverage(row: dict) -> list[dict]:
                                  for item in [*(row.get("affiliations") or []),
                                               *(row.get("membership_evidence") or [])]
                              )})
+    represented_orcids = {(item["source_person_id"], item["source_id"])
+                         for item in coverage if item["source"] == "orcid"}
+    manifests = row.get("membership_owner_sources") or []
+    if isinstance(manifests, str):
+        try:
+            manifests = json.loads(manifests)
+        except (ValueError, TypeError):
+            manifests = []
+    expected_orcids = {(item.get("source_person_id"), identifier)
+                       for item in manifests if isinstance(item, dict)
+                       for identifier in item.get("orcid_ids") or []}
+    for source in row.get("membership_orcid_sources") or []:
+        owner, identifier = source.get("source_person_id"), source.get("source_id")
+        if (not owner or not identifier or (owner, identifier) in represented_orcids
+                or (owner, identifier) not in expected_orcids):
+            continue
+        observed = source_observed_at(source.get("observed_at"))
+        coverage.append({
+            "source": "orcid", "source_person_id": owner, "source_id": identifier,
+            "observed_at": observed.isoformat() if observed else None,
+            "supports_itmo": any(
+                item.get("source") == "orcid" and item.get("source_id") == identifier
+                and item.get("source_person_id") == owner and normalize_ror(item.get("ror")) == ITMO_ROR_ID
+                for item in [*(row.get("affiliations") or []), *(row.get("membership_evidence") or [])]
+            ),
+        })
+        represented_orcids.add((owner, identifier))
     return coverage
 
 
@@ -163,6 +192,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "membership_policy",
             "membership_evidence",
             "membership_source_coverage",
+            "membership_owner_sources",
             "openalex_id",
             "orcid",
             "name_raw",
@@ -230,6 +260,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "membership_policy",
             "membership_evidence",
             "membership_source_coverage",
+            "membership_owner_sources",
             "openalex_id",
             "orcid",
             "name_raw",
