@@ -31,7 +31,7 @@ class Settings:
         os.getenv("PAUK_PERSON_RESOLUTION_MODEL") or "qwen/qwen3-next-80b-a3b-instruct"
     )
     reports_model: str = os.getenv("PAUK_REPORTS_MODEL") or "anthropic/claude-haiku-5.5"
-    claude_cli_model: str = os.getenv("PAUK_CLAUDE_CLI_MODEL") or "haiku"
+    claude_cli_model: str = os.getenv("PAUK_CLAUDE_CLI_MODEL") or "claude-haiku-5-5"
     codex_cli_model: str = os.getenv("PAUK_CODEX_CLI_MODEL", "")
     llm_provider: str = os.getenv("PAUK_LLM_PROVIDER", "openrouter")
     link_relevance_provider: str = os.getenv("PAUK_LINK_RELEVANCE_PROVIDER", "")

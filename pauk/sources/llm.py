@@ -38,14 +38,48 @@ _CLAUDE_DROPPED_VARS = (
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
 )
 _CODEX_DROPPED_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-_LIMIT_MARKERS = (
-    "usage limit",
-    "limit reached",
-    "rate limit",
-    "rate_limit",
-    "too many requests",
-    "429",
+_LIMIT_PATTERN = re.compile(
+    r"usage limit|limit reached|rate[ _]limit|too many requests|hit your|\b429\b", re.IGNORECASE
 )
+# Everything else in the parent's environment (API keys, the database password) stays out of the child: the
+# prompts carry text from third-party PDFs, and a CLI is an agent that could be talked into printing what it sees.
+_CLI_ENV_NAMES = frozenset({
+    "ALL_PROXY",
+    "APPDATA",
+    "COMSPEC",
+    "HOME",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "LANG",
+    "LANGUAGE",
+    "LOCALAPPDATA",
+    "LOGNAME",
+    "NODE_EXTRA_CA_CERTS",
+    "NO_PROXY",
+    "PATH",
+    "PATHEXT",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SHELL",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "TZ",
+    "USER",
+    "USERNAME",
+    "USERPROFILE",
+    "WINDIR",
+})
+_CLI_ENV_PREFIXES = ("LC_", "XDG_")
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +268,15 @@ class LlmClient(Protocol):
 
 
 def _limited(message: str) -> bool:
-    return any(marker in message.lower() for marker in _LIMIT_MARKERS)
+    return _LIMIT_PATTERN.search(message) is not None
+
+
+class SubscriptionLimitError(RuntimeError):
+    """The subscription's limit ran out: every further call would fail too, so the run has to stop."""
+
+
+class CliStoppedError(RuntimeError):
+    """A CLI call was refused because the stage that made it is being interrupted."""
 
 
 @dataclass(frozen=True)
@@ -245,6 +287,7 @@ class CliReply:
     usage: dict | None
     error: str | None
     raw: Any
+    limited: bool = False
 
 
 class ClaudeCli:
@@ -252,6 +295,7 @@ class ClaudeCli:
 
     name = "claude"
     executable = "claude"
+    env_prefix = "CLAUDE_"
     dropped_vars = _CLAUDE_DROPPED_VARS
     extra_env = {"MAX_THINKING_TOKENS": "0"}
 
@@ -290,7 +334,8 @@ class ClaudeCli:
             return CliReply(None, None, f"exit {returncode}, output is not JSON", raw)
         if not isinstance(payload, dict):
             return CliReply(None, None, f"CLI output is {type(payload).__name__}, not an object", payload)
-        usage = payload.get("usage") or {}
+        usage = payload.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
         usage = {
             "prompt_tokens": sum(
                 usage.get(key) or 0
@@ -304,12 +349,12 @@ class ClaudeCli:
             message = str(result or payload.get("subtype") or "error")
             limited = payload.get("api_error_status") == 429 or _limited(message)
             error = f"subscription limit reached: {message}" if limited else f"CLI error: {message}"
-            return CliReply(None, usage, error, payload)
+            return CliReply(None, usage, error, payload, limited)
         return CliReply(result, usage, None, payload)
 
 
 class CodexCli:
-    """`codex exec` on a ChatGPT subscription, read-only and without user config.
+    """`codex exec` on a ChatGPT subscription, read-only, without user config and without shell tools.
 
     The system prompt goes in front of the message; the reply is read from --output-last-message and token
     usage from the --json event stream.
@@ -317,6 +362,7 @@ class CodexCli:
 
     name = "codex"
     executable = "codex"
+    env_prefix = "CODEX_"
     dropped_vars = _CODEX_DROPPED_VARS
     extra_env = {"NO_COLOR": "1"}
 
@@ -329,6 +375,10 @@ class CodexCli:
             "--ignore-user-config",
             "--sandbox",
             "read-only",
+            "-c",
+            "features.shell_tool=false",
+            "-c",
+            "features.unified_exec=false",
             "--color",
             "never",
             "--json",
@@ -363,8 +413,9 @@ class CodexCli:
         failure = _event_error(events)
         if returncode != 0 or (failure and not text.strip()):
             message = (failure or stderr.strip() or f"exit {returncode}")[-500:]
-            error = f"subscription limit reached: {message}" if _limited(message) else f"CLI error: {message}"
-            return CliReply(None, usage, error, raw)
+            limited = _limited(message)
+            error = f"subscription limit reached: {message}" if limited else f"CLI error: {message}"
+            return CliReply(None, usage, error, raw, limited)
         return CliReply(text, usage, None, raw)
 
 
@@ -399,8 +450,8 @@ def _event_error(events: list[dict]) -> str:
 class SubscriptionCliClient:
     """A model behind a subscription CLI (`claude -p`, `codex exec`), with OpenRouterClient's chat_json.
 
-    Variables that would bill an API instead of the subscription, or cap the reply, are dropped from the
-    child's environment. Each call runs in its own temp directory.
+    The child gets only what a CLI needs to run and its own variables, without those that would bill an API
+    instead of the subscription or cap the reply. Each call runs in its own temp directory.
     """
 
     def __init__(self, timeout: int, backend: ClaudeCli | CodexCli, model: str) -> None:
@@ -418,7 +469,13 @@ class SubscriptionCliClient:
         return None if self.executable else f"{self.backend.executable} CLI not found"
 
     def _env(self) -> dict[str, str]:
-        env = {key: value for key, value in os.environ.items() if key not in self.backend.dropped_vars}
+        prefixes = (*_CLI_ENV_PREFIXES, self.backend.env_prefix)
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if (key.upper() in _CLI_ENV_NAMES or key.upper().startswith(prefixes))
+            and key not in self.backend.dropped_vars
+        }
         env.update(self.backend.extra_env)
         return env
 
@@ -435,14 +492,19 @@ class SubscriptionCliClient:
     ) -> dict | None:
         """Run one CLI call, return the parsed JSON reply or None, as OpenRouterClient does.
 
-        max_tokens is ignored: over a cap the CLI continues the answer and returns only its tail.
+        max_tokens is ignored: over a cap the CLI continues the answer and returns only its tail. Unlike
+        OpenRouterClient there is no temperature 0 or JSON mode, so a repeated call can answer differently.
+
+        Raises:
+            SubscriptionLimitError: The subscription's limit ran out.
+            CliStoppedError: The stage is being interrupted.
         """
         del max_tokens
         self.last_usage = None
         self.last_response = None
         self.last_error = None
-        if not self.executable:
-            self._fail(f"{self.backend.executable} CLI not found")
+        if unavailable := self.unavailable_reason():
+            self._fail(unavailable)
             return None
         system = f"{system_prompt}\n\n{_JSON_ONLY}" if system_prompt else _JSON_ONLY
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
@@ -462,6 +524,8 @@ class SubscriptionCliClient:
         self.last_usage = reply.usage
         if reply.error:
             self._fail(reply.error)
+            if reply.limited:
+                raise SubscriptionLimitError(reply.error)
             return None
         if not reply.text or not reply.text.strip():
             self._fail("empty model response")
@@ -479,6 +543,7 @@ class SubscriptionCliClient:
 
 _running: set[subprocess.Popen] = set()
 _running_lock = threading.Lock()
+_stopping = threading.Event()
 
 
 def _kill_tree(process: subprocess.Popen) -> None:
@@ -491,33 +556,47 @@ def _kill_tree(process: subprocess.Popen) -> None:
 
 
 def kill_running_clis() -> None:
-    """Kill every CLI call still running, with its children.
+    """Kill every CLI call still running, with its children, and refuse new ones until resume_clis().
 
     Each CLI runs in its own process group so that a timeout can kill its children, which also keeps Ctrl-C from
-    reaching it: a stage interrupted while worker threads wait on CLIs has to kill them itself.
+    reaching it: a stage interrupted while worker threads wait on CLIs has to kill them itself. New calls are
+    refused because a worker whose call was killed retries it, after this kill has already happened.
     """
     with _running_lock:
+        _stopping.set()
         processes = list(_running)
     for process in processes:
         _kill_tree(process)
 
 
+def resume_clis() -> None:
+    """Allow CLI calls again, once the interrupted stage's workers are done: a job worker outlives its jobs."""
+    _stopping.clear()
+
+
 def _run_cli(
     command: list[str], prompt: str, env: dict[str, str], timeout: int, cwd: Path | None = None
 ) -> tuple[int, str, str]:
-    """Run the CLI; on timeout or interruption kill it with its children."""
+    """Run the CLI; on timeout or interruption kill it with its children.
+
+    Raises:
+        CliStoppedError: The stage is being interrupted (see kill_running_clis).
+        subprocess.TimeoutExpired: The CLI did not finish in time.
+    """
     windows = sys.platform == "win32"
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        cwd=cwd or tempfile.gettempdir(),
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0,
-        start_new_session=not windows,
-    )
     with _running_lock:
+        if _stopping.is_set():
+            raise CliStoppedError("the stage is being interrupted")
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            cwd=cwd or tempfile.gettempdir(),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0,
+            start_new_session=not windows,
+        )
         _running.add(process)
     try:
         stdout, stderr = process.communicate(prompt.encode("utf-8"), timeout=timeout)
@@ -540,14 +619,16 @@ def parse_provider(provider: str) -> tuple[str, str]:
     """The provider name and CLI model of a setting: "openrouter", "claude:<model>" or "codex:<model>".
 
     Raises:
-        ValueError: the name is unknown, or a CLI comes without a model.
+        ValueError: the name is unknown, a CLI comes without a model, or openrouter comes with one.
 
     Example:
         >>> parse_provider(""), parse_provider("claude:haiku"), parse_provider("codex:gpt-5")
         (('openrouter', ''), ('claude', 'haiku'), ('codex', 'gpt-5'))
     """
-    name, _, model = provider.strip().partition(":")
+    name, separator, model = provider.strip().partition(":")
     if name in ("", "openrouter"):
+        if separator:
+            raise ValueError(f"openrouter takes no model in {provider!r}: it comes from the model settings")
         return "openrouter", ""
     if name not in _CLIS:
         raise ValueError(

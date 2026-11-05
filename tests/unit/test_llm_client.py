@@ -10,19 +10,23 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from pauk import cli
 from pauk.settings import Settings
 from pauk.sources import llm
 from pauk.sources.base import HttpRequestError
 from pauk.sources.llm import (
     OPENROUTER_KEY_URL,
     ClaudeCli,
+    CliStoppedError,
     CodexCli,
     OpenRouterClient,
     SubscriptionCliClient,
+    SubscriptionLimitError,
     _run_cli,
     check_providers,
     kill_running_clis,
     llm_client,
+    resume_clis,
 )
 
 
@@ -227,20 +231,53 @@ class ClaudeCliTest(unittest.TestCase):
             "ANTHROPIC_BASE_URL": "https://proxy",
             "CLAUDE_CODE_USE_BEDROCK": "1",
             "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "10",
-            "KEEP": "1",
+            "CLAUDE_CODE_OAUTH_TOKEN": "needed",
+            "TEMP": "/tmp",
         }
         with patch.dict("os.environ", parent):
             _, _, seen = self.run_client(self.reply('{"ok": true}'), max_tokens=10)
 
-        self.assertEqual({name for name in parent if name in seen["env"]}, {"KEEP"})
+        self.assertEqual({name for name in parent if name in seen["env"]}, {"CLAUDE_CODE_OAUTH_TOKEN", "TEMP"})
         self.assertEqual(seen["env"]["MAX_THINKING_TOKENS"], "0")
 
-    def test_a_usage_limit_is_reported_as_such(self, _which):
-        reply = self.reply("Claude AI usage limit reached|1760600000", is_error=True)
-        client, result, _ = self.run_client(reply, returncode=1)
+    def test_project_secrets_do_not_reach_the_cli(self, _which):
+        parent = {
+            "OPENROUTER_API_KEY": "k",
+            "GITHUB_TOKEN": "k",
+            "NEO4J_PASSWORD": "k",
+            "MONGO_URI": "mongodb://u:p@h",
+            "OPENALEX_API_KEY": "k",
+        }
+        with patch.dict("os.environ", parent):
+            _, _, seen = self.run_client(self.reply('{"ok": true}'))
+
+        self.assertEqual({name for name in parent if name in seen["env"]}, set())
+
+    def test_a_usage_limit_stops_the_run(self, _which):
+        for message in (
+            "Claude AI usage limit reached|1760600000",
+            "You've hit your limit \u00b7 resets 3pm",
+            "You've hit your monthly spend limit.",
+        ):
+            with self.subTest(message=message), self.assertRaisesRegex(SubscriptionLimitError, "limit reached"):
+                self.run_client(self.reply(message, is_error=True), returncode=1)
+
+    def test_a_429_status_stops_the_run_whatever_the_text(self, _which):
+        reply = self.reply("Request failed", is_error=True, api_error_status=429)
+        with self.assertRaises(SubscriptionLimitError):
+            self.run_client(reply, returncode=1)
+
+    def test_digits_inside_a_longer_token_are_not_a_limit(self, _which):
+        client, result, _ = self.run_client(self.reply("failed: req_a1429f", is_error=True), returncode=1)
 
         self.assertIsNone(result)
-        self.assertTrue(client.last_error.startswith("subscription limit reached"))
+        self.assertEqual(client.last_error, "CLI error: failed: req_a1429f")
+
+    def test_a_usage_field_of_the_wrong_shape_is_tolerated(self, _which):
+        client, result, _ = self.run_client(self.reply('{"ok": true}', usage=["odd"]))
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(client.last_usage["prompt_tokens"], 0)
 
     def test_output_that_is_not_json_is_a_failure_with_the_raw_text_kept(self, _which):
         client, result, _ = self.run_client("Not logged in", returncode=1)
@@ -303,22 +340,28 @@ class CodexCliTest(unittest.TestCase):
         for flag in ("--json", "--ephemeral", "--skip-git-repo-check", "--output-last-message"):
             self.assertIn(flag, seen["command"])
         self.assertEqual(seen["command"][seen["command"].index("--sandbox") + 1], "read-only")
+        self.assertIn("features.shell_tool=false", seen["command"])
+        self.assertIn("features.unified_exec=false", seen["command"])
         self.assertEqual(client.model, "codex-cli/gpt-x")
 
     def test_the_api_key_is_dropped_so_the_subscription_is_billed(self, _which):
-        parent = {"OPENAI_API_KEY": "sk-x", "OPENAI_BASE_URL": "https://proxy", "CODEX_API_KEY": "sk-y", "KEEP": "1"}
+        parent = {
+            "OPENAI_API_KEY": "sk-x",
+            "OPENAI_BASE_URL": "https://proxy",
+            "CODEX_API_KEY": "sk-y",
+            "CODEX_ACCESS_TOKEN": "t",
+            "CODEX_HOME": "/home/me/.codex",
+            "TEMP": "/tmp",
+        }
         with patch.dict("os.environ", parent):
             _, _, seen = self.run_client('{"ok": true}')
 
-        self.assertEqual({name for name in parent if name in seen["env"]}, {"KEEP"})
-        self.assertEqual(seen["env"]["KEEP"], "1")
+        self.assertEqual({name for name in parent if name in seen["env"]}, {"CODEX_HOME", "TEMP"})
 
-    def test_a_usage_limit_is_reported_as_such(self, _which):
-        events = [{"type": "error", "message": "You've hit your usage limit. Try again later."}]
-        client, result, _ = self.run_client(None, returncode=1, events=events)
-
-        self.assertIsNone(result)
-        self.assertTrue(client.last_error.startswith("subscription limit reached"))
+    def test_a_usage_limit_stops_the_run(self, _which):
+        events = [{"type": "error", "message": "You\u2019ve hit your usage limit. Try again later."}]
+        with self.assertRaisesRegex(SubscriptionLimitError, "limit reached"):
+            self.run_client(None, returncode=1, events=events)
 
     def test_a_failed_call_reports_stderr(self, _which):
         client, result, _ = self.run_client(None, returncode=2, events=[], stderr="Not logged in")
@@ -336,10 +379,8 @@ class CodexCliTest(unittest.TestCase):
         events = [
             {"type": "turn.failed", "error": {"message": "exceeded retry limit, last status: 429 Too Many Requests"}}
         ]
-        client, result, _ = self.run_client(None, events=events)
-
-        self.assertIsNone(result)
-        self.assertTrue(client.last_error.startswith("subscription limit reached"))
+        with self.assertRaisesRegex(SubscriptionLimitError, "limit reached"):
+            self.run_client(None, events=events)
 
     def test_a_timeout_is_a_failure_not_a_crash(self, _which):
         client = SubscriptionCliClient(5, CodexCli(), "gpt-x")
@@ -365,6 +406,7 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual((returncode, stdout), (0, bytes([0xFF, 0x41]).decode("utf-8", "replace")))
 
     def test_an_interrupted_stage_kills_the_clis_its_worker_threads_wait_on(self):
+        self.addCleanup(resume_clis)
         outcome = {}
 
         def worker():
@@ -389,6 +431,57 @@ class RunCliTest(unittest.TestCase):
         self.assertNotEqual(outcome["result"][0], 0)
         self.assertEqual(llm._running, set())
 
+    def test_a_retry_after_the_kill_starts_nothing_until_the_stage_is_done(self):
+        self.addCleanup(resume_clis)
+        kill_running_clis()
+
+        with patch("pauk.sources.llm.subprocess.Popen") as popen, self.assertRaises(CliStoppedError):
+            _run_cli(["cli"], "", {}, 5)
+        popen.assert_not_called()
+
+        resume_clis()
+        returncode, _, _ = _run_cli([sys.executable, "-c", "pass"], "", dict(os.environ), 30)
+        self.assertEqual(returncode, 0)
+
+    def test_a_stopped_call_is_not_reported_as_a_failed_answer(self):
+        self.addCleanup(resume_clis)
+        kill_running_clis()
+        client = SubscriptionCliClient(5, ClaudeCli(), "haiku")
+        client.executable = sys.executable
+
+        with self.assertRaises(CliStoppedError):
+            client.chat_json("prompt")
+
+
+class CommandExitTest(unittest.TestCase):
+    def test_a_subscription_limit_ends_the_command_with_a_message_not_a_traceback(self):
+        with (
+            patch("sys.argv", ["pauk", "dedup", "graph"]),
+            patch("pauk.cli._dispatch", side_effect=SubscriptionLimitError("subscription limit reached: out")),
+            patch("pauk.cli._interrupt_on_termination"),
+            self.assertRaisesRegex(SystemExit, "after the limit resets"),
+        ):
+            cli.main()
+
+    def test_termination_is_turned_into_an_interrupt_for_llm_commands_only(self):
+        for command, expected in ((["dedup", "graph"], 1), (["cache", "export"], 0)):
+            with (
+                self.subTest(command=command),
+                patch("sys.argv", ["pauk", *command]),
+                patch("pauk.cli._dispatch"),
+                patch("pauk.cli._interrupt_on_termination") as guard,
+            ):
+                cli.main()
+                self.assertEqual(guard.call_count, expected)
+
+    def test_the_handler_raises_the_interrupt_the_stages_clean_up_on(self):
+        with patch("pauk.cli.signal.signal") as install:
+            cli._interrupt_on_termination()
+
+        handler = install.call_args.args[1]
+        with self.assertRaises(KeyboardInterrupt):
+            handler(15, None)
+
 
 class LlmProviderTest(unittest.TestCase):
     def test_provider_picks_the_client_and_model(self):
@@ -402,7 +495,7 @@ class LlmProviderTest(unittest.TestCase):
             models,
             {"claude:sonnet": "claude-cli/sonnet", "codex:gpt-x": "codex-cli/gpt-x"},
         )
-        for provider in ("claud", "claude", "codex", "gemini:flash"):
+        for provider in ("claud", "claude", "codex", "gemini:flash", "openrouter:some/model"):
             with self.subTest(provider=provider), self.assertRaises(ValueError):
                 llm_client(provider, timeout=5, api_key="", openrouter_model="m")
 
@@ -436,7 +529,7 @@ class LlmProviderTest(unittest.TestCase):
         config = Settings(llm_provider="claude", author_names_provider="openrouter", person_resolution_provider="")
 
         self.assertEqual(config.provider_for("author_names"), "openrouter")
-        self.assertEqual(config.provider_for("link_relevance"), "claude:haiku")
+        self.assertEqual(config.provider_for("link_relevance"), f"claude:{config.claude_cli_model}")
         self.assertEqual(config.provider_for("person_resolution"), "openrouter")
 
     def test_a_bare_cli_name_takes_its_model_from_the_settings(self):

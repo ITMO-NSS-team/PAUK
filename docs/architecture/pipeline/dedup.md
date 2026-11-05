@@ -132,7 +132,9 @@ subscription CLI (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch i
 in one request `{"pairs": [...]}` and expects `{"results": [...]}`. A pair
 missing from the reply, repeated or invalid is asked again alone; a failed
 batch request is retried once, then its pairs go to review. The batch call
-and the records of the pairs it answered share a `batch_id` in the LLM log. Batch answers are
+and the records of the pairs it answered share a `batch_id` in the LLM log, and
+the request timeout is multiplied by the batch size. The dedup report names the
+model that decided, because the `qwen_*` routes keep their names on any provider. Batch answers are
 cached under the batch prompt: batch mode reuses single answers, single mode
 does not reuse batch answers. Keep 1 for production runs.
 

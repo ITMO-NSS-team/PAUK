@@ -54,7 +54,7 @@ from pathlib import Path
 
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.sources.llm import LlmClient, kill_running_clis, llm_client
+from pauk.sources.llm import LlmClient, kill_running_clis, llm_client, resume_clis
 from pauk.storage import LlmLogStore
 
 from .base import EnrichmentStage
@@ -1014,58 +1014,67 @@ class AuthorNamesStage(EnrichmentStage):
             # interrupt waits only for calls in flight and memory stays flat.
             for start in range(0, len(asked), workers * 8):
                 block = asked[start:start + workers * 8]
-                with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
-                    futures = [pool.submit(ask, person) for person in block]
-                    try:
-                        for future in as_completed(futures):
-                            yield future.result()
-                    except BaseException:
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        kill_running_clis()
-                        raise
+                try:
+                    with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
+                        futures = [pool.submit(ask, person) for person in block]
+                        try:
+                            for future in as_completed(futures):
+                                yield future.result()
+                        except BaseException:
+                            pool.shutdown(wait=False, cancel_futures=True)
+                            kill_running_clis()
+                            raise
+                finally:
+                    resume_clis()
 
-        for person, parsed, second_name_corrected, llm_error in self.progress(
-            answers(), total=len(asked)
-        ):
-            state = person.processing.get(self.name)
-            if parsed is None:
-                # Word order is not reliable enough to store, so the parts stay
-                # as an earlier run left them. Retried next run (FAILED).
-                person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
-                person.name_en = person.name_en or person.name_raw
-                person.processing[self.name] = self._state(
-                    state, ProcessingStatus.FAILED, 0, error=llm_error or "llm request failed"
+        # An interrupt in this loop, or a stop request from progress(), never reaches
+        # answers() on its own: closing it there is what cancels its pool.
+        stream = answers()
+        try:
+            for person, parsed, second_name_corrected, llm_error in self.progress(
+                stream, total=len(asked)
+            ):
+                state = person.processing.get(self.name)
+                if parsed is None:
+                    # Word order is not reliable enough to store, so the parts stay
+                    # as an earlier run left them. Retried next run (FAILED).
+                    person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
+                    person.name_en = person.name_en or person.name_raw
+                    person.processing[self.name] = self._state(
+                        state, ProcessingStatus.FAILED, 0, error=llm_error or "llm request failed"
+                    )
+                    self.prepared.upsert_models("persons", [person])
+                    failed += 1
+                    changed += 1
+                    continue
+
+                if second_name_corrected:
+                    dropped += 1
+
+                person.surname_ru = parsed.get("surname_ru") or None
+                person.first_name_ru = parsed.get("first_name_ru") or None
+                person.second_name_ru = parsed.get("second_name_ru") or None
+                person.surname_en = parsed.get("surname_en") or None
+                person.first_name_en = parsed.get("first_name_en") or None
+                person.second_name_en = parsed.get("second_name_en") or None
+                person.name_ru = " ".join(
+                    part
+                    for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
+                    if part
                 )
+                person.name_en = " ".join(
+                    part
+                    for part in (person.surname_en, person.first_name_en, person.second_name_en)
+                    if part
+                )
+                if parsed.get("matched_candidate") is not None:
+                    matched += 1
+
+                person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
                 self.prepared.upsert_models("persons", [person])
-                failed += 1
                 changed += 1
-                continue
-
-            if second_name_corrected:
-                dropped += 1
-
-            person.surname_ru = parsed.get("surname_ru") or None
-            person.first_name_ru = parsed.get("first_name_ru") or None
-            person.second_name_ru = parsed.get("second_name_ru") or None
-            person.surname_en = parsed.get("surname_en") or None
-            person.first_name_en = parsed.get("first_name_en") or None
-            person.second_name_en = parsed.get("second_name_en") or None
-            person.name_ru = " ".join(
-                part
-                for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
-                if part
-            )
-            person.name_en = " ".join(
-                part
-                for part in (person.surname_en, person.first_name_en, person.second_name_en)
-                if part
-            )
-            if parsed.get("matched_candidate") is not None:
-                matched += 1
-
-            person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
-            self.prepared.upsert_models("persons", [person])
-            changed += 1
+        finally:
+            stream.close()
 
         logger.info(
             "author_names: %d processed, %d matched a directory candidate, "

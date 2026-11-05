@@ -35,6 +35,7 @@ from pauk.pipeline.stages.link_relevance import (
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
+from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PreparedStore, RawStore
 
 
@@ -305,6 +306,36 @@ class StagesTest(unittest.TestCase):
 
         self.assertEqual(classified.classification_status, ClassificationStatus.CLASSIFIED)
         self.assertEqual(pending.classification_status, ClassificationStatus.PENDING)
+
+    @patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_a_subscription_limit_keeps_the_verdicts_already_paid_for(self, llm_client):
+        answer = {"is_authors_artifact": True, "confidence": 0.9, "reason": "own code"}
+        llm_client.return_value.chat_json.side_effect = [answer, SubscriptionLimitError("limit reached")]
+        llm_client.return_value.last_response = {"choices": []}
+        llm_client.return_value.last_usage = None
+        llm_client.return_value.last_error = None
+        llm_client.return_value.model = "test-model"
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [
+            Publication(id="W1", title="first", abstract="https://github.com/org/one"),
+            Publication(id="W2", title="second", abstract="https://github.com/org/two"),
+        ])
+        CodeLinksStage(prepared, raw).run()
+
+        with self.assertRaises(SubscriptionLimitError):
+            LinkRelevanceStage(prepared, raw).run()
+
+        rows = {row.publication_id: row for row in prepared.read_models("repo_links", RepoLink)}
+        statuses = sorted(row.links[0].classification_status for row in rows.values())
+        self.assertIn(ClassificationStatus.CLASSIFIED, statuses)
+        finished = [row for row in rows.values() if row.links[0].llm_reason == "own code"]
+        self.assertEqual(len(finished), 1)
+        publications = {row.id: row for row in prepared.read_models("publications", Publication)}
+        self.assertEqual(
+            publications[finished[0].publication_id].processing["link_relevance"].status,
+            ProcessingStatus.COMPLETED,
+        )
 
     @patch("pauk.pipeline.stages.link_relevance.llm_client")
     def test_link_relevance_classifies_pending_links(self, llm_client):

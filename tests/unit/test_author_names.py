@@ -11,6 +11,7 @@ from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.author_names import AuthorNamesStage, RussianNamesCatalog, to_cyrillic
 from pauk.settings import Settings
+from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PreparedStore, RawStore
 
 CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
@@ -758,6 +759,46 @@ class ParallelAuthorNamesTest(unittest.TestCase):
         self.assertEqual(rows["A3"].surname_ru, "Смирнов")
         self.assertEqual(rows["A4"].surname_ru, "Волков")
         self.assertGreater(len(_ThreadedFakeClient.threads), 1)
+
+    def test_an_interrupt_in_the_loop_kills_the_clis_and_lets_later_stages_run(self):
+        people = [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov"), person("A3", "Ivan Smirnov")]
+
+        with (
+            patch.object(PreparedStore, "upsert_models", side_effect=KeyboardInterrupt),
+            patch("pauk.pipeline.stages.author_names.kill_running_clis") as kill,
+            patch("pauk.pipeline.stages.author_names.resume_clis") as resume,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_stage(people, concurrency=2)
+
+        kill.assert_called_once()
+        resume.assert_called_once()
+
+    def test_a_subscription_limit_stops_the_stage_and_keeps_finished_authors(self):
+        class LimitedClient(_ThreadedFakeClient):
+            def chat_json(self, prompt):
+                if "Sidorov" in prompt:
+                    raise SubscriptionLimitError("subscription limit reached: out")
+                return super().chat_json(prompt)
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = Settings(data_dir=Path(tmp.name), author_names_concurrency=1)
+        config.static_dir.mkdir(parents=True)
+        (config.static_dir / "russian_names.csv").write_text(CATALOG_HEADER, encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("persons", [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov")])
+
+        with (
+            patch("pauk.pipeline.stages.author_names.llm_client", LimitedClient),
+            self.assertRaises(SubscriptionLimitError),
+        ):
+            AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
+
+        rows = {row.id: row for row in prepared.read_models("persons", Person)}
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertNotIn("author_names", rows["A2"].processing)
 
     def test_one_worker_is_the_same_stage(self):
         result, rows = self.run_stage(

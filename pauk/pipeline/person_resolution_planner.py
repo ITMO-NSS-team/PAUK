@@ -176,6 +176,15 @@ def plan_person_merges_resolved(
                 row["model_verdicts"] = {"single": asdict(single_verdict) if single_verdict is not None else None}
         report.append(row)
 
+    def name_the_model() -> None:
+        # The routes say "qwen" whichever provider answered, and a provider
+        # switch changes decisions, so the report has to say who decided.
+        model = getattr(models, "model", None)
+        if isinstance(model, str):
+            for row in report:
+                if row.get("route", "").startswith("qwen") or "input_route" in row:
+                    row["model"] = model
+
     single_mode = models is not None and callable(getattr(type(models), "single_many", None))
     candidates = list(_paired_persons(people, in_scope, staff_ids))
     seen = {frozenset((first.id, second.id)) for first, second in candidates}
@@ -421,4 +430,5 @@ def plan_person_merges_resolved(
         decisions,
     )
     report.extend(group_report)
+    name_the_model()
     return groups, report

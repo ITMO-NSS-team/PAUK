@@ -74,11 +74,12 @@ Team runs go through OpenRouter.
 
 The CLI must be on `PATH` and signed in to the subscription: `claude auth
 status` shows `"authMethod": "claude.ai"`, `codex login status` shows a
-ChatGPT login. PAUK starts the CLI without `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY` and the other variables that would bill the API instead of the
-subscription. A CLI call times out after
-`PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C kills the CLIs that
-are still running.
+ChatGPT login. PAUK gives the CLI only the system variables it needs and its own `CLAUDE_*`
+or `CODEX_*` ones, so API keys and database passwords stay out of it, and
+Codex runs without shell tools: prompts carry text from third-party PDFs.
+Variables that would bill the API instead of the subscription are dropped too. A CLI call times out after
+`PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C, SIGTERM and closing the
+terminal kill the CLIs that are still running; `kill -9` cannot.
 
 One full run on Haiku with Claude Max 5x:
 
@@ -93,10 +94,13 @@ run. By the plans' stated ratios, Max 20x holds about four times as much and
 Pro about a fifth; these were not measured. Sonnet uses
 about three times as much of the limit as Haiku. The limit is shared with any
 other use of the account. `author_names` and person resolution do not fit in
-one 5-hour window together on Max 5x. When the limit runs out, calls fail with
-`subscription limit reached`: `link_relevance` and `author_names` mark the
-record failed and retry it on the next run; person resolution sends the pair
-to review.
+one 5-hour window together on Max 5x. When the limit runs out, the command
+stops with `subscription limit reached`. What it finished is saved, and running
+the same command after the limit resets picks up the rest. A CLI answers
+without temperature 0, so a repeated call can answer differently. Set a full
+model id rather than an alias such as `haiku`: the name is part of the
+person-resolution cache key as written, so answers cached under an alias stay
+in use after it moves to a new model.
 
 Person-resolution answers are cached per model, so switching
 `PAUK_PERSON_RESOLUTION_PROVIDER` asks every pair again, and another model

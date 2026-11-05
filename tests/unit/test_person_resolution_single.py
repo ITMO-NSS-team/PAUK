@@ -33,6 +33,7 @@ from pauk.pipeline.person_resolution import LOG_COLLECTION, ResolutionModels, _R
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
+from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PreparedStore, RawStore, review
 
 
@@ -162,6 +163,18 @@ class SingleResolutionTest(unittest.TestCase):
                     db = mongomock.MongoClient().db
                     review.record_held(db, report, source=review.STAGE)
                     self.assertEqual(len(review.questions(db)), int(action is Decision.REVIEW))
+
+    def test_the_report_names_the_model_that_decided(self):
+        people = [
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True),
+        ]
+        models = SingleModels(SingleVerdict(Decision.REVIEW, 0.8, "supplied evidence"))
+        models.model = "claude-cli/claude-haiku-5-5"
+
+        _, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(report[0]["model"], "claude-cli/claude-haiku-5-5")
 
     def test_unavailable_single_model_leaves_review_not_a_fake_vote(self):
         people = [
@@ -350,6 +363,19 @@ class PairPackingTest(unittest.TestCase):
         self.assertEqual(len(batch), 1)
         self.assertEqual(sorted(record["context"]["pair_id"] for record in pairs), [1, 2, 3])
         self.assertEqual({record["context"]["batch_id"] for record in pairs}, {batch[0]["context"]["batch_id"]})
+
+    def test_a_batch_gets_as_much_time_as_its_pairs_would_alone(self):
+        models = self.models(3)
+
+        self.assertEqual(models._client().timeout, models.config.request_timeout * 3)
+
+    def test_a_subscription_limit_stops_the_run_instead_of_holding_every_pair(self):
+        def respond(client, prompt, system_prompt=None, **kwargs):
+            raise SubscriptionLimitError("subscription limit reached: out")
+
+        models = self.models(1)
+        with patch("pauk.sources.OpenRouterClient.chat_json", respond), self.assertRaises(SubscriptionLimitError):
+            models.single_many(self.items([1, 2]))
 
     def test_a_pair_asked_alone_has_no_batch_id(self):
         self.run_models(self.models(1), [1])

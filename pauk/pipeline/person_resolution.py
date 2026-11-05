@@ -41,7 +41,7 @@ from pauk.graph.person_resolution_single import (
     split_batch_response,
 )
 from pauk.settings import Settings
-from pauk.sources.llm import LlmClient, kill_running_clis, llm_client
+from pauk.sources.llm import LlmClient, kill_running_clis, llm_client, resume_clis
 from pauk.storage import LlmLogStore
 
 logger = logging.getLogger(__name__)
@@ -166,9 +166,10 @@ class ResolutionModels:
     def _client(self) -> LlmClient:
         client = getattr(self._local, "client", None)
         if client is None:
+            # A batch reply takes as long as that many single ones.
             client = llm_client(
                 self.config.provider_for("person_resolution"),
-                timeout=self.config.request_timeout,
+                timeout=self.config.request_timeout * self.batch_size,
                 api_key=self.config.openrouter_api_key,
                 openrouter_model=self.config.person_resolution_model,
                 proxy_url=self.config.openrouter_proxy_url,
@@ -331,6 +332,35 @@ class ResolutionModels:
         batches = [pending[start : start + batch_size] for start in range(0, len(pending), batch_size)]
         return hits, [partial(self._invoke_batch, batch) for batch in batches]
 
+    def _run_jobs(
+        self, requests: list[_Request], jobs: list[Callable[[], list[_Result]]], results: list[_Result]
+    ) -> None:
+        """Run the calls a block at a time, adding their answers to results."""
+        done = len(results)
+        for start in range(0, len(jobs), self.workers * 8):
+            block = jobs[start : start + self.workers * 8]
+            with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
+                futures = [pool.submit(job) for job in block]
+                try:
+                    for future in as_completed(futures):
+                        answered = future.result()
+                        results.extend(answered)
+                        done += len(answered)
+                        if done % 50 < len(answered) or done == len(requests):
+                            logger.info(
+                                "person resolution %s: %d/%d",
+                                requests[0].stage,
+                                done,
+                                len(requests),
+                            )
+                except BaseException:
+                    # Ctrl-C has to drop what is still queued: leaving it
+                    # to the pool's own shutdown would pay for a whole
+                    # block of answers nobody is going to read.
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    kill_running_clis()
+                    raise
+
     def _run(self, requests: list[_Request], batch_size: int = 1) -> dict[int, Verdict | None]:
         if not requests:
             return {}
@@ -339,30 +369,10 @@ class ResolutionModels:
             results = [self._hit(request, batch_size) or self._invoke(request) for request in requests]
         else:
             results, jobs = self._jobs(requests, batch_size)
-            done = len(results)
-            for start in range(0, len(jobs), self.workers * 8):
-                block = jobs[start : start + self.workers * 8]
-                with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
-                    futures = [pool.submit(job) for job in block]
-                    try:
-                        for future in as_completed(futures):
-                            answered = future.result()
-                            results.extend(answered)
-                            done += len(answered)
-                            if done % 50 < len(answered) or done == len(requests):
-                                logger.info(
-                                    "person resolution %s: %d/%d",
-                                    requests[0].stage,
-                                    done,
-                                    len(requests),
-                                )
-                    except BaseException:
-                        # Ctrl-C has to drop what is still queued: leaving it
-                        # to the pool's own shutdown would pay for a whole
-                        # block of answers nobody is going to read.
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        kill_running_clis()
-                        raise
+            try:
+                self._run_jobs(requests, jobs, results)
+            finally:
+                resume_clis()
 
         for result in results:
             self._log.record(

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.sources.llm import llm_client
+from pauk.sources.llm import LlmClient, llm_client
 from pauk.storage import LlmLogStore
 from pauk.urls import deduplicate_repo_urls
 
@@ -250,6 +250,19 @@ class LinkRelevanceStage(EnrichmentStage):
                 )
             ]
             candidates.append((row, pub, pending))
+        try:
+            changed = self._classify(candidates, client, llm_log)
+        finally:
+            # An interrupted or limit-stopped run keeps the verdicts it paid for.
+            self.prepared.write_models("publications", publications.values())
+            self.prepared.write_models("repo_links", links_by_publication)
+        logger.info("link_relevance: done, %d publication(s) processed", changed)
+        return {"publications": changed}
+
+    def _classify(
+        self, candidates: list[tuple[RepoLink, Publication, list[CodeLink]]], client: LlmClient, llm_log: LlmLogStore
+    ) -> int:
+        """Ask the model about every pending link; the verdicts stay on the given records."""
         changed = 0
         for row, pub, pending in self.progress(candidates, total=len(candidates), unit="publication"):
             state = pub.processing.get(self.name)
@@ -324,7 +337,4 @@ class LinkRelevanceStage(EnrichmentStage):
                 error=error,
             )
             changed += 1
-        logger.info("link_relevance: done, %d publication(s) processed", changed)
-        self.prepared.write_models("publications", publications.values())
-        self.prepared.write_models("repo_links", links_by_publication)
-        return {"publications": changed}
+        return changed
