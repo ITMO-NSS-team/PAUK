@@ -27,6 +27,7 @@ from collections.abc import Iterable
 from pymongo.database import Database
 
 from pauk.models import Person
+from pauk.pipeline.membership import apply_membership
 from pauk.pipeline.normalize import _merge_person
 from pauk.storage.person_merge_sources import snapshots
 from pauk.storage.prepared import PreparedStore
@@ -52,8 +53,11 @@ def _check_archived_aggregate(current: dict | None, sources: list[dict]) -> None
         _merge_person(expected, Person.model_validate(row))
         if row.get("name_raw") and row["name_raw"] not in expected.name_variants:
             expected.name_variants.append(row["name_raw"])
+    apply_membership(expected)
+    actual = Person.model_validate(current)
+    apply_membership(actual)
     before = expected.model_dump(mode="json")
-    after = Person.model_validate(current).model_dump(mode="json")
+    after = actual.model_dump(mode="json")
     for field, value in after.items():
         if field in {"processing", "merged_ids"}:
             continue
@@ -68,6 +72,15 @@ def _check_archived_aggregate(current: dict | None, sources: list[dict]) -> None
     for field, value in current.items():
         if field not in known and value != sources[0].get(field):
             raise NothingToRebuild(f"{current['id']} has later changes in {field}; source reconciliation is required")
+
+
+def _refresh_membership_row(row: dict) -> dict:
+    person = Person.model_validate(row)
+    apply_membership(person)
+    fields = person.model_dump(mode="json")
+    return {**row, **{key: fields[key] for key in (
+        "is_itmo", "membership_status", "membership_policy", "membership_evidence"
+    )}}
 
 
 #: Edges of one person, keyed the way `extract_relationships` keys them.
@@ -207,18 +220,35 @@ def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges
 
 
 def _restore_corresponding(client, canonical_id: str, duplicate_edges: Edges, remaining_edges: Edges) -> None:
+    """Rebuild shared-edge evidence rather than keeping the folded union."""
     key = ("Person", "Publication", "AUTHORED", "id")
     affected = {target for _src, target, _props in duplicate_edges.get(key, ())}
     flags: dict[str, bool | None] = {}
+    sources: dict[str, list[dict]] = {}
     for _src, target, props in remaining_edges.get(key, ()):
         if target not in affected:
             continue
+        sources.setdefault(target, []).append(props)
         value = props.get("is_corresponding")
         if value is not None:
             flags[target] = bool(flags.get(target) or value)
         else:
             flags.setdefault(target, None)
-    rows = [(canonical_id, target, {"is_corresponding": value}) for target, value in flags.items()]
+    rows = []
+    for target, value in flags.items():
+        evidence = sources[target]
+        known = [props["institution_rors"] for props in evidence if props.get("institution_rors") is not None]
+        properties = {
+            "is_corresponding": value,
+            "institution_rors": sorted({ror for rors in known for ror in rors}) if known else None,
+        }
+        # The first surviving source has the same scalar precedence as a fold.
+        for name in ("position", "affiliation", "affiliation_source"):
+            properties[name] = evidence[0].get(name)
+        for name in ("institution_source_person_id", "institution_source_id"):
+            owners = {props.get(name) for props in evidence}
+            properties[name] = next(iter(owners)) if len(owners) == 1 else None
+        rows.append((canonical_id, target, properties))
     for chunk in chunked(rows):
         client.set_relationship_properties_batch("Person", "Publication", "AUTHORED", chunk)
 
@@ -296,7 +326,18 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         sources.append(row)
         covered.update(coverage)
 
-    canonical_row = rows.get(canonical_id)
+    complete = remaining <= covered
+    if used_archive and not complete:
+        raise NothingToRebuild("independent source rows for all remaining people are required to restore prepared data")
+    if used_archive:
+        _check_archived_aggregate(live.get(canonical_id), [*sources, duplicate_row])
+    source_rows = {row["id"]: row for row in [*sources, duplicate_row]}
+    sources = [_refresh_membership_row(row) for row in sources]
+    duplicate_row = _refresh_membership_row(duplicate_row)
+    duplicate_spec = person_spec(duplicate_row)
+    _labels, (node_id, duplicate_props) = extract_node(duplicate_row, duplicate_spec)
+    duplicate_edges = extract_relationships(duplicate_row, duplicate_spec)
+    canonical_row = next((row for row in sources if row["id"] == canonical_id), None)
     canonical_props: dict | None = None
     canonical_edges: Edges = {}
     if canonical_row is not None:
@@ -310,11 +351,6 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
 
     # Undoing one member must not retract facts supplied by another member
     # which remains folded. Missing source rows are not evidence of false.
-    complete = remaining <= covered
-    if used_archive and not complete:
-        raise NothingToRebuild("independent source rows for all remaining people are required to restore prepared data")
-    if used_archive:
-        _check_archived_aggregate(live.get(canonical_id), [*sources, duplicate_row])
     for row in sources:
         if row["id"] == canonical_id:
             continue
@@ -349,12 +385,16 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
                     survivor.name_variants.append(row["name_raw"])
         survivor.merged_ids = [identifier for identifier in (canonical.get("merged_ids") or [])
                                if identifier not in returning]
+        apply_membership(survivor)
         for row, restored in (
             (canonical_row, survivor.model_dump(mode="json", by_alias=True)),
             (duplicate_row, Person.model_validate(duplicate_row).model_dump(mode="json", by_alias=True)),
         ):
             current = db.persons.find_one({"id": row["id"]}) or {}
-            content = {key: value for key, value in row.items() if key not in {"_id", "_version", "groups"}}
+            content = {
+                key: value for key, value in source_rows[row["id"]].items()
+                if key not in {"_id", "_version", "groups"}
+            }
             archived_groups = next(
                 (version.get("groups") or [] for version in archives.get(row["id"], [])
                  if {key: value for key, value in version.items() if key not in {"_id", "_version", "groups"}} == content),
@@ -367,7 +407,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
                 raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
             prepared_updates.append((groups, content | restored))
     if patch:
-        # The plain upsert: `is_itmo` is sticky in the person one.
+        # Source reconstruction, unlike an ordinary partial import, may retract values.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0

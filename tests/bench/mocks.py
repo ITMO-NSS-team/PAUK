@@ -9,7 +9,13 @@ from collections import defaultdict
 
 import requests
 
-from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists, flatten_merges
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+    flatten_merges,
+)
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -274,9 +280,11 @@ class RecordingNeo4jClient:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
+            membership = _person_membership_update(existing, clean, node_id)
             clean = _preserve_merged_person_lists(existing, clean)
-            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
-            self.nodes["Person"].setdefault(node_id, {}).update(clean)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self._set_properties(self.nodes["Person"].setdefault(node_id, {}), clean)
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
                                    tgt_match_prop: str = "id") -> int:

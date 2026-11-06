@@ -45,6 +45,53 @@ which a process started before `usermod -aG docker` does not have.
 
 ## Manual data additions
 
+`reassess_membership.py` prepares a reviewable membership correction plan and
+can explicitly apply it to MongoDB. It accepts either a complete local JSONL
+snapshot (`--snapshot-dir`, containing `persons`, `publications`,
+`person_merge_sources`, and `raw`) or an explicit Mongo connection (`--mongo-uri`
+and `--db`). It reads all source groups and writes proposed `persons.jsonl`,
+original `originals.jsonl`, `summary.json` and a checksummed `manifest.json` to
+a new `--out` directory. Connection defaults are never read from `.env`.
+
+Stop collectors, enrichment, merges, admin edits and publication for the entire
+plan/review/apply window; take a backup first. A standalone Mongo deployment
+cannot atomically freeze all source collections. Planning refuses a detected
+concurrent change, and apply checks source fingerprints before and after writing.
+
+From the repository root, with an explicitly selected database and connection:
+
+```bash
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --out data/reports/membership-plan
+```
+
+Review `persons.jsonl` and `summary.json`, then copy the summary's `plan_id` into
+`PLAN_ID`. Validate without writes, then apply the same reviewed plan:
+
+```bash
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --apply-plan data/reports/membership-plan --plan-id "$PLAN_ID"
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --apply-plan data/reports/membership-plan --plan-id "$PLAN_ID" --apply
+```
+
+Apply refuses modified plan files, changed source collections, or stale person
+rows before writing. It updates only membership and its source metadata, keeps
+groups and unrelated fields, and increments `_version` once per changed person.
+Every changed row has a durable original in `membership_reassessments` and a
+normal `revisions` entry. Per-person compare-and-set prevents overwriting a
+concurrent edit. An interrupted run may already have applied earlier rows;
+repeat the exact command to finish pending revisions and remaining rows without
+duplicating revisions or version increments. A source-change error requires
+stopping writers and generating/reviewing a new plan before publication.
+
+This command does not write Neo4j. After successful apply, publish every affected
+group with the existing `pauk publish graph --group <group>` command. Keep the
+reviewed plan and backup until the graph has been checked. Do not import
+`persons.jsonl` with `write_models`: it would redefine group membership.
+
+Reassessment is a later correction, not an undo of a merge. Splitting a merged
+person may therefore refuse to restore older source snapshots until that
+correction is reconciled with the originals; it must not resurrect withdrawn
+membership evidence. The refusal leaves both stores unchanged.
+
 | Script | What it does | Writes |
 |---|---|---|
 | `import_curated_repos.py` | Imports a human-labelled `title,repo_url` list into `Repository.publication_ids`, that is, into `IMPLEMENTS`. Two steps: `plan` only reads and saves its decision as JSON; `apply` writes exactly the reviewed plan | `apply`: Mongo |
