@@ -168,6 +168,9 @@ def _is_choice(row: dict) -> bool:
 def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
+    if row["kind"] == review.GITHUB and row.get("login") and not evidence.get("login"):
+        # A choice can be recorded before a run supplies any evidence.
+        evidence = {**evidence, "login": row["login"]}
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.

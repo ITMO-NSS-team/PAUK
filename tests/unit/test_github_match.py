@@ -905,6 +905,39 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(people["A1"].contributed_to,
                          [Contribution(repository_id=repo.id, role="owner")])
 
+    def test_a_confirmed_owner_in_another_group_prevents_a_second_assignment(self):
+        for merged, scoped in ((False, False), (True, False), (True, True)):
+            with self.subTest(merged=merged, scoped=scoped):
+                self.db.drop_collection("persons")
+                self.db.drop_collection(review.COLLECTION)
+                owner = person("A1", "Ivan Petrov")
+                account = profile("coder42", name="Ivan Petrov", company="ITMO", emails=["account@lab.test"])
+                review.record_verdict(self.db, review.GITHUB, [owner.id, account.login], review.SAME)
+                self.run_stage([owner], [account])
+                owner, = self.prepared.read_models("persons", Person)
+                if merged:
+                    owner.id, owner.merged_ids = "A3", ["A1"]
+                other = PreparedStore(self.db, "other")
+                other.write_models("persons", [owner])
+                self.prepared.write_models("persons", [person("A2", "Ivan Petrov")])
+                before = self.db.persons.find_one({"id": owner.id})
+                selection = PreparedSelection("persons", frozenset({"A2"})) if scoped else None
+
+                _, people = self.rerun_stage(selection)
+
+                self.assertIsNone(people["A2"].github)
+                self.assertIsNone(people["A2"].email)
+                self.assertEqual(set(people), {"A2"})
+                self.assertEqual(self.db.persons.find_one({"id": owner.id}), before)
+                (question,) = review.questions(self.db, answered=False)
+                self.assertEqual(set(question["members"]), {owner.id, "A2", "coder42"})
+                self.assertTrue(question["evidence"]["evidence"]["contested"])
+
+                review.record_account_choice(self.db, "coder42", [owner.id, "A2"], "A2")
+                _, people = self.rerun_stage(selection)
+                self.assertEqual(people["A2"].github, "coder42")
+                self.assertEqual(people["A2"].email, "account@lab.test")
+
     def test_refusing_one_account_keeps_a_contribution_supported_by_another(self):
         repo = repository("lab", "tool")
         self.run_stage(
@@ -921,6 +954,20 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(people["A1"].contributed_to,
                          [Contribution(repository_id=repo.id, role="contributor")])
         self.assertEqual([match.login for match in people["A1"].github_match.matches], ["beta"])
+
+    def test_an_unavailable_confirmed_owner_keeps_a_namesakes_question_open(self):
+        self.run_stage([person("A2", "Ivan Petrov")], [profile("coder42", name="Ivan Petrov")])
+        review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.SAME)
+        self.prepared.write_models("github_profiles", [profile("coder42", name="Ivan Petrov", company="ITMO")])
+
+        with self.assertLogs("pauk.pipeline.stages.github_match", level="WARNING") as logs:
+            _, people = self.rerun_stage()
+            self.assertIsNone(people["A2"].github)
+
+        self.assertIn("coder42", logs.output[0])
+        self.assertIn("A1", logs.output[0])
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A2", "coder42"])
 
     def test_a_refusal_can_retract_a_tracked_account_absent_from_this_group(self):
         self.applied_account_choice()
@@ -1089,6 +1136,24 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(people["A2"].github, "coder42")
         self.assertIsNone(people["A1"].github)
         self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_conflicting_confirmations_require_a_choice_even_without_automatic_signals(self):
+        for author in ("A1", "A2"):
+            review.record_verdict(self.db, review.GITHUB, [author, "coder42"], review.SAME)
+
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov"), person("A2", "Boris Smirnov")],
+            [profile("coder42", name="Night Owl")],
+        )
+
+        self.assertEqual(result["github_matched"], 0)
+        self.assertTrue(all(author.github is None for author in people.values()))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "coder42"])
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        _, people = self.rerun_stage()
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertIsNone(people["A1"].github)
 
     def test_a_yes_holds_where_the_signals_alone_would_reject(self):
         # Found only through the author's paper, under a nickname: the rules see no name.

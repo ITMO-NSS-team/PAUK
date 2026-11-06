@@ -786,6 +786,37 @@ class RepositoryDedupTest(unittest.TestCase):
         self.assertEqual(result["dedup_repositories_merged"], 0)
         self.assertEqual(len(repositories), 2)
 
+    def test_withdrawing_a_match_after_repository_dedup_keeps_the_independent_contribution(self):
+        for independent_canonical in (False, True):
+            for source_role in ("contributor", "owner"):
+                with self.subTest(independent_canonical=independent_canonical, source_role=source_role):
+                    prepared = PreparedStore(self.db, "sample")
+                    canonical = repository("R1", "current", "https://github.com/lab/current",
+                                           github_id=42, day="2026-06-01")
+                    duplicate = repository("R2", "old", "https://github.com/lab/old",
+                                           github_id=42, day="2026-01-01")
+                    original_id, added_id = ((canonical.id, duplicate.id) if independent_canonical
+                                            else (duplicate.id, canonical.id))
+                    author = person("A1", "Ivan Petrov", [])
+                    author.contributed_to = [Contribution(repository_id=original_id, role=source_role)]
+                    apply_matches(author, [GitHubMatchResult(
+                        login="coder42", email="account@lab.test",
+                        contributed_to=[Contribution(repository_id=added_id, role="contributor")],
+                    )])
+                    prepared.write_models("persons", [author])
+                    prepared.write_models("repositories", [canonical, duplicate])
+                    stage = DedupStage(prepared, RawStore(self.db, "sample"), self.config)
+
+                    self.assertEqual(stage._dedup_repositories(), {duplicate.id: canonical.id})
+                    self.assertEqual(stage._dedup_repositories(), {})
+                    saved, = prepared.read_models("persons", Person)
+                    matches = retract_matches(saved)
+                    expected = [Contribution(repository_id=canonical.id, role=source_role)]
+                    self.assertEqual(saved.contributed_to, expected)
+                    apply_matches(saved, matches)
+                    retract_matches(saved)
+                    self.assertEqual(saved.contributed_to, expected)
+
 
 class LoaderPublicationMergeTest(unittest.TestCase):
     def test_previously_published_duplicate_publication_is_folded(self):

@@ -115,6 +115,8 @@ without that author in view (a namesake at another university, a record the
 account shares an address with), so the account is asked about again, naming
 all of them (reason "answered before, but the question did not name every
 author that fits"). Choosing one author is a "no" to the others in the question.
+Two separate confirmations naming different authors also require a joint choice,
+even if the current profile has no automatic signals.
 Authors somebody refused, one by one or all at once, are left out of the choice,
 so the next question names only authors nobody has refused. If the rules alone
 would now link a refused author, the answer goes to the disputes instead.
@@ -140,7 +142,9 @@ more, or when the question asked now names other authors, for instance after a
 namesake appeared. A closed question gets `auto_resolved_at` and no verdict, so
 it leaves the queue and comes back if a later run holds it again. Answered
 questions are never touched.
-Scoped runs create or refresh questions only when all named authors are selected.
+Scoped runs create or refresh questions only when all named authors from the
+current group are selected. Authors read from answers in other groups can join
+the question as context; at least one selected author must be involved.
 If a larger replacement question falls outside that scope, the earlier question
 stays open until a run can save its replacement.
 
@@ -190,12 +194,20 @@ Repositories already named in the match provenance are looked up by id with
 the evidence for its own earlier match. This does not change group membership.
 Scoped runs change only selected persons, so a rechoice targeting only
 the new owner leaves the old owner unchanged until a run covers that person too.
+Authors named in saved answers are looked up across groups, including by
+`merged_ids`, before matching. A confirmed owner outside the current group still
+prevents assigning the account to a namesake. These context rows are never written
+or added to the current group. If a confirmed author cannot be found among eligible
+authors, the account is skipped with a warning; its earlier results and questions
+are kept.
 
 Person merging first combines independent fields, then reapplies the combined
 account results. This prevents a match on one row from claiming an independent
-value on the other. Repository dedup updates ids inside the provenance too. A later
-ORCID confirmation releases the match's claim on the login, and an address present
-in the independently collected `emails` survives retraction.
+value on the other. Repository dedup similarly renames independent contributions
+before reapplying matches. If both sources now name the same contribution, a later
+refusal keeps the independent one. A later ORCID confirmation releases the
+match's claim on the login. An address in the independently collected `emails`
+also survives retraction.
 
 Rows written before this tracking existed have no recoverable provenance here.
 An explicit refusal still clears the named GitHub login. Their existing addresses

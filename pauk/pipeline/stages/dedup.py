@@ -74,6 +74,7 @@ from pauk.models import (
     VersionAuthor,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
     _abstract,
@@ -1273,14 +1274,17 @@ class DedupStage(EnrichmentStage):
             "repositories", [row for row in repositories if row.id not in id_map])
         people = list(self.prepared.read_models("persons", Person))
         for person in people:
+            tracked = person.github_match is not None
+            # Rebuild provenance after renaming: a match may now overlap an independent contribution.
+            matches = retract_matches(person)
             contributions = list(person.contributed_to)
-            if person.github_match:
-                contributions.extend(person.github_match.contributed_to)
-                for match in person.github_match.matches:
-                    contributions.extend(match.contributed_to)
+            for match in matches:
+                contributions.extend(match.contributed_to)
             for contribution in contributions:
                 contribution.repository_id = id_map.get(
                     contribution.repository_id, contribution.repository_id)
+            if tracked:
+                apply_matches(person, matches)
         self.prepared.write_models("persons", people)
         return id_map
 

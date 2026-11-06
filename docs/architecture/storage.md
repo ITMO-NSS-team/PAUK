@@ -32,8 +32,9 @@ pair, `get_rows` and `get_models(entity, ids, model)`, is a point lookup by id
 **without** the group filter, for code that must see an entity's global state
 even if its own group has not touched it yet (consumers:
 `pauk/pipeline/normalize.py::OpenAlexNormalizer._seed`,
-`pauk/graph/unmerge.py` and `github_match`, which rereads repositories named by
-its earlier results).
+`pauk/graph/unmerge.py` and `github_match`, which reads authors named in saved
+answers and repositories named by its earlier results). `include_merged=True`
+also finds a surviving row by an id in its `merged_ids`.
 
 What this does not solve: the same real-world entity under **different** ids
 (several OpenAlex author ids for one person, an ORCID-fallback id, and so on)
