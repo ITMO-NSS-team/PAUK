@@ -28,7 +28,7 @@ from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
@@ -447,7 +447,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
-        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        models = ResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
             if config.person_resolution_enabled

@@ -47,6 +47,67 @@ Set the LLM stage threads in advance: `PAUK_PERSON_RESOLUTION_CONCURRENCY`
 `PAUK_AUTHOR_NAMES_CONCURRENCY` (names; at 16 it takes an hour instead of
 sixteen).
 
+### LLM provider: OpenRouter or a subscription CLI
+
+`link_relevance`, `author_names` and person resolution in dedup can run
+through a subscription CLI instead of OpenRouter: `claude` (`claude -p` on a
+Claude subscription) or `codex` (`codex exec` on a ChatGPT subscription). The
+model comes from `PAUK_CLAUDE_CLI_MODEL` (Haiku by default) and
+`PAUK_CODEX_CLI_MODEL` (no default, because the CLI's own changes between
+versions and `~/.codex/config.toml` is ignored). `claude:sonnet` or
+`codex:<model>` picks a model for one setting. Codex has not been measured on a
+full run yet. There
+is no Gemini option: since June 2026 Gemini CLI serves no individual Google
+accounts, and Antigravity's terms do not support calling `agy` from third-party
+applications on consumer plans. Gemini models are available through OpenRouter. `PAUK_LLM_PROVIDER` sets `link_relevance` and
+`author_names`; `PAUK_LINK_RELEVANCE_PROVIDER` and `PAUK_AUTHOR_NAMES_PROVIDER`
+override it for one stage. Person resolution switches only through
+`PAUK_PERSON_RESOLUTION_PROVIDER`. `run`, `enrich` and `dedup` check all three
+settings at start, so a typo or a CLI missing from `PATH` stops the command
+before any stage runs, even if the stage that needs it is not the one being
+run. Whether the CLI is signed in is not checked at start.
+
+This mode is for local runs by the owner of the subscription, on their own
+machine. Do not sign in to a subscription on a shared server or share its
+login. Anthropic's terms allow only individual use of a Claude subscription.
+Team runs go through OpenRouter.
+
+The CLI must be on `PATH` and signed in to the subscription: `claude auth
+status` shows `"authMethod": "claude.ai"`, `codex login status` shows a
+ChatGPT login. PAUK gives the CLI only the system variables it needs and its own `CLAUDE_*`
+or `CODEX_*` ones, so API keys and database passwords stay out of it, and
+Codex runs without shell tools: prompts carry text from third-party PDFs.
+Variables that would bill the API instead of the subscription are dropped too. A CLI call times out after
+`PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C, SIGTERM and closing the
+terminal kill the CLIs that are still running; `kill -9` cannot.
+
+One full run on Haiku with Claude Max 5x:
+
+| Stage | Requests | Share of a 5-hour window | Time |
+|---|---|---|---|
+| `link_relevance` | ~560 | ~2% | 35 min (one thread) |
+| `author_names` | ~14,000 | ~90% | 2 h at 8 threads |
+| person resolution | ~11,500 | ~80% | 1.7 h at 8 threads |
+
+On OpenRouter the same stages cost about $0.65, $28 (Haiku) and $3 (Qwen) per
+run. By the plans' stated ratios, Max 20x holds about four times as much and
+Pro about a fifth; these were not measured. Sonnet uses
+about three times as much of the limit as Haiku. The limit is shared with any
+other use of the account. `author_names` and person resolution do not fit in
+one 5-hour window together on Max 5x. When the limit runs out, the command
+stops with `subscription limit reached`. What it finished is saved, and running
+the same command after the limit resets picks up the rest. A short rate limit
+stops it the same way, with `rate limited`. A signed-out CLI, or 20 failed calls
+in a row, stops the command too: fix the CLI and run it again. A CLI answers
+without temperature 0, so a repeated call can answer differently. Set a full
+model id rather than an alias such as `haiku`: the name is part of the
+person-resolution cache key as written, so answers cached under an alias stay
+in use after it moves to a new model.
+
+Person-resolution answers are cached per model, so switching
+`PAUK_PERSON_RESOLUTION_PROVIDER` asks every pair again, and another model
+makes other merge decisions. Check the merge plan before switching.
+
 `PAUK_PDF_CRAWLER_URL` turns on the PDF-Crawler-Service fallback; an empty
 value turns it off. If the service cannot find PDFs by DOI from your network,
 every publication wastes minutes and gets a 422 - then it is better to turn

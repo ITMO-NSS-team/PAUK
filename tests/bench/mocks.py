@@ -141,6 +141,7 @@ class MockOpenRouterClient:
                 tests.bench.universe.RUSSIAN_NAMES_CATALOG).
         """
         self.last_response = None
+        self.model = "bench-mock"
         self.last_usage = None
         self.last_error = None
         self._catalog = RussianNamesCatalog([
@@ -517,6 +518,7 @@ class MockLinkRelevanceClient:
     def __init__(self, *args, **kwargs) -> None:
         self.last_error = None
         self.last_response = None
+        self.model = "bench-mock"
         self.last_usage = None
         self.calls: list[str] = []
 

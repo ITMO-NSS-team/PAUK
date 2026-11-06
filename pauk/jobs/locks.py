@@ -15,12 +15,13 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import timedelta
 
 from pymongo.database import Database
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from pauk.jobs.models import aware, now
 
@@ -30,6 +31,7 @@ COLLECTION = "job_locks"
 
 # Long enough for a publish to keep its lock, short enough not to wedge the queue.
 LEASE_MINUTES = 15
+RENEW_SECONDS = 300
 
 
 class Busy(RuntimeError):
@@ -107,8 +109,23 @@ def held(db: Database, resource: str, owner: str | None = None) -> Iterator[str]
             f"{resource} is busy: held by {current.get('owner', 'someone')} "
             f"since {current.get('acquired_at', 'a moment ago')}")
     logger.info("holding %s as %s", resource, owner)
+    released = threading.Event()
+
+    def keep_the_lease() -> None:
+        # A command run from a terminal has no worker beat, and a dedup on a
+        # subscription CLI holds the graph for hours.
+        while not released.wait(RENEW_SECONDS):
+            try:
+                renew(db, resource, owner)
+            except PyMongoError as error:
+                logger.warning("could not renew %s: %s", resource, error)
+
+    renewal = threading.Thread(target=keep_the_lease, daemon=True, name=f"lease-{resource}")
+    renewal.start()
     try:
         yield owner
     finally:
+        released.set()
+        renewal.join(timeout=5)
         release(db, resource, owner)
         logger.info("released %s", resource)
