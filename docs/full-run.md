@@ -96,7 +96,9 @@ about three times as much of the limit as Haiku. The limit is shared with any
 other use of the account. `author_names` and person resolution do not fit in
 one 5-hour window together on Max 5x. When the limit runs out, the command
 stops with `subscription limit reached`. What it finished is saved, and running
-the same command after the limit resets picks up the rest. A CLI answers
+the same command after the limit resets picks up the rest. A short rate limit
+stops it the same way, with `rate limited`. A signed-out CLI, or 20 failed calls
+in a row, stops the command too: fix the CLI and run it again. A CLI answers
 without temperature 0, so a repeated call can answer differently. Set a full
 model id rather than an alias such as `haiku`: the name is part of the
 person-resolution cache key as written, so answers cached under an alias stay

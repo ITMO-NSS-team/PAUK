@@ -38,9 +38,13 @@ _CLAUDE_DROPPED_VARS = (
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
 )
 _CODEX_DROPPED_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-_LIMIT_PATTERN = re.compile(
-    r"usage limit|limit reached|rate[ _]limit|too many requests|hit your|\b429\b", re.IGNORECASE
+_QUOTA_PATTERN = re.compile(r"usage[ _]limit|limit reached|hit your", re.IGNORECASE)
+_RATE_PATTERN = re.compile(r"rate[ _]limit|too many requests|\b429\b", re.IGNORECASE)
+_AUTH_PATTERN = re.compile(
+    r"not logged in|/login|sign in again|log in again|refresh token|unauthorized|invalid api key|\b401\b",
+    re.IGNORECASE,
 )
+_CLI_FAILURE_LIMIT = 20
 # Everything else in the parent's environment (API keys, the database password) stays out of the child: the
 # prompts carry text from third-party PDFs, and a CLI is an agent that could be talked into printing what it sees.
 _CLI_ENV_NAMES = frozenset({
@@ -267,16 +271,30 @@ class LlmClient(Protocol):
     ) -> dict | None: ...
 
 
-def _limited(message: str) -> bool:
-    return _LIMIT_PATTERN.search(message) is not None
-
-
 class SubscriptionLimitError(RuntimeError):
-    """The subscription's limit ran out: every further call would fail too, so the run has to stop."""
+    """A subscription or rate limit stopped the calls: the following ones would fail too, so the run has to stop."""
+
+
+class CliUnusableError(RuntimeError):
+    """The CLI is signed out or keeps failing: without this a run would mark every record failed and exit 0."""
 
 
 class CliStoppedError(RuntimeError):
     """A CLI call was refused because the stage that made it is being interrupted."""
+
+
+def _classify(message: str, status: int | None = None) -> tuple[str, type[RuntimeError] | None]:
+    """The error text for a failed CLI call, and what to raise if the run cannot go on.
+
+    A bare 429 may be a short rate limit, not a spent subscription, so the text keeps the two apart.
+    """
+    if status == 401 or _AUTH_PATTERN.search(message):
+        return f"CLI is not signed in: {message}", CliUnusableError
+    if _QUOTA_PATTERN.search(message):
+        return f"subscription limit reached: {message}", SubscriptionLimitError
+    if status == 429 or _RATE_PATTERN.search(message):
+        return f"rate limited: {message}", SubscriptionLimitError
+    return f"CLI error: {message}", None
 
 
 @dataclass(frozen=True)
@@ -287,7 +305,7 @@ class CliReply:
     usage: dict | None
     error: str | None
     raw: Any
-    limited: bool = False
+    stop: type[RuntimeError] | None = None
 
 
 class ClaudeCli:
@@ -331,7 +349,8 @@ class ClaudeCli:
                 "_raw_text": stdout[:_RAW_TEXT_LIMIT],
                 "_stderr": stderr[:_RAW_TEXT_LIMIT],
             }
-            return CliReply(None, None, f"exit {returncode}, output is not JSON", raw)
+            _, stop = _classify(f"{stdout}\n{stderr}")
+            return CliReply(None, None, f"exit {returncode}, output is not JSON", raw, stop)
         if not isinstance(payload, dict):
             return CliReply(None, None, f"CLI output is {type(payload).__name__}, not an object", payload)
         usage = payload.get("usage")
@@ -347,9 +366,8 @@ class ClaudeCli:
         result = payload.get("result")
         if payload.get("is_error") or not isinstance(result, str):
             message = str(result or payload.get("subtype") or "error")
-            limited = payload.get("api_error_status") == 429 or _limited(message)
-            error = f"subscription limit reached: {message}" if limited else f"CLI error: {message}"
-            return CliReply(None, usage, error, payload, limited)
+            error, stop = _classify(message, payload.get("api_error_status"))
+            return CliReply(None, usage, error, payload, stop)
         return CliReply(result, usage, None, payload)
 
 
@@ -413,9 +431,8 @@ class CodexCli:
         failure = _event_error(events)
         if returncode != 0 or (failure and not text.strip()):
             message = (failure or stderr.strip() or f"exit {returncode}")[-500:]
-            limited = _limited(message)
-            error = f"subscription limit reached: {message}" if limited else f"CLI error: {message}"
-            return CliReply(None, usage, error, raw, limited)
+            error, stop = _classify(message)
+            return CliReply(None, usage, error, raw, stop)
         return CliReply(text, usage, None, raw)
 
 
@@ -463,6 +480,7 @@ class SubscriptionCliClient:
         self.last_usage: dict | None = None
         self.last_response: Any | None = None
         self.last_error: str | None = None
+        self.failures_in_a_row = 0
 
     def unavailable_reason(self) -> str | None:
         """Why no call can be made, or None."""
@@ -483,6 +501,13 @@ class SubscriptionCliClient:
         self.last_error = error
         logger.warning("%s CLI: %s: %s", self.backend.name, self.cli_model, error)
 
+    def _call_failed(self, error: str) -> None:
+        """Note a call that reached no model; a run of them means the CLI is broken, whatever its wording."""
+        self._fail(error)
+        self.failures_in_a_row += 1
+        if self.failures_in_a_row >= _CLI_FAILURE_LIMIT:
+            raise CliUnusableError(f"{self.failures_in_a_row} CLI calls failed in a row, the last with: {error}")
+
     def chat_json(
         self,
         prompt: str,
@@ -496,7 +521,8 @@ class SubscriptionCliClient:
         OpenRouterClient there is no temperature 0 or JSON mode, so a repeated call can answer differently.
 
         Raises:
-            SubscriptionLimitError: The subscription's limit ran out.
+            SubscriptionLimitError: A subscription or rate limit stopped the call.
+            CliUnusableError: The CLI is signed out, or too many calls failed in a row.
             CliStoppedError: The stage is being interrupted.
         """
         del max_tokens
@@ -514,19 +540,20 @@ class SubscriptionCliClient:
                 command = self.backend.command(self.executable, self.cli_model, workdir)
                 returncode, stdout, stderr = _run_cli(command, stdin, self._env(), self.timeout, workdir)
             except subprocess.TimeoutExpired:
-                self._fail(f"timed out after {self.timeout}s")
+                self._call_failed(f"timed out after {self.timeout}s")
                 return None
             except OSError as exc:
-                self._fail(type(exc).__name__)
+                self._call_failed(type(exc).__name__)
                 return None
             reply = self.backend.parse(returncode, stdout, stderr, workdir)
         self.last_response = reply.raw
         self.last_usage = reply.usage
         if reply.error:
-            self._fail(reply.error)
-            if reply.limited:
-                raise SubscriptionLimitError(reply.error)
+            self._call_failed(reply.error)
+            if reply.stop:
+                raise reply.stop(reply.error)
             return None
+        self.failures_in_a_row = 0
         if not reply.text or not reply.text.strip():
             self._fail("empty model response")
             return None

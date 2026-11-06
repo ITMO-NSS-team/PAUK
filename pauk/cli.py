@@ -22,7 +22,7 @@ from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
-from pauk.sources.llm import SubscriptionLimitError, check_providers
+from pauk.sources.llm import CliUnusableError, SubscriptionLimitError, check_providers
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
@@ -373,6 +373,8 @@ def main() -> None:
         # The run is not broken: what it finished is saved, and the same
         # command picks up the rest once the limit resets.
         raise SystemExit(f"{error}\nRun the same command again after the limit resets.") from None
+    except CliUnusableError as error:
+        raise SystemExit(f"{error}\nFix the CLI, then run the same command again.") from None
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> None:

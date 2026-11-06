@@ -18,6 +18,7 @@ from pauk.sources.llm import (
     OPENROUTER_KEY_URL,
     ClaudeCli,
     CliStoppedError,
+    CliUnusableError,
     CodexCli,
     OpenRouterClient,
     SubscriptionCliClient,
@@ -262,10 +263,38 @@ class ClaudeCliTest(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(SubscriptionLimitError, "limit reached"):
                 self.run_client(self.reply(message, is_error=True), returncode=1)
 
-    def test_a_429_status_stops_the_run_whatever_the_text(self, _which):
+    def test_a_bare_429_stops_the_run_but_is_not_called_a_spent_subscription(self, _which):
         reply = self.reply("Request failed", is_error=True, api_error_status=429)
-        with self.assertRaises(SubscriptionLimitError):
+        with self.assertRaisesRegex(SubscriptionLimitError, "^rate limited"):
             self.run_client(reply, returncode=1)
+
+    def test_a_signed_out_cli_stops_the_run(self, _which):
+        for reply, returncode in (
+            (self.reply("Not logged in \u00b7 Please run /login", is_error=True), 1),
+            (self.reply("Request failed", is_error=True, api_error_status=401), 1),
+            ("Not logged in", 1),
+        ):
+            with self.subTest(reply=str(reply)[:40]), self.assertRaises(CliUnusableError):
+                self.run_client(reply, returncode=returncode)
+
+    def test_a_run_of_failed_calls_stops_the_run_whatever_the_wording(self, _which):
+        client = SubscriptionCliClient(5, ClaudeCli(), "haiku")
+        failed = json.dumps(self.reply("Something unknown went wrong", is_error=True))
+
+        with patch("pauk.sources.llm._run_cli", return_value=(1, failed, "")):
+            for _ in range(19):
+                self.assertIsNone(client.chat_json("prompt"))
+            with self.assertRaisesRegex(CliUnusableError, "20 CLI calls failed in a row"):
+                client.chat_json("prompt")
+
+    def test_a_reply_from_the_model_resets_the_count_of_failures(self, _which):
+        client = SubscriptionCliClient(5, ClaudeCli(), "haiku")
+        failed = (1, json.dumps(self.reply("Something unknown went wrong", is_error=True)), "")
+        answered = (0, json.dumps(self.reply("not json at all")), "")
+
+        with patch("pauk.sources.llm._run_cli", side_effect=[failed] * 19 + [answered] + [failed] * 19):
+            for _ in range(39):
+                self.assertIsNone(client.chat_json("prompt"))
 
     def test_digits_inside_a_longer_token_are_not_a_limit(self, _which):
         client, result, _ = self.run_client(self.reply("failed: req_a1429f", is_error=True), returncode=1)
@@ -280,10 +309,10 @@ class ClaudeCliTest(unittest.TestCase):
         self.assertEqual(client.last_usage["prompt_tokens"], 0)
 
     def test_output_that_is_not_json_is_a_failure_with_the_raw_text_kept(self, _which):
-        client, result, _ = self.run_client("Not logged in", returncode=1)
+        client, result, _ = self.run_client("Something broke", returncode=1)
 
         self.assertIsNone(result)
-        self.assertEqual(client.last_response["_raw_text"], "Not logged in")
+        self.assertEqual(client.last_response["_raw_text"], "Something broke")
         self.assertIn("not JSON", client.last_error)
 
     def test_a_non_object_reply_is_a_failure(self, _which):
@@ -364,10 +393,15 @@ class CodexCliTest(unittest.TestCase):
             self.run_client(None, returncode=1, events=events)
 
     def test_a_failed_call_reports_stderr(self, _which):
-        client, result, _ = self.run_client(None, returncode=2, events=[], stderr="Not logged in")
+        client, result, _ = self.run_client(None, returncode=2, events=[], stderr="Something broke")
 
         self.assertIsNone(result)
-        self.assertEqual(client.last_error, "CLI error: Not logged in")
+        self.assertEqual(client.last_error, "CLI error: Something broke")
+
+    def test_a_lost_login_stops_the_run(self, _which):
+        for stderr in ("Not logged in", "Your access token could not be refreshed. Please log out and sign in again."):
+            with self.subTest(stderr=stderr), self.assertRaises(CliUnusableError):
+                self.run_client(None, returncode=1, events=[], stderr=stderr)
 
     def test_an_empty_last_message_is_a_failure(self, _which):
         client, result, _ = self.run_client("")
@@ -379,7 +413,7 @@ class CodexCliTest(unittest.TestCase):
         events = [
             {"type": "turn.failed", "error": {"message": "exceeded retry limit, last status: 429 Too Many Requests"}}
         ]
-        with self.assertRaisesRegex(SubscriptionLimitError, "limit reached"):
+        with self.assertRaisesRegex(SubscriptionLimitError, "^rate limited"):
             self.run_client(None, events=events)
 
     def test_a_timeout_is_a_failure_not_a_crash(self, _which):
@@ -460,6 +494,15 @@ class CommandExitTest(unittest.TestCase):
             patch("pauk.cli._dispatch", side_effect=SubscriptionLimitError("subscription limit reached: out")),
             patch("pauk.cli._interrupt_on_termination"),
             self.assertRaisesRegex(SystemExit, "after the limit resets"),
+        ):
+            cli.main()
+
+    def test_a_signed_out_cli_ends_the_command_with_a_nonzero_exit(self):
+        with (
+            patch("sys.argv", ["pauk", "dedup", "graph"]),
+            patch("pauk.cli._dispatch", side_effect=CliUnusableError("CLI is not signed in: Not logged in")),
+            patch("pauk.cli._interrupt_on_termination"),
+            self.assertRaisesRegex(SystemExit, "Fix the CLI"),
         ):
             cli.main()
 
