@@ -11,6 +11,14 @@ from pauk.person_resolution_defaults import MERGE_FROM, SEPARATE_BELOW
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
+OPENALEX_RPS = 30
+OPENALEX_PUBLIC_RPS = 10
+ORCID_RPS = 12
+CROSSREF_RPS = 10
+CROSSREF_CONCURRENCY = 3
+CROSSREF_PUBLIC_RPS = 5
+CROSSREF_PUBLIC_CONCURRENCY = 1
+
 
 def _path_setting(name: str, default: Path) -> Path:
     configured = os.getenv(name)
@@ -24,6 +32,11 @@ def _path_setting(name: str, default: Path) -> Path:
 class Settings:
     data_dir: Path = Path(os.getenv("PAUK_DATA_DIR") or ROOT_DIR / "data")
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
+    openalex_rps: float = float(os.getenv("PAUK_OPENALEX_RPS") or OPENALEX_RPS)
+    orcid_rps: float = float(os.getenv("PAUK_ORCID_RPS") or ORCID_RPS)
+    crossref_rps: float = float(os.getenv("PAUK_CROSSREF_RPS") or CROSSREF_RPS)
+    crossref_concurrency: int = int(os.getenv("PAUK_CROSSREF_CONCURRENCY") or CROSSREF_CONCURRENCY)
+    crossref_mailto: str = os.getenv("CROSSREF_MAILTO", "")
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL") or "qwen/qwen-2.5-72b-instruct"
