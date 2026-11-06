@@ -15,6 +15,7 @@ from pauk.pipeline.membership import (
     authorship_institution_rors,
     iter_work_membership,
     membership_sources_complete,
+    refresh_authorship_summary,
     refresh_orcid_membership,
     source_observed_at,
 )
@@ -246,6 +247,15 @@ def rebuild_from_global_sources(
                 ))
             previous = [row for row in iter_work_membership(person)
                         if row.institution_source_person_id == owner and row.institution_source_id == work]
+            # Keep historical author slots, but retract institution facts from slots
+            # that the complete replacement response no longer assigns to this owner.
+            current_positions = {position for position, _ in rows}
+            for position in {row.position for row in previous} - current_positions:
+                candidate.membership_work_sources.append(MembershipWorkSource(
+                    publication_id=aliases.get(work, work), position=position,
+                    institution_rors=[], institution_source_person_id=owner,
+                    institution_source_id=work, institution_observed_at=observed_at,
+                ))
             if any((stamp := source_observed_at(row.institution_observed_at)) is not None and stamp > observed_at
                    for row in previous):
                 complete = False
@@ -280,6 +290,7 @@ def rebuild_from_global_sources(
             refresh_orcid_membership(candidate, affiliations, owner, source_id,
                                      observed_at=observed_at)
     if complete and membership_sources_complete(candidate):
+        refresh_authorship_summary(candidate)
         result = candidate
     else:
         # A failed audit must not publish a completeness certificate assembled from partial history.

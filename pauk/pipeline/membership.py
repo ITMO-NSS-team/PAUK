@@ -136,7 +136,8 @@ def _capture_work_membership(person: Person) -> None:
             person.membership_work_sources.append(MembershipWorkSource.model_validate(row.model_dump()))
 
 
-def _update_authorship_summary(person: Person) -> None:
+def refresh_authorship_summary(person: Person) -> None:
+    """Project source facts onto display rows without dropping authorship data."""
     for row in person.authored:
         sources = [source for source in person.membership_work_sources
                    if (source.publication_id, source.position) == (row.publication_id, row.position)
@@ -191,7 +192,7 @@ def coalesce_authorships(person: Person) -> None:
             current.affiliation = row.affiliation
             current.affiliation_source = row.affiliation_source
     person.authored = authored
-    _update_authorship_summary(person)
+    refresh_authorship_summary(person)
 
 
 def refresh_authorship_membership(
@@ -236,7 +237,7 @@ def refresh_authorship_membership(
     source_row.institution_source_person_id = source_person_id
     source_row.institution_source_id = source_work_id
     source_row.institution_observed_at = observed_at
-    _update_authorship_summary(person)
+    refresh_authorship_summary(person)
 
 
 def source_observed_at(value: object) -> datetime | None:

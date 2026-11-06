@@ -980,7 +980,9 @@ class Neo4jClient:
                 "r.institution_rors AS was_rors, r.institution_source_person_id AS was_owner, "
                 "r.institution_source_id AS was_source, "
                 "(size(coalesce(src.merged_ids, [])) > 0 OR size(coalesce(tgt.merged_ids, [])) > 0) "
-                "AS preserve_corresponding"
+                "AS preserve_corresponding, "
+                "(src.membership_policy = $membership_policy "
+                "AND src.membership_status = 'unsupported' AND src.is_itmo = false) AS clear_itmo_ror"
             )
             corresponding_merge = (
                 "SET r.is_corresponding = CASE "
@@ -1001,6 +1003,12 @@ class Neo4jClient:
                 "AND (was_source IS NULL OR r.institution_source_id IS NULL "
                 "OR was_source <> r.institution_source_id) "
                 "THEN null ELSE r.institution_source_id END"
+                # Person upsert already validated every owner and source. Keep the
+                # edge union for partial publishes, but retire this withdrawn ROR.
+                " SET r.institution_rors = CASE "
+                "WHEN coalesce(clear_itmo_ror, false) AND r.institution_rors IS NOT NULL "
+                "THEN [value IN r.institution_rors WHERE NOT (trim(toString(value)) =~ $itmo_ror_pattern)] "
+                "ELSE r.institution_rors END"
             )
         query = cast(
             LiteralString,
@@ -1018,7 +1026,13 @@ class Neo4jClient:
         )
 
         with self.driver.session() as session:
-            matched = session.execute_write(lambda tx: tx.run(query, batch=batch).single()["matched"])
+            parameters = {"batch": batch}
+            if rel_type == "AUTHORED":
+                parameters.update({
+                    "membership_policy": POLICY_VERSION,
+                    "itmo_ror_pattern": rf"(?i)(?:https?://ror\.org/)?{ITMO_ROR_ID}/?",
+                })
+            matched = session.execute_write(lambda tx: tx.run(query, **parameters).single()["matched"])
 
         if matched < len(relationships):
             logger.warning(

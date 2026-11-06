@@ -111,6 +111,16 @@ against observations and the live cluster. A partial import, missing owner,
 or older contradictory observation cannot clear the cluster's flag. Folding
 preserves the inventories; splitting restores them with their original owners.
 
+After a complete reassessment sets a person's current-policy status to
+`unsupported / false`, publishing also removes the ITMO ROR from that person's
+`AUTHORED` summaries, including edges previously aggregated by a merge. Unknown
+ROR lists stay unknown, other institutions remain untouched, and contact-author
+information is preserved. Partial or supported person imports still union edge
+RORs to avoid discarding another owner's evidence. These edge summaries are not
+a general source-version ledger: retracting a particular institution on one
+work while other work still supports membership requires source-specific data;
+membership itself is decided from the person's evidence and coverage.
+
 The department hierarchy is recursive: each `Department` is `PART_OF` exactly
 one parent, either another `Department` (`parent_id`) or a root
 `Organization` (`organization_id`). A chain such as department, faculty,

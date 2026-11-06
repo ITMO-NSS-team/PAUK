@@ -295,7 +295,7 @@ class PersonsStage(EnrichmentStage):
                             person.affiliations = _merge_affiliations(person.affiliations, _openalex_affiliations(payload))
                         else:
                             payload = request.get_record(key)
-                            self.raw.append("orcid", payload, {"orcid": key})
+                            observed_at = self.raw.append("orcid", payload, {"orcid": key})
                             emails = (((payload.get("person") or {}).get("emails") or {}).get("email") or [])
                             # Every address ORCID lists is kept: a third of the
                             # people who list any list more than one, and the
@@ -316,7 +316,7 @@ class PersonsStage(EnrichmentStage):
                                     setattr(person, field, value)
                             refresh_orcid_membership(
                                 person, _orcid_affiliations(payload), orcid_source_owner(person, key), key,
-                                observed_at=datetime.now(UTC),
+                                observed_at=observed_at,
                             )
                         person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
