@@ -76,6 +76,18 @@ class NothingToDoTest(PruneTest):
         self.assertEqual(plan.total(), 0)
 
 
+class GraphOwnedTest(PruneTest):
+    def test_a_version_link_no_row_asks_for_is_kept(self):
+        # `pauk versions link` writes IS_VERSION from the graph itself; a
+        # publish never would, and that is not staleness.
+        self.write(publications=[Publication(id="W1", title="One"), Publication(id="W2", title="Two")])
+        self.publish()
+        self.graph.upsert_relationships_batch("Publication", "Publication", "IS_VERSION",
+                                              [("W1", "W2", {"bucket": "STRONG_FUZZY"})])
+        self.assertEqual(self.links("IS_VERSION"), [("W1", "W2")])
+        self.assertEqual(self.plan().total(), 0)
+
+
 class RetractedClaimTest(PruneTest):
     """A claim a repair took away leaves a record to prune."""
 

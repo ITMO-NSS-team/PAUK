@@ -439,25 +439,45 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual(publications["W1"].merged_ids, ["W2"])
         self.assertEqual({v.openalex_id for v in publications["W1"].versions}, {"W1", "W2"})
 
-    def test_preprint_and_version_of_record_keep_both_venues(self):
+    def test_one_title_under_two_dois_stays_two_publications(self):
+        # A preprint and its version of record are versions, not duplicates:
+        # each keeps its node, and `pauk versions link` relates them.
         result, publications = self.run_stage([
             publication("W1", "Deep nets for spiders", doi="10.2/preprint",
                         journal="SSRN Electronic Journal", day="2025-06-01"),
             publication("W2", "Deep nets for spiders", doi="10.3/vor",
                         journal="Sensors", day="2026-03-13"),
         ])
+        self.assertEqual(result["dedup_publications_merged"], 0)
+        self.assertEqual(set(publications), {"W1", "W2"})
+        self.assertEqual(publications["W2"].versions, [])
+
+    def test_a_record_without_doi_folds_into_the_one_doi_its_title_carries(self):
+        result, publications = self.run_stage([
+            publication("W1", "Deep nets for spiders", doi="10.3/vor", journal="Sensors"),
+            publication("W2", "Deep nets for spiders", journal="Sensors"),
+        ])
         self.assertEqual(result["dedup_publications_merged"], 1)
-        # The later record is the version of record and survives.
-        self.assertEqual(set(publications), {"W2"})
-        survivor = publications["W2"]
-        self.assertEqual(survivor.journal, "Sensors")
-        self.assertEqual({(v.journal, v.doi) for v in survivor.versions},
-                         {("Sensors", "10.3/vor"), ("SSRN Electronic Journal", "10.2/preprint")})
+        self.assertEqual(len(publications), 1)
+
+    def test_a_record_without_doi_never_joins_two_dois(self):
+        # Union-find through the DOI-less record would otherwise fold the
+        # preprint into the article: nothing says which one it belongs to.
+        _, publications = self.run_stage([
+            publication("W1", "Deep nets for spiders", doi="10.2/preprint"),
+            publication("W2", "Deep nets for spiders"),
+            publication("W3", "Deep nets for spiders", doi="10.3/vor"),
+            publication("W4", "Deep nets for spiders"),
+        ])
+        self.assertEqual(len(publications), 3)
+        self.assertIn("W1", publications)
+        self.assertIn("W3", publications)
 
     def test_versions_keep_each_records_own_authors_and_abstract(self):
         # The ledger must answer "who was on the preprint" even after every
-        # authorship is repointed to the surviving record.
-        preprint = publication("W1", "One work", doi="10.2/preprint", day="2025-06-01")
+        # authorship is repointed to the surviving record. No DOI on the
+        # preprint: with two DOIs the records stay apart (versions link them).
+        preprint = publication("W1", "One work", day="2025-06-01")
         preprint.abstract = "Preprint abstract"
         vor = publication("W2", "One work", doi="10.3/vor", day="2026-03-13")
         vor.abstract = "Version-of-record abstract"
@@ -528,7 +548,7 @@ class PublicationDedupTest(unittest.TestCase):
     def test_a_fresher_record_becomes_the_face_before_author_count(self):
         _, publications = self.run_stage(
             [
-                publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
+                publication("W1", "One work", day="2026-01-01"),
                 publication("W2", "One work", doi="10.1/broken", day="2026-02-01"),
             ],
             people=[
@@ -538,13 +558,13 @@ class PublicationDedupTest(unittest.TestCase):
         )
         self.assertEqual(set(publications), {"W2"})
         self.assertEqual(publications["W2"].doi, "10.1/broken")
-        self.assertEqual({v.doi for v in publications["W2"].versions}, {"10.1/x", "10.1/broken"})
+        self.assertEqual({v.doi for v in publications["W2"].versions}, {None, "10.1/broken"})
 
     def test_article_beats_newer_preprint_before_date_and_author_count(self):
         _, publications = self.run_stage(
             [
                 publication("W1", "One work", doi="10.1/x", type="article", day="2026-01-01"),
-                publication("W2", "One work", doi="10.1/y", type="preprint", day="2026-12-01"),
+                publication("W2", "One work", type="preprint", day="2026-12-01"),
             ],
             people=[
                 person("A1", "Author One", ["W1", "W2"]),
@@ -950,6 +970,20 @@ class GraphDedupTest(unittest.TestCase):
         self.assertEqual((applied["entity"], applied["record_a"], applied["merged_into"]),
                          ("publication", "W1", "W2"))
         self.assertEqual(applied["rules"], ["doi"])
+
+    def test_graph_keeps_one_title_under_two_dois_apart(self):
+        client = RecordingNeo4jClient()
+        self.load_new_group(client, "q1", [
+            publication("W1", "Same work", doi="10.2/preprint", day="2026-01-01"),
+        ], [person("X1", "Author One", ["W1"])])
+        self.load_new_group(client, "y2026", [
+            publication("W2", "Same work", doi="10.3/vor", day="2026-05-01"),
+        ], [person("X1", "Author One", ["W2"])])
+        removed, report = dedup_graph_publications(client)
+        self.assertEqual(removed, 0)
+        self.assertEqual(report, [])
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertIn("W2", client.nodes["Publication"])
 
     def test_graph_article_beats_newer_preprint_before_author_count(self):
         client = RecordingNeo4jClient()

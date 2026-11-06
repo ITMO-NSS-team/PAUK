@@ -6,7 +6,7 @@ loading, and graph-level dedup.
 
 **Files:** `pauk/graph/extract.py`, `jsonl_loader.py`, `client.py`,
 `audit.py`, `mutations.py`, `overrides.py`, `schema.py`, `csv_loader.py`,
-`dedup.py`, `load.py`, `pauk/urls.py`.
+`dedup.py`, `load.py`, `version_link.py`, `pauk/urls.py`.
 
 The same schema as a Mermaid diagram:
 [`diagrams/neo4j-schema.md`](../diagrams/neo4j-schema.md). Field-by-field
@@ -38,6 +38,7 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 (:Publication) -[:PRODUCED_BY]->   (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
+(:Publication) -[:IS_VERSION]->    (:Publication)
 
 (:Repository) -[:DEVELOPED_BY]-> (:Department)
 (:Repository) -[:IMPLEMENTS]->   (:Publication)
@@ -66,6 +67,17 @@ Person merges and repeated publication preserve accumulated names, emails and
 affiliations. An aggregated `AUTHORED.is_corresponding` stays true if any source
 record is true. Explicit edits and verified unmerge operations can restore or
 remove values; a partial source record cannot erase another merged record's data.
+
+`IS_VERSION` points from a version (a preprint, a translation, a conference
+paper, a cover, an erratum) to the work it relates to, and carries `bucket`,
+`mergeable`, `status` (`held`, `same` once a person confirmed it, absent for
+a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`. No publish
+writes it: `pauk versions link` (`version_link.py`) rebuilds it from the
+graph, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
+prune` from reading its absence in the prepared rows as staleness; see
+[pipeline/version-candidates.md](pipeline/version-candidates.md).
+`Publication.venue_type` is the OpenAlex source type of the primary venue
+(`journal`, `conference`, `repository`, ...).
 
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
@@ -201,7 +213,10 @@ node (an existing relationship of the canonical node wins; the duplicate's
 properties only fill gaps: `SET new += properties(old); SET new += keep`).
 Node fields go through Python logic in `_merge_duplicate_properties` (lists
 are unioned preserving order, booleans OR-ed, JSON lists unpacked, unioned and
-repacked), then the duplicate is `DETACH DELETE`d. Node properties cannot be
+repacked), then the duplicate is `DETACH DELETE`d. An edge between the
+duplicate and the canonical node (an `IS_VERSION` between the two halves of a
+fold) is not moved: it would become a loop, so it goes with the duplicate.
+Node properties cannot be
 merged directly in Cypher with the same trick: it would briefly set
 `canonical.id` to the duplicate's id while the duplicate still exists, and
 fail on the uniqueness constraint.

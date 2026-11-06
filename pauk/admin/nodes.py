@@ -369,6 +369,7 @@ LINK_WORDS = {
     ("Person", "AUTHORED", "Publication"): ("написал публикацию", "написана автором"),
     ("Person", "BELONGS_TO", "Department"): ("работает в подразделении", "здесь работает"),
     ("Person", "CONTRIBUTED_TO", "Repository"): ("участвовал в разработке", "в разработке участвовал"),
+    ("Publication", "IS_VERSION", "Publication"): ("версия публикации", "у публикации есть версия"),
     ("Publication", "MENTIONS_LINK", "LinkCandidate"): ("ссылается на адрес", "упомянут в публикации"),
     ("Publication", "MENTIONS_LINK", "Repository"): ("ссылается на репозиторий", "упомянут в публикации"),
     ("Publication", "PRODUCED_BY", "Department"): ("сделана в подразделении", "здесь сделана публикация"),

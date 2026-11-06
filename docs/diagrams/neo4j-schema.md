@@ -66,6 +66,7 @@ classDiagram
         +versions : JSON
         +merged_ids
         +full_text
+        +venue_type
     }
 
     class Repository {
@@ -112,6 +113,7 @@ classDiagram
     Publication --> Department : PRODUCED_BY
     Publication --> Repository : MENTIONS_LINK
     Publication --> LinkCandidate : MENTIONS_LINK
+    Publication --> Publication : IS_VERSION
     Repository --> Department : DEVELOPED_BY
     Repository --> Publication : IMPLEMENTS
     Repository --> GitHubProfile : OWNED_BY
@@ -125,6 +127,9 @@ and is built by the `github_match` stage. `MENTIONS_LINK` carries `context`
 (list), `page_number` (list, `0` = abstract), `is_relevant`,
 `classification_status`, `llm_confidence`, `llm_reason`, and, for links with
 line-wrap alternatives, `url_ambiguous`, `candidate_urls` and `availability`.
+`IS_VERSION` carries `bucket`, `mergeable`, `status`, `title_sim`,
+`llm_verdict` and `llm_reason`, and is written by `pauk versions link`, not
+by a publish.
 Details and unique keys: [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
 
 The department hierarchy is recursive: a unit is `PART_OF` its parent, either
