@@ -102,26 +102,31 @@ class PreparedStore:
         for row in self.read_rows(entity):
             yield model.model_validate(row)
 
-    def get_rows(self, entity: str, ids: Iterable[str]) -> Iterator[dict]:
+    def get_rows(self, entity: str, ids: Iterable[str], *, include_merged: bool = False) -> Iterator[dict]:
         """Look up specific rows by their key field, across every group.
 
         Unlike read_rows, this isn't scoped to self.group - it's for a
         stage that needs the current global state of a row it already
         knows the id of (see OpenAlexNormalizer), not "everything my group
         has touched".
+        include_merged also matches ids preserved in merged_ids by dedup.
         """
         ids = [i for i in ids if i]
         if not ids:
             return
         key_field = self._key_field(entity)
+        query = {key_field: {"$in": ids}}
+        if include_merged:
+            query = {"$or": [query, {"merged_ids": {"$in": ids}}]}
         cursor = self._collection(entity).find(
-            {key_field: {"$in": ids}},
+            query,
             {"_id": False, "groups": False, "_version": False},
         )
         yield from cursor
 
-    def get_models(self, entity: str, ids: Iterable[str], model: type[M]) -> Iterator[M]:
-        for row in self.get_rows(entity, ids):
+    def get_models(self, entity: str, ids: Iterable[str], model: type[M], *,
+                   include_merged: bool = False) -> Iterator[M]:
+        for row in self.get_rows(entity, ids, include_merged=include_merged):
             yield model.model_validate(row)
 
     def write_rows(self, entity: str, rows: Iterable[dict]) -> None:

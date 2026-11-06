@@ -71,6 +71,31 @@ class RunTest(unittest.TestCase):
                       self.config, None)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
 
+    def test_delayed_cli_recording_preserves_the_newer_edit_and_original_value(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        original = admin_cli.record_override
+        interleaved = False
+
+        def save_second_before_recording_first(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                admin_cli.run(parse("--actor", "user:second", "node", "set", "Person", "A1",
+                                    "--set", "name_ru=Иоанн"), self.config, db)
+            return original(*args, **kwargs)
+
+        with patch.object(admin_cli, "record_override", save_second_before_recording_first):
+            admin_cli.run(parse("--actor", "user:first", "node", "set", "Person", "A1",
+                                "--set", "name_ru=Пётр"), self.config, db)
+        admin_cli.run(parse("overrides", "apply"), self.config, db)
+
+        self.assertTrue(interleaved)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иоанн")
+        (decision,) = active_overrides(db)
+        self.assertEqual(decision["fields"]["name_ru"], "Иоанн")
+        self.assertIsNone(decision["auto_value"]["name_ru"])
+        self.assertEqual(decision["actor"], "user:second")
+
     def test_an_unknown_field_stops_with_a_message_not_a_traceback(self):
         # The person at the keyboard should read what went wrong.
         with self.assertRaises(SystemExit) as caught:

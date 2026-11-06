@@ -279,6 +279,39 @@ def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[di
     return rows
 
 
+def snapshot_relationships(client: Neo4jClient, label: str, node_id: str,
+                           node_props: dict) -> list[dict]:
+    """Capture incident edges as arguments to `create_relationship`.
+
+    Args:
+        node_props: Properties read before deleting the node. Incoming edges
+            may address it by `url` or `login` rather than by its id.
+
+    Raises:
+        MutationError: An edge cannot be restored through the allowed graph
+            mutations. Refuse before deleting anything.
+    """
+    snapshots = []
+    for row in node_relationships(client, label, node_id):
+        other = row["labels"][0]
+        outgoing = row["outgoing"]
+        triple = (label, row["type"], other) if outgoing else (other, row["type"], label)
+        match_prop = validate_relationship(*triple)
+        src_id = node_id if outgoing else row["other_id"]
+        tgt_id = row["match_value"] if outgoing else (
+            node_id if match_prop == "id" else node_props.get(match_prop))
+        if not src_id or not tgt_id:
+            raise MutationError(
+                f"cannot restore {triple}: missing source id or target {match_prop}")
+        snapshots.append({
+            "src_label": triple[0], "rel_type": triple[1], "tgt_label": triple[2],
+            "src_id": src_id, "tgt_id": tgt_id,
+            "props": {name: value for name, value in row["props"].items()
+                      if name not in ("created_at", "updated_at")},
+        })
+    return snapshots
+
+
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
     """Add a node the pipeline does not know about.
 
@@ -321,14 +354,16 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         UnknownEntity: Unknown label or field.
     """
     validate_fields(label, patch)
-    current = read_node(client, label, node_id)
-    if expected_updated_at is not None and str(current.get("updated_at")) != str(expected_updated_at):
+    current, updated = client.update_node_properties(
+        label, node_id, as_stored(patch), expected_updated_at)
+    if current is None:
+        raise NotFound(f"{label} {node_id} does not exist")
+    if updated is None:
         raise VersionConflict(
             f"{label} {node_id} changed since you opened it "
             f"(now {current.get('updated_at')}, you had {expected_updated_at})")
-    client.upsert_nodes_batch(label, [(node_id, as_stored(patch))])
     logger.info("updated %s %s: %s", label, node_id, ", ".join(sorted(patch)))
-    return read_node(client, label, node_id)
+    return updated
 
 
 def delete_node(client: Neo4jClient, label: str, node_id: str, cascade: bool = False) -> int:
@@ -354,6 +389,22 @@ def delete_node(client: Neo4jClient, label: str, node_id: str, cascade: bool = F
             f"{label} {node_id} still has relationships; pass cascade to delete them too")
     logger.info("deleted %s %s (cascade=%s)", label, node_id, cascade)
     return removed
+
+
+def read_relationship(client: Neo4jClient, src_label: str, rel_type: str, tgt_label: str,
+                      src_id: str, tgt_id: str) -> dict:
+    """Read an edge's data for restoration, excluding DB-owned timestamps.
+
+    Raises:
+        NotFound: The nodes have no such relationship.
+    """
+    validate_relationship(src_label, rel_type, tgt_label)
+    for row in node_relationships(client, src_label, src_id):
+        if (row["outgoing"] and row["type"] == rel_type and tgt_label in row["labels"]
+                and row["match_value"] == tgt_id):
+            return {name: value for name, value in row["props"].items()
+                    if name not in ("created_at", "updated_at")}
+    raise NotFound(f"({src_label} {src_id})-[:{rel_type}]->({tgt_label} {tgt_id}) does not exist")
 
 
 def create_relationship(client: Neo4jClient, src_label: str, rel_type: str, tgt_label: str,

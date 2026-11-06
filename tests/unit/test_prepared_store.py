@@ -2,7 +2,7 @@ import unittest
 
 import mongomock
 
-from pauk.models import Publication
+from pauk.models import Person, Publication
 from pauk.storage import PreparedStore
 from pauk.storage.prepared import REVISIONS, trim_revisions
 
@@ -38,6 +38,17 @@ class PreparedStoreTest(unittest.TestCase):
     def test_get_models_skips_unknown_ids_without_erroring(self):
         store = PreparedStore(self.db, "sample")
         self.assertEqual(list(store.get_models("publications", ["ghost"], Publication)), [])
+
+    def test_merged_id_lookup_returns_the_survivor_without_adding_it_to_the_group(self):
+        owner = Person(id="A2", is_itmo=True, merged_ids=["A1"])
+        PreparedStore(self.db, "other").write_models("persons", [owner])
+        store = PreparedStore(self.db, "sample")
+        before = self.db.persons.find_one({"id": "A2"})
+
+        self.assertEqual(list(store.get_models("persons", ["A1"], Person)), [])
+        self.assertEqual(list(store.get_models("persons", ["A1", "A2"], Person, include_merged=True)), [owner])
+        self.assertEqual(list(store.read_models("persons", Person)), [])
+        self.assertEqual(self.db.persons.find_one({"id": "A2"}), before)
 
     def test_second_group_writing_a_row_adds_provenance_without_hiding_it_from_the_first(self):
         PreparedStore(self.db, "group-a").write_models(

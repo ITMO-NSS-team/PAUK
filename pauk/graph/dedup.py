@@ -485,7 +485,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # to ask about and no pair of people to key a question on.
         current_aliases = client.fetch_merged_id_map("Person")
         review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
-        review.record_disputed(mongo_db, person_report)
+        review.record_disputed(mongo_db, person_report, aliases=current_aliases)
         # Re-read, not the map from before the pass: what this pass folded
         # is exactly the difference between the two.
         review.mark_applied_merges(mongo_db, current_aliases)

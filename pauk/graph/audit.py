@@ -400,6 +400,13 @@ class AuditedNeo4jClient:
         after = self._fetch_node_props(label_list, ids)
         self._emit_diffs("upsert_nodes", label_str, before, after)
 
+    def update_node_properties(self, label, node_id, properties, expected_updated_at=None):
+        before, after = self._client.update_node_properties(
+            label, node_id, properties, expected_updated_at)
+        if after is not None:
+            self._emit_diffs("upsert_nodes", label, {node_id: before}, {node_id: after})
+        return before, after
+
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         if not nodes:
             return

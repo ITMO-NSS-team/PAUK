@@ -37,6 +37,7 @@ from pauk.graph.overrides import (
     apply_overrides,
     deactivate_override,
     deactivate_relationship_override,
+    override_generation,
     record_override,
     record_relationship_override,
 )
@@ -394,13 +395,16 @@ def _set_fields(args, client, db, actor: str) -> dict:
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
+    generation = (override_generation(db, args.label, args.id)
+                  if db is not None and not args.once else None)
     # Graph first: it is the step that can be refused.
     node = update_node(client, args.label, args.id, fields,
                        expected_updated_at=args.expect_updated_at)
     if db is not None and not args.once:
         record_override(db, args.label, args.id, "set", fields, actor=actor,
                         note=args.note or "",
-                        auto_value={name: before.get(name) for name in fields})
+                        auto_value={name: before.get(name) for name in fields},
+                        graph_updated_at=node["updated_at"], expected_generation=generation)
     logger.info("updated %s %s%s", args.label, args.id,
                 "" if db is not None and not args.once else " (not recorded as an override)")
     return node

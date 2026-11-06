@@ -30,12 +30,17 @@ class FakeNeo4jClient:
         self.relationships_matched = 0
         self.relationships_removed = 0
         self.nodes_removed = 0
+        self.node_update_result = (None, None)
 
     def upsert_nodes_batch(self, labels, nodes):
         self.calls.append(("upsert_nodes_batch", (labels, nodes)))
 
     def upsert_person_nodes_batch(self, nodes):
         self.calls.append(("upsert_person_nodes_batch", (nodes,)))
+
+    def update_node_properties(self, label, node_id, properties, expected_updated_at=None):
+        self.calls.append(("update_node_properties", (label, node_id, properties, expected_updated_at)))
+        return self.node_update_result
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships, tgt_match_prop="id"):
         self.calls.append(("upsert_relationships_batch", (src_label, tgt_label, rel_type, relationships)))
@@ -96,6 +101,32 @@ class PassthroughTest(unittest.TestCase):
         client, fake, _sink = audited_client()
         client.close()
         self.assertEqual(fake.calls, [("close", ())])
+
+
+class ConditionalNodeUpdateAuditTest(unittest.TestCase):
+    def test_success_uses_the_images_returned_by_the_locked_transaction(self):
+        client, fake, sink = audited_client()
+        fake.node_update_result = ({"name_ru": "Иван", "updated_at": "old"},
+                                   {"name_ru": "Пётр", "updated_at": "new"})
+        with actor_context("user:roman", source="admin-ui"):
+            result = client.update_node_properties("Person", "A1", {"name_ru": "Пётр"}, "old")
+
+        self.assertEqual(result, fake.node_update_result)
+        (entry,) = sink.entries
+        self.assertEqual(entry.diff, {"name_ru": ("Иван", "Пётр")})
+        self.assertEqual(entry.actor, "user:roman")
+        self.assertEqual(entry.operation, "upsert_nodes")
+
+    def test_refused_or_missing_updates_leave_no_audit_entry(self):
+        for images in (({"name_ru": "Иван"}, None), (None, None)):
+            with self.subTest(images=images):
+                client, fake, sink = audited_client()
+                fake.node_update_result = images
+
+                result = client.update_node_properties("Person", "A1", {"name_ru": "Пётр"}, "old")
+
+                self.assertEqual(result, images)
+                self.assertEqual(sink.entries, [])
 
 
 class UpsertNodesDiffTest(unittest.TestCase):

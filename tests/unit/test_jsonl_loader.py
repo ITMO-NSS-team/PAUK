@@ -35,6 +35,36 @@ class NormalizeRepoUrlTest(unittest.TestCase):
         self.assertEqual(normalize_repo_url("ssh://github.com/org/repo"), "ssh://github.com/org/repo")
 
 
+class GitHubWithdrawalPublicationTest(unittest.TestCase):
+    def setUp(self):
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", github="known-login", email="known@lab.test", homepage="https://lab.test")
+
+    def publish(self, **fields):
+        load_prepared_rows(self.graph, {"persons.jsonl": [{"id": "A1", "is_itmo": True, **fields}]})
+        return self.graph.nodes["Person", "A1"]
+
+    def test_unknown_values_do_not_erase_graph_data(self):
+        for fields in ({}, {"github": None, "email": None}, {"github_match": {"matches": []}}):
+            with self.subTest(fields=fields):
+                row = self.publish(**fields)
+                self.assertEqual(row["github"], "known-login")
+                self.assertEqual(row["email"], "known@lab.test")
+
+    def test_only_fields_explicitly_withdrawn_are_cleared(self):
+        row = self.publish(github_match={"cleared_fields": ["github"]}, email=None)
+        self.assertIsNone(row.get("github"))
+        self.assertEqual(row["email"], "known@lab.test")
+
+    def test_a_new_value_takes_precedence_over_an_old_clear_marker(self):
+        row = self.publish(github="new-login", github_match={"cleared_fields": ["github"]})
+        self.assertEqual(row["github"], "new-login")
+
+    def test_clear_markers_cannot_change_unrelated_fields(self):
+        row = self.publish(github_match={"cleared_fields": ["homepage"]})
+        self.assertEqual(row["homepage"], "https://lab.test")
+
+
 class MentionsSynchronizationTest(unittest.TestCase):
     URL = "https://github.com/org/repo"
     OLD = "https://github.com/org/old"

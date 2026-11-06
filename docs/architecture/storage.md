@@ -31,8 +31,10 @@ Do not assume that a row visible in Mongo is visible to a stage. A separate
 pair, `get_rows` and `get_models(entity, ids, model)`, is a point lookup by id
 **without** the group filter, for code that must see an entity's global state
 even if its own group has not touched it yet (consumers:
-`pauk/pipeline/normalize.py::OpenAlexNormalizer._seed` and
-`pauk/graph/unmerge.py`).
+`pauk/pipeline/normalize.py::OpenAlexNormalizer._seed`,
+`pauk/graph/unmerge.py` and `github_match`, which reads authors named in saved
+answers and repositories named by its earlier results). `include_merged=True`
+also finds a surviving row by an id in its `merged_ids`.
 
 What this does not solve: the same real-world entity under **different** ids
 (several OpenAlex author ids for one person, an ORCID-fallback id, and so on)
@@ -177,14 +179,35 @@ again updates the document instead of creating a second one.
 | `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
 | `verdict`, `actor`, `note`, `decided_at` | the answer: `same` or `different`, by whom, why, when |
 | `applied_at` | when a "same" answer actually merged the records; empty while it waits for a run |
-| `chosen` | for a catalog question, which record was picked |
+| `chosen` | the catalog record or GitHub author picked by a positive choice; a binary answer clears a previous choice |
 | `skipped_at`, `skipped_by`, `disputed_at`, `disputed_rule` | the question was postponed; the rules changed their mind after a "different" answer |
+| `disputed_members`, `disputed_token` | the original members involved in a GitHub discrepancy and a fingerprint of its evidence |
+| `acknowledged_dispute_token` | the GitHub evidence a reviewer explicitly accepted with "оставить как есть" |
 
 An answer and its application are different things and live in different
 fields. Applying changes the graph once; the answer keeps all later runs in
 agreement with the person. A "different" answer has nothing to apply: it
 exists so the rules do not merge the pair tomorrow when it gains a shared
 coauthor.
+
+Answer transitions belong to `review.py`. Replacing a choice with "different"
+clears `chosen` in the same Mongo update as the verdict. GitHub decisions also
+check the verdict before applying a choice, so an older document that still
+has `chosen` beside "different" cannot turn a refusal into a confirmation.
+GitHub disagreements resolve aliases through the same answer reader and mark
+the original question behind the effective refusal, including refusals implied
+by choosing another author. A newer answer takes precedence over an older one.
+Person-pair answers use the same source-question lookup after merges; both dedup
+passes supply their alias maps. When aliases collapse several answers to one
+pair, the most recent `decided_at` wins.
+
+GitHub confirmation checks the displayed evidence token in the same Mongo update
+as the answer. It closes identical future discrepancies; changed evidence needs
+another review. A repeated confirmation is a no-op. Ordinary answer forms do not
+acknowledge evidence they never displayed. Superseded discrepancy flags are retired
+without changing the old answer itself.
+The caller supplies the evaluated GitHub accounts and selected authors separately
+from the report: an empty report retracts old rule conflicts only inside that scope.
 
 `applied_at` is set by whoever merged: the panel (`mark_applied`) or a run
 (`mark_applied_merges`, which matches answers against the map of what was

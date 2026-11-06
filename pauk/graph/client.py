@@ -228,6 +228,45 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
+    def update_node_properties(self, label: str, node_id: str, properties: dict,
+                               expected_updated_at: object | None = None) -> tuple[dict | None, dict | None]:
+        """Update an existing node under a write lock, returning before/after.
+
+        Missing nodes return `(None, None)`; a stale version returns the
+        current properties and no after-image. The temporary property takes
+        the lock before reading the version and is removed in the same query.
+        """
+        clean = {name: value for name, value in properties.items()
+                 if name not in ("id", "created_at", "updated_at")}
+        lock = cast(LiteralString, f"""
+            MATCH (n:{label} {{id: $node_id}})
+            SET n.__pauk_edit_lock = true
+            REMOVE n.__pauk_edit_lock
+            RETURN properties(n) AS props
+        """)
+        write = cast(LiteralString, f"""
+            MATCH (n:{label} {{id: $node_id}})
+            WITH n, datetime.realtime() AS stamp
+            SET n += $properties,
+                n.updated_at = CASE WHEN n.updated_at >= stamp
+                    THEN n.updated_at + duration({{nanoseconds: 1}}) ELSE stamp END
+            RETURN properties(n) AS props
+        """)
+
+        def update(tx):
+            row = tx.run(lock, node_id=node_id).single()
+            if row is None:
+                return None, None
+            before = dict(row["props"])
+            if (expected_updated_at is not None
+                    and str(before.get("updated_at")) != str(expected_updated_at)):
+                return before, None
+            after = tx.run(write, node_id=node_id, properties=clean).single()
+            return before, dict(after["props"])
+
+        with self.driver.session() as session:
+            return session.execute_write(update)
+
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         """Create or update Person nodes, retaining lists from graph folds.
 
@@ -932,11 +971,12 @@ class Neo4jClient:
         The other end's properties come along because an id does not always
         address it: two of the eleven relationships are matched by `url` or
         `login`, and removing such an edge needs that value, not the id.
+        The edge's own `props` let a caller restore its data after removal.
         """
         text = (
             f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
             "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
-            "properties(other) AS other_props, "
+            "properties(other) AS other_props, properties(r) AS props, "
             "startNode(r).id = n.id AS outgoing "
             "ORDER BY type, other_id"
         )

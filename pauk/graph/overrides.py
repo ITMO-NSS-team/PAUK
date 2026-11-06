@@ -28,10 +28,15 @@ audit log would be nonsense.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
+from uuid import uuid4
 
+from neo4j.time import DateTime
+from pymongo import ReturnDocument
 from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from .mutations import (
     MutationError,
@@ -48,13 +53,62 @@ from .mutations import (
 logger = logging.getLogger(__name__)
 
 COLLECTION = "graph_overrides"
+MAX_DECISION_WRITE_ATTEMPTS = 5
 
 SET = "set"
 DELETE = "delete"
-#: Added by a person: not an instruction, a claim that keeps a prune off it.
+# Preserve manually added nodes and relationships during graph pruning.
 CREATE = "create"
 LINK = "link"
 OPERATIONS = (SET, DELETE, CREATE)
+
+
+class DecisionWriteUncertain(PyMongoError):
+    """Mongo may have committed a decision but its result cannot be verified."""
+
+
+class DecisionWriteConflict(PyMongoError):
+    """A decision changed state or exhausted its bounded write attempts."""
+
+
+def _write_decision(db: Database, document_id: str,
+                    build: Callable[[dict], dict | None]) -> dict | None:
+    """Apply one complete decision, retrying if another editor changed it.
+
+    A lost reply does not prove the write failed. Its unique token lets us
+    confirm a commit before a caller compensates the graph mutation.
+    """
+    collection = db[COLLECTION]
+    for _ in range(MAX_DECISION_WRITE_ATTEMPTS):
+        before = collection.find_one({"_id": document_id})
+        update = build(before or {})
+        if update is None:
+            return None
+        token = uuid4().hex
+        update.setdefault("$set", {}).update(write_id=token, updated_at=_now())
+        query = {"_id": document_id, "write_id": (before or {}).get(
+            "write_id", {"$exists": False})}
+        try:
+            saved = collection.find_one_and_update(
+                query, update, upsert=before is None, return_document=ReturnDocument.AFTER)
+        except DuplicateKeyError:
+            if before is None:
+                continue
+            raise
+        except PyMongoError as error:
+            try:
+                current = collection.find_one({"_id": document_id})
+            except PyMongoError:
+                raise DecisionWriteUncertain(document_id) from error
+            if current and current.get("write_id") == token:
+                return current
+            if ((current or {}).get("write_id") != (before or {}).get("write_id")
+                    or (before is None and current is not None)):
+                raise DecisionWriteUncertain(document_id) from error
+            raise
+        if saved is not None:
+            return saved
+    raise DecisionWriteConflict(f"decision {document_id} kept changing; retry the edit")
 
 
 def _now() -> datetime:
@@ -94,10 +148,55 @@ def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
     return f"rel:{src_label}:{rel_type}:{tgt_label}:{src_id}:{tgt_id}"
 
 
+def override_generation(db: Database, label: str, target_id: str) -> int:
+    """Read before editing the graph to detect a later undo or deletion."""
+    row = db[COLLECTION].find_one({"_id": override_id(label, target_id)}, {"generation": True})
+    return (row or {}).get("generation", 0)
+
+
+def _graph_version(value: object) -> str:
+    """Keep Neo4j's nanoseconds and normalize offsets for string comparison."""
+    if isinstance(value, DateTime):
+        version = value
+    elif isinstance(value, datetime):
+        version = DateTime.from_native(value)
+    else:
+        version = DateTime.from_iso_format(str(value))
+    if version.tzinfo is None:
+        version = version.replace(tzinfo=UTC)
+    return version.as_timezone(UTC).iso_format()
+
+
+def _field_updates(existing: dict, fields: dict, auto_value: dict, version: str | None) -> dict:
+    """Keep the newest field values and the oldest known original values."""
+    values = dict(existing.get("fields") or {})
+    originals = dict(existing.get("auto_value") or {})
+    versions = dict(existing.get("field_versions") or {})
+    first_versions = dict(existing.get("auto_value_versions") or {})
+    for name, value in fields.items():
+        if version is None or name not in versions or version > versions[name]:
+            values[name] = value
+            if version is None:
+                versions.pop(name, None)
+            else:
+                versions[name] = version
+    for name, value in auto_value.items():
+        if (name not in originals or (version is not None and name in first_versions
+                                     and version < first_versions[name])):
+            originals[name] = value
+            if version is None:
+                first_versions.pop(name, None)
+            else:
+                first_versions[name] = version
+    return {"fields": values, "auto_value": originals,
+            "field_versions": versions, "auto_value_versions": first_versions}
+
+
 def record_override(db: Database, label: str, target_id: str, op: str,
                     fields: dict | None = None, actor: str = "unknown",
                     note: str = "", auto_value: dict | None = None,
-                    snapshot: dict | None = None) -> dict:
+                    snapshot: dict | None = None, graph_updated_at: object | None = None,
+                    expected_generation: int | None = None) -> dict:
     """Write down a manual decision about one node.
 
     Fields are merged into whatever the document already holds rather than
@@ -113,16 +212,18 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         fields: Field values for "set" and "create"; ignored for "delete".
         actor: Who decided, for the audit trail.
         note: Free-text reason, shown in the panel.
-        auto_value: What the pipeline had before the edit. Recorded only
-            for fields seen for the first time; otherwise a second edit
-            would overwrite the original automatic value with the previous
-            manual one, and the conflict report would compare an edit with
-            an edit.
+        auto_value: Value before the earliest graph edit. An older delayed
+            edit corrects an intermediate value recorded by a newer edit;
+            a legacy original without a version is preserved.
         snapshot: For a deletion, every field the node carried. The
             decision then holds what is needed to put the record back, and
             restoring stops depending on the audit feed, which records
             history, not state, and summarises a bulk operation without
             listing fields at all.
+        graph_updated_at: Version returned by the graph field update. Each
+            field follows this order even if Mongo receives edits out of order.
+        expected_generation: State read before editing the graph. Undo,
+            deletion or creation changes it and rejects the delayed edit.
 
     Returns:
         The stored document.
@@ -136,56 +237,57 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         if op == SET and not fields:
             raise MutationError("a 'set' override with no fields changes nothing")
 
-    now = _now()
     document_id = override_id(label, target_id)
+    version = _graph_version(graph_updated_at) if graph_updated_at is not None else None
 
-    # Field paths, not a whole document: two parallel edits must both survive.
-    update: dict = {
-        "$set": {
-            "kind": "node",
-            "label": label,
-            "target_id": target_id,
-            "actor": actor,
-            "active": True,
-            "updated_at": now,
-            **{f"fields.{name}": value for name, value in fields.items()},
-        },
-        "$setOnInsert": {"created_at": now},
-    }
-    if op == SET:
-        # Settled by the conditional write below.
-        update["$setOnInsert"]["op"] = SET
-    else:
-        update["$set"]["op"] = op
-    if op == CREATE:
-        # Sticky, unlike `op`, which a deletion overwrites.
-        update["$set"]["created"] = True
-    if snapshot:
-        update["$set"]["snapshot"] = snapshot
-    if note:
-        update["$set"]["note"] = note
-    else:
-        update["$setOnInsert"]["note"] = ""
-    db[COLLECTION].update_one({"_id": document_id}, update, upsert=True)
-    if op == SET:
-        # A claim stays a claim: as a plain "set" it would go with the edit.
-        db[COLLECTION].update_one({"_id": document_id, "op": {"$ne": CREATE}},
-                                  {"$set": {"op": SET}})
+    def build(existing: dict) -> dict:
+        generation = existing.get("generation", 0)
+        if expected_generation is not None and generation != expected_generation:
+            raise DecisionWriteConflict(f"decision {document_id} was withdrawn or replaced")
+        fresh = op == SET and not existing.get("active")
+        base = {} if fresh else existing
+        latest = version is None or version >= base.get("graph_version", "")
+        update: dict = {
+            "$set": {
+                "kind": "node", "label": label, "target_id": target_id,
+                "generation": generation + 1 if op != SET else generation,
+                **_field_updates(base, fields, auto_value or {}, version),
+            },
+            "$setOnInsert": {"created_at": _now()},
+        }
+        if fresh:
+            update["$set"]["source_value"] = {}
+        if latest:
+            update["$set"].update(
+                actor=actor, active=True,
+                op=CREATE if op == SET and existing.get("op") == CREATE else op)
+            if version is not None:
+                update["$set"]["graph_version"] = version
+            else:
+                update.setdefault("$unset", {})["graph_version"] = ""
+            if note:
+                update["$set"]["note"] = note
+            else:
+                update["$setOnInsert"]["note"] = ""
+        if op != SET:
+            update["$set"].update(field_versions={}, auto_value_versions={})
+        if op == CREATE or _made_by_hand(existing):
+            update["$set"]["created"] = True
+        if snapshot is not None:
+            update["$set"]["snapshot"] = snapshot
+        elif op == CREATE:
+            update.setdefault("$unset", {})["snapshot"] = ""
+        return update
 
-    # Once per field: the first edit is the one that replaced the pipeline's.
-    for name, value in (auto_value or {}).items():
-        db[COLLECTION].update_one(
-            {"_id": document_id, f"auto_value.{name}": {"$exists": False}},
-            {"$set": {f"auto_value.{name}": value}})
-
+    stored = _write_decision(db, document_id, build)
     logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(fields)))
-    # Read back: the driver hands timestamps back without a timezone.
-    return db[COLLECTION].find_one({"_id": document_id})
+    return cast(dict, stored)
 
 
 def record_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
                                  src_id: str, tgt_id: str, op: str = DELETE,
-                                 actor: str = "unknown", note: str = "") -> dict:
+                                 actor: str = "unknown", note: str = "",
+                                 snapshot: dict | None = None) -> dict:
     """Write down a manual decision about one relationship.
 
     Two kinds, and they are not symmetrical. `delete` is an instruction:
@@ -195,6 +297,10 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
     tells an edge somebody added by hand from one the pipeline made and has
     since stopped making, and a prune would remove both.
 
+    Args:
+        snapshot: Properties read before unlinking, so undo restores the
+            edge's data as well as its endpoints. Used only for deletion.
+
     Raises:
         UnknownEntity: The triple is not a relationship the graph has, or
             the operation is neither of the two.
@@ -203,28 +309,21 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
         raise UnknownEntity(
             f"relationship overrides support {DELETE!r} and {LINK!r}, got {op!r}")
     validate_relationship(src_label, rel_type, tgt_label)
-    now = _now()
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
-    existing = db[COLLECTION].find_one({"_id": document_id}) or {}
-    db[COLLECTION].replace_one({"_id": document_id}, {
-        "_id": document_id,
-        "kind": "rel",
-        "src_label": src_label,
-        "rel_type": rel_type,
-        "tgt_label": tgt_label,
-        "src_id": src_id,
-        "target_id": tgt_id,
-        "op": op,
-        "actor": actor,
-        "note": note or existing.get("note", ""),
-        "active": True,
-        "created_at": existing.get("created_at", now),
-        "updated_at": now,
-    }, upsert=True)
+
+    def build(existing: dict) -> dict:
+        return {"$set": {
+            "kind": "rel", "src_label": src_label, "rel_type": rel_type,
+            "tgt_label": tgt_label, "src_id": src_id, "target_id": tgt_id,
+            "op": op, "snapshot": dict(snapshot or {}) if op == DELETE else {},
+            "actor": actor, "note": note or existing.get("note", ""), "active": True,
+        }, "$setOnInsert": {"created_at": _now()}}
+
+    stored = _write_decision(db, document_id, build)
     logger.info("override recorded: %s (%s %s)-[:%s]->(%s %s)",
                 "unlink" if op == DELETE else "link",
                 src_label, src_id, rel_type, tgt_label, tgt_id)
-    return db[COLLECTION].find_one({"_id": document_id})
+    return cast(dict, stored)
 
 
 def deactivate_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
@@ -238,11 +337,14 @@ def deactivate_relationship_override(db: Database, src_label: str, rel_type: str
             otherwise withdraw the claim on a link somebody added and
             report that a publish will rebuild it.
     """
-    query = {"_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)}
-    if only_op is not None:
-        query["op"] = only_op
-    result = db[COLLECTION].update_one(query, {"$set": {"active": False, "updated_at": _now()}})
-    return result.modified_count > 0
+    document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
+
+    def build(existing: dict) -> dict | None:
+        if not existing.get("active") or (only_op is not None and existing.get("op") != only_op):
+            return None
+        return {"$set": {"active": False}}
+
+    return _write_decision(db, document_id, build) is not None
 
 
 def claimed_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
@@ -293,21 +395,21 @@ def deactivate_override(db: Database, label: str, target_id: str,
         Whether anything was withdrawn.
     """
     document_id = override_id(label, target_id)
-    row = db[COLLECTION].find_one({"_id": document_id})
-    if row is None or not row.get("active"):
-        return False
-    if only_op is not None and row.get("op") != only_op:
-        return False
-    if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
-        # The deletion goes, the edit or the claim stays, the snapshot goes with it.
-        db[COLLECTION].update_one(
-            {"_id": document_id},
-            {"$set": {"op": CREATE if _made_by_hand(row) else SET, "updated_at": _now()},
-             "$unset": {"snapshot": ""}})
-        return True
-    db[COLLECTION].update_one(
-        {"_id": document_id}, {"$set": {"active": False, "updated_at": _now()}})
-    return True
+
+    def build(row: dict) -> dict | None:
+        if not row.get("active") or (only_op is not None and row.get("op") != only_op):
+            return None
+        update: dict = {"$set": {"generation": row.get("generation", 0) + 1,
+                           "field_versions": {}, "auto_value_versions": {}},
+                  "$unset": {"graph_version": ""}}
+        if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
+            update["$set"]["op"] = CREATE if _made_by_hand(row) else SET
+            update["$unset"]["snapshot"] = ""
+        else:
+            update["$set"]["active"] = False
+        return update
+
+    return _write_decision(db, document_id, build) is not None
 
 
 def active_overrides(db: Database) -> list[dict]:
