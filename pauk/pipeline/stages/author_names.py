@@ -1027,8 +1027,6 @@ class AuthorNamesStage(EnrichmentStage):
                 finally:
                     resume_clis()
 
-        # An interrupt in this loop, or a stop request from progress(), never reaches
-        # answers() on its own: closing it there is what cancels its pool.
         stream = answers()
         try:
             for person, parsed, second_name_corrected, llm_error in self.progress(

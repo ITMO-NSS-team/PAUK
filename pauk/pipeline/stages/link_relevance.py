@@ -253,7 +253,6 @@ class LinkRelevanceStage(EnrichmentStage):
         try:
             changed = self._classify(candidates, client, llm_log)
         finally:
-            # An interrupted or limit-stopped run keeps the verdicts it paid for.
             self.prepared.write_models("publications", publications.values())
             self.prepared.write_models("repo_links", links_by_publication)
         logger.info("link_relevance: done, %d publication(s) processed", changed)

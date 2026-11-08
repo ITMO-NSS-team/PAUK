@@ -370,8 +370,6 @@ def main() -> None:
         # answer, and a stack trace does not say so.
         raise SystemExit(str(error)) from None
     except SubscriptionLimitError as error:
-        # The run is not broken: what it finished is saved, and the same
-        # command picks up the rest once the limit resets.
         raise SystemExit(f"{error}\nRun the same command again after the limit resets.") from None
     except CliUnusableError as error:
         raise SystemExit(f"{error}\nFix the CLI, then run the same command again.") from None

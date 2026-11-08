@@ -45,8 +45,6 @@ _AUTH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _CLI_FAILURE_LIMIT = 20
-# Everything else in the parent's environment (API keys, the database password) stays out of the child: the
-# prompts carry text from third-party PDFs, and a CLI is an agent that could be talked into printing what it sees.
 _CLI_ENV_NAMES = frozenset({
     "ALL_PROXY",
     "APPDATA",
@@ -487,6 +485,11 @@ class SubscriptionCliClient:
         return None if self.executable else f"{self.backend.executable} CLI not found"
 
     def _env(self) -> dict[str, str]:
+        """An allowlisted environment for the CLI.
+
+        API keys and the database password stay out: the prompts carry text from
+        third-party PDFs, and the CLI is an agent that could be talked into printing it.
+        """
         prefixes = (*_CLI_ENV_PREFIXES, self.backend.env_prefix)
         env = {
             key: value

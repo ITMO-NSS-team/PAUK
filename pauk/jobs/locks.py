@@ -98,6 +98,9 @@ def taken(db: Database) -> set[str]:
 def held(db: Database, resource: str, owner: str | None = None) -> Iterator[str]:
     """Hold the resource for the length of a block.
 
+    The lease is renewed in the background: a command run from a terminal has
+    no worker beat, and a dedup on a subscription CLI holds the graph for hours.
+
     Raises:
         Busy: Somebody else has it. The caller decides what that means: a
             CLI says so and stops, a worker puts its job back in the queue.
@@ -112,8 +115,6 @@ def held(db: Database, resource: str, owner: str | None = None) -> Iterator[str]
     released = threading.Event()
 
     def keep_the_lease() -> None:
-        # A command run from a terminal has no worker beat, and a dedup on a
-        # subscription CLI holds the graph for hours.
         while not released.wait(RENEW_SECONDS):
             try:
                 renew(db, resource, owner)

@@ -166,7 +166,6 @@ class ResolutionModels:
     def _client(self) -> LlmClient:
         client = getattr(self._local, "client", None)
         if client is None:
-            # A batch reply takes as long as that many single ones.
             client = llm_client(
                 self.config.provider_for("person_resolution"),
                 timeout=self.config.request_timeout * self.batch_size,
@@ -354,9 +353,6 @@ class ResolutionModels:
                                 len(requests),
                             )
                 except BaseException:
-                    # Ctrl-C has to drop what is still queued: leaving it
-                    # to the pool's own shutdown would pay for a whole
-                    # block of answers nobody is going to read.
                     pool.shutdown(wait=False, cancel_futures=True)
                     kill_running_clis()
                     raise

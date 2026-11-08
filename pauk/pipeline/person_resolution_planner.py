@@ -177,8 +177,6 @@ def plan_person_merges_resolved(
         report.append(row)
 
     def name_the_model() -> None:
-        # The routes say "qwen" whichever provider answered, and a provider
-        # switch changes decisions, so the report has to say who decided.
         model = getattr(models, "model", None)
         if isinstance(model, str):
             for row in report:
