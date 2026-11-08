@@ -29,6 +29,8 @@ PUBLIC_LIMITS = {
     "pub.orcid.org": RateLimit(ORCID_RPS),
     "api.crossref.org": RateLimit(CROSSREF_PUBLIC_RPS, CROSSREF_PUBLIC_CONCURRENCY),
     "arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "www.arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "export.arxiv.org": RateLimit(ARXIV_RPS, 1),
 }
 RATE_LIMITER = HostRateLimiter()
 

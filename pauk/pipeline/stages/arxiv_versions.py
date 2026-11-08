@@ -1,14 +1,8 @@
-"""Find an arXiv copy of papers whose full text is out of reach.
+"""Append an arXiv PDF link to papers without full text, found by DOI via Semantic Scholar.
 
-OpenAlex links the arXiv preprint to the journal article for only part of the
-papers. Semantic Scholar keeps that pair (`externalIds.ArXiv`) for many of the
-rest. A paper with a DOI and no full text gets `https://arxiv.org/pdf/<id>`
-appended to `pdf_urls`, after the links it already has, so code_links reads
-the preprint only when the publisher's copy fails.
-
-The stage runs before code_links. A paper that code_links already finished
-without text would not be read again, so its code_links state is dropped
-when a new link is added.
+Runs before code_links, which reads the link when the publisher's copy fails.
+A paper with no code links yet has its code_links state dropped so the same
+run reads it; one that already has links keeps them and waits for --force.
 """
 
 from __future__ import annotations
@@ -17,7 +11,7 @@ import logging
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-from pauk.models import Publication
+from pauk.models import Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpRequestError
@@ -32,7 +26,6 @@ DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "h
 
 
 def bare_doi(doi: str) -> str:
-    """The DOI without the resolver prefix OpenAlex stores it with."""
     value = doi.strip()
     for prefix in DOI_PREFIXES:
         if value.lower().startswith(prefix):
@@ -41,22 +34,15 @@ def bare_doi(doi: str) -> str:
 
 
 def has_arxiv_link(publication: Publication) -> bool:
-    """True if one of the paper's PDF links already points at arXiv."""
     return any((urlsplit(url).hostname or "").lower() in ARXIV_HOSTS for url in publication.pdf_urls)
 
 
 def wants_arxiv_copy(publication: Publication) -> bool:
-    """A paper worth looking up: it has a DOI, no text, and no arXiv link yet."""
-    return bool(publication.doi) and not publication.full_text and not has_arxiv_link(publication)
-
-
-def arxiv_pdf_url(identifier: str) -> str:
-    return f"https://arxiv.org/pdf/{identifier}"
+    return (bool(publication.doi) and not (publication.full_text or "").strip()
+            and not has_arxiv_link(publication))
 
 
 class ArxivVersionsStage(EnrichmentStage):
-    """Appends an arXiv PDF link to papers without full text, found by DOI."""
-
     name = "arxiv_versions"
     progress_label = "Publications: looking up arXiv copies of papers without full text"
 
@@ -68,6 +54,8 @@ class ArxivVersionsStage(EnrichmentStage):
             and self.needs_attempt(publication.processing.get(self.name))
             and wants_arxiv_copy(publication)
         ]
+        self.with_links = {row.publication_id for row in self.prepared.read_models("repo_links", RepoLink)
+                           if row.links}
         client = SemanticScholarClient(self.config.request_timeout, self.config.semantic_scholar_api_key,
                                        requests_per_second=self.config.semantic_scholar_rps)
         batches = [candidates[start:start + MAX_BATCH] for start in range(0, len(candidates), MAX_BATCH)]
@@ -86,15 +74,15 @@ class ArxivVersionsStage(EnrichmentStage):
                 found += sum(self._apply(publication, arxiv_id(record))
                              for publication, record in zip(batch, records, strict=True))
             self.prepared.upsert_models("publications", batch)
-        return {"publications": len(candidates), "arxiv_found": found, "failed": failed}
+        return {"arxiv_looked_up": len(candidates), "arxiv_found": found, "arxiv_failed": failed}
 
     def _apply(self, publication: Publication, identifier: str | None) -> int:
-        """Append the arXiv link if there is one; returns 1 when a link was added."""
         if identifier is None:
             self._record(publication, ProcessingStatus.COMPLETED_EMPTY, 0)
             return 0
-        publication.pdf_urls = [*publication.pdf_urls, arxiv_pdf_url(identifier)]
-        publication.processing.pop("code_links", None)
+        publication.pdf_urls = [*publication.pdf_urls, f"https://arxiv.org/pdf/{identifier}"]
+        if publication.id not in self.with_links:
+            publication.processing.pop("code_links", None)
         self._record(publication, ProcessingStatus.COMPLETED, 1)
         return 1
 

@@ -50,11 +50,11 @@ Default profiles (`pauk/settings.py`):
 | `api.crossref.org` | contact email supplied | 10 | 3 |
 | `api.crossref.org` | anonymous | 5 | 1 |
 | `api.semanticscholar.org` | with or without a key | 1 | 1 |
-| `arxiv.org` | public, every client | 1/3 | 1 |
+| `arxiv.org`, `www.arxiv.org`, `export.arxiv.org` | public, every client | 1/3 | 1 |
 
 `OpenAlexClient` sends the key as `Authorization: Bearer ...`.
 `SemanticScholarClient` sends its key, when there is one, as `x-api-key`. The
-`arxiv.org` limit is in `PUBLIC_LIMITS`, so it applies to every client,
+arXiv limits are in `PUBLIC_LIMITS`, so they apply to every client,
 including the PDF downloads in `code_links`: arXiv asks automated clients for
 no more than one request every three seconds.
 `CrossrefClient` sends `mailto` in the query and `User-Agent` so redirects

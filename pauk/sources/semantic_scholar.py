@@ -13,12 +13,7 @@ BATCH_RETRIES = 8
 
 
 class SemanticScholarClient(HttpClient):
-    """Semantic Scholar Graph API: which arXiv preprint a DOI corresponds to.
-
-    The batch endpoint takes at most MAX_BATCH ids per request. Without an API
-    key the shared pool often answers 429, so a batch is retried longer than
-    an ordinary request.
-    """
+    """Semantic Scholar Graph API; without a key the shared pool often answers 429."""
 
     def __init__(self, timeout: int, api_key: str = "", *,
                  requests_per_second: float = SEMANTIC_SCHOLAR_RPS) -> None:
@@ -48,7 +43,6 @@ class SemanticScholarClient(HttpClient):
 
 
 def arxiv_id(record: dict[str, Any] | None) -> str | None:
-    """The arXiv identifier of a Semantic Scholar paper record, if it has one."""
     if not isinstance(record, dict):
         return None
     external = record.get("externalIds") or {}

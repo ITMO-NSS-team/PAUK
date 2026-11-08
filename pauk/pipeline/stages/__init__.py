@@ -12,9 +12,8 @@ from .repositories import RepositoriesStage
 from .social_graph import SocialGraphStage
 
 # A chain of dependencies: dedup folds on what the fetching stages brought,
-# names follow it, arxiv_versions adds the PDF links code_links reads,
-# link_relevance follows code_links, emails precedes github_match, and
-# github_match follows the repositories harvest.
+# names follow it, link_relevance follows code_links, emails precedes
+# github_match, and github_match follows the repositories harvest.
 ALL_STAGES = (
     PersonsStage, DepartmentsStage, ArxivVersionsStage, CodeLinksStage, LinkRelevanceStage,
     EmailsStage, RepositoriesStage, RepoPeopleStage, DedupStage, GitHubMatchStage,

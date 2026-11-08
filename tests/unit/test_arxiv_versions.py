@@ -6,10 +6,11 @@ from unittest import mock
 import fitz
 import mongomock
 
-from pauk.models import Publication, RepoLink
+from pauk.models import CodeLink, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.arxiv_versions import (
+    ARXIV_HOSTS,
     ArxivVersionsStage,
     bare_doi,
     has_arxiv_link,
@@ -80,9 +81,11 @@ class SemanticScholarClientTest(unittest.TestCase):
 
 class ArxivDownloadPaceTest(unittest.TestCase):
     def test_arxiv_downloads_are_paced_for_every_client(self):
-        limit = HttpClient(timeout=5).rate_limits["arxiv.org"]
-        self.assertEqual(limit.requests_per_second, ARXIV_RPS)
-        self.assertEqual(limit.max_concurrent, 1)
+        limits = HttpClient(timeout=5).rate_limits
+        for host in ARXIV_HOSTS:
+            with self.subTest(host=host):
+                self.assertEqual(limits[host].requests_per_second, ARXIV_RPS)
+                self.assertEqual(limits[host].max_concurrent, 1)
 
 
 class ArxivVersionsStageTest(unittest.TestCase):
@@ -151,6 +154,49 @@ class ArxivVersionsStageTest(unittest.TestCase):
         rows = self._run()
         self.assertNotIn("code_links", rows["W1"].processing)
         self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
+
+    def test_a_paper_that_already_has_links_keeps_them_until_force(self):
+        done = ProcessingState(status=ProcessingStatus.COMPLETED, result_count=1)
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="t", doi="10.1/a", processing={"code_links": done}),
+        ])
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+        self.client.papers_by_doi.return_value = [_record("2201.06114")]
+        rows = self._run()
+        self.assertEqual(rows["W1"].pdf_urls, ["https://arxiv.org/pdf/2201.06114"])
+        self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+
+    def test_text_of_only_whitespace_counts_as_no_text(self):
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="t", doi="10.1/a", full_text=" \n\n "),
+        ])
+        self.client.papers_by_doi.return_value = [None]
+        self._run()
+        self.assertEqual(self._queried(), [["10.1/a"]])
+
+    def test_a_malformed_response_fails_the_batch(self):
+        self.prepared.write_models("publications", [Publication(id="W1", title="t", doi="10.1/a")])
+        self.client.papers_by_doi.side_effect = ValueError("does not match")
+        rows = self._run()
+        self.assertEqual(rows["W1"].processing["arxiv_versions"].status, ProcessingStatus.FAILED)
+
+    def test_an_unknown_doi_is_not_asked_again(self):
+        self.prepared.write_models("publications", [Publication(id="W1", title="t", doi="10.1/a")])
+        self.client.papers_by_doi.return_value = [None]
+        self._run()
+        self._run()
+        self.assertEqual(len(self._queried()), 1)
+
+    def test_the_result_counts_do_not_collide_with_other_stages(self):
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="t", doi="10.1/a"),
+            Publication(id="W2", title="t", doi="10.1/b"),
+        ])
+        self.client.papers_by_doi.return_value = [_record("2201.06114"), None]
+        result = ArxivVersionsStage(self.prepared, self.raw).run()
+        self.assertEqual(result, {"arxiv_looked_up": 2, "arxiv_found": 1, "arxiv_failed": 0})
 
     def test_a_failed_batch_is_retried_on_the_next_run_and_nothing_else_changes(self):
         done = ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)
