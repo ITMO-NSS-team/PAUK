@@ -14,10 +14,12 @@ flowchart TD
         LLM["OpenRouter LLM"]
         HOME["Author homepages"]
         PDFC["PDF-Crawler-Service<br/>(optional, PAUK_PDF_CRAWLER_URL)"]
+        S2API["Semantic Scholar API"]
+        ARXIV["arXiv"]
     end
 
     subgraph MONGO["MongoDB"]
-        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, github, github_user")]
+        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, semantic_scholar,<br/>github, github_user")]
         PUB[("publications")]
         PER[("persons")]
         DEP[("departments, organizations")]
@@ -45,15 +47,16 @@ flowchart TD
         direction TB
         S1["1. persons<br/>affiliations, ORCID, profiles"]
         S2["2. departments<br/>catalog matching"]
-        S3["3. code_links<br/>code links from PDF / abstract"]
-        S4["4. link_relevance<br/>LLM classification of links"]
-        S5["5. emails<br/>addresses from text and homepages"]
-        S6["6. repositories<br/>GitHub metadata"]
-        S7["7. repo_people<br/>owner and contributors"]
-        S8["8. dedup<br/>local merge of duplicates"]
-        S9["9. github_match<br/>account to author matching"]
-        S10["10. author_names<br/>name parts in ru and en"]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
+        SAX["3. arxiv_versions<br/>arXiv copy of papers without text"]
+        S3["4. code_links<br/>code links from PDF / abstract"]
+        S4["5. link_relevance<br/>LLM classification of links"]
+        S5["6. emails<br/>addresses from text and homepages"]
+        S6["7. repositories<br/>GitHub metadata"]
+        S7["8. repo_people<br/>owner and contributors"]
+        S8["9. dedup<br/>local merge of duplicates"]
+        S9["10. github_match<br/>account to author matching"]
+        S10["11. author_names<br/>name parts in ru and en"]
+        S1 --> S2 --> SAX --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
     end
 
     PER <--> S1
@@ -65,8 +68,12 @@ flowchart TD
     DEP <--> S2
     PER <--> S2
     PUB <--> S2
+    PUB <--> SAX
+    SAX -->|"POST paper/batch by DOI"| S2API
+    SAX -->|"append: semantic_scholar"| RAW
     PUB <--> S3
     RL <--> S3
+    S3 -->|"GET pdf (one per 3 s)"| ARXIV
     S3 -->|"download a PDF if direct candidates gave none"| PDFC
     S3 <--> PDFS
     RL <--> S4

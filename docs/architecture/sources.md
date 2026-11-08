@@ -4,7 +4,7 @@
 per external API.
 
 **Files:** `pauk/sources/base.py`, `rate_limit.py`, `openalex.py`, `github.py`,
-`crossref.py`, `orcid.py`, `llm.py`.
+`crossref.py`, `orcid.py`, `semantic_scholar.py`, `llm.py`.
 
 Thin wrappers, each knowing only its own API. All except `SubscriptionCliClient`,
 which runs a local CLI, inherit from `base.py::HttpClient`.
@@ -49,8 +49,14 @@ Default profiles (`pauk/settings.py`):
 | `pub.orcid.org` | public | 12 | controlled by the caller's workers |
 | `api.crossref.org` | contact email supplied | 10 | 3 |
 | `api.crossref.org` | anonymous | 5 | 1 |
+| `api.semanticscholar.org` | with or without a key | 1 | 1 |
+| `arxiv.org`, `www.arxiv.org`, `export.arxiv.org` | public, every client | 1/3 | 1 |
 
 `OpenAlexClient` sends the key as `Authorization: Bearer ...`.
+`SemanticScholarClient` sends its key, when there is one, as `x-api-key`. The
+arXiv limits are in `PUBLIC_LIMITS`, so they apply to every client,
+including the PDF downloads in `code_links`: arXiv asks automated clients for
+no more than one request every three seconds.
 `CrossrefClient` sends `mailto` in the query and `User-Agent` so redirects
 retain polite-pool access. Requests handles authorization on redirects.
 
@@ -77,6 +83,8 @@ Settings:
 | `PAUK_CROSSREF_RPS` | `10` | Crossref requests/s; capped at 5 without a contact |
 | `PAUK_CROSSREF_CONCURRENCY` | `3` | Crossref requests in flight; one without a contact |
 | `CROSSREF_MAILTO` | empty | Contact email for Crossref polite-pool access |
+| `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
+| `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Semantic Scholar requests/s |
 
 ## Clients
 
@@ -86,6 +94,7 @@ Settings:
 | `github.py` | `GitHubClient` | `get_repository`, `has_readme` (a separate call: the repository payload does not say whether a README exists), `contributors`, `commits`, `get_user`, `user_repositories`. It also retries rate limits sent as `403` or `429`: `Retry-After` first, then `X-RateLimit-Reset` for an exhausted primary limit, then at least 60 seconds for a secondary limit named only in the response body. The wait log line says which limit it was |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname; optional contact email selects polite-pool limits |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
+| `semantic_scholar.py` | `SemanticScholarClient` | `papers_by_doi(dois)`: up to 500 DOIs per `POST /graph/v1/paper/batch`, one record or `None` per DOI in request order, retried up to eight times; `arxiv_id(record)` reads `externalIds.ArXiv`. Used by `ArxivVersionsStage` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 | `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude:<model>`, `codex:<model>`; a bare CLI name gets `Settings.claude_cli_model` or `Settings.codex_cli_model`), `check_providers` parses every stage's setting and looks for its CLI when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage and refuses new ones until `resume_clis`. A CLI reports a spent limit with `SubscriptionLimitError` and a lost login or 20 failures in a row with `CliUnusableError`; both stop the command |
 

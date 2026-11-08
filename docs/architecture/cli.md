@@ -56,8 +56,8 @@ only what this group has accumulated. See [storage.md](storage.md).
 pauk enrich [stage] --group <group> [--input <id-file> --entity <entity>] [--force]
 ```
 
-`stage` is the name of one stage (`persons`, `departments`, `code_links`,
-`link_relevance`, `emails`, `repositories`, `repo_people`, `dedup`,
+`stage` is the name of one stage (`persons`, `departments`, `arxiv_versions`,
+`code_links`, `link_relevance`, `emails`, `repositories`, `repo_people`, `dedup`,
 `github_match`, `author_names`; optionally `social_graph`) or `all` (the
 default: the main stages in the order of `ALL_STAGES` in
 `pipeline/stages/__init__.py`). `social_graph` is in `OPTIONAL_STAGES` and

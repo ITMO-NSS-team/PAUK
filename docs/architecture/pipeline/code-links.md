@@ -164,7 +164,10 @@ footnotes and scans without a text layer are not recovered.
 ## Fallback through PDF-Crawler-Service
 
 Unique `pdf_urls` are tried first: `best_oa_location.pdf_url`, then the
-non-empty `locations[].pdf_url` in source order. If all direct links failed to
+non-empty `locations[].pdf_url` in source order, then the arXiv link that
+`arxiv_versions` appends for papers without full text
+([arxiv-versions.md](arxiv-versions.md)). Requests to `arxiv.org` are paced at
+one every three seconds, as arXiv asks. If all direct links failed to
 download or parse (or there are none), but the publication has a `doi` and
 `PAUK_PDF_CRAWLER_URL` is set, the stage probes `GET {url}/health` once per
 stage run (not per publication, no retries); on success, for such publications

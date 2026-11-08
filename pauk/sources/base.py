@@ -13,6 +13,7 @@ import requests
 
 from pauk.redaction import redact_url
 from pauk.settings import (
+    ARXIV_RPS,
     CROSSREF_PUBLIC_CONCURRENCY,
     CROSSREF_PUBLIC_RPS,
     OPENALEX_PUBLIC_RPS,
@@ -27,6 +28,9 @@ PUBLIC_LIMITS = {
     "api.openalex.org": RateLimit(OPENALEX_PUBLIC_RPS),
     "pub.orcid.org": RateLimit(ORCID_RPS),
     "api.crossref.org": RateLimit(CROSSREF_PUBLIC_RPS, CROSSREF_PUBLIC_CONCURRENCY),
+    "arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "www.arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "export.arxiv.org": RateLimit(ARXIV_RPS, 1),
 }
 RATE_LIMITER = HostRateLimiter()
 

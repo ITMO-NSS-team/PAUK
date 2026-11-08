@@ -73,12 +73,14 @@ Beyond the plain mapping it does the following:
 
 `Enricher.run(stage_name, selection, force)` runs one stage or all of them
 (`ALL_STAGES`, in the order fixed in `pipeline/stages/__init__.py`: `persons`,
-`departments`, `code_links`, `link_relevance`, `emails`, `repositories`,
-`repo_people`, `dedup`, `github_match`, `author_names`). Atomicity is
-per-document in MongoDB (see [../storage.md](../storage.md)).
+`departments`, `arxiv_versions`, `code_links`, `link_relevance`, `emails`,
+`repositories`, `repo_people`, `dedup`, `github_match`, `author_names`).
+Atomicity is per-document in MongoDB (see [../storage.md](../storage.md)).
 
-The order is not arbitrary. `emails` reads the full text downloaded by
-`code_links` and runs before `github_match`, so that a found address can
+The order is not arbitrary. `arxiv_versions` runs before `code_links`
+because it adds the arXiv PDF link that `code_links` then downloads. `emails`
+reads the full text downloaded by `code_links` and runs before
+`github_match`, so that a found address can
 identify an account. `github_match` needs both the accounts collected by
 `repo_people` and the authorships already folded by `dedup`.
 
@@ -105,7 +107,8 @@ it costs hundreds of API requests per run.
 
 Each stage has its own note:
 [persons.md](persons.md), [departments.md](departments.md),
-[code-links.md](code-links.md), [emails.md](emails.md),
+[arxiv-versions.md](arxiv-versions.md), [code-links.md](code-links.md),
+[emails.md](emails.md),
 [repositories.md](repositories.md), [repo-people.md](repo-people.md),
 [dedup.md](dedup.md), [github-match.md](github-match.md),
 [author-names.md](author-names.md), [social-graph.md](social-graph.md). The

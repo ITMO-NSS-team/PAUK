@@ -1,3 +1,4 @@
+from .arxiv_versions import ArxivVersionsStage
 from .author_names import AuthorNamesStage
 from .code_links import CodeLinksStage
 from .dedup import DedupStage
@@ -14,7 +15,7 @@ from .social_graph import SocialGraphStage
 # names follow it, link_relevance follows code_links, emails precedes
 # github_match, and github_match follows the repositories harvest.
 ALL_STAGES = (
-    PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
+    PersonsStage, DepartmentsStage, ArxivVersionsStage, CodeLinksStage, LinkRelevanceStage,
     EmailsStage, RepositoriesStage, RepoPeopleStage, DedupStage, GitHubMatchStage,
     AuthorNamesStage,
 )
