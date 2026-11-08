@@ -18,6 +18,8 @@ CROSSREF_RPS = 10
 CROSSREF_CONCURRENCY = 3
 CROSSREF_PUBLIC_RPS = 5
 CROSSREF_PUBLIC_CONCURRENCY = 1
+SEMANTIC_SCHOLAR_RPS = 1
+ARXIV_RPS = 1 / 3
 
 
 def _path_setting(name: str, default: Path) -> Path:
@@ -37,6 +39,8 @@ class Settings:
     crossref_rps: float = float(os.getenv("PAUK_CROSSREF_RPS") or CROSSREF_RPS)
     crossref_concurrency: int = int(os.getenv("PAUK_CROSSREF_CONCURRENCY") or CROSSREF_CONCURRENCY)
     crossref_mailto: str = os.getenv("CROSSREF_MAILTO", "")
+    semantic_scholar_api_key: str = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
+    semantic_scholar_rps: float = float(os.getenv("PAUK_SEMANTIC_SCHOLAR_RPS") or SEMANTIC_SCHOLAR_RPS)
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL") or "qwen/qwen-2.5-72b-instruct"

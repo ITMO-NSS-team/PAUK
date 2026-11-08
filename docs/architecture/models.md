@@ -29,7 +29,8 @@ the relation-like models.
     [neo4j-graph.md](neo4j-graph.md).
   - `versions` and `merged_ids` are the merge ledger (below).
   - `pdf_urls` are unique candidates from `best_oa_location` and `locations`,
-    in load order; they are combined on re-normalization and dedup.
+    in load order, plus the arXiv link `arxiv_versions` appends for a paper
+    without full text; they are combined on re-normalization and dedup.
 - **`PublicationVersion`**: one OpenAlex record folded into this publication
   by dedup: a preprint, a record version, or a duplicate from OpenAlex
   reindexing. It keeps the title, DOI, journal, date, abstract and authors of

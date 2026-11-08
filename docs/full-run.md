@@ -182,16 +182,20 @@ uv run pauk normalize --group testrun
 uv run pauk enrich --group testrun
 ```
 
-Stages, in execution order: `persons -> departments -> code_links ->
-link_relevance -> emails -> repositories -> repo_people -> dedup ->
-github_match -> author_names` (plus the optional `social_graph`). One stage:
-`uv run pauk enrich <stage> --group testrun`.
+Stages, in execution order: `persons -> departments -> arxiv_versions ->
+code_links -> link_relevance -> emails -> repositories -> repo_people ->
+dedup -> github_match -> author_names` (plus the optional `social_graph`).
+One stage: `uv run pauk enrich <stage> --group testrun`.
 
 `departments`, `code_links`, `link_relevance`, `emails`, `github_match` and
 `dedup` write their results to Mongo in one batch at the end: an interrupted
 stage leaves no partial result, and the counters in the database do not move
-while it runs, so watch the log. `persons`, `repo_people` and `author_names`
-write as they go.
+while it runs, so watch the log. `persons`, `arxiv_versions`, `repo_people`
+and `author_names` write as they go.
+
+`arxiv_versions` asks Semantic Scholar for the arXiv copies of papers without
+full text. Without `SEMANTIC_SCHOLAR_API_KEY` the shared pool often answers
+429 and the stage waits it out; for the whole ITMO corpus that is minutes.
 
 Person dedup runs through the resolver: a logistic model separates and merges
 the confident pairs itself, and the LLM (`PAUK_PERSON_RESOLUTION_MODEL`)
