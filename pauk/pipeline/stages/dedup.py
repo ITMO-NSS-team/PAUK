@@ -1293,7 +1293,7 @@ class DedupStage(EnrichmentStage):
         if self.config.person_resolution_enabled:
             from pauk.graph.person_resolution import MODEL_FEATURES, ResolverPolicy
             from pauk.graph.person_resolution_model import load_logistic_model
-            from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+            from pauk.pipeline.person_resolution import ResolutionModels
             from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 
             groups, report = plan_person_merges_resolved(
@@ -1303,7 +1303,7 @@ class DedupStage(EnrichmentStage):
                 fields_of=fields_of,
                 staff_ids=staff_ids,
                 decisions=answers,
-                models=OpenRouterResolutionModels(self.config, self.prepared.db, self.prepared.group),
+                models=ResolutionModels(self.config, self.prepared.db, self.prepared.group),
                 policy=ResolverPolicy(
                     separate_below=self.config.person_resolution_separate_below,
                     merge_from=self.config.person_resolution_merge_from,
