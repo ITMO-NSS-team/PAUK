@@ -2,7 +2,9 @@ import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from itertools import product
 from pathlib import Path
+from unittest import mock
 
 import mongomock
 
@@ -882,17 +884,166 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
         self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
 
-    def test_a_scoped_rechoice_leaves_the_old_owner_until_their_own_run(self):
+    def test_a_scoped_rechoice_retracts_the_previous_owner_in_the_same_run(self):
         self.applied_account_choice()
         review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
 
         _, people = self.rerun_stage(PreparedSelection("persons", frozenset({"A2"})))
 
-        self.assertEqual(people["A1"].github, "coder42")
+        self.assertIsNone(people["A1"].github)
         self.assertEqual(people["A2"].github, "coder42")
         _, people = self.rerun_stage(PreparedSelection("persons", frozenset({"A1"})))
         self.assertIsNone(people["A1"].github)
         self.assertEqual(people["A2"].github, "coder42")
+
+    def cross_group_choice(self, graph=None):
+        repo = self.applied_account_choice()
+        if graph is not None:
+            self.publish(graph)
+        original_group = self.prepared.group
+        other = PreparedStore(self.db, "other")
+        other.write_models("persons", [person("A2", "Ivan Petrov")])
+        other.write_models("github_profiles", list(self.prepared.read_models("github_profiles", GitHubProfile)))
+        other.write_models("repositories", [repo])
+        self.prepared.write_models("persons", [p for p in self.prepared.read_models("persons", Person) if p.id == "A1"])
+        self.prepared = other
+        self.raw = RawStore(self.db, "other")
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        return repo, original_group
+
+    def test_rechoosing_in_another_group_publishes_both_sides_of_the_transfer(self):
+        graph = FakePanelGraph()
+        repo, original_group = self.cross_group_choice(graph)
+
+        for _ in range(2):
+            _, people = self.rerun_stage()
+            previous, = PreparedStore(self.db, original_group).read_models("persons", Person)
+            self.assertIsNone(previous.github)
+            self.assertIsNone(previous.email)
+            self.assertEqual(previous.contributed_to, [])
+            self.assertEqual(people["A2"].github, "coder42")
+            self.assertEqual(set(self.db.persons.find_one({"id": "A1"})["groups"]), {original_group, "other"})
+            self.publish(graph)
+            self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+            self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
+            self.assertNotIn(("Person", "CONTRIBUTED_TO", "Repository", "A1", repo.id), graph.relationships)
+            self.assertEqual(graph.nodes["Person", "A2"]["github"], "coder42")
+
+    def test_a_failed_handoff_is_resumed_before_publishing(self):
+        self.cross_group_choice()
+        modify = self.prepared.modify_model
+
+        def fail_assignment(entity, identifier, model, change):
+            if identifier == "A2":
+                raise RuntimeError("write interrupted")
+            return modify(entity, identifier, model, change)
+
+        with (mock.patch.object(self.prepared, "modify_model", side_effect=fail_assignment),
+              self.assertRaisesRegex(RuntimeError, "write interrupted")):
+            self.rerun_stage()
+        self.assertEqual(list(self.db.persons.find({"github": "coder42"})), [])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(people["A1"].github_match.withdrawn_logins, ["coder42"])
+
+    def test_a_cross_group_choice_disputes_its_foreign_refusal_in_the_same_run(self):
+        self.cross_group_choice()
+        self.db.persons.update_one({"id": "A1"}, {"$set": {"email": "unique@itmo.ru", "emails": ["unique@itmo.ru"]}})
+        account, = self.prepared.read_models("github_profiles", GitHubProfile)
+        account.emails = ["unique@itmo.ru"]
+        self.prepared.write_models("github_profiles", [account])
+
+        self.rerun_stage()
+
+        (question,) = review.questions(self.db, disputed=True)
+        self.assertEqual(question["members"], ["A1", "A2", "coder42"])
+        self.assertEqual(question["chosen"], "A2")
+
+    def test_a_cross_group_handoff_closes_the_previous_owners_open_question(self):
+        self.cross_group_choice()
+        review.record_held(self.db, [{"status": "held", "login": "coder42", "person": "A1",
+                                      "signals": ["name_exact"], "held_because": ["name only"]}])
+
+        self.rerun_stage()
+
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_handoff_does_not_close_a_different_accounts_unselected_question(self):
+        self.cross_group_choice()
+        profiles = list(self.prepared.read_models("github_profiles", GitHubProfile))
+        self.prepared.write_models("github_profiles", [*profiles, profile("unrelated", name="Night Owl")])
+        review.record_held(self.db, [{"status": "held", "login": "unrelated", "person": "A1",
+                                      "signals": ["name_exact"], "held_because": ["name only"]}])
+
+        self.rerun_stage(PreparedSelection("persons", frozenset({"A2"})))
+
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "unrelated"])
+
+    def test_a_chain_of_unpublished_handoffs_can_be_published_from_any_of_its_groups(self):
+        graph = FakePanelGraph()
+        repo, original_group = self.cross_group_choice(graph)
+        self.rerun_stage()
+        groups = [original_group, "other"]
+        previous = "A2"
+        for group, chosen in (("third", "A3"), ("fourth", "A1")):
+            prepared = PreparedStore(self.db, group)
+            existing = list(prepared.get_models("persons", [chosen], Person))
+            prepared.write_models("persons", existing or [person(chosen, "Ivan Petrov")])
+            prepared.write_models("github_profiles", [profile("coder42", name="Ivan Petrov",
+                                                              emails=["account@lab.test"], repos=[repo.url])])
+            prepared.write_models("repositories", [repo])
+            review.record_account_choice(self.db, "coder42", [previous, chosen], chosen)
+            self.prepared, self.raw = prepared, RawStore(self.db, group)
+            self.rerun_stage()
+            groups.append(group)
+            previous = chosen
+        self.assertEqual({row["id"] for row in self.db.persons.find({"github": "coder42"})}, {"A1"})
+
+        for group in reversed(groups):
+            self.prepared = PreparedStore(self.db, group)
+            self.publish(graph)
+            self.assertEqual({node_id for (label, node_id), props in graph.nodes.items()
+                              if label == "Person" and props.get("github") == "coder42"}, {"A1"})
+            self.assertEqual({source for (src, rel, tgt, source, target) in graph.relationships
+                              if (src, rel, tgt, target) == ("Person", "CONTRIBUTED_TO", "Repository", repo.id)}, {"A1"})
+
+    def test_sequences_of_choices_refusals_and_withdrawals_keep_one_global_owner(self):
+        authors = ("A1", "A2", "A3")
+        for actions in product((*authors, "none", "withdraw"), repeat=3):
+            with self.subTest(actions=actions):
+                db = mongomock.MongoClient()["pauk_test"]
+                for author in authors:
+                    PreparedStore(db, f"source-{author}").write_models("persons", [person(author, "Ivan Petrov")])
+                graph = FakePanelGraph()
+                repo = repository("lab", "tool")
+                groups = []
+                for index, action in enumerate(actions):
+                    if action in authors:
+                        review.record_account_choice(db, "coder42", list(authors), action)
+                    elif action == "none":
+                        review.record_verdict(db, review.GITHUB, [*authors, "coder42"], review.DIFFERENT)
+                    else:
+                        review.withdraw(db, review.GITHUB, [*authors, "coder42"])
+                    expected = {action} if action in authors else set()
+                    group = f"step-{index}"
+                    prepared = PreparedStore(db, group)
+                    prepared.write_models("persons", prepared.get_models("persons", expected or {"A1"}, Person))
+                    prepared.write_models("github_profiles", [profile(
+                        "coder42", name="Ivan Petrov", emails=["account@lab.test"], repos=[repo.url])])
+                    prepared.write_models("repositories", [repo])
+                    GitHubMatchStage(prepared, RawStore(db, group), self.config).run()
+                    self.assertEqual({row["id"] for row in db.persons.find({"github": "coder42"})}, expected)
+                    groups.append(prepared)
+                    for saved in reversed(groups):
+                        load_prepared_rows(graph, {filename: list(saved.read_rows(entity))
+                                                   for entity, filename in ENTITY_FILES.items()})
+                        actual = {node_id for (label, node_id), props in graph.nodes.items()
+                                  if label == "Person" and props.get("github") == "coder42"}
+                        self.assertEqual(actual, expected)
 
     def test_a_group_without_the_profile_does_not_retract_a_previous_match(self):
         repo = self.applied_account_choice()
@@ -927,8 +1078,11 @@ class GitHubReviewTest(unittest.TestCase):
 
                 self.assertIsNone(people["A2"].github)
                 self.assertIsNone(people["A2"].email)
-                self.assertEqual(set(people), {"A2"})
-                self.assertEqual(self.db.persons.find_one({"id": owner.id}), before)
+                self.assertEqual(set(people), {"A2", owner.id})
+                saved = self.db.persons.find_one({"id": owner.id})
+                self.assertNotIn("github", saved)
+                self.assertEqual(saved["authored"], before["authored"])
+                self.assertIn("other", saved["groups"])
                 (question,) = review.questions(self.db, answered=False)
                 self.assertEqual(set(question["members"]), {owner.id, "A2", "coder42"})
                 self.assertTrue(question["evidence"]["evidence"]["contested"])
@@ -1013,6 +1167,54 @@ class GitHubReviewTest(unittest.TestCase):
 
         self.assertEqual(people["A1"].contributed_to,
                          [Contribution(repository_id=repo.id, role="contributor")])
+
+    def test_an_automatic_match_does_not_take_an_independently_known_account_from_another_group(self):
+        original = person("A1", "Ivan Petrov", github="coder42", email="source@lab.test")
+        other = PreparedStore(self.db, "original")
+        other.write_models("persons", [original])
+
+        _, people = self.run_stage([person("A2", "Ivan Petrov", email="account@lab.test")], [
+            profile("coder42", name="Ivan Petrov", company="ITMO", emails=["account@lab.test"]),
+        ])
+
+        self.assertIsNone(people["A2"].github)
+        saved, = other.read_models("persons", Person)
+        self.assertEqual(saved, original)
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "coder42"])
+
+    def test_a_live_source_row_and_its_survivor_are_one_candidate(self):
+        original = person("A1", "Ivan Petrov")
+        original.merged_ids = ["A0"]
+        review.record_verdict(self.db, review.GITHUB, ["A0", "coder42"], review.SAME)
+        self.run_stage([original], [profile("coder42", name="Ivan Petrov", company="ITMO")])
+        original, = self.prepared.read_models("persons", Person)
+        PreparedStore(self.db, "source").write_models("persons", [original])
+        survivor = person("A3", "Ivan Petrov")
+        survivor.merged_ids = ["A0", "A1"]
+        self.prepared.write_models("persons", [survivor])
+
+        _, people = self.rerun_stage()
+
+        self.assertEqual(people["A3"].github, "coder42")
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_all_independent_logins_of_a_folded_author_remain_owned(self):
+        original = person("A1", "Ivan Petrov", github="coder42")
+        other = PreparedStore(self.db, "source")
+        other.write_models("persons", [original])
+        survivor = person("A3", "Ivan Petrov", github="other-account")
+        survivor.merged_ids = [original.id]
+
+        _, people = self.run_stage([survivor, person("A2", "Ivan Petrov", email="account@lab.test")], [
+            profile("coder42", name="Ivan Petrov", company="ITMO", emails=["account@lab.test"]),
+        ])
+
+        self.assertIsNone(people["A2"].github)
+        saved, = other.read_models("persons", Person)
+        self.assertEqual(saved, original)
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A2", "A3", "coder42"])
 
     def test_rechoosing_after_a_person_fold_removes_the_inherited_match(self):
         self.applied_account_choice()

@@ -79,6 +79,11 @@ keyed by `publication_id`.
   Enrichment stages use it after an external request completes. Passing a
   subset to `write_models` would retract the group's claim on everything not
   in the subset, which is why `upsert_models` exists.
+- **`modify_model`**: rereads one existing row, applies a callback and saves it
+  only if its `_version` still matches. A conflict retries from the fresh row;
+  deletion or repeated conflicts raise `PreparedWriteConflict`. It keeps other
+  groups' claims and adds the current one. GitHub handoffs use it for both former
+  and new owners, preserving unrelated concurrent enrichment.
 
 ### Versioning: `_version` and `revisions`
 
@@ -125,6 +130,8 @@ separate Mongo requests (`find_one` + `update_one`, not an atomic
 groups can race. In practice runs are started by hand and do not overlap. A
 pipeline run holds its group (`PipelineRunner.run`) and publishing holds the
 graph, but nothing guards a single document across groups.
+`modify_model` uses a conditional version check for its own updates; the ordinary
+batch write methods retain the simplification above.
 
 ### Durable person merge sources
 
@@ -208,6 +215,8 @@ acknowledge evidence they never displayed. Superseded discrepancy flags are reti
 without changing the old answer itself.
 The caller supplies the evaluated GitHub accounts and selected authors separately
 from the report: an empty report retracts old rule conflicts only inside that scope.
+Question retirement also uses per-account coverage: changing an author for one
+account cannot close that author's questions about another account.
 
 `applied_at` is set by whoever merged: the panel (`mark_applied`) or a run
 (`mark_applied_merges`, which matches answers against the map of what was

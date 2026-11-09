@@ -62,6 +62,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 from itertools import combinations
 
+from pauk.aliases import flatten_merges
 from pauk.models import (
     ClassificationStatus,
     CodeLink,
@@ -787,7 +788,7 @@ def folded_ids(people: Iterable[Person]) -> dict[str, str]:
     an id nothing carries any more. Every reader of those answers needs this,
     which is why it lives here rather than on one stage.
     """
-    return {folded: person.id for person in people for folded in person.merged_ids}
+    return dict(flatten_merges([(folded, person.id) for person in people for folded in person.merged_ids]))
 
 
 def staff_identities(catalog: RussianNamesCatalog | None,
@@ -1278,6 +1279,8 @@ class DedupStage(EnrichmentStage):
             # Rebuild provenance after renaming: a match may now overlap an independent contribution.
             matches = retract_matches(person)
             contributions = list(person.contributed_to)
+            if person.github_match:
+                contributions.extend(person.github_match.cleared_contributions)
             for match in matches:
                 contributions.extend(match.contributed_to)
             for contribution in contributions:

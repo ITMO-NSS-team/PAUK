@@ -15,9 +15,12 @@ from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import NamedTuple
 
-from pauk.models import Contribution, GitHubMatchResult, GitHubProfile, Person, Publication, Repository
+from pauk.jobs.locks import held
+from pauk.jobs.models import GITHUB_MATCH
+from pauk.models import Contribution, GitHubMatchResult, GitHubProfile, Person, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.pipeline.github_matches import apply_matches, retract_matches
+from pauk.pipeline.github_matches import apply_matches, retract_matches, withdraw_matches
+from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages.dedup import folded_ids
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
@@ -413,18 +416,30 @@ class GitHubMatchStage(EnrichmentStage):
         return bridge
 
     def run(self) -> dict[str, int]:
+        # Ownership changes can update people from several groups.
+        with held(self.prepared.db, GITHUB_MATCH):
+            return self._run_locked()
+
+    def _run_locked(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
         profiles = list(self.prepared.read_models("github_profiles", GitHubProfile))
         known_logins = {profile.login for profile in profiles} | {
             person.github for person in people if person.github
-        } | {match.login for person in people if person.github_match for match in person.github_match.matches}
+        } | {match.login for person in people if person.github_match for match in person.github_match.matches} | {
+            login for person in people if person.github_match for login in person.github_match.withdrawn_logins}
         answers = review.github_decisions(self.prepared.db)
         answered_ids = {member for members in answers if members & known_logins
                         for member in members - known_logins}
+        owners = self.prepared.db["persons"].distinct("id", {"$or": [
+            {"github": {"$in": list(known_logins)}},
+            {"github_match.matches.login": {"$in": list(known_logins)}},
+            {"github_match.withdrawn_logins": {"$in": list(known_logins)}},
+        ]}) if known_logins else []
         local_ids = {person.id for person in people}
         # Answers are global: an owner in another group must still compete with this group's candidates.
         context = [person for person in self.prepared.get_models(
-            "persons", answered_ids - local_ids, Person, include_merged=True) if person.id not in local_ids]
+            "persons", (answered_ids | set(owners)) - local_ids, Person,
+            include_merged=True) if person.id not in local_ids]
         candidates = [*people, *context]
         aliases = folded_ids(candidates)
         if aliases:
@@ -437,16 +452,25 @@ class GitHubMatchStage(EnrichmentStage):
         }
         repositories.extend(self.prepared.get_models(
             "repositories", known_repository_ids - {repository.id for repository in repositories}, Repository))
-        # Read but unused: the bridge comes from the authorships on each person.
-        list(self.prepared.read_models("publications", Publication))
-
         # A previous match's copied address is an output, not independent evidence.
-        independent = [person.model_copy(deep=True) if person.github_match else person for person in candidates]
+        independent = [person.model_copy(deep=True) for person in candidates]
         for person in independent:
             retract_matches(person)
-        authors, email_index, name_index = self._authors(independent)
+        source_owners: dict[str, set[str]] = defaultdict(set)
+        for person in independent:
+            if person.github:
+                source_owners[person.github].add(aliases.get(person.id, person.id))
+        matching_people: dict[str, Person] = {}
+        for person in sorted(independent, key=lambda person: (person.id in aliases, person.id)):
+            canonical = aliases.get(person.id, person.id)
+            if canonical in matching_people:
+                _merge_person(matching_people[canonical], person)
+            else:
+                person.id = canonical
+                matching_people[canonical] = person
+        authors, email_index, name_index = self._authors(list(matching_people.values()))
         accounts = self._accounts(profiles, repositories)
-        bridge = self._bridge(candidates)
+        bridge = self._bridge(list(matching_people.values()))
         logger.info("github_match: %d accounts against %d ITMO authors",
                     len(accounts), len(authors))
 
@@ -457,8 +481,8 @@ class GitHubMatchStage(EnrichmentStage):
                     verdicts.setdefault(login, {})[person_id] = verdict
 
         by_id = {person.id: person for person in candidates}
-        covered = {person.id for person in people if self.selected("persons", person.id)}
-        question_scope = covered | {person.id for person in context}
+        covered = {aliases.get(person.id, person.id) for person in people if self.selected("persons", person.id)}
+        question_scope = covered | {aliases.get(person.id, person.id) for person in context}
         repositories_by_url = {repository.url: repository for repository in repositories}
 
         def row_of(login: str, fit: Fit) -> dict:
@@ -467,12 +491,13 @@ class GitHubMatchStage(EnrichmentStage):
                 "url": accounts[login]["url"],
                 "profile": accounts[login]["profile"],
                 "person": fit.author_id,
-                "name_raw": by_id[fit.author_id].name_raw,
+                "name_raw": matching_people[fit.author_id].name_raw,
                 "score": round(fit.score, 2),
                 "signals": fit.signals,
                 "evidence": fit.evidence,
                 "decision": fit.decision,
-                "confidence": confidence(fit.signals, fit.evidence.get("in_bridge", False)),
+                "confidence": ("high" if fit.author_id in source_owners[login]
+                               else confidence(fit.signals, fit.evidence.get("in_bridge", False))),
                 "repos": sorted(accounts[login]["repos"]),
             }
 
@@ -481,7 +506,9 @@ class GitHubMatchStage(EnrichmentStage):
         evaluated: set[str] = set()
         # Sorted: two runs over the same data must reach the same decisions.
         for login in sorted(accounts):
-            unavailable = sorted(person_id for person_id, verdict in verdicts.get(login, {}).items()
+            claims = {person_id: review.SAME for person_id in source_owners[login]}
+            claims.update(verdicts.get(login, {}))
+            unavailable = sorted(person_id for person_id, verdict in claims.items()
                                  if verdict == review.SAME and person_id not in authors)
             if unavailable:
                 logger.warning("github_match: skipping %s; confirmed author(s) unavailable: %s",
@@ -489,26 +516,37 @@ class GitHubMatchStage(EnrichmentStage):
                 continue
             evaluated.add(login)
             match = match_account(accounts[login], authors, email_index, name_index, bridge,
-                                  verdicts.get(login))
+                                  claims)
             decisions += [row_of(login, fit) for fit in match.refused]
             if match.best is not None:
                 chosen[login] = row_of(login, match.best)
                 chosen[login]["candidates"] = [
-                    {"person": fit.author_id, "name_raw": by_id[fit.author_id].name_raw,
+                    {"person": fit.author_id, "name_raw": matching_people[fit.author_id].name_raw,
                      "signals": fit.signals}
                     for fit in match.candidates]
                 decisions.append(chosen[login])
 
+        reports = self._answered(decisions, verdicts)
         questions = []
-        for row in self._answered(decisions, verdicts):
+        for row in reports:
             subjects = {row["person"], *(candidate["person"] for candidate in row.get("candidates") or [])}
-            if subjects <= question_scope and subjects & covered:
+            if row["status"] == "held" and subjects <= question_scope and subjects & covered:
                 questions.append(row)
 
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
         linked: set[str] = set()
         results: dict[str, list[GitHubMatchResult]] = defaultdict(list)
+        attempts_before = {person.id: (person.processing[self.name].attempts if self.name in person.processing else 0)
+                           for person in candidates}
+
+        def record_result(person: Person) -> None:
+            person.processing[self.name] = ProcessingState(
+                status=(ProcessingStatus.COMPLETED if person.github_match.matches
+                        else ProcessingStatus.COMPLETED_EMPTY),
+                attempts=attempts_before[person.id] + 1, finished_at=datetime.now(UTC),
+                result_count=len(person.github_match.matches),
+            )
         for row in decisions:
             stats[row["decision"]] = stats.get(row["decision"], 0) + 1
             if row["decision"] != "matched":
@@ -529,43 +567,80 @@ class GitHubMatchStage(EnrichmentStage):
                 contributed_to=contributions,
             ))
 
-        for person in people:
-            if not self.selected("persons", person.id):
+        asked = {row["login"] for row in questions if row["status"] == "held"}
+        invalidated = asked | {login for login in evaluated if self.selection is None and login not in chosen}
+        answered = {login for login, said in verdicts.items() if covered & said.keys()}
+        action_logins = linked | invalidated | answered
+        review_scopes = {login: covered | (verdicts.get(login, {}).keys() & matching_people.keys()
+                                          if login in linked | answered else set())
+                         for login in evaluated}
+        write_ids = local_ids | results.keys()
+        for person in candidates:
+            subject = aliases.get(person.id, person.id)
+            withdrawn = {login for login in action_logins
+                         if (login in linked and chosen[login]["person"] != subject)
+                         or verdicts.get(login, {}).get(subject) == review.DIFFERENT}
+            pending = set(person.github_match.withdrawn_logins) & action_logins if person.github_match else set()
+            tracked = person.github_match.matches if person.github_match else ()
+            if (person.github not in withdrawn and not pending
+                    and not any(match.login in withdrawn | invalidated for match in tracked)):
                 continue
+            affected = pending | (withdrawn & ({person.github} | {match.login for match in tracked})) | {
+                match.login for match in tracked if match.login in invalidated}
+
+            def remove_accounts(current: Person, withdrawn=withdrawn) -> None:
+                changed = withdraw_matches(current, withdrawn)
+                changed = withdraw_matches(current, invalidated - withdrawn, clear_login=False) or changed
+                if changed:
+                    record_result(current)
+
+            # Persist removals before assigning a new owner; a failed run can safely resume.
+            person = self.prepared.modify_model("persons", person.id, Person, remove_accounts)
+            by_id[person.id] = person
+            for login in affected:
+                if login in review_scopes:
+                    review_scopes[login].add(subject)
+            write_ids.add(person.id)
+
+        for person_id in sorted(write_ids & covered):
+            person = by_id[person_id]
             refused = verdicts.get(person.github, {}).get(person.id) == review.DIFFERENT
             if person.github_match is None and person.id not in results and not refused:
                 continue
-            previous_email = person.email
-            previous = retract_matches(person)
             assigned = results.get(person.id, [])
-            still_matched = {match.login for match in assigned}
-            # Group reads may omit profiles or repositories collected by another group.
-            retained = [match for match in previous if (match.login not in evaluated or match.login in still_matched)
-                        and verdicts.get(match.login, {}).get(person.id) != review.DIFFERENT]
-            if refused:
-                # Explicit refusals also cover logins saved before provenance was tracked.
-                person.github = None
-            apply_matches(person, [*assigned, *retained], cleared_fields=("github",) if refused else ())
-            filled_emails += previous_email is None and person.email is not None
-            state = person.processing.get(self.name)
-            person.processing[self.name] = ProcessingState(
-                status=(ProcessingStatus.COMPLETED if person.github_match.matches
-                        else ProcessingStatus.COMPLETED_EMPTY),
-                attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(UTC),
-                result_count=len(person.github_match.matches),
-            )
+            filled = False
 
-        self.prepared.write_models("persons", people)
+            def assign_accounts(current: Person, assigned=assigned) -> None:
+                nonlocal filled
+                filled = False
+                refused = verdicts.get(current.github, {}).get(current.id) == review.DIFFERENT
+                if current.github_match is None and not assigned and not refused:
+                    return
+                previous_email = current.email
+                previous = retract_matches(current)
+                still_matched = {match.login for match in assigned}
+                # Group reads may omit profiles or repositories collected by another group.
+                retained = [match for match in previous if (match.login not in evaluated or match.login in still_matched)
+                            and verdicts.get(match.login, {}).get(current.id) != review.DIFFERENT]
+                if refused:
+                    current.github = None
+                apply_matches(current, [*assigned, *retained], cleared_fields=("github",) if refused else ())
+                filled = previous_email is None and current.email is not None
+                record_result(current)
+
+            self.prepared.modify_model("persons", person.id, Person, assign_accounts)
+            filled_emails += filled
+
+        questions.extend(row for row in reports if row["status"] == "disputed"
+                         and row["person"] in review_scopes.get(row["login"], set()))
         review.record_held(self.prepared.db, questions, source=review.STAGE)
         review.record_disputed(self.prepared.db, questions, aliases=aliases,
-                               github_scope={login: covered for login in evaluated})
-        # A link counts only where it was written: a scoped run leaves the others alone.
-        asked = {row["login"] for row in questions if row["status"] == "held"}
+                               github_scope=review_scopes)
+        # A committed handoff must not widen the scope of another account's questions.
         settled = {login: chosen.get(login) for login in evaluated
                    if login in linked or login in asked
                    or chosen.get(login, {}).get("decision") not in ("matched", "review")}
-        review.retire_github(self.prepared.db, settled, covered, aliases)
+        review.retire_github(self.prepared.db, settled, covered, aliases, account_scopes=review_scopes)
         # A file beside dedup's journal: it is read by people, not by the pipeline.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         with AtomicWriter(journal_path) as handle:

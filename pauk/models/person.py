@@ -41,6 +41,8 @@ class GitHubMatchState(BaseModel):
     email: str | None = None
     contributed_to: list[Contribution] = Field(default_factory=list)
     cleared_fields: list[GitHubMatchField] = Field(default_factory=list)
+    cleared_contributions: list[Contribution] = Field(default_factory=list)
+    withdrawn_logins: list[str] = Field(default_factory=list)
 
 
 class Person(BaseModel):

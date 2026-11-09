@@ -1,12 +1,16 @@
 import unittest
+from unittest import mock
 
 import mongomock
 
+from pauk.graph import load
 from pauk.graph.jsonl_loader import extract_repo_links, load_prepared_rows, normalize_repo_url
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.graph.unmerge import split_person
-from pauk.models import Person, Publication
+from pauk.models import Contribution, GitHubMatchResult, Person, Publication
+from pauk.pipeline.github_matches import apply_matches, retract_matches
+from pauk.settings import Settings
 from pauk.storage import PreparedStore
 from pauk.urls import deduplicate_repo_urls
 from tests.bench.mocks import RecordingNeo4jClient
@@ -63,6 +67,109 @@ class GitHubWithdrawalPublicationTest(unittest.TestCase):
     def test_clear_markers_cannot_change_unrelated_fields(self):
         row = self.publish(github_match={"cleared_fields": ["homepage"]})
         self.assertEqual(row["homepage"], "https://lab.test")
+
+
+class GitHubMatchPublicationTest(unittest.TestCase):
+    def setUp(self):
+        self.graph = FakePanelGraph()
+        self.author = Person(id="A1", is_itmo=True)
+        apply_matches(self.author, [GitHubMatchResult(
+            login="coder42", email="account@lab.test",
+            contributed_to=[Contribution(repository_id="R1", role="contributor")],
+        )])
+        self.repositories = [{"id": "R1", "url": "https://github.com/lab/tool"}]
+
+    def rows(self, *extra):
+        return {"persons.jsonl": [self.author.model_dump(mode="json", by_alias=True), *extra],
+                "repositories.jsonl": self.repositories}
+
+    def withdraw(self):
+        retract_matches(self.author)
+        apply_matches(self.author, [])
+
+    def test_withdrawal_reaches_a_person_folded_only_on_the_graph(self):
+        load_prepared_rows(self.graph, self.rows({"id": "A3", "is_itmo": True, "homepage": "https://lab.test"}))
+        merge_nodes(self.graph, "Person", "A1", "A3")
+        self.withdraw()
+
+        for _ in range(2):
+            load_prepared_rows(self.graph, self.rows())
+            self.assertIsNone(self.graph.nodes["Person", "A3"].get("github"))
+            self.assertIsNone(self.graph.nodes["Person", "A3"].get("email"))
+            self.assertEqual(self.graph.nodes["Person", "A3"]["homepage"], "https://lab.test")
+            self.assertNotIn(("Person", "CONTRIBUTED_TO", "Repository", "A3", "R1"), self.graph.relationships)
+            self.assertNotIn(("Person", "A1"), self.graph.nodes)
+
+    def test_publishing_reads_independent_sources_of_the_survivor_without_claiming_their_group(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        source = PreparedStore(db, "source")
+        independent = Person(id="A3", is_itmo=True, github="coder42", email="independent@lab.test",
+                             contributed_to=[Contribution(repository_id="R1", role="owner")])
+        source.write_models("persons", [independent])
+        load_prepared_rows(self.graph, self.rows(independent.model_dump(mode="json", by_alias=True)))
+        merge_nodes(self.graph, "Person", "A1", "A3")
+        self.withdraw()
+        PreparedStore(db, "withdrawal").write_models("persons", [self.author])
+        before = db.persons.find_one({"id": independent.id})
+
+        with (mock.patch.object(load, "audited_client", return_value=self.graph),
+              mock.patch.object(load, "create_constraints")):
+            load.load_jsonl_group(Settings(), db, "withdrawal")
+
+        props = self.graph.nodes["Person", "A3"]
+        self.assertEqual(props["github"], "coder42")
+        self.assertEqual(props["email"], "independent@lab.test")
+        self.assertEqual(self.graph.relationships["Person", "CONTRIBUTED_TO", "Repository", "A3", "R1"]["role"], "owner")
+        self.assertEqual(db.persons.find_one({"id": independent.id}), before)
+
+    def test_repository_folds_and_manual_claims_are_respected(self):
+        original = self.author.model_copy(deep=True)
+        for claimed in (False, True):
+            with self.subTest(claimed=claimed):
+                self.author = original.model_copy(deep=True)
+                client = RecordingNeo4jClient()
+                load_prepared_rows(client, self.rows({"id": "A2", "is_itmo": True,
+                                                     "contributed_to": [{"repository_id": "R1", "role": "owner"}]}))
+                client.upsert_nodes_batch("Repository", [("R3", {"url": "https://github.com/lab/renamed",
+                                                                   "merged_ids": ["R1"]})])
+                client.merge_repository_nodes_batch([("R1", "R3")])
+                self.withdraw()
+                claim = {("Person", "CONTRIBUTED_TO", "Repository", "A1", "R1")} if claimed else set()
+
+                load_prepared_rows(client, self.rows(), claimed_relationships=claim)
+
+                edge = "Person", "CONTRIBUTED_TO", "Repository", "A1", "R3"
+                self.assertEqual(edge in client.edges, claimed)
+                self.assertIn(("Person", "CONTRIBUTED_TO", "Repository", "A2", "R3"), client.edges)
+
+    def test_an_interrupted_publication_finishes_the_withdrawal_on_retry(self):
+        load_prepared_rows(self.graph, self.rows())
+        self.withdraw()
+
+        def stop_after_nodes(step, done, total):
+            if step == "выкладка узлов" and done == total:
+                raise RuntimeError("publish interrupted")
+
+        with self.assertRaisesRegex(RuntimeError, "publish interrupted"):
+            load_prepared_rows(self.graph, self.rows(), report=stop_after_nodes)
+        load_prepared_rows(self.graph, self.rows())
+        self.assertIsNone(self.graph.nodes["Person", "A1"].get("github"))
+        self.assertNotIn(("Person", "CONTRIBUTED_TO", "Repository", "A1", "R1"), self.graph.relationships)
+
+    def test_an_unknown_contribution_role_does_not_erase_the_survivors_known_role(self):
+        client = RecordingNeo4jClient()
+        independent = {"id": "A3", "is_itmo": True,
+                       "contributed_to": [{"repository_id": "R1", "role": "owner"}]}
+        load_prepared_rows(client, self.rows(independent))
+        client.upsert_nodes_batch("Person", [("A3", {"merged_ids": ["A1"]})])
+        client.merge_person_nodes_batch([("A1", "A3")])
+        self.withdraw()
+        independent["contributed_to"] = [{"repository_id": "R1"}]
+
+        load_prepared_rows(client, self.rows(independent))
+
+        edge = "Person", "CONTRIBUTED_TO", "Repository", "A3", "R1"
+        self.assertEqual(client.edges[edge]["role"], "owner")
 
 
 class MentionsSynchronizationTest(unittest.TestCase):

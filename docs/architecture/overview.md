@@ -109,3 +109,5 @@ Both use the same decision functions (`plan_person_merges` and the paired
 logic for publications and repositories); they differ only in where rows come
 from (MongoDB vs Cypher) and where the result is written. See
 [pipeline/dedup.md](pipeline/dedup.md).
+Both layers resolve alias chains through `pauk/aliases.py`; cycles or conflicting
+survivors are rejected before applying the map.

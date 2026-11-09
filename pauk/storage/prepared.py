@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
 from typing import TypeVar
 
 from pydantic import BaseModel
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,11 @@ M = TypeVar("M", bound=BaseModel)
 #: Where a replaced row's previous version is filed. One collection for
 #: every entity, like `raw`.
 REVISIONS = "revisions"
+MAX_MODEL_UPDATE_ATTEMPTS = 5
+
+
+class PreparedWriteConflict(PyMongoError):
+    """A prepared row disappeared or kept changing during a conditional edit."""
 
 
 def trim_revisions(db: Database, before: str, apply: bool = False) -> dict[str, int]:
@@ -176,16 +182,40 @@ class PreparedStore:
         for row in rows:
             self._upsert_row(entity, row, collection, revisions)
 
-    def _upsert_row(self, entity: str, row: dict, collection, revisions) -> None:
+    def modify_model(self, entity: str, identifier: str, model: type[M], change: Callable[[M], None]) -> M:
+        """Apply an edit to the latest row and claim it for this group.
+
+        Retry on a concurrent version change so cross-group edits do not
+        replace unrelated enrichment with an earlier snapshot.
+        """
+        collection = self._collection(entity)
+        for _ in range(MAX_MODEL_UPDATE_ATTEMPTS):
+            before = collection.find_one({self._key_field(entity): identifier})
+            if before is None:
+                raise PreparedWriteConflict(f"{entity} {identifier} no longer exists")
+            current = model.model_validate(before)
+            change(current)
+            row = current.model_dump(mode="json", by_alias=True)
+            if row[self._key_field(entity)] != identifier:
+                raise ValueError("a conditional edit cannot change the row's identity")
+            if self._upsert_row(entity, row, collection, self.db[REVISIONS], before=before, check_version=True):
+                return current
+        raise PreparedWriteConflict(f"{entity} {identifier} kept changing; retry the stage")
+
+    def _upsert_row(self, entity: str, row: dict, collection, revisions, *,
+                    before: dict | None = None, check_version: bool = False) -> bool:
         key_field = self._key_field(entity)
         row_id = row[key_field]
-        before = collection.find_one({"_id": row_id})
+        if not check_version:
+            before = collection.find_one({"_id": row_id})
+        query = {"_id": row_id}
+        if check_version:
+            query["_version"] = before.get("_version", {"$exists": False})
         before_content = {k: v for k, v in (before or {}).items() if k not in ("_id", "groups", "_version")}
         row_content = {k: v for k, v in row.items() if v is not None}
         content_changed = before is None or before_content != row_content
         if not content_changed and before is not None and "_version" in before:
-            collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
-            return
+            return bool(collection.update_one(query, {"$addToSet": {"groups": self.group}}).matched_count)
         new_version = (before or {}).get("_version", 0) + 1
         update: dict = {
             "$set": {**row_content, "_version": new_version},
@@ -194,7 +224,9 @@ class PreparedStore:
         unset_fields = {k for k, v in row.items() if v is None}
         if unset_fields:
             update["$unset"] = dict.fromkeys(unset_fields, "")
-        collection.update_one({"_id": row_id}, update, upsert=True)
+        result = collection.update_one(query, update, upsert=not check_version)
+        if check_version and not result.matched_count:
+            return False
         if content_changed and before is not None:
             revisions.insert_one(
                 {
@@ -206,3 +238,4 @@ class PreparedStore:
                     "replaced_at": datetime.now(UTC).isoformat(),
                 }
             )
+        return True

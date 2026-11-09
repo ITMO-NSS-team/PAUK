@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from pauk.jobs import locks, store
 from pauk.jobs.models import (
+    GITHUB_MATCH,
     GRAPH,
     Job,
     JobKind,
@@ -348,6 +349,14 @@ class GraphIsHeldWhilePublishingTest(unittest.TestCase):
         from pauk.graph.load import load_jsonl_group
         with locks.held(self.db, GRAPH, "someone-else"), self.assertRaises(locks.Busy):
             load_jsonl_group(self.config, self.db, "2024")
+
+    def test_publishing_does_not_read_a_half_finished_account_transfer(self):
+        from pauk.graph import load
+        with (locks.held(self.db, GITHUB_MATCH, "matcher"), patch.object(load, "_load_locked") as work,
+              self.assertRaises(locks.Busy)):
+            load.load_jsonl_group(self.config, self.db, "2024")
+        work.assert_not_called()
+        self.assertIsNone(locks.holder(self.db, GRAPH))
 
     def test_a_dedup_is_refused_while_the_graph_is_held(self):
         from pauk.graph.dedup import run_graph_dedup

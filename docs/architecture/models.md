@@ -66,6 +66,8 @@ the relation-like models.
     and contributions; `GitHubMatchState` also records which displayed values
     and contributions were added by applying those results. This metadata stays
     in Mongo and is not part of the graph schema.
+    `cleared_fields` and `cleared_contributions` retain explicit withdrawals for
+    publishing; `withdrawn_logins` carries earlier owners into later handoffs.
 - The block under the `# Stubs` comment (`scopus_id`, `researcher_id`,
   `h_index`, `wikipedia` and others) holds fields no pipeline stage fills.
   The exceptions are `other_names`, `homepage`, `linkedin`, `gitlab_username`

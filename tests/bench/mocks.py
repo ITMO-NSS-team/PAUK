@@ -9,7 +9,8 @@ from collections import defaultdict
 
 import requests
 
-from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists, flatten_merges
+from pauk.aliases import flatten_merges
+from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -491,6 +492,15 @@ class RecordingNeo4jClient:
 
     def merge_repository_nodes_batch(self, merges) -> int:
         return self._fold_nodes("Repository", merges)
+
+    def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs, tgt_match_prop="id") -> int:
+        removed = 0
+        for source, target in pairs:
+            key = src_label, rel_type, tgt_label, source, target
+            if key in self.edges:
+                del self.edges[key]
+                removed += 1
+        return removed
 
     def close(self) -> None:
         pass

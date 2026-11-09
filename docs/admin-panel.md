@@ -384,6 +384,8 @@ the rest as failed.
 
 While a resource is busy, jobs that need it wait without blocking others;
 collect by group proceeds even if a publish is waiting for the graph.
+GitHub matching shares a separate lock with publishing and source reconciliation: an account handoff must
+finish saving its former and new owners before publication can read them.
 
 If the worker disappeared **in the middle of a publish**, manual edits in the
 graph have already been overwritten by pipeline values and not restored, since
@@ -520,9 +522,9 @@ query is bounded, and nobody needs last week's bad records.
 
 ### Reconcile with Mongo
 
-The graph does not converge to Mongo by itself. Publishing only adds, so a
-record deleted from Mongo, or a relationship a row no longer claims, is removed
-separately: with the "Сверка с источником" button on the "Пайплайн" page, or
+Publishing applies explicit GitHub withdrawals and classified-link changes.
+Other records deleted from Mongo, or relationships their rows no longer claim,
+are removed separately with the "Сверка с источником" button on the "Пайплайн" page, or
 from the terminal:
 
 ```bash
@@ -534,6 +536,8 @@ uv run pauk admin prune --apply    # removes it
 page this is one job with a checkbox: unchecked, it only counts and puts the
 numbers in the result; checked, it removes. Run it unchecked first and read the
 list: manual records created before hand-made records were tracked look extra.
+The preview never forwards writes to Neo4j, including the loader's automatic
+cleanup calls. Manual relationship claims remain protected through graph folds.
 
 It leaves three things alone: records and links made by hand (they are in the
 manual decisions, which is the only reason that record exists), what the next

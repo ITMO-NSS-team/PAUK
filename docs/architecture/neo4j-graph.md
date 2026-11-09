@@ -96,6 +96,9 @@ An explicit `github` or `email` withdrawal in `Person.github_match.cleared_field
 is published as a null property update. This removes the old graph value even
 after Mongo has unset the field. Unmarked missing or null values remain unknown
 source data and do not erase graph properties. The withdrawal markers stay in Mongo.
+`cleared_contributions` removes only the named generated `CONTRIBUTED_TO` edges.
+After folds, GitHub field updates and withdrawals target the surviving ids;
+independent source values and manual relationship claims remain protected.
 
 A person always has the single label `:Person`; ITMO membership is the
 boolean property `is_itmo`, not a label. The property is sticky: the same
@@ -432,6 +435,10 @@ rows come from). Separately, `uv run python -m pauk.graph.load --dir
 <folder>` runs a standalone tool for an external CSV export, with no MongoDB,
 using `csv_loader.load_csv_dir`. Both paths create constraints, then load,
 and close the connection in `finally`.
+For GitHub changes, the Mongo publisher also reads related person aliases and
+repository dependencies across groups. These reads do not change group membership.
+Publishing holds the `github_match` resource alongside the graph lock so it cannot
+read a partially saved account handoff.
 
 ## `urls.py`
 

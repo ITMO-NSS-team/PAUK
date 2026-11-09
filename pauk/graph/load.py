@@ -1,4 +1,4 @@
-"""CLI entry point for loading a shared CSV export into Neo4j."""
+"""Publish prepared MongoDB groups or external CSV files to Neo4j."""
 
 import argparse
 import logging
@@ -7,7 +7,7 @@ from pathlib import Path
 from pymongo.database import Database
 
 from pauk.jobs.locks import held
-from pauk.jobs.models import GRAPH
+from pauk.jobs.models import GITHUB_MATCH, GRAPH
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore
 
@@ -33,12 +33,8 @@ ENTITY_FILES = {
 }
 
 
-# Which node label the rows of each prepared entity become, derived from
-# the loader's own map rather than written out again: an entity added to
-# the pipeline must not silently lose its tombstones because a second list
-# was never updated.
-# persons.jsonl is the one file FILE_SPECS does not carry: it feeds two
-# registry entries, ITMO and external, that share the base label.
+# Derive tombstone labels from the loader registry to avoid a second mapping.
+# Persons use two specs with the same label and are absent from FILE_SPECS.
 FILE_LABELS = {
     filename: NODE_REGISTRY[spec_key].labels.split(":")[0]
     for filename, spec_key in FILE_SPECS.items()
@@ -46,13 +42,7 @@ FILE_LABELS = {
 
 
 def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) -> dict[str, list[dict]]:
-    """Remove rows whose node was deleted by hand.
-
-    Filtering here rather than deleting after the load is what keeps the
-    audit log honest: MERGE would recreate the node and apply_overrides
-    would remove it again, writing a creation and a deletion nobody asked
-    for on every single run.
-    """
+    """Skip manually deleted nodes before MERGE can recreate them and add audit noise."""
     filtered = {}
     for filename, rows in rows_by_file.items():
         label = FILE_LABELS.get(filename)
@@ -69,66 +59,76 @@ def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) ->
 
 def load_jsonl_group(config: Settings, mongo_db: Database, group: str,
                      report: Progress | None = None) -> dict[str, int]:
-    """Load one prepared group from Mongo into Neo4j. Used by `pauk publish graph`.
-
-    Takes the graph lock for the whole run. Two publishes at once interleave
-    their batches and reapply manual decisions against a half-written graph,
-    and the audit feed ends up describing changes in an order that never
-    happened.
-
-    Args:
-        config: Application settings (Neo4j connection).
-        mongo_db: The raw/prepared MongoDB database.
-        group: The group whose prepared rows to publish.
+    """Publish one MongoDB group with graph writes and GitHub ownership changes locked.
 
     Returns:
-        How many prepared rows went in per entity, and what the manual
-        decisions did afterwards. The loader itself reports its batches to
-        the log; these are the numbers a scheduled run has to hand back.
+        Prepared row counts per entity and manual override results.
 
     Raises:
-        Busy: Something else is already writing the graph.
+        Busy: Another run holds the graph or GitHub matching lock.
     """
-    with held(mongo_db, GRAPH):
+    with held(mongo_db, GRAPH), held(mongo_db, GITHUB_MATCH):
         return _load_locked(config, mongo_db, group, report)
 
 
 def _load_locked(config: Settings, mongo_db: Database, group: str,
                  report: Progress | None = None) -> dict[str, int]:
-    """The publish itself, with the graph already held.
-
-    Split out so the lock wraps the whole run rather than each step: a
-    second publish starting between the upload and apply_overrides would
-    reapply decisions against a graph that is still being written.
-    """
+    """Keep both locks through loading and reapplying manual overrides."""
     prepared = PreparedStore(mongo_db, group)
     rows_by_file = {
         filename: list(prepared.read_rows(entity))
         for entity, filename in ENTITY_FILES.items()
     }
-    rows_by_file = _drop_tombstoned(rows_by_file, mongo_db)
     client = audited_client(config, mongo_db)
     try:
         create_constraints(client)
-        # Large batches are recorded as one summary entry each (see
-        # AuditedNeo4jClient.diff_threshold), so a publish costs a handful
-        # of audit rows, not one per node, while still recording who
-        # republished this group and when.
+        rows_by_file = _github_context(prepared, client, rows_by_file)
+        rows_by_file = _drop_tombstoned(rows_by_file, mongo_db)
         with actor_context("etl-pipeline", source=f"publish:{group}"):
-            # LinkCandidate is the one label with no prepared file of its
-            # own (it is made up from repo_links rows), so _drop_tombstoned
-            # cannot filter it and the loader is told separately.
+            # Generated LinkCandidates have no prepared rows for the tombstone filter.
             load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
                                tombstoned_ids(mongo_db, "LinkCandidate"), report=report,
                                claimed_relationships=claimed_relationships(mongo_db))
-            # Last step, after candidate promotion and every fold: publishing
-            # overwrites hand-corrected fields with whatever the source says,
-            # so the manual decisions are put back on top.
+            # Manual decisions take precedence over published source values.
             counts = apply_overrides(client, mongo_db)
     finally:
         client.close()
     return {f"rows_{filename.removesuffix('.jsonl')}": len(rows)
             for filename, rows in rows_by_file.items()} | counts
+
+
+def _github_context(prepared: PreparedStore, client, rows_by_file: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    people = rows_by_file["persons.jsonl"]
+    related = {member for row in people if row.get("github_match")
+               for member in [row["id"], *(row.get("merged_ids") or [])]}
+    if not related:
+        return rows_by_file
+    aliases = client.fetch_merged_id_map("Person")
+    known = {row["id"] for row in people}
+    checked = set()
+    while related - checked:
+        for duplicate, canonical in aliases.items():
+            if duplicate in related or canonical in related:
+                related.update((duplicate, canonical))
+        pending = related - checked
+        checked.update(pending)
+        # A graph fold may have independent source rows outside this group.
+        for row in prepared.get_rows("persons", pending, include_merged=True):
+            related.update((row["id"], *(row.get("merged_ids") or [])))
+            if row["id"] not in known:
+                people.append(row)
+                known.add(row["id"])
+    repository_ids = {item["repository_id"] for row in people for item in [
+        *(row.get("contributed_to") or []),
+        *((row.get("github_match") or {}).get("cleared_contributions") or []),
+    ]}
+    repositories = rows_by_file["repositories.jsonl"]
+    known_repositories = {row["id"] for row in repositories}
+    for row in prepared.get_rows("repositories", repository_ids, include_merged=True):
+        if row["id"] not in known_repositories:
+            repositories.append(row)
+            known_repositories.add(row["id"])
+    return rows_by_file
 
 
 def main() -> None:

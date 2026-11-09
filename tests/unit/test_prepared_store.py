@@ -1,10 +1,12 @@
 import unittest
+from unittest import mock
 
 import mongomock
 
-from pauk.models import Person, Publication
+from pauk.models import GitHubMatchResult, Person, Publication
+from pauk.pipeline.github_matches import apply_matches, withdraw_matches
 from pauk.storage import PreparedStore
-from pauk.storage.prepared import REVISIONS, trim_revisions
+from pauk.storage.prepared import REVISIONS, PreparedWriteConflict, trim_revisions
 
 
 class PreparedStoreTest(unittest.TestCase):
@@ -38,6 +40,63 @@ class PreparedStoreTest(unittest.TestCase):
     def test_get_models_skips_unknown_ids_without_erroring(self):
         store = PreparedStore(self.db, "sample")
         self.assertEqual(list(store.get_models("publications", ["ghost"], Publication)), [])
+
+    def test_conditional_edit_retries_without_erasing_a_new_independent_source(self):
+        author = Person(id="A1", is_itmo=True)
+        apply_matches(author, [GitHubMatchResult(login="coder42", email="account@lab.test")])
+        PreparedStore(self.db, "original").write_models("persons", [author])
+        collection = self.db.persons
+        update = collection.update_one
+        collided = False
+
+        def concurrent_source(query, change, **kwargs):
+            nonlocal collided
+            if "_version" in query and not collided:
+                collided = True
+                update({"_id": author.id}, {"$set": {"email": "independent@lab.test", "orcid": "ORCID-new"},
+                                           "$inc": {"_version": 1}})
+            return update(query, change, **kwargs)
+
+        with mock.patch.object(collection, "update_one", side_effect=concurrent_source):
+            result = PreparedStore(self.db, "handoff").modify_model(
+                "persons", author.id, Person, lambda person: withdraw_matches(person, {"coder42"}))
+
+        self.assertIsNone(result.github)
+        self.assertEqual(result.email, "independent@lab.test")
+        self.assertEqual(result.orcid, "ORCID-new")
+        saved = collection.find_one({"_id": author.id})
+        self.assertEqual(set(saved["groups"]), {"original", "handoff"})
+        self.assertEqual(saved["_version"], 3)
+        (revision,) = self.db[REVISIONS].find({})
+        self.assertEqual(revision["snapshot"]["email"], "independent@lab.test")
+
+    def test_conditional_edit_does_not_recreate_a_deleted_person(self):
+        store = PreparedStore(self.db, "sample")
+        with self.assertRaises(PreparedWriteConflict):
+            store.modify_model("persons", "missing", Person, lambda person: None)
+        self.assertEqual(self.db.persons.count_documents({}), 0)
+
+    def test_a_noop_conditional_edit_claims_the_group_without_an_extra_revision(self):
+        author = Person(id="A1", is_itmo=True)
+        PreparedStore(self.db, "original").write_models("persons", [author])
+
+        result = PreparedStore(self.db, "context").modify_model("persons", author.id, Person, lambda person: None)
+
+        self.assertEqual(result, author)
+        saved = self.db.persons.find_one({"_id": author.id})
+        self.assertEqual(set(saved["groups"]), {"original", "context"})
+        self.assertEqual(saved["_version"], 1)
+        self.assertEqual(self.db[REVISIONS].count_documents({}), 0)
+
+    def test_a_conditional_edit_cannot_overwrite_another_identity(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("persons", [Person(id=pid, is_itmo=True) for pid in ("A1", "A2")])
+        before = list(self.db.persons.find({}).sort("_id"))
+
+        with self.assertRaisesRegex(ValueError, "identity"):
+            store.modify_model("persons", "A1", Person, lambda person: setattr(person, "id", "A2"))
+
+        self.assertEqual(list(self.db.persons.find({}).sort("_id")), before)
 
     def test_merged_id_lookup_returns_the_survivor_without_adding_it_to_the_group(self):
         owner = Person(id="A2", is_itmo=True, merged_ids=["A1"])

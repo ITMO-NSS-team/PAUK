@@ -2,7 +2,7 @@ import unittest
 
 from pauk.graph.extract import extract_node, person_spec
 from pauk.models import Contribution, GitHubMatchResult, Person
-from pauk.pipeline.github_matches import apply_matches, retract_matches
+from pauk.pipeline.github_matches import apply_matches, retract_matches, withdraw_matches
 from pauk.pipeline.normalize import _merge_person
 
 
@@ -80,6 +80,30 @@ class GitHubMatchEffectsTest(unittest.TestCase):
         self.assertEqual(self.person.contributed_to, [self.contribution])
         self.assertEqual(self.person.github, "second")
         self.assertIsNone(self.person.email)
+
+    def test_withdrawing_one_account_keeps_another_accounts_shared_contribution(self):
+        second = GitHubMatchResult(login="second", contributed_to=[self.contribution])
+        apply_matches(self.person, [self.match, second])
+
+        withdraw_matches(self.person, {"coder42"})
+
+        self.assertEqual(self.person.github, "second")
+        self.assertEqual(self.person.contributed_to, [self.contribution])
+        self.assertEqual(self.person.github_match.cleared_contributions, [])
+        self.assertEqual(self.person.github_match.withdrawn_logins, ["coder42"])
+
+    def test_withdrawn_edges_survive_repeats_and_are_cancelled_by_a_new_source(self):
+        apply_matches(self.person, [self.match])
+        withdraw_matches(self.person, {"coder42"})
+        retract_matches(self.person)
+        apply_matches(self.person, [])
+        self.assertEqual(self.person.github_match.cleared_contributions, [self.contribution])
+        self.person.contributed_to.append(self.contribution.model_copy(deep=True))
+
+        apply_matches(self.person, [])
+
+        self.assertEqual(self.person.github_match.cleared_contributions, [])
+        self.assertEqual(self.person.contributed_to, [self.contribution])
 
     def test_an_independent_source_on_either_merged_row_survives_retraction(self):
         for independent_first in (False, True):

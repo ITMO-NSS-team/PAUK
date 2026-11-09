@@ -21,11 +21,16 @@ no signal at all. Candidates come from existing relationships and saved answers:
 - **email**: the account's address equals the author's address;
 - **name**: the full name (not a single word) equals the author's name;
 - **answer**: a person confirmed the author or chose them for this account.
+- **source**: an independent source, such as ORCID, already names the author's GitHub login.
 
 An address indexes every author who has it. A shared address therefore brings
 all of them into the comparison; an unresolved tie asks a question instead of
 choosing whichever Mongo returned first. A manual confirmation brings its author
 into the comparison even after the account's name, address or repositories change.
+An independently known login is also treated as a confirmation; a manual refusal
+can override it. Copied match outputs do not count as independent sources.
+Records connected by `merged_ids` are combined before scoring, so a source row
+kept by another group cannot compete with its own survivor.
 
 A single-word name does not enter the index: half the sample shares a surname,
 and such a match means nothing.
@@ -176,6 +181,10 @@ person merging reuse it. No extra Mongo collection or graph property is involved
 unsets cleared properties, so their absence alone cannot distinguish a
 withdrawal from an unknown source value. The markers survive repeat runs and
 person merges; supplying a new value removes the corresponding marker.
+`cleared_contributions` records generated repository links that were removed.
+`withdrawn_logins` keeps earlier owners discoverable until the account is assigned
+back to them. This lets a later handoff publish all preceding withdrawals even
+when intermediate groups were never published.
 
 The matcher compares authors without its own earlier additions. An address copied
 from an account is therefore never independent proof that the account belongs to
@@ -192,14 +201,23 @@ group sees; fresh repository data replaces an earlier role for that account.
 Repositories already named in the match provenance are looked up by id with
 `PreparedStore.get_models`, across groups, so a group's missing row does not erase
 the evidence for its own earlier match. This does not change group membership.
-Scoped runs change only selected persons, so a rechoice targeting only
-the new owner leaves the old owner unchanged until a run covers that person too.
+Selection controls which account decisions the run applies. Applying a decision
+also withdraws its old matches from other owners, including those outside the
+group or selection. Changed former owners keep their existing group claims and
+join the current group, so publishing it carries both sides of the handoff.
+The same run updates their open questions and discrepancies. Coverage is kept
+separately for each account, so unrelated questions remain open.
 Authors named in saved answers are looked up across groups, including by
 `merged_ids`, before matching. A confirmed owner outside the current group still
-prevents assigning the account to a namesake. These context rows are never written
-or added to the current group. If a confirmed author cannot be found among eligible
+prevents assigning the account to a namesake. Context that needs no change is not
+added to the group. If a confirmed author cannot be found among eligible
 authors, the account is skipped with a warning; its earlier results and questions
 are kept.
+When an account returns to review, its previous generated matches are withdrawn;
+independently sourced fields remain. Matching, publishing and source reconciliation share the
+`github_match` resource lock. Withdrawals are saved before new assignments, and
+person updates retry against the latest Mongo version to preserve concurrent
+enrichment. An interrupted handoff can be completed by repeating the stage.
 
 Person merging first combines independent fields, then reapplies the combined
 account results. This prevents a match on one row from claiming an independent
@@ -216,8 +234,9 @@ surviving source data, rather than guessing which stage supplied them.
 Withdrawals already saved without `cleared_fields` also need an earlier revision
 to recover their intent; an empty current value alone is not enough.
 
-Publishing sends marked withdrawals as nulls to remove the old Neo4j properties;
-ordinary unknown values leave graph properties intact. As with other source removals,
-old `CONTRIBUTED_TO` edges are removed by the existing reconcile operation
-(`pauk admin prune`, or "Сверка с источником" in the panel); publishing alone
-does not remove them. Manual relationship claims remain protected there.
+Publishing sends marked withdrawals as nulls and removes explicitly withdrawn
+`CONTRIBUTED_TO` edges. Both follow graph aliases after folds. The publisher reads
+related prepared source rows across groups so a survivor's independent values and
+links remain protected. Manual relationship claims are also preserved.
+Ordinary unknown values leave graph properties intact; other stale edges still
+need the reconcile operation (`pauk admin prune`, or "Сверка с источником").

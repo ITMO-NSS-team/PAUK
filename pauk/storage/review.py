@@ -372,7 +372,8 @@ def _write_answer(db: Database, key: str, update: dict, *, dispute_token: str = 
 
 
 def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[str],
-                  aliases: dict[str, str] | None = None) -> int:
+                  aliases: dict[str, str] | None = None, *,
+                  account_scopes: dict[str, set[str]] | None = None) -> int:
     """Close open account questions a run has settled without a person.
 
     An account is asked about once, so any other open question about it is
@@ -387,6 +388,8 @@ def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[st
             asked now, and stays open.
         people: The persons the run covers; a scoped run covers its selection only.
         aliases: Folded-away person id to the id that survived.
+        account_scopes: Authors actually covered for each account, including
+            counterparts changed by a cross-group handoff.
 
     Returns:
         How many questions were closed.
@@ -402,7 +405,8 @@ def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[st
         if question["_id"] in asked:
             continue
         login = question["evidence"]["login"]
-        if any(aliases.get(member, member) not in people
+        covered = account_scopes.get(login, set()) if account_scopes is not None else people
+        if any(aliases.get(member, member) not in covered
                for member in question["members"] if member != login):
             continue
         result = db[COLLECTION].update_one(

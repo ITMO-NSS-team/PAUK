@@ -199,7 +199,9 @@ def _merge_person(base: Person, extra: Person) -> Person:
         base.processing.setdefault(stage, state)
     if tracked:
         apply_matches(base, matches,
-                      cleared_fields=extra.github_match.cleared_fields if extra.github_match else ())
+                      cleared_fields=extra.github_match.cleared_fields if extra.github_match else (),
+                      cleared_contributions=extra.github_match.cleared_contributions if extra.github_match else (),
+                      withdrawn_logins=extra.github_match.withdrawn_logins if extra.github_match else ())
     return base
 
 
