@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,10 +22,13 @@ from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
+from pauk.sources.llm import CliUnusableError, SubscriptionLimitError, check_providers
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
 logger = logging.getLogger("pauk.cli")
+
+_LLM_COMMANDS = ("run", "enrich", "dedup")
 
 
 def _selector(args):
@@ -203,7 +207,8 @@ def _cmd_collect(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
         count = Collector(
-            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key,
+                           requests_per_second=settings.openalex_rps), RawStore(db, group)
         ).collect(_selector(args))
         _log_result("collect", group, {"raw_works": count})
 
@@ -338,19 +343,45 @@ def _cmd_admin(args) -> None:
         mongo.close()
 
 
+def _interrupt_on_termination() -> None:
+    """Treat SIGTERM and a closed terminal as Ctrl-C.
+
+    Subscription CLIs sit in their own process groups, so these signals do
+    not reach them, and without an exception here nothing would kill them.
+    """
+
+    def interrupt(*_signal) -> None:
+        raise KeyboardInterrupt
+
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):
+        if (received := getattr(signal, name, None)) is not None:
+            signal.signal(received, interrupt)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     configure_logging(args.verbose)
+    if args.command in _LLM_COMMANDS:
+        _interrupt_on_termination()
     try:
         _dispatch(args, parser)
     except Busy as error:
         # Something else holds the graph or the group. Waiting is the
         # answer, and a stack trace does not say so.
         raise SystemExit(str(error)) from None
+    except SubscriptionLimitError as error:
+        raise SystemExit(f"{error}\nRun the same command again after the limit resets.") from None
+    except CliUnusableError as error:
+        raise SystemExit(f"{error}\nFix the CLI, then run the same command again.") from None
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> None:
+    if args.command in _LLM_COMMANDS:
+        try:
+            check_providers(settings)
+        except ValueError as error:
+            parser.error(str(error))
     if args.command == "run":
         _cmd_run(args)
     elif args.command == "collect":

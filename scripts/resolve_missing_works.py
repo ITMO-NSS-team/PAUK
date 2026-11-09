@@ -234,7 +234,8 @@ def command_resolve(args, config: Settings, db: Database) -> None:
     missing = [r for r in rejected if r["reason"] == "publication_not_in_graph"]
     logger.info("rows with a repository but no publication in the graph: %d", len(missing))
 
-    client = OpenAlexClient(config.request_timeout, config.openalex_api_key)
+    client = OpenAlexClient(config.request_timeout, config.openalex_api_key,
+                           requests_per_second=config.openalex_rps)
     resolved = []
     for index, row in enumerate(missing, 1):
         match = _best_match(client, row)

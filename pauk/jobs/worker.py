@@ -45,7 +45,9 @@ def _collect(config: Settings, db: Database, payload, stop: Stop,
              report: Report) -> dict[str, int]:
     from pauk.pipeline.runner import PipelineRunner
     from pauk.pipeline.selectors import PeriodSelector, WorkSelector
+    from pauk.sources.llm import check_providers
 
+    check_providers(config)
     selector = (WorkSelector(payload.work_id) if payload.work_id
                 else PeriodSelector(payload.date_from, payload.date_to))
     return PipelineRunner(config, payload.group, db).run(selector, on_stage=report)
@@ -67,6 +69,9 @@ def _publish(config: Settings, db: Database, payload, stop: Stop,
 def _dedup(config: Settings, db: Database, payload, stop: Stop,
            report: Report) -> dict[str, int]:
     from pauk.graph.dedup import run_graph_dedup
+    from pauk.sources.llm import check_providers
+
+    check_providers(config)
     report("склейка дублей по всему графу")
     return run_graph_dedup(config, db)
 
