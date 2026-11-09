@@ -63,6 +63,7 @@ export interface OperationsState {
   stand: string;
   host: string;
   error: string;
+  databaseRecovery: { safety: string; ready?: boolean } | null;
   filter: string;
   search: string;
 }
@@ -92,6 +93,7 @@ export function initialState(): OperationsState {
     stand: "",
     host: "",
     error: "",
+    databaseRecovery: null,
     filter: "all",
     search: "",
   };

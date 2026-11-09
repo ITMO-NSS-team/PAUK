@@ -150,6 +150,13 @@ def observed(engine: Engine):
         checks = list(pool.map(lambda item: check(*item), probes))
     if engine.site_state_error:
         error = "; ".join(filter(None, (error, engine.site_state_error)))
+    recovery = engine.store.get("database-recovery")
+    if recovery:
+        message = (
+            "Запись в базы заблокирована. Восстановите страховочную копию "
+            + recovery["safety"] + " кнопкой «Восстановить»: новый дамп создаваться не будет."
+        )
+        error = "; ".join(filter(None, (error, message)))
     releases = engine.releases()
     by_id = {release["id"]: release for release in releases}
     live, preview = (None, None) if engine.site_state_error else (engine.store.get("live"), engine.store.get("preview"))
@@ -175,6 +182,7 @@ def observed(engine: Engine):
         checks=checks,
         storage=storage,
         error=error,
+        databaseRecovery=recovery,
         backups=engine.backups(),
         live=by_id.get(live) or installed,
         preview=by_id.get(preview),
