@@ -1,19 +1,8 @@
-"""Domain layer for editing the graph by hand.
+"""Validated graph edits shared by the CLI and admin panel.
 
-Everything that changes the graph outside the pipeline goes through here:
-the `pauk admin` commands and the admin panel's HTTP routes. Callers only
-parse their arguments and set `actor_context`; what a valid change *is*
-lives in this module.
-
-Labels and relationship types are interpolated into Cypher (the driver
-cannot bind identifiers as parameters), so every entry point validates
-against a closed set built from `extract.py::NODE_REGISTRY`. `update_node`
-takes the `updated_at` the editor saw and refuses the write if the node has
-moved on since, so concurrent editors do not overwrite each other.
-
-The whitelists are derived from NODE_REGISTRY, so a field added to the
-loader is editable here without a second edit, and a field that is not
-published to the graph cannot be set by hand.
+Cypher identifiers cannot be bound as parameters, so labels, fields and
+relationship types are whitelisted from NODE_REGISTRY. Optional updated_at
+checks reject stale node edits. Callers provide the audit actor and source.
 """
 
 from __future__ import annotations
@@ -90,14 +79,7 @@ def columns(label: str) -> tuple[str, ...]:
 
 
 def _check_search_fields() -> None:
-    """Fail at import if a listed field is not a real field of its label.
-
-    A rename in `extract.py` would otherwise leave the search box quietly
-    matching nothing: Cypher returns null for a property that does not
-    exist rather than raising. The same holds for a column the listing
-    shows and for the property it sorts on: both are interpolated into
-    Cypher, and a stale name sorts everything into one silent blob.
-    """
+    """Reject stale search/list fields at import; Cypher would silently return nulls."""
     for label, fields in SEARCH_FIELDS.items():
         if label not in NODE_FIELDS:
             raise RuntimeError(f"SEARCH_FIELDS names an unknown label: {label}")
@@ -137,13 +119,9 @@ class VersionConflict(MutationError):
 
 
 def as_stored(props: dict) -> dict:
-    """Property values shaped the way the loader stores them.
+    """Serialize nested properties as JSON text, matching the loader.
 
-    Neo4j has no nested-map property type, so `funding`, `versions`,
-    `counts_by_year` and `affiliations` are kept as JSON text
-    (`extract.py::extract_node` does the same). A manual edit has to match,
-    or the driver rejects the write and the same field ends up holding two
-    different shapes depending on who wrote it.
+    Neo4j cannot store nested maps as node properties.
     """
     stored = dict(props)
     for key in JSON_TEXT_FIELDS:
@@ -202,17 +180,10 @@ def person_facts(client: Neo4jClient, node_ids: list[str]) -> dict[str, dict]:
 
 
 def folded_into(client: Neo4jClient, label: str, node_id: str) -> str | None:
-    """The record this id was folded into, for an id with no node of its own.
+    """Resolve an old id from review questions, audit entries or bookmarks.
 
-    A fold leaves the swallowed id in the survivor's `merged_ids` and
-    nowhere else, while everything written before the fold (a question in
-    the review queue, a line in the change feed, somebody's bookmark) goes
-    on naming it. Reading that is the only way to answer "where did it go".
-
-    Returns:
-        The surviving node's id, or None when no node ever swallowed this
-        one. Not asked whether the id has a node itself: the caller comes
-        here having already failed to find it.
+    The caller has already checked that the id has no node. Returns the survivor's
+    id from merged_ids, or None if it cannot be found.
     """
     validate_label(label)
     return client.fetch_canonical_id(label, node_id)
@@ -251,17 +222,10 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
 
 
 def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
-    """Edges touching one node, as the panel shows them on a node's page.
+    """Read incident edges with the match_value needed to address the other endpoint.
 
-    Each row carries `match_value`: what addresses the other end for *this*
-    relationship. Usually its id, but a Repository is matched by `url` and
-    a GitHubProfile by `login`, and an edge cannot be removed without the
-    right one; the id simply finds nothing.
-
-    `match_prop` belongs to the *target* of the triple, so it only applies
-    to the other end when the edge leaves this node. On an incoming edge
-    the other end is the source, and a source is always addressed by its
-    id; reading the target's property off it would give None.
+    Outgoing edges use the triple's target property (id, URL or login).
+    Incoming edges use the source id, regardless of the target property.
     """
     validate_label(label)
     rows = client.fetch_node_relationships(label, node_id)
@@ -448,23 +412,14 @@ MERGEABLE = {
 
 
 def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id: str) -> int:
-    """Fold a duplicate into the node it duplicates.
+    """Move the duplicate's relationships to the survivor, then delete the duplicate.
 
-    The duplicate's relationships move to the canonical node and the
-    duplicate is deleted. `merged_ids` on the survivor is what keeps the
-    duplicate from coming back: the loader reads it (`fetch_merged_id_map`)
-    and redirects the old id on every later publish. Without that entry the
-    next publish recreates the node.
-
-    Nothing in the graph records which edge came from where afterwards,
-    so this is not undone from the graph. A Person can still be taken back
-    apart, because the prepared row it was published from describes its
-    node and all of its edges; see `pauk.graph.unmerge`. For the other two
-    labels there is no such reverse, and callers facing a human should say
-    so before folding.
+    merged_ids lets later publishes resolve the old id without recreating it.
+    The graph loses edge provenance: only Person folds can be undone from prepared
+    rows or pre-merge snapshots, through pauk.graph.unmerge.
 
     Returns:
-        Number of nodes removed (0 or 1).
+        Number of duplicate nodes removed (0 or 1).
     """
     if label not in MERGEABLE:
         raise UnknownEntity(
@@ -486,11 +441,7 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
 
 
 def count_nodes(client: Neo4jClient) -> dict[str, int]:
-    """How many nodes of each editable label the graph holds.
-
-    For the panel's overview, where the number beside a label is expected
-    to mean "how many of these are there", the count people navigate by.
-    """
+    """Count each editable node label for the admin overview."""
     counts = {}
     for label in NODE_FIELDS:
         validate_label(label)

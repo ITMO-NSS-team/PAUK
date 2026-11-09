@@ -1,12 +1,7 @@
-"""Declarative mapping from prepared JSONL rows (plain dicts) to Neo4j
-nodes/relationships.
+"""Map flat prepared rows to Neo4j nodes and relationships.
 
-Works on plain dicts, not pydantic instances. extract_node copies only the
-whitelisted NodeSpec.prop_fields, so fields like `_processing` (not a
-Neo4j-safe primitive) are never copied into node properties.
-
-Assumes the flat, per-entity prepared layout (persons, departments,
-publications, ...); a nested/aggregate format is not handled.
+NodeSpec whitelists properties so internal fields such as _processing cannot
+be copied into the graph. Extractors accept plain dicts, not model instances.
 """
 
 from __future__ import annotations
@@ -309,12 +304,10 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
 
 
 def person_spec(row: dict) -> NodeSpec:
-    """Which of the two person specs describes this row.
+    """Choose the Person relationship whitelist by is_itmo.
 
-    Persons share one file and one label; `is_itmo` picks the relationship
-    whitelist, because an external person never gets BELONGS_TO or
-    CONTRIBUTED_TO. Kept here rather than at the call site: a publish and
-    an undone merge have to read the same row the same way.
+    External people omit BELONGS_TO and CONTRIBUTED_TO. Publishing and unmerge
+    must use the same spec.
     """
     return NODE_REGISTRY["itmo_person" if row.get("is_itmo") else "external_person"]
 

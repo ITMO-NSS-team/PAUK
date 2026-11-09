@@ -1,16 +1,7 @@
-"""Deduplication across the whole graph, not one prepared group.
+"""Deduplicate all published groups using the pipeline's merge rules.
 
-The per-group dedup stage only sees one prepared group, but the graph
-accumulates every published group: the same researcher (or work, or
-repository) collected in two periods becomes two nodes that no group-level
-pass will ever compare, since each group's JSONL holds only one of the ids.
-This module applies the same merge rules (pauk/pipeline/stages/dedup.py)
-to all nodes of each kind at once and folds duplicates directly in Neo4j.
-
-The merged ids end up in the canonical node's `merged_ids` property, so a
-later republish of an old group cannot resurrect a folded duplicate: the
-loader re-folds any id found in a graph-side merged_ids map at the end of
-every load (see jsonl_loader.load_prepared_rows).
+Group-scoped dedup cannot compare records collected in separate groups.
+Survivors retain merged_ids so later publishing can reapply graph-only folds.
 """
 
 from __future__ import annotations
@@ -145,13 +136,10 @@ def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]]
 
 
 def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
-    """Trusted ORCIDs from every group's raw openalex_authors envelopes.
+    """Read trusted ORCIDs from all groups' raw OpenAlex author records.
 
-    Same reasoning as the per-group stage: the orcid property stored on a
-    node may descend from the surname-only Crossref backfill, which can
-    stamp a namesake's ORCID onto the wrong person. The author's own
-    OpenAlex record is authoritative; a later fetch of the same author
-    overrides an earlier one - across every group, not just one.
+    The latest record for each author wins. Graph ORCIDs may originate from an
+    ambiguous Crossref surname match and are not authoritative here.
     """
     orcids: dict[str, str | None] = {}
     cursor = mongo_db.raw.find({"source": "openalex_authors"}).sort("fetched_at", 1)

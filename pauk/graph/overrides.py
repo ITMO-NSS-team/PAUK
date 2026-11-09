@@ -1,28 +1,10 @@
-"""Manual edits that survive the pipeline.
+"""Persist manual graph decisions and reapply them after publishing or dedup.
 
-Neo4j is a display copy, not the source of truth: `pauk publish graph`
-pours prepared documents into it with `MERGE ... ON MATCH SET n +=
-row.properties`. A field corrected by hand and also written by the
-pipeline is overwritten on the next publish; a node deleted by hand comes
-back, because MERGE creates it again.
-
-So a manual edit is kept as a *decision*, not only as a value in the
-graph: one document per target in `graph_overrides`, reapplied after
-every publish and after every graph-wide dedup. The graph ends up
-carrying the same edit again, which is why applying has to be idempotent:
-reapplying an override that is already in place must produce no audit
-entry at all, or the change feed fills with edits nobody made.
-
-Two things this buys beyond survival:
-
-- the manual edits are a readable list, not values dissolved in the graph;
-- `auto_value` (what the field held before the edit) makes conflicts
-  visible: "the source now says X, your override still says Y".
-
-Deletion is a tombstone as much as an operation. The loader has to skip
-tombstoned ids *before* writing, otherwise every run recreates the node
-and every reapply deletes it again, so the graph would be correct and the
-audit log would be nonsense.
+Decisions live in graph_overrides because publishing can overwrite graph
+properties or recreate deleted entities. auto_value records the original value
+for conflict detection. Tombstones are also filtered before loading to avoid
+recreating and deleting the same entities on every publish.
+Reapplying an unchanged decision must not produce another audit entry.
 """
 
 from __future__ import annotations
@@ -112,12 +94,7 @@ def _write_decision(db: Database, document_id: str,
 
 
 def _now() -> datetime:
-    """Current time at the precision BSON keeps.
-
-    Mongo stores milliseconds; a plain datetime.now() carries microseconds
-    and comes back rounded, so a document returned to the caller would
-    differ from the one in the database.
-    """
+    """Match BSON millisecond precision so stored and returned versions compare equal."""
     moment = datetime.now(UTC)
     return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
 
@@ -138,12 +115,9 @@ def override_id(label: str, target_id: str) -> str:
 
 def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
                              src_id: str, tgt_id: str) -> str:
-    """Key for a decision about one relationship.
+    """Identify an edge by its triple, source id and target match value.
 
-    A relationship needs five parts to be named: a node is one id, an edge
-    is a type plus both ends. The target id is whatever the loader matches
-    the target by (`url` for a Repository, `login` for a GitHubProfile),
-    so the key matches what the publish path actually compares.
+    The target value follows the loader: URL for Repository, login for GitHubProfile.
     """
     return f"rel:{src_label}:{rel_type}:{tgt_label}:{src_id}:{tgt_id}"
 
@@ -288,22 +262,13 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
                                  src_id: str, tgt_id: str, op: str = DELETE,
                                  actor: str = "unknown", note: str = "",
                                  snapshot: dict | None = None) -> dict:
-    """Write down a manual decision about one relationship.
-
-    Two kinds, and they are not symmetrical. `delete` is an instruction:
-    the loader would recreate the edge from the same prepared row on every
-    run, and this is what stops it. `link` is only a claim: the edge is
-    there already and publishing leaves it alone, but without it nothing
-    tells an edge somebody added by hand from one the pipeline made and has
-    since stopped making, and a prune would remove both.
+    """Record a manual edge deletion or a claim protecting an added edge from prune.
 
     Args:
-        snapshot: Properties read before unlinking, so undo restores the
-            edge's data as well as its endpoints. Used only for deletion.
+        snapshot: Properties saved before deletion so undo can restore the edge's data.
 
     Raises:
-        UnknownEntity: The triple is not a relationship the graph has, or
-            the operation is neither of the two.
+        UnknownEntity: Unknown relationship triple or operation.
     """
     if op not in (DELETE, LINK):
         raise UnknownEntity(
@@ -356,12 +321,9 @@ def claimed_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
 
 
 def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
-    """Edges the loader must not recreate, as (src_label, rel_type, tgt_label, src_id, tgt_id).
+    """Edges excluded before loading, as (src_label, rel_type, tgt_label, src_id, tgt_id).
 
-    Filtered out before the upload rather than deleted after it, for the
-    same reason node tombstones are: `MERGE` would recreate the edge and
-    the reapply would remove it again, writing a creation and a deletion
-    into the audit log on every single run.
+    Filtering before upserts avoids repeated creation/deletion audit entries.
     """
     return {
         (row["src_label"], row["rel_type"], row["tgt_label"], row["src_id"], row["target_id"])
@@ -417,12 +379,7 @@ def active_overrides(db: Database) -> list[dict]:
 
 
 def tombstoned_ids(db: Database, label: str) -> set[str]:
-    """Ids the loader must not write at all.
-
-    Without this the node is recreated by every publish and removed by
-    every reapply: the end state is right, but each run writes a creation
-    and a deletion nobody asked for into the audit log.
-    """
+    """Manually deleted ids to skip before MERGE can recreate them."""
     return {
         row["target_id"]
         for row in db[COLLECTION].find(
@@ -432,12 +389,7 @@ def tombstoned_ids(db: Database, label: str) -> set[str]:
 
 
 def _needs_write(current: dict, fields: dict[str, Any]) -> bool:
-    """Whether the graph already agrees with the override.
-
-    The comparison is what keeps reapplying free: without it every publish
-    would write every override again and stamp an audit entry for a change
-    that did not happen.
-    """
+    """Skip matching values so reapplying a decision produces no redundant audit entry."""
     return any(current.get(name) != value for name, value in fields.items())
 
 
