@@ -90,21 +90,32 @@ Mongo remains running for `mongodump`; this supports the standalone Mongo 4.4
 installation without replica-set-only `--oplog`. Pipeline writers are stopped;
 do not run database-mutating CLI commands during maintenance. Services that
 were already stopped remain stopped. A `finally` block restarts the services
-OPS stopped, including when a dump fails.
+OPS stopped when a backup fails. A partially failed restore keeps writers stopped.
 
 Verification reads all SHA-256 hashes, the full gzip stream and metadata of
 both Neo4j dumps using `neo4j-admin database load --info`. This does not claim
 that a restore has been tested. A restore first verifies the selected backup
 and matches its database-credential fingerprint to the current environment.
-It then creates a new full safety backup. Failure to create that copy prevents
-any restore writes.
+It then creates a new full safety backup, without restarting writers between
+the backup and restoration. Failure to create that copy prevents any restore writes.
 
 Restoration drops the PAUK Mongo database before loading the archive, so
 collections created after the backup are removed. It loads both Neo4j dumps
-offline, restores data ownership, restarts services and checks Mongo and a
-Neo4j query. Only then is `restored` recorded. There is no automatic rollback
-of a partially failed database restore; the safety copy and operation log are
-the recovery inputs. Restoring `system` also restores Neo4j users and roles.
+offline, restores data ownership, starts the databases and checks Mongo and a
+Neo4j query before restarting writers. Before the first database write, SQLite
+records `database-recovery`, including the safety backup and original services.
+Failure or interruption preserves this record and prevents ordinary operations,
+scheduled backups and deletion of the recovery copy. OPS startup stops writers
+again. Successful loads and probes persist a `ready` flag before writers restart;
+startup can finish that non-destructive restart after an interruption.
+
+The existing Restore button on the recorded safety backup enters recovery mode:
+it verifies that copy and restores all three archives without taking another
+backup or requiring running Neo4j. Mongo is started for archive loading. Recovery
+does not depend on a lock or job records inside the database being restored.
+Other backup IDs are refused until recovery completes. Failed recovery can be
+retried. The UI identifies the safety copy and explains the absence of a new dump.
+Restoring `system` also restores Neo4j users and roles.
 
 The schedule is disabled by default. Enabling it explicitly approves the
 maintenance interruption shown in the dialog. It runs once per Moscow calendar
@@ -147,9 +158,13 @@ release is restored. Previous builds stay available in the archive. The
 rollback operation selects a saved build; it does not rebuild or restore a DB.
 Archive slots are explicitly started/stopped and limited to the eight ports.
 
-Slot changes also roll back if recording their SQLite state fails. At startup,
-OPS reconciles `live`, `preview` and archive settings with the actual relative
-links before it starts the operation runner. Interrupted operations remain
+Before changing a slot, OPS records its previous and target releases in SQLite.
+After HTTP verification, the confirmed slot and completion of the switch are
+committed in one transaction. Slot changes also roll back if recording fails.
+At startup, an unfinished switch is rolled back to its previous release before
+OPS reconciles `live`, `preview` and archive settings with relative links.
+Rollback is repeatable; a failure to restore or verify the old release retains
+the pending record and blocks site actions. Interrupted operations remain
 failed; reconciliation does not replay publication or require MongoDB.
 Unexpected or broken links are reported in the status page and block site
 operations while backup operations remain available. A failure to restore or

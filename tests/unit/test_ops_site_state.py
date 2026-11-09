@@ -30,7 +30,14 @@ class SiteStateTest(unittest.TestCase):
     def test_publish_rolls_back_when_state_write_fails(self):
         self.engine.mount_slot("main", "old")
         self.store.set("live", "old")
-        with patch.object(self.store, "set", side_effect=OSError("disk full")), self.assertRaisesRegex(
+        original = self.store.set_many
+
+        def fail_commit(values):
+            if values.get("live") == "new":
+                raise OSError("disk full")
+            original(values)
+
+        with patch.object(self.store, "set_many", side_effect=fail_commit), self.assertRaisesRegex(
             OSError, "disk full"
         ):
             self.engine.publish("new")
@@ -64,18 +71,19 @@ class SiteStateTest(unittest.TestCase):
             self.engine.publish("new")
         self.assertEqual((self.engine.config.site / "main/index.html").read_text(), "old")
         self.assertEqual(self.store.get("live"), "old")
-        self.engine.http_check.assert_not_called()
+        self.engine.http_check.assert_called_once_with(8520)
 
     def test_publish_restores_state_even_if_write_committed_before_error(self):
         self.engine.mount_slot("main", "old")
         self.store.set("live", "old")
-        original = self.store.set
+        original = self.store.set_many
 
-        def write_then_fail(key, value):
-            original(key, value)
-            raise OSError("late failure")
+        def write_then_fail(values):
+            original(values)
+            if values.get("live") == "new":
+                raise OSError("late failure")
 
-        with patch.object(self.store, "set", side_effect=write_then_fail), self.assertRaises(OSError):
+        with patch.object(self.store, "set_many", side_effect=write_then_fail), self.assertRaises(OSError):
             self.engine.publish("new")
         self.assertEqual((self.engine.config.site / "main").readlink(), Path("releases/old"))
         self.assertEqual(self.store.get("live"), "old")
@@ -174,15 +182,55 @@ class SiteStateTest(unittest.TestCase):
             mount(slot, release)
 
         with patch.object(self.engine, "mount_slot", side_effect=fail_restore), patch.object(
-            self.store, "set", side_effect=OSError("write failed")
+            self.store, "set_many", side_effect=OSError("write failed")
         ), self.assertRaisesRegex(RuntimeError, "restore failed"):
             self.engine.publish("new")
         self.assertIn("restore failed", self.engine.site_state_error)
         with self.assertRaises(RuntimeError):
             self.engine.execute("publish", {"id": "old"})
         self.engine.reconcile_site()
-        self.assertEqual(self.store.get("live"), "new")
+        self.assertEqual(self.store.get("live"), "old")
         self.assertIsNone(self.engine.site_state_error)
+
+    def test_interrupted_switch_returns_previous_release_on_restart(self):
+        for slot, key, port in (("main", "live", 8520), ("preview", "preview", None),
+                                ("archive-8522", "archive-8522", 8522)):
+            with self.subTest(slot=slot):
+                self.engine.mount_slot(slot, "old")
+                self.store.set(key, "old")
+                with patch.object(self.store, "set_many", side_effect=KeyboardInterrupt), \
+                        self.assertRaises(KeyboardInterrupt):
+                    self.engine.switch_slot(slot, key, "new", port)
+                self.assertEqual((self.engine.config.site / slot).readlink(), Path("releases/new"))
+                fresh = Engine(self.engine.config, Store(self.engine.config.state), None)
+                with patch.object(fresh, "http_check"):
+                    fresh.reconcile_site()
+                self.assertEqual((fresh.config.site / slot).readlink(), Path("releases/old"))
+                self.assertEqual(self.store.get(key), "old")
+                self.assertIsNone(self.store.get("slot-switch"))
+
+    def test_failed_recovery_remains_pending_across_restarts(self):
+        self.engine.mount_slot("main", "old")
+        self.store.set("live", "old")
+        with patch.object(self.engine, "http_check", side_effect=KeyboardInterrupt), \
+                self.assertRaises(KeyboardInterrupt):
+            self.engine.publish("new")
+        fresh = Engine(self.engine.config, Store(self.engine.config.state), None)
+        with patch.object(fresh, "http_check", side_effect=RuntimeError("nginx unavailable")):
+            fresh.reconcile_site()
+        self.assertIsNotNone(self.store.get("slot-switch"))
+        self.assertIn("nginx unavailable", fresh.site_state_error)
+        with patch.object(fresh, "http_check"):
+            fresh.reconcile_site()
+        self.assertIsNone(self.store.get("slot-switch"))
+        self.assertEqual(self.store.get("live"), "old")
+
+    def test_committed_switch_survives_restart(self):
+        self.engine.publish("new")
+        fresh = Engine(self.engine.config, Store(self.engine.config.state), None)
+        fresh.reconcile_site()
+        self.assertEqual(self.store.get("live"), "new")
+        self.assertIsNone(self.store.get("slot-switch"))
 
     def test_http_check_rejects_html_fallback_for_detail(self):
         del self.engine.http_check

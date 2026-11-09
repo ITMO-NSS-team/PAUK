@@ -149,6 +149,10 @@ export function mountOperations(): void {
   }
 
   function confirm(action: string, id = ""): void {
+    const recovery = action === "restore-backup" && state.databaseRecovery;
+    if (recovery && id !== recovery.safety) {
+      throw new Error(`Сначала восстановите страховочную копию ${recovery.safety}`);
+    }
     const dangerous = [
       "restore-backup",
       "delete-backup",
@@ -158,7 +162,7 @@ export function mountOperations(): void {
     ].includes(action);
     const phrase = action === "restore-backup" ? `ВОССТАНОВИТЬ ${state.stand}` : "ПОДТВЕРЖДАЮ";
     const titles: Record<string, string> = {
-      "restore-backup": "Восстановить базы из выбранного дампа?",
+      "restore-backup": recovery ? "Восстановить обе базы из страховочной копии?" : "Восстановить базы из выбранного дампа?",
       "delete-backup": "Удалить выбранный дамп?",
       publish: "Опубликовать превью?",
       rollback: "Вернуть выбранный релиз?",
@@ -170,7 +174,7 @@ export function mountOperations(): void {
     const downtime = ["restore-backup", "create-backup"].includes(action);
     show(
       titles[action] ?? "Подтвердить операцию",
-      `${id ? `<div class="ops-selection-card"><strong>${escape(id)}</strong></div>` : ""}${downtime ? '<div class="ops-notice">На время операции Neo4j, админка и воркер будут остановлены. Восстановление начинается со страховочного дампа.</div>' : ""}${dangerous ? `<label class="ops-field">Введите ${escape(phrase)}<input name="confirmation" required autocomplete="off"></label>` : ""}`,
+      `${id ? `<div class="ops-selection-card"><strong>${escape(id)}</strong></div>` : ""}${downtime ? `<div class="ops-notice">На время операции Neo4j, админка и воркер будут остановлены. ${recovery ? "Будет использована готовая страховочная копия без создания нового дампа." : "Восстановление начинается со страховочного дампа."}</div>` : ""}${dangerous ? `<label class="ops-field">Введите ${escape(phrase)}<input name="confirmation" required autocomplete="off"></label>` : ""}`,
       "Продолжить",
       async (form) => {
         const confirmation = String(form.get("confirmation") ?? "");

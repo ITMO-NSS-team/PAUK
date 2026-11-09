@@ -168,11 +168,141 @@ class OperationsTest(OperationsFixture, unittest.TestCase):
         with (
             patch.object(self.engine, "verify"),
             patch.object(self.engine, "backup", side_effect=RuntimeError("no space")),
-            patch.object(self.engine, "maintenance") as maintenance,
+            patch.object(self.engine, "maintenance"),
         ):
             with self.assertRaisesRegex(RuntimeError, "no space"):
                 self.engine.restore("backup1")
-            maintenance.assert_not_called()
+            self.assertIsNone(self.store.get("database-recovery"))
+
+    def test_partial_restore_blocks_writers_and_recovers_without_new_backup(self):
+        self.backup()
+        self.backup("safety")
+        services = [dict(Service=name, State="running") for name in ("mongo", "neo4j", "worker")]
+        calls = []
+
+        def fail_load(args, **kwargs):
+            calls.append(args)
+            if any("database load neo4j" in arg for arg in args):
+                raise RuntimeError("load failed")
+
+        with (
+            patch.object(self.engine, "inspect", return_value=services),
+            patch.object(self.engine, "verify"),
+            patch.object(self.engine, "backup", return_value="safety"),
+            patch.object(self.engine, "command", side_effect=fail_load),
+            self.assertRaisesRegex(RuntimeError, "load failed"),
+        ):
+            self.engine.restore("backup1")
+        self.assertFalse(any("start" in args for args in calls))
+        self.assertEqual(self.store.get("database-recovery")["safety"], "safety")
+        fresh = Engine(self.config, Store(self.config.state), self.db)
+        with patch.object(fresh, "command") as command, patch.object(fresh, "schedule"):
+            fresh.stop.set()
+            fresh.start()
+            fresh.thread.join()
+            self.assertIn("stop", command.call_args.args[0])
+        with self.assertRaises(RuntimeError):
+            fresh.execute("delete-backup", {"id": "safety"})
+        with (
+            patch.object(fresh, "verify"),
+            patch.object(fresh, "backup") as backup,
+            patch.object(fresh, "maintenance") as maintenance,
+            patch.object(fresh, "command") as command,
+            patch.object(fresh, "wait_databases"),
+        ):
+            fresh.restore("safety")
+        backup.assert_not_called()
+        maintenance.assert_not_called()
+        self.assertIsNone(self.store.get("database-recovery"))
+        self.assertEqual(command.call_args.args[0][-3:], ["start", "neo4j", "worker"])
+
+    def test_restore_probe_failure_keeps_recovery_pending(self):
+        self.backup("safety")
+        self.store.set("database-recovery", dict(safety="safety", restart=["worker"]))
+        with (
+            patch.object(self.engine, "verify"),
+            patch.object(self.engine, "command") as command,
+            patch.object(self.engine, "wait_databases", side_effect=RuntimeError("not ready")),
+            self.assertRaisesRegex(RuntimeError, "not ready"),
+        ):
+            self.engine.restore("safety")
+        self.assertFalse(self.store.get("database-recovery")["ready"])
+        self.assertFalse(any("start" in call.args[0] and "worker" in call.args[0]
+                             for call in command.call_args_list))
+
+    def test_successful_restore_keeps_writers_stopped_until_verified(self):
+        self.backup()
+        services = [dict(Service=name, State="running") for name in ("mongo", "neo4j", "worker")]
+        calls = []
+
+        def command(args, **kwargs):
+            if "start" in args and "worker" in args:
+                self.assertTrue(self.store.get("database-recovery")["ready"])
+            calls.append(args)
+
+        def safety(name, *, stopped):
+            self.assertTrue(stopped)
+            self.assertFalse(any("start" in args for args in calls))
+            return "safety"
+
+        def probe():
+            self.assertTrue(any("mongorestore" in arg for args in calls for arg in args))
+            for database in ("neo4j", "system"):
+                self.assertTrue(any(f"database load {database}" in arg for args in calls for arg in args))
+            self.assertFalse(any("start" in args and "worker" in args for args in calls))
+
+        with (
+            patch.object(self.engine, "inspect", return_value=services),
+            patch.object(self.engine, "verify"),
+            patch.object(self.engine, "backup", side_effect=safety),
+            patch.object(self.engine, "command", side_effect=command),
+            patch.object(self.engine, "wait_databases", side_effect=probe),
+        ):
+            self.engine.restore("backup1")
+        self.assertIsNone(self.store.get("database-recovery"))
+
+    def test_restore_interruption_is_durable_before_first_write(self):
+        self.backup()
+        services = [dict(Service=name, State="running") for name in ("mongo", "neo4j", "worker")]
+
+        def interrupt(args, **kwargs):
+            if any("dropDatabase" in arg for arg in args):
+                self.assertEqual(self.store.get("database-recovery")["safety"], "safety")
+                raise KeyboardInterrupt
+
+        with (
+            patch.object(self.engine, "inspect", return_value=services),
+            patch.object(self.engine, "verify"),
+            patch.object(self.engine, "backup", return_value="safety"),
+            patch.object(self.engine, "command", side_effect=interrupt) as command,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.engine.restore("backup1")
+        self.assertFalse(any("start" in call.args[0] for call in command.call_args_list))
+        self.assertFalse(Store(self.config.state).get("database-recovery")["ready"])
+
+    def test_completed_load_resumes_services_after_restart(self):
+        self.store.set("database-recovery", dict(safety="safety", restart=["worker"], ready=True))
+        fresh = Engine(self.config, Store(self.config.state), self.db)
+        fresh.stop.set()
+        with patch.object(fresh, "command") as command, patch.object(fresh, "wait_databases"):
+            fresh.start()
+            fresh.thread.join()
+        self.assertEqual(command.call_args.args[0][-2:], ["start", "worker"])
+        self.assertIsNone(self.store.get("database-recovery"))
+
+    def test_recovery_keeps_control_plane_available_when_docker_is_down(self):
+        self.store.set("database-recovery", dict(safety="safety", restart=["worker"]))
+        self.engine.stop.set()
+        with (
+            patch.object(self.engine, "command", side_effect=RuntimeError("Docker unavailable")),
+            self.assertLogs("pauk.ops.engine", level="ERROR"),
+        ):
+            self.engine.start()
+            self.engine.thread.join()
+        self.assertIsNotNone(self.store.get("database-recovery"))
+        with self.assertRaisesRegex(RuntimeError, "страховочную копию"):
+            self.engine.execute("create-backup", {})
 
     def test_restore_refuses_changed_application_credentials(self):
         self.backup()

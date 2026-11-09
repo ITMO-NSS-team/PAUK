@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -187,7 +187,7 @@ class Engine:
 
     @contextmanager
     def maintenance(self):
-        """Keep stopped services stopped and always restart services we stopped."""
+        """Resume previous services unless database recovery is still pending."""
         if self.busy():
             raise RuntimeError("Воркер занят. Дождитесь завершения активных задач.")
         rows = self.inspect("ps", "--all", "--format", "json")
@@ -202,18 +202,19 @@ class Engine:
                 if self.busy():
                     raise RuntimeError("Осталась незавершённая задача; обслуживание отменено")
                 self.command(self.compose("stop", "neo4j"), timeout=90)
-                yield
+                yield restart
             finally:
-                self.stage("Запуск сервисов после обслуживания")
-                self.command(self.compose("start", *restart), timeout=180)
-                self.wait_databases()
+                if not self.store.get("database-recovery"):
+                    self.stage("Запуск сервисов после обслуживания")
+                    self.command(self.compose("start", *restart), timeout=180)
+                    self.wait_databases()
 
-    def backup(self, name: str) -> str:
+    def backup(self, name: str, *, stopped=False) -> str:
         backup_id = datetime.now(ZoneInfo("UTC")).strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6]
         path = directory(self.config.dumps, backup_id)
         path.mkdir(parents=True, mode=0o700)
         path.chmod(0o700)
-        with self.maintenance():
+        with nullcontext() if stopped else self.maintenance():
             self.stage("Дамп MongoDB")
             script = 'exec mongodump --uri="$MONGO_URI" --archive --gzip'
             self.command(
@@ -303,11 +304,23 @@ class Engine:
         _, selected = self.manifest(backup_id)
         if selected.get("credentials") != self.credentials():
             raise ValueError("Учётные данные баз изменились после создания копии")
-        self.stage("Страховочный дамп перед восстановлением")
-        safety = self.backup("Перед восстановлением " + backup_id)
-        self.stage("Страховочная копия: " + safety)
+        recovery = self.store.get("database-recovery")
+        if recovery and backup_id != recovery["safety"]:
+            raise ValueError("Сначала восстановите страховочную копию: " + recovery["safety"])
         path, manifest = self.manifest(backup_id)
-        with self.maintenance():
+        with nullcontext(recovery["restart"]) if recovery else self.maintenance() as restart:
+            if recovery:
+                self.command(self.compose("stop", "-t", "300", "worker", "admin"), timeout=330)
+                self.command(self.compose("stop", "neo4j"), timeout=90)
+                self.command(self.compose("start", "mongo"), timeout=180)
+                self.wait_mongo()
+            else:
+                self.stage("Страховочный дамп перед восстановлением")
+                safety = self.backup("Перед восстановлением " + backup_id, stopped=True)
+                recovery = dict(target=backup_id, safety=safety, restart=restart)
+                self.stage("Страховочная копия: " + safety)
+            recovery["ready"] = False
+            self.store.set("database-recovery", recovery)
             self.stage("Восстановление MongoDB")
             database = self.db.name
             if not re.fullmatch(r"[a-zA-Z0-9_-]+", database) or database in ("admin", "local", "config"):
@@ -367,10 +380,35 @@ class Engine:
                         script,
                     )
                 )
-        self.stage("Проверка запуска баз")
+            self.stage("Проверка запуска баз")
+            self.command(self.compose("start", "mongo", "neo4j"), timeout=180)
+            self.wait_databases()
+            manifest["restored"] = True
+            write_json(path / "manifest.json", manifest)
+            recovery["ready"] = True
+            self.store.set("database-recovery", recovery)
+        self.finish_recovery()
+
+    def finish_recovery(self):
+        """Resume writers only after a durable record of successful database loads."""
+        recovery = self.store.get("database-recovery")
+        if not recovery or not recovery.get("ready"):
+            return
         self.wait_databases()
-        manifest["restored"] = True
-        write_json(path / "manifest.json", manifest)
+        if recovery["restart"]:
+            self.command(self.compose("start", *recovery["restart"]), timeout=180)
+        self.store.set("database-recovery", None)
+
+    def wait_mongo(self):
+        """Wait for Mongo independently of the offline graph during recovery."""
+        for attempt in range(60):
+            try:
+                self.db.client.admin.command("ping")
+                return
+            except Exception:
+                if attempt == 59:
+                    raise
+                time.sleep(2)
 
     def credentials(self) -> str:
         value = "\0".join(
@@ -489,6 +527,16 @@ class Engine:
 
     def reconcile_site(self):
         """Record the actual slots without publishing or consulting MongoDB."""
+        pending = self.store.get("slot-switch")
+        if pending:
+            try:
+                self.mount_slot(pending["slot"], pending["previous"])
+                if pending["port"] is not None and pending["previous"] is not None:
+                    self.http_check(pending["port"])
+                self.store.set_many({pending["key"]: pending["previous"], "slot-switch": None})
+            except Exception as error:
+                self.site_state_error = f"Не удалось восстановить слот {pending['slot']}: {error}"
+                return
         values = {}
         slots = [("main", "live"), ("preview", "preview")]
         slots.extend((f"archive-{port}", f"archive-{port}") for port in range(8522, 8530))
@@ -531,16 +579,24 @@ class Engine:
         """Restore the old slot if either verification or recording fails."""
         if self.site_state_error:
             raise RuntimeError(self.site_state_error)
+        if self.store.get("slot-switch"):
+            raise RuntimeError("Сначала завершите восстановление предыдущего переключения слота")
         previous = self.store.get(key)
+        self.store.set("slot-switch", dict(
+            slot=slot, key=key, previous=previous, target=release_id, port=port,
+            operation=self.operation["id"] if self.operation else None,
+        ))
         try:
             self.mount_slot(slot, release_id)
             if port is not None:
                 self.http_check(port)
-            self.store.set(key, release_id)
+            self.store.set_many({key: release_id, "slot-switch": None})
         except Exception:
             try:
                 self.mount_slot(slot, previous)
-                self.store.set_many({key: previous})
+                if port is not None and previous is not None:
+                    self.http_check(port)
+                self.store.set_many({key: previous, "slot-switch": None})
             except Exception as error:
                 self.site_state_error = f"Не удалось восстановить слот {slot}: {error}"
                 raise RuntimeError(self.site_state_error) from error
@@ -675,6 +731,9 @@ class Engine:
             self.switch_slot("preview", "preview", None)
 
     def execute(self, action: str, args: dict):
+        recovery = self.store.get("database-recovery")
+        if recovery and action not in ("restore-backup", "verify-backup"):
+            raise RuntimeError("Требуется восстановить страховочную копию: " + recovery["safety"])
         if self.site_state_error and action in (
             "build-site", "publish", "rollback", "discard-preview", "start-archive", "stop-archive", "publish-pages"
         ):
@@ -776,6 +835,8 @@ class Engine:
         return True
 
     def schedule(self):
+        if self.store.get("database-recovery"):
+            return
         config = self.store.get("schedule", {"enabled": False, "time": "03:00", "keep": 3})
         current = datetime.now(ZoneInfo("Europe/Moscow"))
         day = current.date().isoformat()
@@ -798,6 +859,12 @@ class Engine:
             self.store.set("scheduled-day", day)
 
     def start(self):
+        if self.store.get("database-recovery"):
+            try:
+                self.command(self.compose("stop", "-t", "300", "worker", "admin"), timeout=330)
+                self.finish_recovery()
+            except Exception:
+                logger.exception("Database recovery remains pending; could not reconcile services")
         self.reconcile_site()
         self.store.recover()
 
