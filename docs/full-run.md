@@ -22,7 +22,7 @@ df -h
 docker ps
 ```
 
-Ports `27018`, `7688` and `8501` must be free. You also need free RAM for Mongo
+Ports `27018`, `7688` and `5173` must be free. You also need free RAM for Mongo
 and Neo4j (on Linux, `free -g`). API keys are checked after `.env` is set up
 (section 1).
 
@@ -47,6 +47,67 @@ Set the LLM stage threads in advance: `PAUK_PERSON_RESOLUTION_CONCURRENCY`
 `PAUK_AUTHOR_NAMES_CONCURRENCY` (names; at 16 it takes an hour instead of
 sixteen).
 
+### LLM provider: OpenRouter or a subscription CLI
+
+`link_relevance`, `author_names` and person resolution in dedup can run
+through a subscription CLI instead of OpenRouter: `claude` (`claude -p` on a
+Claude subscription) or `codex` (`codex exec` on a ChatGPT subscription). The
+model comes from `PAUK_CLAUDE_CLI_MODEL` (Haiku by default) and
+`PAUK_CODEX_CLI_MODEL` (no default, because the CLI's own changes between
+versions and `~/.codex/config.toml` is ignored). `claude:sonnet` or
+`codex:<model>` picks a model for one setting. Codex has not been measured on a
+full run yet. There
+is no Gemini option: since June 2026 Gemini CLI serves no individual Google
+accounts, and Antigravity's terms do not support calling `agy` from third-party
+applications on consumer plans. Gemini models are available through OpenRouter. `PAUK_LLM_PROVIDER` sets `link_relevance` and
+`author_names`; `PAUK_LINK_RELEVANCE_PROVIDER` and `PAUK_AUTHOR_NAMES_PROVIDER`
+override it for one stage. Person resolution switches only through
+`PAUK_PERSON_RESOLUTION_PROVIDER`. `run`, `enrich` and `dedup` check all three
+settings at start, so a typo or a CLI missing from `PATH` stops the command
+before any stage runs, even if the stage that needs it is not the one being
+run. Whether the CLI is signed in is not checked at start.
+
+This mode is for local runs by the owner of the subscription, on their own
+machine. Do not sign in to a subscription on a shared server or share its
+login. Anthropic's terms allow only individual use of a Claude subscription.
+Team runs go through OpenRouter.
+
+The CLI must be on `PATH` and signed in to the subscription: `claude auth
+status` shows `"authMethod": "claude.ai"`, `codex login status` shows a
+ChatGPT login. PAUK gives the CLI only the system variables it needs and its own `CLAUDE_*`
+or `CODEX_*` ones, so API keys and database passwords stay out of it, and
+Codex runs without shell tools: prompts carry text from third-party PDFs.
+Variables that would bill the API instead of the subscription are dropped too. A CLI call times out after
+`PAUK_REQUEST_TIMEOUT`, but not sooner than 120 s. Ctrl-C, SIGTERM and closing the
+terminal kill the CLIs that are still running; `kill -9` cannot.
+
+One full run on Haiku with Claude Max 5x:
+
+| Stage | Requests | Share of a 5-hour window | Time |
+|---|---|---|---|
+| `link_relevance` | ~560 | ~2% | 35 min (one thread) |
+| `author_names` | ~14,000 | ~90% | 2 h at 8 threads |
+| person resolution | ~11,500 | ~80% | 1.7 h at 8 threads |
+
+On OpenRouter the same stages cost about $0.65, $28 (Haiku) and $3 (Qwen) per
+run. By the plans' stated ratios, Max 20x holds about four times as much and
+Pro about a fifth; these were not measured. Sonnet uses
+about three times as much of the limit as Haiku. The limit is shared with any
+other use of the account. `author_names` and person resolution do not fit in
+one 5-hour window together on Max 5x. When the limit runs out, the command
+stops with `subscription limit reached`. What it finished is saved, and running
+the same command after the limit resets picks up the rest. A short rate limit
+stops it the same way, with `rate limited`. A signed-out CLI, or 20 failed calls
+in a row, stops the command too: fix the CLI and run it again. A CLI answers
+without temperature 0, so a repeated call can answer differently. Set a full
+model id rather than an alias such as `haiku`: the name is part of the
+person-resolution cache key as written, so answers cached under an alias stay
+in use after it moves to a new model.
+
+Person-resolution answers are cached per model, so switching
+`PAUK_PERSON_RESOLUTION_PROVIDER` asks every pair again, and another model
+makes other merge decisions. Check the merge plan before switching.
+
 `PAUK_PDF_CRAWLER_URL` turns on the PDF-Crawler-Service fallback; an empty
 value turns it off. If the service cannot find PDFs by DOI from your network,
 every publication wastes minutes and gets a 422 - then it is better to turn
@@ -56,12 +117,18 @@ the fallback off.
 
 ### Take a dump
 
-`<MONGO_URI>` is the connection string from the server's `.env`. On Windows,
-run from Git Bash.
+Take the Mongo archive on the server, using credentials already present in
+the running container. Save it outside the checkout:
 
 ```bash
-ssh <server> "docker exec pauk-mongo mongodump --uri='<MONGO_URI>' --archive --gzip" > pauk_dump.archive.gz
+cd ~/pauk/code
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml exec -T mongo sh -c 'exec mongodump --username="$MONGO_INITDB_ROOT_USERNAME" --password="$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase=admin --archive --gzip' > /var/essdata/pauk/dumps/itmo/mongo.archive.gz
 ```
+
+Choose a new backup path rather than overwriting an existing archive. Copy the
+archive to your workstation with `scp`. This contains Mongo only; a full PAUK
+backup also needs dumps of the Neo4j `neo4j` and `system` databases. An offline
+Neo4j dump requires a separately approved maintenance window.
 
 ### Start local Mongo and Neo4j
 
@@ -110,13 +177,13 @@ to your run.
 All at once (collect + normalize + enrich; publish is separate):
 
 ```bash
-uv run pauk run --from 2025-01-01 --to 2025-03-31 --name testrun
+uv run pauk run --from <start-date> --to <end-date> --name testrun
 ```
 
 Phase by phase:
 
 ```bash
-uv run pauk collect --from 2025-01-01 --to 2025-03-31 --name testrun
+uv run pauk collect --from <start-date> --to <end-date> --name testrun
 uv run pauk normalize --group testrun
 uv run pauk enrich --group testrun
 ```
@@ -127,10 +194,11 @@ github_match -> author_names` (plus the optional `social_graph`). One stage:
 `uv run pauk enrich <stage> --group testrun`.
 
 `departments`, `code_links`, `link_relevance`, `emails`, `github_match` and
-`dedup` write their results to Mongo in one batch at the end: an interrupted
-stage leaves no partial result, and the counters in the database do not move
-while it runs, so watch the log. `persons`, `repo_people` and `author_names`
-write as they go.
+`dedup` normally write their final results at the end. These writes are
+per document, not a transaction over the stage; an interruption while saving
+can leave partial updates. Watch the log while external requests run.
+`persons` and `author_names` persist the responses they have completed.
+`repo_people` upserts accumulated changes at the end of its pass; it does not persist every request immediately.
 
 Person dedup runs through the resolver: a logistic model separates and merges
 the confident pairs itself, and the LLM (`PAUK_PERSON_RESOLUTION_MODEL`)
@@ -138,11 +206,9 @@ decides the rest. That is why the stage needs `OPENROUTER_API_KEY`; with
 `PAUK_PERSON_RESOLUTION_ENABLED=false` it runs on the old rules, without an
 LLM.
 
-On the 2020-2026 corpus the resolver takes 5-6 hours on 32 threads and uses
-about 60% of all tokens of the run; names take an hour on 16 threads; the
-other stages take minutes. Verdicts are cached in `llm_person_resolution_cache`
-and survive pair renumbering after merges, so a restart after a break is
-cheap.
+Resolver cost and duration depend on corpus size, cache hits and concurrency.
+Verdicts are cached in `llm_person_resolution_cache` and survive pair
+renumbering after merges, so a resumed run reuses completed decisions.
 
 The `dedup` stage folds duplicates within one group. Deduplicating the whole
 graph is a separate command (section 3).
@@ -154,21 +220,27 @@ uv run pauk publish graph --group testrun     # per group
 uv run pauk dedup graph                         # whole graph
 ```
 
-`dedup graph` on the full graph takes about an hour with a filled verdict
-cache and hours with an empty one; resolver progress is in the log (`person
-resolution qwen_first: N/M`). Merges it held back and deferred pairs go to
+Resolver progress is in the log (`person resolution qwen_first: N/M`).
+Runtime depends on graph size and the verdict cache. Merges it held back and deferred pairs go to
 `data/cache/dedup_candidates_graph.jsonl`.
 
 ## 4. Update the web
 
 ```bash
-uv run pauk cache export                        # -> data/cache/graph_snapshot_<date>.json
-uv run pauk gui build                           # -> data/gui/{public,private}/*.json
-cd pauk/gui/web && npm install && npm run dev   # locally
-./scripts/deploy.sh                             # to the server, port 8501
+uv run pauk cache export
+uv run pauk gui build
 ```
 
-After graph changes, rebuild the web with the same chain.
+For local development, run `npm install` and `npm run dev` in
+`pauk/gui/web/`. For a static build, run `npm run build` there. Vite includes
+the generated private data in `dist/`.
+
+On the server, the worker writes `~/pauk/gui/itmo`, while nginx serves
+`~/pauk/site/itmo/main`. Publishing a reviewed frontend build is a separate
+approved operation; a map rebuild does not replace the live site. Follow
+[deployment](architecture/deploy.md#static-site-and-reports), including
+permissions on JSON and shared reports. `scripts/deploy.sh` targets the
+legacy screen server and does not update the Compose site.
 
 ## 5. Verification
 
@@ -225,32 +297,22 @@ remaining rows, publish the affected groups and rebuild cache and web.
 
 After the copy checks out, repeat sections 2-5 against production: in the
 repository's `.env`, restore the production database addresses (from the
-server's `.env`) instead of the local ones.
+server's Compose env file) instead of the local ones.
 
-A large run is easier to build in a new database (`MONGO_DB=pauk_<date>`),
-leaving the old one untouched. Then, before switching over, copy
-`admin_users` and `graph_overrides` from the previous database, apply the
-edits (`pauk admin overrides apply`) and restart the services: the map, the
-admin panel and the worker. They read `.env` at startup, so without a restart
-they keep working with the old database. When started from `screen`, run them
-with the binaries from `.venv`: the user `PATH` is not there and `uv` is not
-found.
+On the server, settings come from `~/pauk/secrets/pauk.env` and are passed
+explicitly by Compose. Keep Mongo and Neo4j selection consistent. Switching
+only `MONGO_DB` leaves the shared Neo4j graph unchanged; it is not an isolated
+stand. Accounts, sessions, overrides and review decisions also live in Mongo
+and must be accounted for when replacing that database.
+
+After an approved configuration change, recreate the relevant services with
+`docker compose --env-file ... -f deploy/compose.yml up -d`; a plain restart
+does not apply a changed container environment. Rebuild the image as well if
+code changed. Check the worker queue before recreating it. Publish the static
+site separately after inspecting the generated data.
 
 Remove the copy when done:
 
 ```bash
 docker rm -f pauk-mongo-copy pauk-neo4j-copy
-```
-
-## Checklist
-
-```
-[ ] 0. pre-flight: disk / RAM / ports / keys and key limit / LLM threads
-[ ] 1. dump -> restore into local Mongo -> local Neo4j; env on the copy, verified
-[ ] 2. pauk run --from ... --to ... --name testrun
-[ ] 3. pauk publish graph --group testrun ; pauk dedup graph
-[ ] 4. cache export ; gui build ; deploy.sh
-[ ] 5. graph counters
-[ ] 6. targeted catch-up if anything is missing
-[ ] 7. copy verified -> repeat on production
 ```

@@ -95,7 +95,7 @@ class PersonRoleFeaturesTest(unittest.TestCase):
             {"shared_coauthors": 1},
             {"shared_publications": 1, "shared_coauthors": 1},
             {"staff_id_a": "42", "staff_id_b": "42"},
-            {"orcid_a": "0000-1", "orcid_b": "0000-1"},
+            {"orcid_a": "0000-0002-1825-0097", "orcid_b": "0000-0002-1825-0097"},
         ):
             with self.subTest(changes=changes), patch(
                 "pauk.graph.person_resolution.logistic_probability", return_value=0.999
@@ -104,7 +104,7 @@ class PersonRoleFeaturesTest(unittest.TestCase):
 
     def test_identifier_conflict_still_separates_namesakes(self):
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
-            result = resolve_pair(self.pair("Sergey Makarov", "Sergey Makarov", orcid_a="0000-1", orcid_b="0000-2"))
+            result = resolve_pair(self.pair("Sergey Makarov", "Sergey Makarov", orcid_a="0000-0002-1825-0097", orcid_b="0000-0001-5109-3700"))
         self.assertEqual(result.decision, Decision.SEPARATE)
 
     def test_shared_work_does_not_bypass_independent_evidence(self):
@@ -125,7 +125,7 @@ class PersonRoleFeaturesTest(unittest.TestCase):
     def test_shared_work_guard_preserves_identifiers_and_independent_support(self):
         pair = self.pair("Huadong Wang", "Huadong Wang", shared_publications=1, small_team_shared_coauthors=0)
         for changes in (
-            {"orcid_a": "same", "orcid_b": "same"},
+            {"orcid_a": "0000-0002-1825-0097", "orcid_b": "0000-0002-1825-0097"},
             {"staff_id_a": "42", "staff_id_b": "42"},
             {"shared_coauthors": 1, "small_team_shared_coauthors": 1},
         ):
@@ -139,4 +139,4 @@ class PersonRoleFeaturesTest(unittest.TestCase):
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.01):
             self.assertEqual(resolve_pair(pair).decision, Decision.SEPARATE)
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
-            self.assertEqual(resolve_pair(replace(pair, orcid_a="one", orcid_b="two")).decision, Decision.SEPARATE)
+            self.assertEqual(resolve_pair(replace(pair, orcid_a="0000-0002-1825-0097", orcid_b="0000-0001-5109-3700")).decision, Decision.SEPARATE)

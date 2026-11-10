@@ -47,6 +47,10 @@ payload}`. `append(source, payload, request)` is an `insert_one` with no
 upsert, so fetch history is never overwritten. `read(source)` is
 `find({"source": source, "group": self.group})` sorted by `fetched_at`.
 
+`append()` returns the exact timestamp persisted in `fetched_at`. ORCID
+membership uses that timestamp for `observed_at`, so replaying the same
+stored response cannot falsely look older than its prepared facts.
+
 `ensure_indexes()` creates two compound indexes on `raw`: `{source, group,
 fetched_at}` for the normal read, and `{source, fetched_at}` for cross-group
 scans that also sort responses by time. Cross-group scans (for example
@@ -105,7 +109,7 @@ grows by 1:
     "version": 1,                   # the version number being archived
     "snapshot": {...},              # the full document as it was BEFORE replacement
     "replaced_by_group": "period-2024",
-    "replaced_at": "2026-08-12T...",
+    "replaced_at": "<UTC timestamp>",
 }
 ```
 
@@ -163,8 +167,8 @@ is idempotent and called when each command starts, next to
 `revisions` with zstd compression if they do not exist yet. They are the two
 heaviest collections: verbatim API responses and full row snapshots. An
 existing collection cannot change its compressor this way (WiredTiger takes
-it at creation); the command for a live database is in
-[admin-panel.md](../admin-panel.md). A server or test double that does not
+it at creation); live-database maintenance is described in
+[admin-panel.md](../admin-panel.md#mongo-compression). A server or test double that does not
 accept the option keeps the default compressor.
 
 ## `review.py`: questions a person answers
@@ -180,7 +184,7 @@ again updates the document instead of creating a second one.
 | Field | Meaning |
 |---|---|
 | `_id` | `<kind>:<id>:<id>...` with members sorted, so (a, b) and (b, a) are one question |
-| `kind` | `person_pair`, `person_group`, `github_person` or `staff_record` |
+| `kind` | `person_pair`, `person_group`, `github_person`, `staff_record`, or the read-only diagnostic `person_alias_conflict` |
 | `members` | who the question is about: person records, an account login, catalog records |
 | `evidence` | what the rules gathered: names, shared coauthors, departments, refusal reasons (`held_because`); refreshed on every repeated refusal so there is something to compare against |
 | `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
@@ -225,6 +229,12 @@ it is taken apart with `record_undo` after `pauk.graph.unmerge.split_person`.
 
 Indexes include `{verdict, seen_at}` (the queue opens on unanswered, oldest
 first) and `{members}` (all questions about one person).
+
+Alias-conflict diagnostics have their own keys and are never identity decisions.
+They carry competing alias edges and the operation that stopped. Normal answers
+and skips cannot dismiss them or create identity decisions inside the affected
+component. Recording a diagnostic preserves existing ordinary group questions;
+repair and validated closure are separate from this queue.
 
 ## PDFs: on disk, Mongo holds only a pointer (`pdf.py::PdfStore`)
 
@@ -280,7 +290,9 @@ separate document for the corrective semantic retry too; its number is in
   snapshots (`pauk/cache/graph_snapshot.py`), the site data
   (`pauk/gui/graph_builder/builder.py`) and local journals such as the dedup
   candidates (`data/audit/<group>/dedup_candidates.jsonl`, path from
-  `Settings.audit_dir`). Text mode only (`mode="w", encoding="utf-8"`); it
+  `Settings.audit_dir`). Temporary files use mode 600, retained after
+  replacement; publishing generated JSON for another service requires setting
+  readable permissions. Text mode only (`mode="w", encoding="utf-8"`); it
   does not suit binary data.
 - **`atomic_write_bytes(target, data)`**: the same trick for bytes already in
   memory (PDFs from `PdfStore.save`).

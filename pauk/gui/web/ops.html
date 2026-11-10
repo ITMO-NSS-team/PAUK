@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Панель управления PAUK: сервисы, резервные копии, сайт и операции."
+    />
+    <title>PAUK · OPS</title>
+    <link rel="icon" type="image/png" href="./src/assets/icons/pauk-frame-8x.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="ops-app"></div>
+    <main class="ops-device-gate" aria-labelledby="ops-device-title">
+      <div class="ops-device-brand">PAUK <span>| OPS</span></div>
+      <svg
+        class="ops-device-illustration"
+        width="160"
+        height="112"
+        viewBox="0 0 160 112"
+        fill="none"
+        aria-hidden="true"
+      >
+        <rect x="24" y="12" width="112" height="72" rx="5" stroke="currentColor" stroke-width="2" />
+        <path d="M12 94h136l-7 8H19l-7-8Z" stroke="currentColor" stroke-width="2" />
+        <path
+          d="m68 44 9 9 17-18"
+          stroke="var(--accent)"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+      <h1 id="ops-device-title">PAUK недоступен<br />на мобильных устройствах</h1>
+      <p>Откройте панель на ноутбуке или компьютере.</p>
+      <span class="ops-device-rule"></span>
+    </main>
+    <dialog id="ops-dialog" aria-labelledby="ops-dialog-title"></dialog>
+    <div id="ops-toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/app/ops.ts"></script>
+  </body>
+</html>

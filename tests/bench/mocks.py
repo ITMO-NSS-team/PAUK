@@ -10,7 +10,12 @@ from collections import defaultdict
 import requests
 
 from pauk.aliases import flatten_merges
-from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+)
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -142,6 +147,7 @@ class MockOpenRouterClient:
                 tests.bench.universe.RUSSIAN_NAMES_CATALOG).
         """
         self.last_response = None
+        self.model = "bench-mock"
         self.last_usage = None
         self.last_error = None
         self._catalog = RussianNamesCatalog([
@@ -275,16 +281,35 @@ class RecordingNeo4jClient:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
+            membership = _person_membership_update(existing, clean, node_id)
             clean = _preserve_merged_person_lists(existing, clean)
-            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
-            self.nodes["Person"].setdefault(node_id, {}).update(clean)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self._set_properties(self.nodes["Person"].setdefault(node_id, {}), clean)
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
                                    tgt_match_prop: str = "id") -> int:
         src_primary = src_label.split(":")[0]
         tgt_primary = tgt_label.split(":")[0]
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             src_ok = src_id in self.nodes.get(src_primary, {})
             if tgt_match_prop == "id":
                 tgt_ok = tgt_id in self.nodes.get(tgt_primary, {})
@@ -299,11 +324,15 @@ class RecordingNeo4jClient:
                     edge.get("is_corresponding"), props.get("is_corresponding")
                 ))
                 self._set_properties(edge, props)
-                if rel_type == "AUTHORED" and has_corresponding:
+                preserve = bool(
+                    self.nodes[src_primary][src_id].get("merged_ids")
+                    or self.nodes[tgt_primary].get(tgt_id, {}).get("merged_ids")
+                )
+                if rel_type == "AUTHORED" and has_corresponding and preserve:
                     edge["is_corresponding"] = bool(corresponding)
-                matched += 1
+                matched += input_count
             else:
-                self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
+                self.unresolved.extend([(src_label, rel_type, tgt_label, src_id, tgt_id)] * input_count)
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -380,7 +409,7 @@ class RecordingNeo4jClient:
         duplicate. On both nodes and edges the canonical's own values win,
         but anything only the duplicate knew fills the gap."""
         removed = 0
-        for dup_id, canonical_id in flatten_merges(merges):
+        for dup_id, canonical_id in flatten_merges(merges, label=label):
             if dup_id == canonical_id:
                 continue
             if dup_id not in self.nodes.get(label, {}):
@@ -412,6 +441,10 @@ class RecordingNeo4jClient:
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
+            canonical_props["merged_ids"] = list(dict.fromkeys(
+                alias for alias in [*(canonical_props.get("merged_ids") or []), dup_id]
+                if alias != canonical_id
+            ))
             removed += 1
         return removed
 
@@ -527,6 +560,7 @@ class MockLinkRelevanceClient:
     def __init__(self, *args, **kwargs) -> None:
         self.last_error = None
         self.last_response = None
+        self.model = "bench-mock"
         self.last_usage = None
         self.calls: list[str] = []
 

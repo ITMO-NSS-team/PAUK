@@ -352,6 +352,37 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Создан");
   });
 
+  it("with public detail (key and pub_roles only) the author card keeps the masked label and has no private block", async () => {
+    const data = await loadSampleGraphData();
+    const a1 = data.authors.find((author) => author.key === "A1");
+    if (!a1) throw new Error("the fixture must contain author A1");
+    const publicA1: AuthorDetail = { key: "A1", pub_roles: { P1: { position: 1, corresponding: true } } };
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, indexDetailsByKey([publicA1]), NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe(a1.label);
+    const titles = [...panel.querySelectorAll(".panel-section__title")].map((el) => el.textContent);
+    expect(titles).not.toContain("Приватное");
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
+    expect(panel.textContent).toContain("автор для переписки");
+  });
+
+  it("the authors overview drops the ORCID/GitHub/email shares when detail has no such fields (public build)", async () => {
+    const data = await loadSampleGraphData();
+    const publicDetails = data.authors.map((author): AuthorDetail => ({ key: author.key, pub_roles: {} }));
+    const store = new Store<AppState>(initialState({ tab: 1 }));
+
+    mountPanel(store, data, NO_PUB_DETAILS, indexDetailsByKey(publicDetails), NO_REPO_DETAILS);
+
+    const labels = [...panel.querySelectorAll("dt")].map((el) => el.textContent);
+    expect(labels).not.toContain("ORCID");
+    expect(labels).not.toContain("Email");
+  });
+
   it("long list: first 3, \"+ ещё\" adds 20 at a time, \"свернуть\" at any step returns to 3", async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
@@ -743,6 +774,37 @@ describe("mountPanel", () => {
 
       store.set({ selection: { kind: "node", key: "P1" } });
       expect(panel.textContent).toContain("реализовано 32/57 · 56%");
+    });
+  });
+
+  describe("OSA report of a repository", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("links the report in the interface language by key, without waiting for repos-detail, and hides it in a language it lacks", async () => {
+      const data = await loadSampleGraphData();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          Promise.resolve(
+            url.includes("reports/index.json")
+              ? new Response(JSON.stringify({ en: ["R1"] }))
+              : new Response(null, { status: 404 }),
+          ),
+        ),
+      );
+      const store = new Store<AppState>({
+        ...initialState({ lang: "en" }),
+        selection: { kind: "node", key: "R1" },
+      });
+      mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+      await vi.waitFor(() =>
+        expect(panel.querySelector("a[href='/reports/en/R1.pdf']")?.textContent).toBe("PDF"),
+      );
+
+      store.set({ lang: "ru" });
+      expect(panel.querySelector("a[href$='.pdf']")).toBeNull();
     });
   });
 

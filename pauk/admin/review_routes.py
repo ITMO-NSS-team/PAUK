@@ -116,6 +116,8 @@ SIGNALS = {
 def _asks(row: dict) -> str:
     """What this row is a question about, in two or three words."""
     kind = row["kind"]
+    if kind == review.ALIAS:
+        return "конфликт алиасов"
     if kind == review.GROUP:
         return f"группа из {len(row['members'])}"
     if kind == review.GITHUB:
@@ -180,6 +182,9 @@ def _shown(row: dict, back: str = "") -> dict:
         "asks": _asks(row),
         # A flag rather than a literal in the template.
         "is_group": row["kind"] == review.GROUP,
+        "is_alias": row["kind"] == review.ALIAS,
+        "alias_edges": evidence.get("alias_edges") or [],
+        "operation": evidence.get("operation"),
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
         "is_choice": _is_choice(row),
@@ -337,6 +342,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
+        review.require_answerable(db, kind, members)
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
@@ -370,7 +376,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             if len(same) < 2:
                 return back("Отметьте хотя бы двоих, кого считаете одним человеком.")
             if len(same) >= len(members):
-                return back("Вся группа не может быть одним человеком — её отклонили "
+                return back("Вся группа не может быть одним человеком – её отклонили "
                             "как раз потому, что внутри разные люди.")
             # Nothing is folded here: later merges would name a swallowed node.
             review.record_split(db, members, same, actor=user.actor, note=note)
@@ -412,7 +418,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 
     if kind != review.PAIR:
         # Only a pair is ever folded; the other kinds link rather than merge.
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "слитой была только пара")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "склеенной была только пара")
     if graph is None:
         return back("Граф недоступен, разделить записи сейчас нельзя.")
     # Before the graph is touched: an undo the store refuses would strand it.
@@ -430,7 +436,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                     "или её удалили вручную.")
     except NotFound as error:
         logger.warning("%s could not split %s: %s", user.actor, members, error)
-        return back("В графе нет этого слияния. Возможно, записи уже разделили.")
+        return back("В графе нет этой склейки. Возможно, записи уже разделили.")
     except MutationError as error:
         logger.warning("%s could not split %s: %s", user.actor, members, error)
         return back("Разделить не удалось, подробности в журнале сервиса.")

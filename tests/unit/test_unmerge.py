@@ -58,7 +58,7 @@ class WhatComesBackTest(UnmergeTest):
     def setUp(self):
         super().setUp()
         self.publish(person("A1", "Ivan Smirnov", works=["W1"], is_itmo=True),
-                     person("A2", "I. Smirnov", works=["W2"], orcid="0000-0002"))
+                     person("A2", "I. Smirnov", works=["W2"], orcid="0000-0001-5109-3700"))
         self.fold()
 
     def test_the_fold_is_what_this_starts_from(self):
@@ -92,10 +92,10 @@ class WhatComesBackTest(UnmergeTest):
         # The survivor had no ORCID and took the duplicate's. Left behind it
         # is not just stale: it is the identity of somebody else, and the
         # rules would fold the two again on it.
-        self.assertEqual(self.graph.nodes[("Person", "A1")]["orcid"], "0000-0002")
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["orcid"], "0000-0001-5109-3700")
         split_person(self.graph, self.db, ["A1", "A2"])
         self.assertIsNone(self.graph.nodes[("Person", "A1")].get("orcid"))
-        self.assertEqual(self.graph.nodes[("Person", "A2")]["orcid"], "0000-0002")
+        self.assertEqual(self.graph.nodes[("Person", "A2")]["orcid"], "0000-0001-5109-3700")
 
     def test_a_field_of_its_own_is_left_alone(self):
         # is_itmo is the survivor's, not something the fold brought in.
@@ -232,7 +232,7 @@ class SurvivorWithNoRowTest(UnmergeTest):
     def setUp(self):
         super().setUp()
         self.publish(person("A1", "Ivan Smirnov", works=["W1"]),
-                     person("A2", "I. Smirnov", works=["W2"], orcid="0000-0002"))
+                     person("A2", "I. Smirnov", works=["W2"], orcid="0000-0001-5109-3700"))
         self.fold()
         self.db.persons.delete_one({"id": "A1"})
 

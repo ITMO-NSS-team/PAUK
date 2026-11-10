@@ -1,7 +1,8 @@
 import unittest
 
 from pauk.graph.extract import extract_node, person_spec
-from pauk.models import Contribution, GitHubMatchResult, Person
+from pauk.models import Authorship, Contribution, GitHubMatchResult, Person
+from pauk.models.person import MembershipOwnerSources
 from pauk.pipeline.github_matches import apply_matches, retract_matches, withdraw_matches
 from pauk.pipeline.normalize import _merge_person
 
@@ -131,6 +132,31 @@ class GitHubMatchEffectsTest(unittest.TestCase):
         self.assertEqual(self.person.emails, [])
         retract_matches(self.person)
         self.assertIsNone(self.person.email)
+
+    def test_merge_reassesses_membership_without_losing_github_source_provenance(self):
+        people = [Person(
+            id=f"A{i}", is_itmo=True,
+            authored=[Authorship(publication_id=f"W{i}", institution_rors=[],
+                                 institution_source_person_id=f"A{i}", institution_source_id=f"W{i}")],
+            membership_owner_sources=[MembershipOwnerSources(
+                source_person_id=f"A{i}", work_ids=[f"W{i}"], orcid_ids=[])],
+        ) for i in (1, 2)]
+        independent = Contribution(repository_id="R2", role="contributor")
+        people[1].email = "source@lab.test"
+        people[1].contributed_to = [independent]
+        before_extra = people[1].model_dump()
+        apply_matches(people[0], [self.match])
+
+        merged = _merge_person(*people)
+        retract_matches(merged)
+
+        self.assertEqual(merged.membership_status, "unsupported")
+        self.assertFalse(merged.is_itmo)
+        self.assertEqual({row.source_person_id for row in merged.membership_owner_sources}, {"A1", "A2"})
+        self.assertIsNone(merged.github)
+        self.assertEqual(merged.email, "source@lab.test")
+        self.assertEqual(merged.contributed_to, [independent])
+        self.assertEqual(people[1].model_dump(), before_extra)
 
     def test_match_provenance_is_not_published_as_graph_properties(self):
         apply_matches(self.person, [self.match])

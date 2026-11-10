@@ -13,13 +13,14 @@ from datetime import date
 
 from pymongo.database import Database
 
-from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
+from pauk.aliases import MergeAliasConflict
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy, _normalize_orcid
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
@@ -37,6 +38,7 @@ from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
+from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import chunked
 from .overrides import apply_overrides
@@ -147,7 +149,7 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
         payload = envelope.get("payload") or {}
         author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
         if author_id:
-            orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
+            orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
     return orcids
 
 
@@ -226,7 +228,7 @@ def dedup_graph_persons(
     canonical_nodes: list[tuple[str, dict]] = []
     for canonical, duplicates in groups:
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging %s (%s) into %s (%s)",
                 duplicate.id,
                 duplicate.name_raw,
@@ -242,7 +244,6 @@ def dedup_graph_persons(
         # records. Serializing their defaults would erase fields never read.
         # The fold below merges the complete stored properties transactionally.
         canonical_nodes.append((canonical.id, {
-            "is_itmo": canonical.is_itmo,
             "name_variants": canonical.name_variants,
             "merged_ids": canonical.merged_ids,
         }))
@@ -289,7 +290,7 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
         canonical, duplicates = ranked[0], ranked[1:]
         merged_ids = list(canonical.get("merged_ids") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging publication %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("title"),
@@ -373,7 +374,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
         merged_ids = list(canonical.get("merged_ids") or [])
         cited_urls = list(canonical.get("cited_urls") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging repository %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("url"),
@@ -435,7 +436,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
-        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        models = ResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
             if config.person_resolution_enabled
@@ -493,6 +494,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # decisions go back on top here too.
         with actor_context("etl-pipeline", source="dedup-graph"):
             overrides = apply_overrides(client, mongo_db)
+        retire_alias_conflicts(mongo_db, "dedup-graph")
         return {
             "graph_persons_merged": persons_removed,
             "graph_publications_merged": publications_removed,
@@ -501,5 +503,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "graph_dedup_component_conflicts": component_conflicts,
             **overrides,
         }
+    except MergeAliasConflict as conflict:
+        record_alias_conflict(mongo_db, conflict, "dedup-graph")
+        raise
     finally:
         client.close()

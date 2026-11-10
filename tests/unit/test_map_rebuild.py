@@ -76,8 +76,7 @@ class WriteSiteDataTest(unittest.TestCase):
     def test_it_writes_both_builds_and_creates_the_directories(self):
         out, _ = self.build(self.tmp / "does" / "not" / "exist")
         self.assertEqual(sorted(p.name for p in (out / "private").iterdir()), DETAIL_FILES)
-        self.assertEqual(sorted(p.name for p in (out / "public").iterdir()),
-                         [name for name in DETAIL_FILES if name != "authors-detail.json"])
+        self.assertEqual(sorted(p.name for p in (out / "public").iterdir()), DETAIL_FILES)
 
     def test_it_reports_what_it_wrote(self):
         _, counts = self.build()

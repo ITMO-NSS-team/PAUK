@@ -6,11 +6,13 @@ from pathlib import Path
 
 from pymongo.database import Database
 
+from pauk.aliases import MergeAliasConflict
 from pauk.jobs.locks import held
 from pauk.jobs.models import GITHUB_MATCH, GRAPH
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore
 
+from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
@@ -91,6 +93,11 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
                                claimed_relationships=claimed_relationships(mongo_db))
             # Manual decisions take precedence over published source values.
             counts = apply_overrides(client, mongo_db)
+        retire_alias_conflicts(mongo_db, f"publish:{group}")
+        retire_alias_conflicts(mongo_db, "dedup-graph")
+    except MergeAliasConflict as conflict:
+        record_alias_conflict(mongo_db, conflict, f"publish:{group}")
+        raise
     finally:
         client.close()
     return {f"rows_{filename.removesuffix('.jsonl')}": len(rows)

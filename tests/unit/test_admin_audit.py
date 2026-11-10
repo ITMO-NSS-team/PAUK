@@ -127,7 +127,7 @@ class AuditPageTest(unittest.TestCase):
     def test_the_node_page_shows_its_own_history(self):
         self.sign_in()
         body = self.client.get("/nodes/Person/A1").text
-        self.assertIn("Что с ней делали", body)
+        self.assertIn("Изменения в графе", body)
         self.assertIn("user:roman", body)
         self.assertIn("/audit?entity_type=Person&entity_id=A1", body)
 

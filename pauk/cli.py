@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,10 +22,13 @@ from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
+from pauk.sources.llm import CliUnusableError, SubscriptionLimitError, check_providers
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
 logger = logging.getLogger("pauk.cli")
+
+_LLM_COMMANDS = ("run", "enrich", "dedup")
 
 
 def _selector(args):
@@ -168,6 +172,19 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
 
 
+def _add_reports_parsers(sub: argparse._SubParsersAction) -> None:
+    """Register `reports build`: OSA PDF reports on the snapshot's repositories, for the site."""
+    from pauk.reports.settings import reports_settings
+
+    p = sub.add_parser("reports")
+    reports_sub = p.add_subparsers(dest="reports_command", required=True)
+    p = reports_sub.add_parser("build", help="generate the missing OSA reports (needs OpenRouter, not the lab VPN)")
+    p.add_argument("keys", nargs="*", help="repository ids to limit the run to (default: every repository)")
+    p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
+    p.add_argument("--force", action="store_true", help="regenerate reports that already exist")
+    p.add_argument("--workers", type=int, default=reports_settings.workers, help="OSA runs in parallel")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pauk")
     parser.add_argument("--verbose", action="store_true")
@@ -175,6 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
+    _add_reports_parsers(sub)
     admin_cli.add_parser(sub)
     return parser
 
@@ -189,7 +207,8 @@ def _cmd_collect(args) -> None:
     with _mongo_db() as db:
         group = _group(args)
         count = Collector(
-            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key,
+                           requests_per_second=settings.openalex_rps), RawStore(db, group)
         ).collect(_selector(args))
         _log_result("collect", group, {"raw_works": count})
 
@@ -279,6 +298,25 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
     write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
 
 
+def _cmd_reports(args, parser: argparse.ArgumentParser) -> None:
+    if args.reports_command != "build":
+        parser.error(f"unknown reports command: {args.reports_command}")
+    from pauk.cache.graph_snapshot import latest_snapshot
+    from pauk.reports import ReportsBuilder
+
+    path = args.cache or latest_snapshot(settings.cache_dir)
+    logger.info("reports build: %s", path)
+    try:
+        result = ReportsBuilder(settings).build(
+            path, keys=frozenset(args.keys), force=args.force, workers=args.workers
+        )
+    except (ValueError, RuntimeError) as error:
+        raise SystemExit(str(error)) from None
+    _log_result("reports build", None, result)
+    if result["failed"]:
+        raise SystemExit(f"{result['failed']} report(s) failed")
+
+
 def _cmd_admin(args) -> None:
     # `schema` only prints the whitelists; it reaches neither database,
     # so it stays usable without one running.
@@ -305,19 +343,45 @@ def _cmd_admin(args) -> None:
         mongo.close()
 
 
+def _interrupt_on_termination() -> None:
+    """Treat SIGTERM and a closed terminal as Ctrl-C.
+
+    Subscription CLIs sit in their own process groups, so these signals do
+    not reach them, and without an exception here nothing would kill them.
+    """
+
+    def interrupt(*_signal) -> None:
+        raise KeyboardInterrupt
+
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):
+        if (received := getattr(signal, name, None)) is not None:
+            signal.signal(received, interrupt)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     configure_logging(args.verbose)
+    if args.command in _LLM_COMMANDS:
+        _interrupt_on_termination()
     try:
         _dispatch(args, parser)
     except Busy as error:
         # Something else holds the graph or the group. Waiting is the
         # answer, and a stack trace does not say so.
         raise SystemExit(str(error)) from None
+    except SubscriptionLimitError as error:
+        raise SystemExit(f"{error}\nRun the same command again after the limit resets.") from None
+    except CliUnusableError as error:
+        raise SystemExit(f"{error}\nFix the CLI, then run the same command again.") from None
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> None:
+    if args.command in _LLM_COMMANDS:
+        try:
+            check_providers(settings)
+        except ValueError as error:
+            parser.error(str(error))
     if args.command == "run":
         _cmd_run(args)
     elif args.command == "collect":
@@ -334,6 +398,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_cache(args, parser)
     elif args.command == "gui":
         _cmd_gui(args, parser)
+    elif args.command == "reports":
+        _cmd_reports(args, parser)
     elif args.command == "admin":
         _cmd_admin(args)
     else:

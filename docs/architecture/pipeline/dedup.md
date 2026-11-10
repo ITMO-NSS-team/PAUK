@@ -94,6 +94,17 @@ pairs and 360 synthetic training examples. Replace the trusted data-only pickle
 through `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`; code and feature contract
 must match the artifact.
 
+Offline reproduction uses `scripts/person_resolution_model.py`. Supply JSON
+with `surname_counts` and `rows` containing `evidence` (PairEvidence fields),
+binary `label`, and `origin` (`annotated` or `synthetic`). Run
+`python scripts/person_resolution_model.py dataset.json --report replay.json`
+to replay an artifact, or add `--fit-output candidate.pkl` to fit a new file
+with scikit-learn installed. Fitting uses the production features, StandardScaler
+and liblinear LogReg (`C=0.03`, equal class weights, seed 20260921). Inputs and
+artifacts are hashed; existing output files are not overwritten. Synthetic rows
+are training-only. Replay is not an independent accuracy estimate and does not
+call Qwen. Production artifacts and thresholds are never replaced automatically.
+
 The features combine role-aligned surname/given-name compatibility, token and
 transliteration similarity, identifiers, catalog status, publications,
 collaborators and institutional context. The single Qwen request includes
@@ -117,16 +128,44 @@ and Qwen merge proposals. Missing evidence alone is not a separation rule.
 
 Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
 `PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
-`PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`
-and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Defaults are defined in
+`PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`,
+`PAUK_PERSON_RESOLUTION_MERGE_FROM`, `PAUK_PERSON_RESOLUTION_PROVIDER` and
+`PAUK_PERSON_RESOLUTION_BATCH_SIZE`. The model default is in
+`pauk/settings.py`, the threshold defaults are in
 `pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
 not an additional merge threshold. Missing/invalid responses go to review.
+Compact prompt features use the same configured artifact's surname counts as
+LogReg. Complete short Latin surnames such as Yi/Ji are preserved for blocking
+without changing the fitted feature normalization. Explicit conflicting ORCID
+or staff IDs take precedence over the multiple-person-name review guard.
 Cache keys include the model, prompt and evidence, but not the transient pair
 number. Retries are reserved for failed or invalid responses.
+
+`PAUK_PERSON_RESOLUTION_PROVIDER` selects OpenRouter (default) or a
+subscription CLI (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch it.
+`PAUK_PERSON_RESOLUTION_BATCH_SIZE` (default 1) sends that many uncached pairs
+in one request `{"pairs": [...]}` and expects `{"results": [...]}`. A pair
+missing from the reply, repeated or invalid is asked again alone; a failed
+batch request is retried once, then its pairs go to review. The batch call
+and the records of the pairs it answered share a `batch_id` in the LLM log, and
+the request timeout is multiplied by the batch size. The dedup report names the
+model that decided, because the `qwen_*` routes keep their names on any provider. Batch answers are
+cached under the batch prompt: batch mode reuses single answers, single mode
+does not reuse batch answers. Keep 1 for production runs.
 
 Held pairs are stored in `review_pairs` with their input route and model verdict
 for the admin panel. Automatically separated pairs retire obsolete unanswered
 questions. Existing operator decisions remain authoritative.
+
+Merge journal rows retain model reason, confidence, input route and verdicts.
+`merge_evidence` identifies the actual accepted pair decisions within the final
+component, so a transitive fold is not presented as a direct model judgment.
+Competing historical alias targets still fail validation before publication;
+they must not be resolved by silently selecting one survivor. Publish and graph
+dedup record the conflicting person component as a separate read-only alias
+diagnostic in admin review, with its edges and the failing operation. Historical
+aliases need repair before retrying; ordinary identity answers cannot dismiss or
+repair this diagnostic.
 
 Before prepared-person merges, complete source rows are preserved in
 `person_merge_sources`. Failure to preserve any participant aborts before the

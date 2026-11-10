@@ -37,6 +37,7 @@ def collect(db: Database) -> dict:
             "running": [{"kind": str(job.kind), "id": job.id} for job in running],
             "workers": store.workers_present(db),
             "pressing": review.count(db, pressing=True, answered=False, skipped=False),
+            "open": review.count(db, answered=False, skipped=False),
             "last_run": _last_run(db),
             "health": _health(db),
         }

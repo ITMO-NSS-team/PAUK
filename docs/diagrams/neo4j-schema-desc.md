@@ -19,9 +19,11 @@ graph even if the pydantic model has them (see
 > A researcher or author, from ITMO or external, told apart by the `is_itmo`
 > property, not by the label.
 
-* **`id`** (`ID`, *Unique*): author identifier (the bare OpenAlex author ID).
-* **`is_itmo`** (`Boolean`): ITMO membership. A "sticky" property: once set to
-  `true`, a later external row for the same person never lowers it to `false`.
+* **`id`** (`ID`, *Unique*): bare OpenAlex author ID, or `orcid_<orcid>` /
+  `name_<hash>` when the source has no author ID.
+* **`is_itmo`** (`Boolean`): ITMO membership backed by authorship ROR or ORCID
+  evidence. A complete current assessment of every original owner's sources
+  can clear `true`; partial or older observations cannot.
 * **`openalex_id`** (`String`): OpenAlex identifier.
 * **`orcid`** (`String`): ORCID identifier.
 * **`name_raw`** (`String`): the name as OpenAlex gave it.
@@ -231,6 +233,11 @@ edge up the hierarchy.
 * **`context`** (`List[String]`): text fragments around the link.
 * **`page_number`** (`List[Integer]`): pages (`0` = abstract; Neo4j does not
   store `null` in an array property, so the sentinel is not `None`).
+* **`pdf_id`** (`List[String]`): source PDF ids, parallel to contexts; empty
+  strings represent missing ids.
+* **`context_source`** (`List[String]`): occurrence sources, parallel to contexts.
+* **`reference_label`** (`List[String]`): footnote or bibliography labels; empty
+  strings represent missing labels.
 * **`classification_status`** (`String`): `pending`, `classified` or `failed`.
 * **`is_relevant`** (`Boolean`): relevance verdict.
 * **`llm_confidence`** (`Float`): LLM confidence.

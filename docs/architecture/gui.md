@@ -4,7 +4,7 @@
 site, and how the site itself is organized.
 
 **Files:** the `pauk/gui/graph_builder/` package (`builder.py`,
-`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`,
+`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`, `public.py`,
 `grants.py`, `config.py`, tests in `tests/`) and the site in
 `pauk/gui/web/`.
 
@@ -28,13 +28,15 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 - `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
   fields that the site loads lazily after the map.
 
-Privacy is decided by folder, not by content. `authors-detail.json`
-(personal fields) is written only to `data/gui/private/`; the other three
-files go to both `public/` and `private/`, because Vite serves static files
-from a single folder (`vite.config.ts::publicDir`, which points at
-`data/gui/private/`). The build runs in stages, one module each:
-`authorship.py` (who wrote what), `departments.py`, `layout.py`, `nodes.py`,
-`edges.py`.
+Both folders contain all four files. `private/` keeps full names and personal
+fields. `public.py::to_public` rewrites the public variant: masked labels,
+sequential author keys, consistent remapped edges, whitelisted fields and
+abstracts without emails or scraped author blocks. The source snapshot and
+private output remain intact. `npm run build:public` selects `data/gui/public`
+and emits `dist-public` with relative URLs; the default build uses private
+files. `scripts/publish_pages.sh` validates and uploads the public data for
+GitHub Pages. The layout stages are `authorship.py`, `departments.py`,
+`layout.py`, `nodes.py` and `edges.py`.
 
 **External authors.** The export takes every `Person` (with `is_itmo`) and
 every `AUTHORED`. A publication reaches the map if it has at least one ITMO
@@ -153,4 +155,23 @@ health) page of the admin panel (`pauk/admin/health.py`); see
 `p.is_itmo`, not a label; `tests/unit/test_checks.py` checks every label and
 relationship type in the queries against the schema.
 
-Deployment to the lab server is described in [deploy.md](deploy.md).
+On the server, the worker writes these files under `~/pauk/gui/itmo/`, while
+nginx reads a separate built site at `~/pauk/site/itmo/main/`. A data rebuild
+does not publish a release. Publishing must also make generated files readable
+by nginx; atomic JSON output starts with mode 600. See [deploy.md](deploy.md).
+
+## `ops.html`: operations interface
+
+The separate Vite entry `src/app/ops.ts` mounts `features/operations/`.
+It reuses the map's themes and branding, with top navigation for service
+status, backups, site releases and operation logs. It reads open `/api/ops/` endpoints without accounts or sessions and does not
+simulate results.
+The dedicated OPS image builds without map data and serves `/ops/` from FastAPI.
+The map remains a separate nginx service. See [ops.md](ops.md) for execution,
+permissions and deployment configuration.
+
+Backup dates use Moscow calendar days; labels refresh with server polling.
+Unsupported mobile devices see a desktop-only screen and do not poll the API.
+`npm run build` emits both `dist/index.html` and `dist/ops.html` for local checks;
+production OPS and map builds select only their own entry.
+Visual rules and screen rationale: [../design/ops.md](../design/ops.md).

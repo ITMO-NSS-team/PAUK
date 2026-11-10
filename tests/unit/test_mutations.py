@@ -1,7 +1,12 @@
 import unittest
 from datetime import datetime, timedelta
 
-from pauk.graph.client import _merge_duplicate_properties
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+)
 from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -92,14 +97,44 @@ class FakeGraph:
                                    tgt_match_prop="id"):
         self.calls.append("upsert_relationships_batch")
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             target_exists = any(
                 key[0] == tgt_label and value.get(tgt_match_prop) == tgt_id
                 for key, value in self.nodes.items())
             if (src_label, src_id) not in self.nodes or not target_exists:
                 continue
-            self.relationships[(src_label, rel_type, tgt_label, src_id, tgt_id)] = dict(props)
-            matched += 1
+            key = (src_label, rel_type, tgt_label, src_id, tgt_id)
+            edge = self.relationships.setdefault(key, {})
+            previous = edge.get("is_corresponding")
+            preserve = bool(
+                self.nodes[(src_label, src_id)].get("merged_ids")
+                or self.nodes.get((tgt_label, tgt_id), {}).get("merged_ids")
+            )
+            for field, value in props.items():
+                if value is None:
+                    edge.pop(field, None)
+                else:
+                    edge[field] = value
+            if rel_type == "AUTHORED" and preserve and (previous is not None or props.get("is_corresponding") is not None):
+                edge["is_corresponding"] = bool(previous or props.get("is_corresponding"))
+            matched += input_count
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -138,6 +173,10 @@ class FakeGraph:
             canonical = self.nodes.get(("Person", canonical_id))
             if duplicate is not None and canonical is not None:
                 canonical.update(_merge_duplicate_properties("Person", canonical, duplicate))
+                canonical["merged_ids"] = list(dict.fromkeys(
+                    alias for alias in [*(canonical.get("merged_ids") or []), duplicate_id]
+                    if alias != canonical_id
+                ))
             if self.nodes.pop(("Person", duplicate_id), None) is None:
                 continue
             removed += 1
@@ -157,19 +196,15 @@ class FakeGraph:
     # against this fake end to end.
 
     def upsert_person_nodes_batch(self, nodes):
-        """Persons carry the sticky is_itmo rule of the real client.
-
-        A row arriving with is_itmo=False never downgrades a node that is
-        already ITMO.
-        """
+        """Apply the client's evidence-aware membership and merged-list rules."""
         self.calls.append("upsert_person_nodes_batch")
-        nodes = list(nodes)
-        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_itmo"))
-                  or bool(props.get("is_itmo"))
-                  for node_id, props in nodes}
-        self.upsert_nodes_batch("Person", nodes)
-        for node_id, is_itmo in sticky.items():
-            self.nodes[("Person", node_id)]["is_itmo"] = is_itmo
+        for node_id, props in nodes:
+            existing = self.nodes.get(("Person", node_id), {})
+            membership = _person_membership_update(existing, props, node_id)
+            clean = _preserve_merged_person_lists(existing, props)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self.upsert_nodes_batch("Person", [(node_id, clean)])
 
     def merge_publication_nodes_batch(self, merges):
         self.calls.append("merge_publication_nodes_batch")

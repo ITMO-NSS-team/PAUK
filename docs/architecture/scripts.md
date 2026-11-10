@@ -18,11 +18,12 @@ The "Writes" column is the one thing worth knowing before you run a script.
 
 | Script | What it does | Writes |
 |---|---|---|
-| `deploy.sh` | Builds the site locally from the current branch, rsyncs it to the server and restarts the `screen` session that serves it. It does **not** regenerate the map data and does no `git pull` on the server; see [deploy.md](deploy.md) | server |
-| `serve_static.py` | Serves the site on the server: `http.server` plus ready-made `.gz` files for browsers that accept gzip. Started by `deploy.sh` | no |
-| `mongo-up.sh` | Idempotent (re)start of the `pauk-mongo` container on the server | server |
-| `systemd/` | Unit files `pauk-admin.service` (admin panel) and `pauk-worker.service` (`pauk admin worker`); installation is in [../admin-panel.md](../admin-panel.md) | no |
-| `snapshot_mongo.py` | Dumps prepared collections to Extended JSON, one file per collection, with a manifest and sha256 | no, read-only |
+| `publish_pages.sh` | Validates public map data, uploads the `pages-data` release asset and waits for the Pages workflow; see [ops.md](ops.md) | GitHub release and deployment |
+| `deploy.sh` | Legacy screen-based publication to `~/pauk-gui`; does not update the Compose site. Do not use for the active deployment; see [deploy.md](deploy.md) | server |
+| `serve_static.py` | Legacy static server used by `deploy.sh`; the active site uses nginx | no |
+| `mongo-up.sh` | Legacy standalone Mongo container manager; do not run alongside the active Compose Mongo service | server |
+| `systemd/` | Legacy panel/worker units; not used by the Compose deployment | no |
+| `snapshot_mongo.py` | Reads prepared collections into Extended JSON with a manifest and sha256; not a full MongoDB backup | output files only |
 
 `snapshot_mongo.py` is the rollback point. Take a snapshot before any
 operation that overwrites prepared data; it also prepares the input for the
@@ -43,6 +44,53 @@ Run these from a normal terminal: they need membership in the `docker` group,
 which a process started before `usermod -aG docker` does not have.
 
 ## Manual data additions
+
+`reassess_membership.py` prepares a reviewable membership correction plan and
+can explicitly apply it to MongoDB. It accepts either a complete local JSONL
+snapshot (`--snapshot-dir`, containing `persons`, `publications`,
+`person_merge_sources`, and `raw`) or an explicit Mongo connection (`--mongo-uri`
+and `--db`). It reads all source groups and writes proposed `persons.jsonl`,
+original `originals.jsonl`, `summary.json` and a checksummed `manifest.json` to
+a new `--out` directory. Connection defaults are never read from `.env`.
+
+Stop collectors, enrichment, merges, admin edits and publication for the entire
+plan/review/apply window; take a backup first. A standalone Mongo deployment
+cannot atomically freeze all source collections. Planning refuses a detected
+concurrent change, and apply checks source fingerprints before and after writing.
+
+From the repository root, with an explicitly selected database and connection:
+
+```bash
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --out data/reports/membership-plan
+```
+
+Review `persons.jsonl` and `summary.json`, then copy the summary's `plan_id` into
+`PLAN_ID`. Validate without writes, then apply the same reviewed plan:
+
+```bash
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --apply-plan data/reports/membership-plan --plan-id "$PLAN_ID"
+uv run python -m scripts.reassess_membership --mongo-uri "$MONGO_URI" --db pauk --apply-plan data/reports/membership-plan --plan-id "$PLAN_ID" --apply
+```
+
+Apply refuses modified plan files, changed source collections, or stale person
+rows before writing. It updates only membership and its source metadata, keeps
+groups and unrelated fields, and increments `_version` once per changed person.
+Every changed row has a durable original in `membership_reassessments` and a
+normal `revisions` entry. Per-person compare-and-set prevents overwriting a
+concurrent edit. An interrupted run may already have applied earlier rows;
+repeat the exact command to finish pending revisions and remaining rows without
+duplicating revisions or version increments. A source-change error requires
+stopping writers and generating/reviewing a new plan before publication.
+
+This command does not write Neo4j. After successful apply, publish every affected
+group with the existing `pauk publish graph --group <group>` command. Keep the
+reviewed plan and backup until the graph has been checked. Do not import
+`persons.jsonl` with `write_models`: it would redefine group membership.
+
+Reassessment is a later correction, not an undo of a merge. Splitting a merged
+person may therefore refuse to restore older source snapshots until that
+correction is reconciled with the originals; it must not resurrect withdrawn
+membership evidence. The refusal leaves both stores unchanged.
 
 | Script | What it does | Writes |
 |---|---|---|
@@ -85,7 +133,6 @@ to the checkout.
 |---|---|---|
 | `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories | draft in `data/static/` |
 | `export_link_labels.py` | Exports links (or whole papers) to CSV for manual labelling; the only tooling in the repository for measuring precision and recall of link extraction | no |
-| `mass_launch_osa_tool.py` | Batch launch of the external `osa_tool` over a list of repositories | external tool |
 
 `export_link_labels.py` has two modes: `links` measures precision over links
 already extracted, and `papers` measures recall, which cannot be seen from the

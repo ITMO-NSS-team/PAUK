@@ -10,6 +10,8 @@ from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
 from pauk.admin.review_routes import _reason_words
+from pauk.aliases import MergeAliasConflict, flatten_merges
+from pauk.graph.alias_review import record_alias_conflict
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
@@ -20,6 +22,52 @@ from pauk.storage import PreparedStore, RawStore, review
 from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
+
+
+class AliasIncidentPageTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().alias_review
+        with self.assertRaises(MergeAliasConflict) as caught:
+            flatten_merges([("A", "B"), ("A", "C")], label="Person")
+        record_alias_conflict(self.db, caught.exception, "publish:example")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.get_session] = lambda: {
+            "login": "audit", "role": "editor", "csrf": "local-test-token"}
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        self.client = TestClient(app, follow_redirects=False)
+        self.addCleanup(self.client.close)
+
+    def test_alias_incident_displays_edges_and_no_identity_answer_form(self):
+        response = self.client.get("/review")
+        self.assertEqual(response.status_code, 200)
+        for text in ("конфликт алиасов", "A → B", "A → C", "publish:example",
+                     "Требуется исправить историю слияний"):
+            self.assertIn(text, response.text)
+        self.assertNotIn('action="/review/answer"', response.text)
+        self.assertNotIn('action="/review/withdraw"', response.text)
+
+    def test_alias_actions_and_disguised_group_actions_are_rejected(self):
+        for kind in (review.ALIAS, review.GROUP, review.PAIR):
+            members = "A,B" if kind == review.PAIR else "A,B,C"
+            for verdict in ("same", "different", "split", "skip", "choose"):
+                with self.subTest(kind=kind, verdict=verdict):
+                    response = self.client.post("/review/answer", data={
+                        "csrf": "local-test-token", "kind": kind, "members": members,
+                        "same": ["A", "B"], "verdict": verdict, "tab": "open"})
+                    self.assertEqual(response.status_code, 400)
+            response = self.client.post("/review/withdraw", data={
+                "csrf": "local-test-token", "kind": kind, "members": members})
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(review.count(self.db, answered=False, skipped=False), 1)
+
+    def test_expanded_group_submission_cannot_leave_partial_identity_answers(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": "local-test-token", "kind": review.GROUP, "members": "A,B,C,X",
+            "same": ["A", "X"], "verdict": "split", "tab": "open"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(self.db.review_pairs.count_documents({}), 1)
 
 
 class ReviewPageTest(unittest.TestCase):
@@ -231,20 +279,20 @@ class AnsweredTabTest(unittest.TestCase):
 
     def test_a_merge_says_when_it_will_happen(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
-        self.assertIn("сольётся на следующем прогоне", self.body())
+        self.assertIn("склеится при следующем прогоне", self.body())
 
     def test_a_merge_that_happened_says_so_instead(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
         review.mark_applied(self.db, review.PAIR, ["A1", "A2"])
         body = self.body()
-        self.assertIn("слито", body)
-        self.assertNotIn("сольётся на следующем прогоне", body)
+        self.assertIn("склеено", body)
+        self.assertNotIn("склеится при следующем прогоне", body)
 
     def test_keeping_two_people_apart_promises_no_merge(self):
         # There is nothing to apply: the answer only stops the rules from
         # merging the pair later.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
 
 class FoldNowTest(unittest.TestCase):
@@ -407,7 +455,7 @@ class DisputedTabTest(unittest.TestCase):
         # Nothing was merged. Saying otherwise would send somebody looking
         # for a merge that never happened.
         self.assertIn("user:andrey", self.body())
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
     def test_confirming_it_again_clears_the_disagreement(self):
         response = self.client.post("/review/answer", data={
@@ -954,7 +1002,7 @@ class StaffChoiceTest(unittest.TestCase):
         self.choose(self.RECORDS[0])
         body = self.body("answered")
         self.assertIn("запись выбрана", body)
-        self.assertIn("сведёт записи на следующем прогоне", body)
+        self.assertIn("склеит записи при следующем прогоне", body)
 
 
 class ChoiceFormGuardTest(unittest.TestCase):
@@ -1077,7 +1125,7 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
     def test_what_the_rules_say_now_sits_by_the_old_reason(self):
         # It is the rules changing their mind, not part of the answer.
         why = self.cells()[2]
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
     def test_a_viewer_sees_the_answer_without_the_buttons(self):
         # The column is shown to a viewer too, who has to see what had
@@ -1122,7 +1170,7 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
             "name_b": "B", "rule": "same_name"}])
         why = self.cells()[2]
         self.assertIn("–", why)
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
 
 class SkippedTabTest(unittest.TestCase):

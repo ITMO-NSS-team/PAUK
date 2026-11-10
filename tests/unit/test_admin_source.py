@@ -136,7 +136,7 @@ class HistoryOnThePageTest(unittest.TestCase):
     def test_the_block_is_there_even_with_nothing_in_it(self):
         # The absence is an answer too: nobody has to wonder whether the
         # panel simply does not know.
-        self.assertIn("Что говорил источник", self.body())
+        self.assertIn("Изменения при сборе данных", self.body())
 
     def test_a_run_that_changed_the_record_is_shown(self):
         self.db[source.REVISIONS].insert_one(
@@ -152,14 +152,14 @@ class HistoryOnThePageTest(unittest.TestCase):
         self.db[source.REVISIONS].insert_one(
             archived("persons", "A1", 1, {"id": "A1", "orcid": None},
                      "2026-08-30__from_2026-03-01", "2026-08-30T12:00:00"))
-        self.assertIn("разобрать её нечем", self.body())
+        self.assertIn("показать её нельзя", self.body())
 
     def test_it_is_not_the_same_block_as_the_graph_journal(self):
         # Two questions about one record: what people did to the graph, and
         # what the pipeline decided about the source.
         body = self.body()
-        self.assertIn("Что с ней делали", body)
-        self.assertIn("Что говорил источник", body)
+        self.assertIn("Изменения в графе", body)
+        self.assertIn("Изменения при сборе данных", body)
 
     def test_a_viewer_sees_it_too(self):
         create_user(self.db, "guest", "hunter2", role="viewer")
@@ -167,4 +167,4 @@ class HistoryOnThePageTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         client = TestClient(app, follow_redirects=False)
         client.post("/login", data={"login": "guest", "password": "hunter2"})
-        self.assertIn("Что говорил источник", client.get("/nodes/Person/A1").text)
+        self.assertIn("Изменения при сборе данных", client.get("/nodes/Person/A1").text)

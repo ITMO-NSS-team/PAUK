@@ -7,6 +7,7 @@ import type {
   PubNode,
   RepoDetail,
   RepoNode,
+  ReportsIndex,
 } from "../contracts/graph";
 import { DATA_CONFIG, PANEL_CONFIG } from "../core/config";
 import {
@@ -203,12 +204,12 @@ export function mountPanel(
 ): () => void {
   const container = requireElement("panel");
 
-  // TODO: static PDFs and file list next to the site data; move into repos-detail.json if this stays.
-  const reportFiles = new Map<string, string>();
+  // Written by `pauk reports build`, not by the site data build.
+  const reportKeys = new Map<string, Set<string>>();
   fetch(DATA_CONFIG.reportsIndexUrl)
-    .then((response) => (response.ok ? (response.json() as Promise<string[]>) : []))
-    .then((files) => {
-      for (const file of files) reportFiles.set(file.toLowerCase(), file);
+    .then((response) => (response.ok ? (response.json() as Promise<ReportsIndex>) : {}))
+    .then((index: ReportsIndex) => {
+      for (const [lang, keys] of Object.entries(index)) reportKeys.set(lang, new Set(keys));
       store.notify();
     })
     .catch((error: unknown) => console.warn("reports/index.json:", error));
@@ -298,17 +299,10 @@ export function mountPanel(
     };
   }
 
-  function reportLinksOf(repoUrl: string): PanelLink[] {
-    const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
-    const file = reportFiles.get(`${name}_report.pdf`);
-    return file
-      ? [
-          {
-            kind: "link",
-            href: `/reports/${encodeURIComponent(file)}`,
-            text: "PDF",
-          },
-        ]
+  /** No fallback to another language: a report the reader can't read is no report. */
+  function reportLinksOf(key: string, lang: AppState["lang"]): PanelLink[] {
+    return reportKeys.get(lang)?.has(key)
+      ? [{ kind: "link", href: `${DATA_CONFIG.reportsUrl}/${lang}/${encodeURIComponent(key)}.pdf`, text: "PDF" }]
       : [];
   }
 
@@ -463,14 +457,25 @@ export function mountPanel(
       let withOrcid = 0;
       let withGithub = 0;
       let withEmail = 0;
+      let hasContacts = false;
       for (const author of authors) {
         const detail = authorDetails.get(author.key);
         if (!detail) continue;
         withDetail++;
+        if (detail.email !== undefined) hasContacts = true;
         if (detail.orcid) withOrcid++;
         if (detail.github) withGithub++;
         if (detail.email) withEmail++;
       }
+      // The public build has no contact fields at all; 0% would read as "nobody has one".
+      const contactRows: PanelRow[] =
+        withDetail > 0 && !hasContacts
+          ? []
+          : [
+              [t("field.orcid", lang), completionRow(withOrcid, withDetail)],
+              [t("field.github", lang), completionRow(withGithub, withDetail)],
+              [t("field.email", lang), completionRow(withEmail, withDetail)],
+            ];
 
       return show(
         t("overview.title", lang),
@@ -481,9 +486,7 @@ export function mountPanel(
           [t("overview.externalAuthors", lang), String(external)],
           [t("field.deptsCount", lang), String(data.departments.length)],
           [t("overview.avgPubsPerAuthor", lang), avgPubs],
-          [t("field.orcid", lang), completionRow(withOrcid, withDetail)],
-          [t("field.github", lang), completionRow(withGithub, withDetail)],
-          [t("field.email", lang), completionRow(withEmail, withDetail)],
+          ...contactRows,
         ]),
         false,
         null,
@@ -632,10 +635,12 @@ export function mountPanel(
         // record means the file has not arrived yet.
         const authorDetail = authorDetails.get(node.key);
         if (authorDetail) {
-          const fullName = localize(authorDetail.name_ru, authorDetail.name_en, lang);
+          const nameRu = authorDetail.name_ru ?? "";
+          const nameEn = authorDetail.name_en ?? "";
+          const fullName = localize(nameRu, nameEn, lang);
           if (fullName) {
             title = fullName;
-            const otherName = localize(authorDetail.name_en, authorDetail.name_ru, lang);
+            const otherName = localize(nameEn, nameRu, lang);
             if (otherName && otherName !== fullName) subtitle = otherName;
           }
           if (authorDetail.openalex_id)
@@ -654,20 +659,20 @@ export function mountPanel(
           }
           if (authorDetail.email)
             privateRows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
-          if (authorDetail.affiliations.length > 0) {
+          if (authorDetail.affiliations?.length) {
             privateRows.push([
               t("field.affiliations", lang),
               { kind: "list", items: affiliationItems(authorDetail.affiliations) },
             ]);
           }
           // Per source, see author_variants() in pauk/gui/graph_builder/nodes.py.
-          if (authorDetail.name_variants.openalex.length > 0) {
+          if (authorDetail.name_variants?.openalex.length) {
             privateRows.push([
               t("field.nameVariantsOpenalex", lang),
               { kind: "list", items: authorDetail.name_variants.openalex },
             ]);
           }
-          if (authorDetail.name_variants.orcid.length > 0) {
+          if (authorDetail.name_variants?.orcid.length) {
             privateRows.push([
               t("field.nameVariantsOrcid", lang),
               { kind: "list", items: authorDetail.name_variants.orcid },
@@ -749,11 +754,11 @@ export function mountPanel(
             rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
           if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
           if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
-          const reportLinks = repoDetail ? reportLinksOf(repoDetail.url) : [];
-          if (reportLinks.length > 0) rows.push([t("field.report", lang), reportLinks]);
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
+        const reportLinks = reportLinksOf(node.key, lang);
+        if (reportLinks.length > 0) rows.push([t("field.report", lang), reportLinks]);
 
         const contributors = repoContributorRefsOf(node.key, lang);
         if (contributors.length > 0)

@@ -26,12 +26,25 @@ NAME_RESCUE_TEAM_LIMIT = 50
 
 
 @lru_cache(maxsize=16384)
-def name_tokens(value: str | None) -> tuple[str, ...]:
+def name_tokens(value: str | None, preserve_short: bool = False) -> tuple[str, ...]:
     """Keep compound boundaries; normalize accents, mixed scripts and initials."""
     value = unicodedata.normalize("NFKD", (value or "").translate(_DASHES))
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = re.sub(r"['’‘ʼ]", "", value)
-    tokens = [token for token in re.findall(r"[^\W_]+(?:-[^\W_]+)*", _fold(value)) if any(c.isalpha() for c in token)]
+    if not preserve_short:
+        # The fitted feature contract retains its original normalization.
+        tokens = [token for token in re.findall(r"[^\W_]+(?:-[^\W_]+)*", _fold(value)) if any(c.isalpha() for c in token)]
+    else:
+        tokens = []
+        for raw in re.findall(r"[^\W_]+(?:-[^\W_]+)*", value):
+            if not any(char.isalpha() for char in raw):
+                continue
+            token = _fold(raw)
+            # Yi/Ji are complete surnames, not initials. Keep the original Latin
+            # spelling when transliteration would erase that distinction.
+            if len(token) == 1 and len(raw) > 1 and raw.isascii() and raw.isalpha():
+                token = raw.casefold()
+            tokens.append(token)
     while tokens and tokens[0] in _TITLES:
         tokens.pop(0)
     return tuple(tokens)
@@ -78,16 +91,18 @@ def _surname_forms(
     return result
 
 
-def parse_name(value: str | None, surnames: tuple[str, ...] = ()) -> set[NameForm]:
+def parse_name(
+    value: str | None, surnames: tuple[str, ...] = (), *, preserve_short: bool = False
+) -> set[NameForm]:
     """Return possible roles without using a first name as a standalone key."""
-    tokens = name_tokens(value)
+    tokens = name_tokens(value, preserve_short)
     if not tokens:
         return set()
     if value and "," in value:
         left, right = value.split(",", 1)
-        return _surname_forms(name_tokens(left), name_tokens(right), True)
+        return _surname_forms(name_tokens(left, preserve_short), name_tokens(right, preserve_short), True)
     for surname in surnames:
-        parts = name_tokens(surname)
+        parts = name_tokens(surname, preserve_short)
         for start in range(len(tokens)):
             for end in range(start + 1, len(tokens) + 1):
                 if "".join(tokens[start:end]).replace("-", "") == "".join(parts).replace("-", ""):
@@ -152,18 +167,18 @@ def person_name_forms(people: list[Person]) -> dict[str, set[NameForm]]:
     token_counts: Counter[str] = Counter()
     for person in people:
         surnames = tuple(value for value in (person.surname_ru, person.surname_en) if value)
-        raw = parse_name(person.name_raw, surnames)
+        raw = parse_name(person.name_raw, surnames, preserve_short=True)
         given_fields = tuple(value for value in (person.first_name_ru, person.first_name_en) if value)
         # Parsed fields remain usable even if the raw display name is absent.
         for surname in surnames:
-            surname_key = "".join(name_tokens(surname)).replace("-", "")
+            surname_key = "".join(name_tokens(surname, True)).replace("-", "")
             if not given_fields and any(form.surname == surname_key for form in raw):
                 continue
             for given in given_fields or ("",):
-                raw.update(_surname_forms(name_tokens(surname), name_tokens(given), True))
+                raw.update(_surname_forms(name_tokens(surname, True), name_tokens(given, True), True))
         forms = set(raw)
         aliases = [parsed for name in (*person.name_variants, *person.other_names)
-                   if (parsed := parse_name(name, surnames))]
+                   if (parsed := parse_name(name, surnames, preserve_short=True))]
         if not raw:
             # A sole complete alias remains useful; several aliases must
             # agree on an identity instead of creating unrelated blocks.
@@ -195,10 +210,10 @@ def person_name_forms(people: list[Person]) -> dict[str, set[NameForm]]:
         token_counts.update({form.surname for form in forms})
         terminals = set()
         for name in (person.name_raw, *person.name_variants, *person.other_names):
-            parts = name_tokens(name)
+            parts = name_tokens(name, True)
             if parts:
                 if name and "," in name:
-                    terminals.update(form.surname for form in parse_name(name))
+                    terminals.update(form.surname for form in parse_name(name, preserve_short=True))
                 else:
                     long = [token for token in parts if len(token) > 1]
                     if long:
@@ -320,7 +335,7 @@ def candidate_person_pairs(
                 exact[("orcid", orcid)].add(person.id)
         if staff_id := (staff_ids or {}).get(person.id):
             exact[("staff", staff_id)].add(person.id)
-        display_tokens = name_tokens(person.name_raw)
+        display_tokens = name_tokens(person.name_raw, True)
         if len(display_tokens) >= 2 and any(len(token) > 1 for token in display_tokens):
             exact[("full_name", " ".join(display_tokens))].add(person.id)
             exact[("joined_full_name", "".join(display_tokens).replace("-", ""))].add(person.id)

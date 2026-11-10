@@ -231,6 +231,7 @@ class MergeNodesIntegrationTest(Neo4jIntegrationTestCase):
             {
                 "orcid": (None, "0000-1"),
                 "emails": (None, ["canon@x.com", "dup@x.com"]),
+                "merged_ids": (None, ["dup"]),
             },
         )
         self.assertIsNone(self._node_props("dup"))  # duplicate is actually gone from the graph

@@ -14,6 +14,8 @@ from pauk.graph.person_resolution import (
     ResolverPolicy,
     SecondStageContext,
     _identifier_relation,
+    _normalize_orcid,
+    _orcid_relation,
     _surname,
     _tokens,
     apply_first_verdict,
@@ -56,6 +58,10 @@ def plan_person_merges_resolved(
     )
 
     by_id = {person.id: person for person in people}
+    trusted_orcid = {
+        person.id: _normalize_orcid(trusted_orcid.get(person.id, person.orcid)) or None
+        for person in people
+    }
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
     decisions = decisions or {}
@@ -95,6 +101,7 @@ def plan_person_merges_resolved(
     pair_data: dict[int, tuple[Person, Person, PairEvidence, set[str], set[str]]] = {}
     merge_pairs: list[tuple[str, str]] = []
     pair_rules: dict[frozenset[str], str] = {}
+    pair_details: dict[frozenset[str], dict] = {}
     report: list[dict] = []
     pending_first: list[tuple[int, PairEvidence]] = []
     input_routes: dict[int, str] = {}
@@ -114,7 +121,7 @@ def plan_person_merges_resolved(
             }
         )
 
-    def plan_merge(first: Person, second: Person, route: str) -> None:
+    def plan_merge(first: Person, second: Person, route: str, **details) -> None:
         pair = tuple(sorted((first.id, second.id)))
         if decisions.get(frozenset(pair)) == DIFFERENT:
             report.append(
@@ -130,6 +137,9 @@ def plan_person_merges_resolved(
             return
         merge_pairs.append(pair)
         pair_rules[frozenset(pair)] = route
+        pair_details[frozenset(pair)] = {
+            "person_a": first.id, "person_b": second.id, "route": route, **details
+        }
 
     def hold(
         first: Person,
@@ -175,6 +185,13 @@ def plan_person_merges_resolved(
             if single_mode:
                 row["model_verdicts"] = {"single": asdict(single_verdict) if single_verdict is not None else None}
         report.append(row)
+
+    def name_the_model() -> None:
+        model = getattr(models, "model", None)
+        if isinstance(model, str):
+            for row in report:
+                if row.get("route", "").startswith("qwen") or "input_route" in row:
+                    row["model"] = model
 
     single_mode = models is not None and callable(getattr(type(models), "single_many", None))
     candidates = list(_paired_persons(people, in_scope, staff_ids))
@@ -234,7 +251,10 @@ def plan_person_merges_resolved(
         pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
         resolution = resolve_pair(evidence, policy, logreg_model)
         if resolution.decision is Decision.MERGE:
-            plan_merge(first, second, resolution.route)
+            plan_merge(
+                first, second, resolution.route, reason=resolution.reason,
+                logreg_probability=round(resolution.probability, 6),
+            )
         elif resolution.decision is Decision.SEPARATE:
             separate(first, second, resolution)
         elif resolution.decision is Decision.FIRST_MODEL:
@@ -325,7 +345,7 @@ def plan_person_merges_resolved(
                 pair_id=pair_id,
                 researcher_a=researcher_context(first),
                 researcher_b=researcher_context(second),
-                trusted_orcid_relation=_identifier_relation(evidence.orcid_a, evidence.orcid_b),
+                trusted_orcid_relation=_orcid_relation(evidence.orcid_a, evidence.orcid_b),
                 staff_identity_relation=_identifier_relation(evidence.staff_id_a, evidence.staff_id_b),
                 shared_work_ids=tuple(sorted(publication_ids[first.id] & publication_ids[second.id])[:12]),
                 shared_coauthors=tuple(
@@ -386,7 +406,15 @@ def plan_person_merges_resolved(
                 verdict,
             )
         if resolution.decision is Decision.MERGE:
-            plan_merge(first, second, resolution.route)
+            plan_merge(
+                first, second, resolution.route,
+                reason=resolution.reason, model_confidence=verdict.confidence,
+                logreg_probability=round(resolution.probability, 6),
+                input_route=input_routes[pair_id],
+                model_verdicts={"single": asdict(verdict)} if single_mode else {
+                    "first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)
+                },
+            )
         elif resolution.decision is Decision.SEPARATE:
             separate(
                 first,
@@ -420,5 +448,25 @@ def plan_person_merges_resolved(
         staff_ids,
         decisions,
     )
+    # Keep the actual pair verdicts, including the edges of a transitive fold.
+    # A decision about A/B must never be attributed to an unasked A/C pair.
+    component_evidence: dict[str, list[dict]] = {}
+    component_of: dict[str, str] = {}
+    for canonical, duplicates in groups:
+        component_evidence[canonical.id] = []
+        for person in (canonical, *duplicates):
+            component_of[person.id] = canonical.id
+    for detail in pair_details.values():
+        canonical_id = component_of.get(detail["person_a"])
+        if canonical_id is not None and component_of.get(detail["person_b"]) == canonical_id:
+            component_evidence[canonical_id].append(detail)
+    for row in group_report:
+        if row.get("status") != "merged":
+            continue
+        direct = pair_details.get(frozenset((row["person_a"], row["person_b"])))
+        if direct:
+            row.update({key: value for key, value in direct.items() if key not in {"person_a", "person_b", "route"}})
+        row["merge_evidence"] = component_evidence[row["merged_into"]]
     report.extend(group_report)
+    name_the_model()
     return groups, report

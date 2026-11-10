@@ -20,7 +20,7 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 | Node | Unique key | Labels |
 |---|---|---|
-| Person | `id` (bare OpenAlex author ID) | `Person` |
+| Person | `id` (OpenAlex author ID or deterministic local fallback) | `Person` |
 | Department | `id` (the catalog `uid`) | `Department` |
 | Organization | `id` and `name_en` (both unique) | `Organization` |
 | Publication | `id` (bare OpenAlex work ID) | `Publication` |
@@ -51,7 +51,10 @@ the main fields, at no extra request
 ([pipeline/repositories.md](pipeline/repositories.md)).
 
 `AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
-`is_corresponding`; `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
+`is_corresponding`. It also carries institution RORs and source IDs when one
+source supplies the edge. After publication dedup, the person node's source
+coverage retains each original work version separately; an unknown institution
+list differs from an explicitly empty one. `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
 `context` (a list), `page_number` (a list; `0` means the abstract, because
 Neo4j cannot store `null` inside an array property, so the sentinel is not
 `None`; see [pipeline/code-links.md](pipeline/code-links.md)), the parallel
@@ -66,6 +69,9 @@ Person merges and repeated publication preserve accumulated names, emails and
 affiliations. An aggregated `AUTHORED.is_corresponding` stays true if any source
 record is true. Explicit edits and verified unmerge operations can restore or
 remove values; a partial source record cannot erase another merged record's data.
+For an ordinary edge with neither endpoint merged, a later source correction
+can change `is_corresponding` from true to false. Duplicate AUTHORED rows within
+one write batch are still combined by OR; graph folds also retain any true value.
 
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
@@ -86,11 +92,11 @@ is created only to a repository present in the prepared `repositories`
 collection: the social graph walks uncited repositories too but does not
 store them, and a relationship cannot point at a missing node.
 
-The evidence the matcher decides on (`GitHubProfile.emails`, `commit_names`,
-`repos`, and `Person.emails`) is not published to the graph. These are
-working data for matching and also real people's addresses; they stay in the
-prepared rows and in the `github_matches.jsonl` journal. Of the collected
-profile, only `company` goes into the graph.
+`Person.email` and `Person.emails` are published to the graph. Profile fields
+`login`, `name`, `html_url`, `description`, `location`, `company` and `type`
+are published from `GitHubProfile`. Matcher evidence `GitHubProfile.emails`,
+`commit_names` and `repos` stays in Mongo and the `github_matches.jsonl`
+journal; it is not in the profile's graph-property whitelist.
 
 An explicit `github` or `email` withdrawal in `Person.github_match.cleared_fields`
 is published as a null property update. This removes the old graph value even
@@ -100,13 +106,31 @@ source data and do not erase graph properties. The withdrawal markers stay in Mo
 After folds, GitHub field updates and withdrawals target the surviving ids;
 independent source values and manual relationship claims remain protected.
 
-A person always has the single label `:Person`; ITMO membership is the
-boolean property `is_itmo`, not a label. The property is sticky: the same
-author can be ITMO in one group and external in another, but `is_itmo` only
-grows, and an external row never lowers an existing `is_itmo=true`
-(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` in
-`client.py::upsert_person_nodes_batch`). In cross-group dedup the same rule
-is applied by `BOOLEAN_MERGE_FIELDS["Person"]` in `_fold_nodes_batch`.
+A person always has the single label `:Person`; `is_itmo` is a boolean
+property used by existing consumers. A membership result based on complete
+source evidence may update it in either direction. Legacy or incomplete
+records cannot lower a previously true value. Source evidence is retained
+through person folds so a later split can restore the original owners.
+The graph also records source coverage and observation times. A partial or
+older import cannot withdraw a newer claim. Existing graph rows without this
+provenance need a full source re-evaluation before their historical membership
+can be corrected safely.
+
+`membership_owner_sources` is serialized as JSON alongside source coverage.
+Before clearing membership, the graph checks the complete owner inventory
+against observations and the live cluster. A partial import, missing owner,
+or older contradictory observation cannot clear the cluster's flag. Folding
+preserves the inventories; splitting restores them with their original owners.
+
+After a complete reassessment sets a person's current-policy status to
+`unsupported / false`, publishing also removes the ITMO ROR from that person's
+`AUTHORED` summaries, including edges previously aggregated by a merge. Unknown
+ROR lists stay unknown, other institutions remain untouched, and contact-author
+information is preserved. Partial or supported person imports still union edge
+RORs to avoid discarding another owner's evidence. These edge summaries are not
+a general source-version ledger: retracting a particular institution on one
+work while other work still supports membership requires source-specific data;
+membership itself is decided from the person's evidence and coverage.
 
 The department hierarchy is recursive: each `Department` is `PART_OF` exactly
 one parent, either another `Department` (`parent_id`) or a root
@@ -168,6 +192,13 @@ an id that graph dedup had already folded into another node, it is folded
 again immediately, without waiting for the next `pauk dedup graph`.
 Folding runs after relationship upserts: deleting an alias earlier would
 prevent `MATCH` from creating a relationship from the current batch.
+
+Person alias conflicts found by publish or graph dedup are recorded in the
+admin review queue as `merge_alias_conflict`, with the affected component and
+its alias edges. Conflicting targets and cycles still stop the operation;
+the loader does not select a survivor or silently discard the conflicting
+data. Existing alias corruption needs repair before retrying. A review answer
+alone does not rewrite historical `merged_ids`.
 
 `sync_mentions_links_batch` removes stale `MENTIONS_LINK` edges to
 `Repository` and `LinkCandidate` that are absent from the current `RepoLink`.
@@ -309,6 +340,9 @@ next publish would create it again. The operation is irreversible: the
 duplicate is deleted with its relationships, and the audit diff covers node
 properties only, so there is nothing to restore the edges from. The CLI
 therefore asks for confirmation.
+
+The graph fold itself also records each removed ID and inherited aliases, so
+direct callers retain provenance even without a prepared canonical row.
 
 ## `overrides.py`: edits that survive publishing
 
