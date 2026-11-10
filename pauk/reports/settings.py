@@ -12,7 +12,6 @@ from pauk.settings import ROOT_DIR, _path_setting
 @dataclass(frozen=True)
 class ReportsSettings:
     osa_package: str = "osa_tool==0.3.2"
-    model: str = "anthropic/claude-haiku-5.5"
     context_window: int = 80_000
     languages: dict[str, str] = field(default_factory=lambda: {"en": "English", "ru": "Russian"})
     # On the lab server the clones sit on NFS: fewer at once keeps the peak space

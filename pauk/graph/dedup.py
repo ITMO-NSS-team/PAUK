@@ -28,7 +28,7 @@ from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
@@ -238,7 +238,7 @@ def dedup_graph_persons(
     canonical_nodes: list[tuple[str, dict]] = []
     for canonical, duplicates in groups:
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging %s (%s) into %s (%s)",
                 duplicate.id,
                 duplicate.name_raw,
@@ -300,7 +300,7 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
         canonical, duplicates = ranked[0], ranked[1:]
         merged_ids = list(canonical.get("merged_ids") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging publication %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("title"),
@@ -384,7 +384,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
         merged_ids = list(canonical.get("merged_ids") or [])
         cited_urls = list(canonical.get("cited_urls") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging repository %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("url"),
@@ -446,7 +446,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
-        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        models = ResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
             if config.person_resolution_enabled

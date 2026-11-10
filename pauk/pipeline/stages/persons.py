@@ -229,7 +229,9 @@ class PersonsStage(EnrichmentStage):
                     by_publication.setdefault(publication.id, []).append(person)
 
         crossref_changed = 0
-        crossref = CrossrefClient(self.config.request_timeout)
+        crossref = CrossrefClient(self.config.request_timeout, self.config.crossref_mailto,
+                                 requests_per_second=self.config.crossref_rps,
+                                 max_concurrent=self.config.crossref_concurrency)
         for publication_id, authors in self.progress(by_publication.items(), total=len(by_publication),
                                                       label="Publications: finding author ORCIDs via Crossref",
                                                       unit="publication"):
@@ -268,8 +270,9 @@ class PersonsStage(EnrichmentStage):
             crossref_changed += 1
 
         changed = 0
-        openalex = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key)
-        orcid = OrcidClient(self.config.request_timeout)
+        openalex = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key,
+                                 requests_per_second=self.config.openalex_rps)
+        orcid = OrcidClient(self.config.request_timeout, requests_per_second=self.config.orcid_rps)
         for person in self.progress(eligible_people, total=len(eligible_people), label="Authors: OpenAlex and ORCID"):
             for source, request in ((self.openalex_name, openalex), (self.orcid_name, orcid)):
                 # OpenAlex can supply an ORCID, so calculate the second key

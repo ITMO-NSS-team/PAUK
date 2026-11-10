@@ -56,7 +56,8 @@ class OsaRunner:
     """Runs OSA for one repository; the PDF lands at its target whole or not at all."""
 
     def __init__(
-        self, api_key: str, osa_dir: Path, proxy_url: str = "", settings: ReportsSettings = reports_settings
+        self, api_key: str, osa_dir: Path, proxy_url: str = "",
+        settings: ReportsSettings = reports_settings, *, model: str,
     ) -> None:
         """Prepares the environment every run shares.
 
@@ -64,10 +65,12 @@ class OsaRunner:
             api_key: OpenRouter key, handed to OSA as `LLM_SERVICE_KEY`, the
                 name its `protollm` client reads for OpenRouter.
             osa_dir: Working copies go to `<osa_dir>/tmp`, logs to `<osa_dir>/logs`.
+            model: OpenRouter model OSA runs with, `Settings.reports_model`.
             proxy_url: `OPENROUTER_PROXY_URL`, see `proxy_env`.
-            settings: The OSA version, model and context window to run with.
+            settings: The OSA version and context window to run with.
         """
         self.osa_dir = osa_dir
+        self.model = model
         self.settings = settings
         self._running: set[subprocess.Popen] = set()
         self._lock = threading.Lock()
@@ -93,7 +96,7 @@ class OsaRunner:
             "uvx", "--from", self.settings.osa_package, "osa-tool", "-r", url,
             "--mode", "advanced", "--report", "--web-mode",
             "--no-fork", "--no-pull-request", "--delete-dir",
-            "--api", "openai", "--model", self.settings.model, "--context-window", str(self.settings.context_window),
+            "--api", "openai", "--model", self.model, "--context-window", str(self.settings.context_window),
             "--artefacts-language", osa_language,
         ]
 

@@ -1146,13 +1146,14 @@ class DedupStage(EnrichmentStage):
                 canonical.versions,
                 [_version_of(canonical, version_authors.get(canonical.id, ()))])
             for duplicate in duplicates:
-                logger.info("dedup: merging publication %s (%s) into %s (%s)",
+                logger.debug("dedup: merging publication %s (%s) into %s (%s)",
                             duplicate.id, duplicate.journal, canonical.id, canonical.journal)
                 _merge_publication(canonical, duplicate,
                                    version_authors.get(duplicate.id, ()))
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d publication(s)", len(id_map))
 
         if not id_map:
             # Ledger rebuilds still have to reach disk when nothing merged.
@@ -1265,12 +1266,13 @@ class DedupStage(EnrichmentStage):
             )
             canonical, duplicates = ranked[0], ranked[1:]
             for duplicate in duplicates:
-                logger.info("dedup: merging repository %s (%s) into %s (%s)",
+                logger.debug("dedup: merging repository %s (%s) into %s (%s)",
                             duplicate.id, duplicate.url, canonical.id, canonical.url)
                 _merge_repository(canonical, duplicate)
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d repository(ies)", len(id_map))
 
         if not id_map:
             return {}
@@ -1298,7 +1300,7 @@ class DedupStage(EnrichmentStage):
         if self.config.person_resolution_enabled:
             from pauk.graph.person_resolution import MODEL_FEATURES, ResolverPolicy
             from pauk.graph.person_resolution_model import load_logistic_model
-            from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+            from pauk.pipeline.person_resolution import ResolutionModels
             from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 
             groups, report = plan_person_merges_resolved(
@@ -1308,7 +1310,7 @@ class DedupStage(EnrichmentStage):
                 fields_of=fields_of,
                 staff_ids=staff_ids,
                 decisions=answers,
-                models=OpenRouterResolutionModels(self.config, self.prepared.db, self.prepared.group),
+                models=ResolutionModels(self.config, self.prepared.db, self.prepared.group),
                 policy=ResolverPolicy(
                     separate_below=self.config.person_resolution_separate_below,
                     merge_from=self.config.person_resolution_merge_from,
@@ -1335,7 +1337,7 @@ class DedupStage(EnrichmentStage):
         removed: set[str] = set()
         for canonical, duplicates in groups:
             for duplicate in duplicates:
-                logger.info("dedup: merging %s (%s) into %s (%s)",
+                logger.debug("dedup: merging %s (%s) into %s (%s)",
                             duplicate.id, duplicate.name_raw, canonical.id, canonical.name_raw)
                 _merge_person(canonical, duplicate)
                 if duplicate.name_raw:
@@ -1344,6 +1346,7 @@ class DedupStage(EnrichmentStage):
                 removed.add(duplicate.id)
             apply_membership(canonical)
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d person(s)", len(removed))
         if removed:
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)

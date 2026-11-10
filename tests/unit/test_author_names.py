@@ -11,6 +11,7 @@ from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.author_names import AuthorNamesStage, RussianNamesCatalog, to_cyrillic
 from pauk.settings import Settings
+from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PreparedStore, RawStore
 
 CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
@@ -21,8 +22,8 @@ def person(pid, name, *, variants=(), degree=None, itmo=True):
                   name_variants=list(variants), degree=degree)
 
 
-class _FakeOpenRouterClient:
-    """Stands in for pauk.sources.OpenRouterClient in tests: returns queued
+class _FakeLlmClient:
+    """Stands in for the LLM client in tests: returns queued
     replies in call order instead of hitting the network. A queued value of
     None simulates a failed call, matching what chat_json() returns then."""
 
@@ -30,6 +31,7 @@ class _FakeOpenRouterClient:
 
     def __init__(self, *args, **kwargs) -> None:
         del args, kwargs
+        self.model = "test-model"
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -63,8 +65,8 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
-                   _FakeOpenRouterClient.queued(replies)):
+        with patch("pauk.pipeline.stages.author_names.llm_client",
+                   _FakeLlmClient.queued(replies)):
             result = AuthorNamesStage(
                 self.prepared, self.raw, self.config, force=force
             ).run()
@@ -199,8 +201,8 @@ class AuthorNamesStageTest(unittest.TestCase):
             "reason": "complete split",
         }
         with patch(
-            "pauk.pipeline.stages.author_names.OpenRouterClient",
-            _FakeOpenRouterClient.queued([complete]),
+            "pauk.pipeline.stages.author_names.llm_client",
+            _FakeLlmClient.queued([complete]),
         ):
             again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
 
@@ -523,8 +525,8 @@ class AuthorNamesStageTest(unittest.TestCase):
                       "second_name_ru": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
                       "second_name_en": None, "reason": ""}],
         )
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
-                   _FakeOpenRouterClient.queued([])):
+        with patch("pauk.pipeline.stages.author_names.llm_client",
+                   _FakeLlmClient.queued([])):
             again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["author_names"], 0)
 
@@ -709,6 +711,7 @@ class _ThreadedFakeClient:
 
     def __init__(self, *args, **kwargs) -> None:
         del args, kwargs
+        self.model = "test-model"
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -740,7 +743,7 @@ class ParallelAuthorNamesTest(unittest.TestCase):
         prepared = PreparedStore(db, "sample")
         prepared.write_models("persons", people)
         _ThreadedFakeClient.threads = set()
-        with patch("pauk.pipeline.stages.author_names.OpenRouterClient", _ThreadedFakeClient):
+        with patch("pauk.pipeline.stages.author_names.llm_client", _ThreadedFakeClient):
             result = AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
         return result, {p.id: p for p in prepared.read_models("persons", Person)}
 
@@ -756,6 +759,46 @@ class ParallelAuthorNamesTest(unittest.TestCase):
         self.assertEqual(rows["A3"].surname_ru, "Смирнов")
         self.assertEqual(rows["A4"].surname_ru, "Волков")
         self.assertGreater(len(_ThreadedFakeClient.threads), 1)
+
+    def test_an_interrupt_in_the_loop_kills_the_clis_and_lets_later_stages_run(self):
+        people = [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov"), person("A3", "Ivan Smirnov")]
+
+        with (
+            patch.object(PreparedStore, "upsert_models", side_effect=KeyboardInterrupt),
+            patch("pauk.pipeline.stages.author_names.kill_running_clis") as kill,
+            patch("pauk.pipeline.stages.author_names.resume_clis") as resume,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.run_stage(people, concurrency=2)
+
+        kill.assert_called_once()
+        resume.assert_called_once()
+
+    def test_a_subscription_limit_stops_the_stage_and_keeps_finished_authors(self):
+        class LimitedClient(_ThreadedFakeClient):
+            def chat_json(self, prompt):
+                if "Sidorov" in prompt:
+                    raise SubscriptionLimitError("subscription limit reached: out")
+                return super().chat_json(prompt)
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = Settings(data_dir=Path(tmp.name), author_names_concurrency=1)
+        config.static_dir.mkdir(parents=True)
+        (config.static_dir / "russian_names.csv").write_text(CATALOG_HEADER, encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("persons", [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov")])
+
+        with (
+            patch("pauk.pipeline.stages.author_names.llm_client", LimitedClient),
+            self.assertRaises(SubscriptionLimitError),
+        ):
+            AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
+
+        rows = {row.id: row for row in prepared.read_models("persons", Person)}
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertNotIn("author_names", rows["A2"].processing)
 
     def test_one_worker_is_the_same_stage(self):
         result, rows = self.run_stage(
