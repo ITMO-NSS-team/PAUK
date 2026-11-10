@@ -89,6 +89,14 @@ Settings:
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 | `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude:<model>`, `codex:<model>`; a bare CLI name gets `Settings.claude_cli_model` or `Settings.codex_cli_model`), `check_providers` parses every stage's setting and looks for its CLI when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage and refuses new ones until `resume_clis`. A CLI reports a spent limit with `SubscriptionLimitError` and a lost login or 20 failures in a row with `CliUnusableError`; both stop the command |
 
+## Logging
+
+`OpenRouterClient` logs individual requests at DEBUG. Repeated failures are
+throttled per kind: the first and every hundredth occurrence are warnings;
+the rest remain visible with `--verbose`. Use stage summaries and progress
+for INFO-level monitoring. File and container log formatting and redaction
+are configured by `pauk/logging.py`.
+
 ## PDF-Crawler-Service is not in this package
 
 Fallback PDF download by DOI through the external

@@ -24,13 +24,14 @@ from pymongo.errors import PyMongoError
 
 from pauk.jobs import locks, store
 from pauk.jobs.models import Job, JobKind, parse_payload
+from pauk.logging import set_run
 from pauk.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-# Poll on an empty queue, and the beat, well inside locks.LEASE_MINUTES.
+# Keep presence fresh as well as the job heartbeat and resource lease.
 POLL_SECONDS = 5.0
-BEAT_SECONDS = 60.0
+BEAT_SECONDS = 5.0
 
 
 #: True when somebody pressed cancel. Asked between phases and by `Report`.
@@ -190,9 +191,11 @@ class _Beat:
     in, which is the one thing the lock exists to prevent.
     """
 
-    def __init__(self, db: Database, job: Job, owner: str | None = None) -> None:
+    def __init__(self, db: Database, job: Job, owner: str | None = None,
+                 *, worker_name: str | None = None) -> None:
         self._db, self._job = db, job
         self._owner = owner or locks.this_process()
+        self._worker_name = worker_name or self._owner
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name=f"beat-{job.id}")
@@ -200,6 +203,7 @@ class _Beat:
     def _loop(self) -> None:
         while not self._stop.wait(BEAT_SECONDS):
             try:
+                store.mark_present(self._db, self._worker_name)
                 store.heartbeat(self._db, self._job.id)
                 locks.renew(self._db, self._job.resource, self._owner)
             except PyMongoError as error:
@@ -212,7 +216,7 @@ class _Beat:
 
     def __exit__(self, *_exception) -> None:
         self._stop.set()
-        self._thread.join(timeout=BEAT_SECONDS)
+        self._thread.join()
 
 
 @dataclass
@@ -305,8 +309,9 @@ class Worker:
             if stop():
                 raise Cancelled(f"остановлено перед шагом «{step}»")
 
+        set_run(f"{job.kind} {job.id}")
         try:
-            with _Beat(self.db, job):
+            with _Beat(self.db, job, worker_name=self.name):
                 result = STEPS[job.kind](self.config, self.db, payload, stop, report)
         except locks.Busy as error:
             # Not a failure: it goes back for whoever gets there next.
@@ -321,6 +326,8 @@ class Worker:
             logger.exception("job %s failed", job.id)
             store.fail(self.db, job.id, f"{type(error).__name__}: {error}")
             return True
+        finally:
+            set_run(None)
         store.finish(self.db, job.id, result)
         logger.info("job %s done: %s", job.id,
                     ", ".join(f"{k}={v}" for k, v in sorted(result.items())) or "nothing to do")

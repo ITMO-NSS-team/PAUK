@@ -178,6 +178,10 @@ def add_parser(subparsers) -> None:
         "--apply", action="store_true",
         help="delete them; without it the counts are printed and nothing changes")
 
+    serve = commands.add_parser("serve", help="run the panel's web server")
+    serve.add_argument("--host", default="0.0.0.0", help="address to listen on (default: 0.0.0.0)")
+    serve.add_argument("--port", type=int, default=8505, help="port to listen on (default: 8505)")
+
     worker = commands.add_parser(
         "worker", help="perform the scheduled runs, one at a time")
     worker.add_argument("--once", action="store_true",
@@ -234,6 +238,10 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_trim(args, db)
         return
 
+    if args.admin_command == "serve":
+        _run_serve(args)
+        return
+
     # The worker opens its own connections per job: one held for hours dies.
     if args.admin_command == "worker":
         _run_worker(args, config, db)
@@ -251,6 +259,17 @@ def run(args, config: Settings, db: Database | None) -> None:
         raise SystemExit(str(error)) from None
     finally:
         client.close()
+
+
+def _run_serve(args) -> None:
+    """Serve the panel with the same log lines as the rest of PAUK.
+
+    uvicorn is told to leave logging alone, so its access and error loggers
+    reach the handlers `configure_logging` installed.
+    """
+    import uvicorn
+
+    uvicorn.run("pauk.admin.app:build", factory=True, host=args.host, port=args.port, log_config=None)
 
 
 def _run_worker(args, config: Settings, db: Database) -> None:
