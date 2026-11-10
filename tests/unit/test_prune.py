@@ -20,7 +20,8 @@ from pauk.graph.unmerge import split_person
 from pauk.jobs import locks
 from pauk.jobs.models import PrunePayload
 from pauk.jobs.worker import _prune
-from pauk.models import GitHubProfile, Person, Publication, Repository
+from pauk.models import Contribution, GitHubMatchResult, GitHubProfile, Person, Publication, Repository
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.settings import Settings
 from pauk.storage import PreparedStore
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -74,6 +75,69 @@ class NothingToDoTest(PruneTest):
         plan = self.plan()
         self.assertEqual((plan.nodes, plan.edges), ({}, {}))
         self.assertEqual(plan.total(), 0)
+
+    def test_preview_does_not_apply_a_pending_github_withdrawal(self):
+        author = person("A1", "Ivan")
+        apply_matches(author, [GitHubMatchResult(
+            login="coder42", contributed_to=[Contribution(repository_id="R1", role="owner")])])
+        self.write(persons=[author], repositories=[repository("R1", "https://github.com/lab/tool")])
+        self.publish()
+        retract_matches(author)
+        apply_matches(author, [])
+        self.write(persons=[author])
+        before = dict(self.graph.relationships)
+
+        planned = self.plan()
+
+        self.assertEqual(self.graph.relationships, before)
+        self.assertEqual(planned.edges, {("Person", "CONTRIBUTED_TO", "Repository"): [("A1", "R1")]})
+
+    def test_preview_does_not_call_the_graphs_implements_synchronizer(self):
+        self.write(publications=[Publication(id="W1", title="Work")],
+                   repositories=[repository("R1", "https://github.com/lab/tool", ["W1"])])
+        self.publish()
+        work = Publication(id="W1", title="Work", processing={"link_relevance": {"status": "completed_empty"}})
+        self.write(publications=[work], repositories=[repository("R1", "https://github.com/lab/tool")])
+        with patch.object(self.graph, "sync_implements_relationships_batch", create=True,
+                          side_effect=AssertionError("graph write")):
+            planned = self.plan()
+        self.assertEqual(planned.edges, {("Repository", "IMPLEMENTS", "Publication"): [("R1", "W1")]})
+
+    def test_preview_does_not_call_the_graphs_mentions_synchronizer(self):
+        url = "https://github.com/lab/tool"
+        self.write(publications=[Publication(id="W1", title="Work", mentions_links=[
+            {"target_kind": "repository", "repository_url": url}])], repositories=[repository("R1", url)])
+        self.publish()
+        self.write(publications=[Publication(id="W1", title="Work", processing={
+            "code_links": {"status": "completed_empty"}})])
+        self.prepared.write_rows("repo_links", [{"publication_id": "W1", "links": []}])
+        with patch.object(self.graph, "sync_mentions_links_batch", create=True,
+                          side_effect=AssertionError("graph write")):
+            planned = self.plan()
+        self.assertEqual(planned.edges, {("Publication", "MENTIONS_LINK", "Repository"): [("W1", url)]})
+
+    def test_preview_refuses_to_forward_an_unknown_write(self):
+        with self.assertRaises(AttributeError):
+            prune._WouldWrite(self.graph).delete_nodes_batch("Person", ["A1"])
+
+    def test_a_manual_claim_on_an_alias_is_kept_after_a_withdrawal(self):
+        author = person("A1", "Ivan")
+        apply_matches(author, [GitHubMatchResult(
+            login="coder42", contributed_to=[Contribution(repository_id="R1", role="owner")])])
+        survivor = person("A3", "Ivan")
+        self.write(persons=[author, survivor], repositories=[repository("R1", "https://github.com/lab/tool")])
+        self.publish()
+        record_relationship_override(self.db, "Person", "CONTRIBUTED_TO", "Repository", "A1", "R1", op="link")
+        merge_nodes(self.graph, "Person", "A1", "A3")
+        retract_matches(author)
+        apply_matches(author, [])
+        self.write(persons=[author, survivor])
+
+        planned = self.plan()
+
+        self.assertEqual(planned.edges, {})
+        self.assertEqual(planned.kept_by_hand, 1)
+        self.assertEqual(self.links("CONTRIBUTED_TO"), [("A3", "R1")])
 
 
 class RetractedClaimTest(PruneTest):

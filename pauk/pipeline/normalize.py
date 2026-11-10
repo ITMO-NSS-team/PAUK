@@ -11,6 +11,7 @@ from typing import TypeVar
 
 from pauk.models import Authorship, Funding, Person, Publication
 from pauk.models.person import MembershipOwnerSources
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.membership import (
     ITMO_ROR_ID,
     apply_membership,
@@ -188,13 +189,21 @@ def _merge_person(base: Person, extra: Person) -> Person:
         inventoried = {row.source_person_id for row in person.membership_owner_sources}
         for owner in {person.id, *person.merged_ids} - inventoried:
             person.membership_owner_sources.append(MembershipOwnerSources(source_person_id=owner))
+    tracked = base.github_match is not None or extra.github_match is not None
+    matches = []
+    if tracked:
+        # Merge independent sources first, or one row's match could erase the other's facts later.
+        matches = retract_matches(base)
+        for match in retract_matches(extra):
+            if match not in matches:
+                matches.append(match)
     base.is_itmo = base.is_itmo or extra.is_itmo
     if base.id != extra.id:
         base.merged_ids = list(dict.fromkeys([*base.merged_ids, extra.id, *extra.merged_ids]))
     base.membership_owner_sources = merge_owner_sources(base.membership_owner_sources, extra.membership_owner_sources)
     for field in Person.model_fields:
-        if field in {"id", "openalex_id", "is_itmo", "processing", "membership_owner_sources",
-                     "membership_status", "membership_policy"}:
+        if field in {"id", "openalex_id", "is_itmo", "processing", "github_match",
+                     "membership_owner_sources", "membership_status", "membership_policy"}:
             continue
         current, incoming = getattr(base, field), getattr(extra, field)
         if isinstance(current, list):
@@ -210,6 +219,11 @@ def _merge_person(base: Person, extra: Person) -> Person:
         base.processing.setdefault(stage, state)
     coalesce_authorships(base)
     apply_membership(base)
+    if tracked:
+        apply_matches(base, matches,
+                      cleared_fields=extra.github_match.cleared_fields if extra.github_match else (),
+                      cleared_contributions=extra.github_match.cleared_contributions if extra.github_match else (),
+                      withdrawn_logins=extra.github_match.withdrawn_logins if extra.github_match else ())
     return base
 
 

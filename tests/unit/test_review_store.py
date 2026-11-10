@@ -1,4 +1,6 @@
 import unittest
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 import mongomock
 
@@ -152,6 +154,28 @@ class VerdictTest(unittest.TestCase):
     def test_only_a_merge_can_be_marked_applied(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
         self.assertFalse(review.mark_applied(self.db, review.PAIR, ["A1", "A2"]))
+
+
+class AccountChoiceTransitionsTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A1")
+
+    def test_a_refusal_removes_the_previous_choice(self):
+        answer = review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"],
+                                       review.DIFFERENT)
+
+        self.assertNotIn("chosen", answer)
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"A1", "A2", "coder42"}): review.DIFFERENT,
+        })
+
+    def test_a_legacy_refusal_does_not_apply_its_leftover_choice(self):
+        self.db[review.COLLECTION].update_one({}, {"$set": {"verdict": review.DIFFERENT}})
+
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"A1", "A2", "coder42"}): review.DIFFERENT,
+        })
 
 
 class DecisionsTest(unittest.TestCase):
@@ -503,6 +527,29 @@ class AnswersSurviveAMergeTest(unittest.TestCase):
         self.assertEqual(review.github_decisions(self.db, {"B": "A"}),
                          {frozenset({"A", "ivanov"}): review.DIFFERENT})
 
+    def test_an_account_choice_follows_the_person(self):
+        review.record_account_choice(self.db, "ivanov", ["B", "C"], "B")
+        self.assertEqual(review.github_decisions(self.db, {"B": "A"}),
+                         {frozenset({"A", "ivanov"}): review.SAME,
+                          frozenset({"C", "ivanov"}): review.DIFFERENT})
+
+    def test_a_choice_stays_a_yes_when_the_others_fold_into_the_chosen(self):
+        review.record_account_choice(self.db, "ivanov", ["B", "C"], "B")
+        self.assertEqual(review.github_decisions(self.db, {"C": "B"}),
+                         {frozenset({"B", "ivanov"}): review.SAME})
+
+    def test_the_later_answer_about_an_account_comes_last(self):
+        # C was folded into A: both answers are about A now, the later one has to win.
+        review.record_verdict(self.db, review.GITHUB, ["A", "ivanov"], review.SAME)
+        review.record_verdict(self.db, review.GITHUB, ["A", "D", "ivanov"], review.DIFFERENT)
+        review.record_verdict(self.db, review.GITHUB, ["C", "ivanov"], review.DIFFERENT)
+        for day, key in enumerate(["github_person:A:ivanov", "github_person:A:D:ivanov",
+                                   "github_person:C:ivanov"], start=1):
+            self.db[review.COLLECTION].update_one(
+                {"_id": key}, {"$set": {"decided_at": datetime(2026, 1, day, tzinfo=UTC)}})
+        answers = review.github_decisions(self.db, {"C": "A"})
+        self.assertEqual(list(answers.items())[-1], (frozenset({"A", "ivanov"}), review.DIFFERENT))
+
     def test_a_catalog_choice_follows_the_person(self):
         review.record_choice(self.db, "B", self.RECORDS, self.RECORDS[0])
         self.assertEqual(review.staff_choices(self.db, {"B": "A"}), {"A": self.RECORDS[0]})
@@ -512,12 +559,179 @@ class AnswersSurviveAMergeTest(unittest.TestCase):
         self.assertEqual(review.decisions(self.db, {"B": "A", "C": "D"}),
                          {frozenset({"A", "D"}): review.DIFFERENT})
 
+    def test_a_pair_disagreement_follows_both_people_to_the_original_answer(self):
+        answer = review.record_verdict(self.db, review.PAIR, ["B", "C"], review.DIFFERENT)
+
+        noted = review.record_disputed(self.db, [{"status": "disputed", "person_a": "A",
+                                                  "person_b": "D", "rule": "orcid"}],
+                                        aliases={"B": "A", "C": "D"})
+
+        self.assertEqual(noted, 1)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+        self.assertEqual(disputed["members"], ["B", "C"])
+
+    def test_the_latest_update_wins_when_pair_answers_collapse_after_a_merge(self):
+        first = review.record_verdict(self.db, review.PAIR, ["A", "D"], review.DIFFERENT)
+        second = review.record_verdict(self.db, review.PAIR, ["B", "C"], review.SAME)
+        for answer, day in ((first, 3), (second, 2)):
+            self.db[review.COLLECTION].update_one(
+                {"_id": answer["_id"]}, {"$set": {"decided_at": datetime(2026, 1, day, tzinfo=UTC)}})
+
+        self.assertEqual(review.decisions(self.db, {"B": "A", "C": "D"}),
+                         {frozenset({"A", "D"}): review.DIFFERENT})
+
     def test_without_a_map_nothing_is_rewritten(self):
         # The map is the caller's knowledge, not the store's: a reader that
         # has none must still see the answers as they were stored.
         review.record_verdict(self.db, review.GITHUB, ["B", "ivanov"], review.SAME)
         self.assertEqual(review.github_decisions(self.db),
                          {frozenset({"B", "ivanov"}): review.SAME})
+
+
+class GitHubDisputesSurviveAMergeTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.aliases = {"A1": "A2"}
+        self.report = [{"status": "disputed", "person": "A2", "login": "coder42", "rule": "email_exact"}]
+
+    def test_a_refusal_for_several_authors_marks_the_original_question(self):
+        answer = review.record_verdict(self.db, review.GITHUB, ["A1", "B1", "coder42"], review.DIFFERENT)
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 1)
+
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+        self.assertEqual(disputed["members"], ["A1", "B1", "coder42"])
+
+    def test_choosing_another_author_disputes_the_original_choice(self):
+        answer = review.record_account_choice(self.db, "coder42", ["A1", "B1"], "B1")
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 1)
+
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+        self.assertEqual(disputed["chosen"], "B1")
+        self.assertEqual(disputed["verdict"], review.SAME)
+
+    def test_other_candidates_in_the_report_do_not_change_which_answer_is_disputed(self):
+        answer = review.record_account_choice(self.db, "coder42", ["A1", "B1"], "B1")
+        self.report[0]["candidates"] = [{"person": "A2"}, {"person": "B1"}]
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 1)
+
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+
+    def test_authors_folded_into_the_chosen_person_are_not_refused(self):
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 0)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_later_confirmation_supersedes_an_old_aliased_refusal(self):
+        old = review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+        new = review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.SAME)
+        self.order_answers(old, new)
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 0)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_only_the_latest_effective_refusal_is_marked(self):
+        old = review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.DIFFERENT)
+        new = review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+        self.order_answers(old, new)
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 1)
+
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], new["_id"])
+
+    def test_a_refusal_for_another_account_is_not_marked(self):
+        review.record_verdict(self.db, review.GITHUB, ["A1", "other-account"], review.DIFFERENT)
+
+        self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 0)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_new_confirmation_retires_the_old_questions_disagreement(self):
+        old = review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+        review.record_disputed(self.db, self.report, aliases=self.aliases)
+        new = review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.SAME)
+        self.order_answers(old, new)
+
+        review.record_disputed(self.db, [], aliases=self.aliases)
+
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        self.assertEqual(self.db[review.COLLECTION].find_one({"_id": old["_id"]})["verdict"], review.DIFFERENT)
+
+    def test_retiring_one_disagreement_keeps_other_refusals_from_the_same_answer(self):
+        old = review.record_verdict(self.db, review.GITHUB, ["A1", "B1", "coder42"], review.DIFFERENT)
+        review.record_disputed(self.db, self.report, aliases=self.aliases)
+        new = review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.SAME)
+        self.order_answers(old, new)
+
+        review.record_disputed(self.db, [], aliases=self.aliases)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        report = [{"status": "disputed", "person": "B1", "login": "coder42", "rule": "email_exact"}]
+        review.record_disputed(self.db, report, aliases=self.aliases)
+
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], old["_id"])
+        self.assertEqual(disputed["verdict"], review.DIFFERENT)
+
+    def test_a_legacy_group_disagreement_is_retired_only_when_all_its_refusals_are_superseded(self):
+        review.record_held(self.db, [{"status": "held", "login": "coder42", "person": "A1",
+                                     "candidates": [{"person": "A1"}, {"person": "B1"}]}])
+        old = review.record_verdict(self.db, review.GITHUB, ["A1", "B1", "coder42"], review.DIFFERENT)
+        review.record_disputed(self.db, self.report, aliases=self.aliases)
+        self.db[review.COLLECTION].update_one({"_id": old["_id"]},
+                                             {"$unset": {"disputed_members": "", "disputed_token": ""}})
+        first = review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.SAME)
+        self.order_answers(old, first)
+
+        review.record_disputed(self.db, [], aliases=self.aliases)
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        second = review.record_verdict(self.db, review.GITHUB, ["B1", "coder42"], review.SAME)
+        self.order_answers(old, first, second)
+        review.record_disputed(self.db, [], aliases=self.aliases)
+
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_confirmation_during_a_repeat_does_not_reopen_the_same_disagreement(self):
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
+        with patch.object(review, "_now", return_value=moment):
+            review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+            review.record_disputed(self.db, self.report, aliases=self.aliases)
+            (question,) = review.questions(self.db, disputed=True)
+            collection = self.db[review.COLLECTION]
+            update = collection.update_many
+
+            def confirm_before_update(query, changes):
+                review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT,
+                                      dispute_token=question["disputed_token"])
+                return update(query, changes)
+
+            with patch.object(collection, "update_many", side_effect=confirm_before_update):
+                self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 0)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_new_answer_is_not_marked_using_a_previous_answer_snapshot(self):
+        review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+        collection = self.db[review.COLLECTION]
+        update = collection.update_many
+
+        def confirm_before_update(query, changes):
+            review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.SAME)
+            return update(query, changes)
+
+        with patch.object(collection, "update_many", side_effect=confirm_before_update):
+            self.assertEqual(review.record_disputed(self.db, self.report, aliases=self.aliases), 0)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def order_answers(self, *answers):
+        for day, answer in enumerate(answers, start=1):
+            self.db[review.COLLECTION].update_one(
+                {"_id": answer["_id"]}, {"$set": {"decided_at": datetime(2026, 1, day, tzinfo=UTC)}})
 
 
 class UndoingAnAppliedAnswerTest(unittest.TestCase):

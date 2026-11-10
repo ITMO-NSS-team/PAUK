@@ -1,10 +1,10 @@
 import json
 import logging
-from collections import defaultdict, deque
 from typing import LiteralString, cast
 
 from neo4j import GraphDatabase
 
+from pauk.aliases import flatten_merges
 from pauk.pipeline.membership import ITMO_ROR_ID, POLICY_VERSION, normalize_ror, source_observed_at
 
 logger = logging.getLogger(__name__)
@@ -236,11 +236,7 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
                 current = canonical_value if isinstance(canonical_value, list) else []
                 merged = _union_values(current, duplicate_value)
                 if key == "merged_ids":
-                    # A stale entry on the duplicate can name the survivor
-                    # itself, and the union would make the node its own
-                    # alias. mutations.merge_nodes guards the list it
-                    # writes; this is the same guard on the list the fold
-                    # merges into it.
+                    # Historical aliases may include the survivor; never make it its own alias.
                     merged = [value for value in merged if value != canonical.get("id")]
                 if merged != canonical_value:
                     updates[key] = merged
@@ -270,60 +266,6 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
     return updates
 
 
-class MergeAliasConflict(ValueError):
-    """An ambiguous alias component that must not be folded automatically."""
-
-    def __init__(self, message: str, merges: list[tuple[str, str]], seed: str, label: str | None):
-        super().__init__(message)
-        self.label = label
-        neighbors: dict[str, set[str]] = defaultdict(set)
-        for first, second in merges:
-            neighbors[first].add(second)
-            neighbors[second].add(first)
-        members = {seed}
-        pending = [seed]
-        while pending:
-            for neighbor in neighbors[pending.pop()] - members:
-                members.add(neighbor)
-                pending.append(neighbor)
-        self.members = sorted(members)
-        self.aliases = sorted({pair for pair in merges if pair[0] in members and pair[0] != pair[1]})
-
-
-def flatten_merges(merges: list[tuple[str, str]], *, label: str | None = None) -> list[tuple[str, str]]:
-    """Resolve aliases to one terminal survivor before any deletion.
-
-    Overlapping historical aliases may name both an intermediate node and
-    its survivor. They are safe only when all paths reach the same node.
-    Cycles and competing survivors are rejected without choosing a winner.
-    """
-    targets: dict[str, set[str]] = defaultdict(set)
-    parents: dict[str, set[str]] = defaultdict(set)
-    for duplicate, canonical in merges:
-        if duplicate != canonical:
-            targets[duplicate].add(canonical)
-            parents[canonical].add(duplicate)
-    remaining = {node: len(destinations) for node, destinations in targets.items()}
-    roots = {node: node for node in parents if node not in targets}
-    depth: dict[str, int] = defaultdict(int)
-    ready = deque(roots)
-    while ready:
-        node = ready.popleft()
-        for parent in parents.get(node, ()):
-            depth[parent] = max(depth[parent], depth[node] + 1)
-            root = roots.setdefault(parent, roots[node])
-            if root != roots[node]:
-                raise MergeAliasConflict(f"Conflicting merge targets for {parent}", merges, parent, label)
-            remaining[parent] -= 1
-            if remaining[parent] == 0:
-                ready.append(parent)
-    if unresolved := sorted(node for node, count in remaining.items() if count):
-        raise MergeAliasConflict("Cyclic merge aliases cannot be applied", merges, unresolved[0], label)
-    # A nearer survivor's scalar values take precedence over the records it
-    # had swallowed; flat groups retain their original relative order.
-    return [(node, roots[node]) for node in sorted(targets, key=depth.__getitem__)]
-
-
 def _preserve_merged_person_lists(stored: dict, incoming: dict) -> dict:
     """A source row cannot retract list evidence contributed by a graph fold.
 
@@ -341,15 +283,7 @@ def _preserve_merged_person_lists(stored: dict, incoming: dict) -> dict:
 
 
 def chunked(seq: list, size: int = CHUNK_SIZE):
-    """Yield successive slices of a sequence.
-
-    Args:
-        seq: The list to split into chunks.
-        size: Maximum number of items per chunk.
-
-    Yields:
-        Successive sub-lists of `seq`, each at most `size` items long.
-    """
+    """Yield slices of at most size items."""
     for i in range(0, len(seq), size):
         yield seq[i : i + size]
 
@@ -428,16 +362,50 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
+    def update_node_properties(self, label: str, node_id: str, properties: dict,
+                               expected_updated_at: object | None = None) -> tuple[dict | None, dict | None]:
+        """Update an existing node under a write lock, returning before/after.
+
+        Missing nodes return `(None, None)`; a stale version returns the
+        current properties and no after-image. The temporary property takes
+        the lock before reading the version and is removed in the same query.
+        """
+        clean = {name: value for name, value in properties.items()
+                 if name not in ("id", "created_at", "updated_at")}
+        lock = cast(LiteralString, f"""
+            MATCH (n:{label} {{id: $node_id}})
+            SET n.__pauk_edit_lock = true
+            REMOVE n.__pauk_edit_lock
+            RETURN properties(n) AS props
+        """)
+        write = cast(LiteralString, f"""
+            MATCH (n:{label} {{id: $node_id}})
+            WITH n, datetime.realtime() AS stamp
+            SET n += $properties,
+                n.updated_at = CASE WHEN n.updated_at >= stamp
+                    THEN n.updated_at + duration({{nanoseconds: 1}}) ELSE stamp END
+            RETURN properties(n) AS props
+        """)
+
+        def update(tx):
+            row = tx.run(lock, node_id=node_id).single()
+            if row is None:
+                return None, None
+            before = dict(row["props"])
+            if (expected_updated_at is not None
+                    and str(before.get("updated_at")) != str(expected_updated_at)):
+                return before, None
+            after = tx.run(write, node_id=node_id, properties=clean).single()
+            return before, dict(after["props"])
+
+        with self.driver.session() as session:
+            return session.execute_write(update)
+
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
-        """Create or update Person nodes, retaining lists from graph folds.
+        """Upsert Person nodes, preserving lists contributed by graph folds.
 
         Legacy rows cannot retract membership. A completed, versioned
         assessment may replace it only when it covers the live cluster.
-
-        Args:
-            nodes: List of (node_id, properties) tuples. Each properties
-                dict is expected to carry "is_itmo" (see
-                pauk/graph/extract.py's itmo_person/external_person specs).
         """
         if not nodes:
             return
@@ -562,21 +530,13 @@ class Neo4jClient:
         """
         batch = [
             {"dup_id": dup_id, "canonical_id": canonical_id, "priority": priority}
-            for priority, (dup_id, canonical_id) in enumerate(flatten_merges(merges))
+            for priority, (dup_id, canonical_id) in enumerate(flatten_merges(merges, label=label))
         ]
         if not batch:
             return 0
 
-        # Labels and relationship types are interpolated for the same reason
-        # as in upsert_relationships_batch: Cypher cannot parameterize
-        # identifiers, and these are always our own literals.
-        # "SET new += properties(old); SET new += keep" is the pure-Cypher way
-        # to fill gaps without letting the duplicate win: everything the old
-        # relationship knew is copied in, then the canonical's own values are
-        # laid back on top. Without it, a MERGE that finds an existing
-        # canonical relationship silently drops the duplicate's properties —
-        # e.g. the only AUTHORED edge carrying an affiliation.
-        # The aggregate edge means corresponding in ANY source record.
+        # Copy old edge properties, then restore canonical values so they win.
+        # is_corresponding is ORed across sources instead of replacing either value.
         corresponding_merge = (
             "SET new.is_corresponding = CASE "
             "WHEN keep.is_corresponding IS NULL "
@@ -644,10 +604,7 @@ class Neo4jClient:
             )
             for other_label, rel_type in incoming
         ]
-        # The nodes themselves cannot use that trick: copying properties(dup)
-        # wholesale would momentarily set canonical.id to the duplicate's id
-        # while the duplicate node still exists, tripping the uniqueness
-        # constraint. The field-specific merge is computed in Python instead.
+        # Copy node fields in Python: copying dup.id in Cypher would violate uniqueness.
         props_query = cast(
             LiteralString,
             f"""
@@ -792,12 +749,7 @@ class Neo4jClient:
                 lambda tx: [dict(record) for record in tx.run(query)])
 
     def fetch_node_ids(self, label: str) -> set[str]:
-        """Every id the graph holds under one label.
-
-        For comparing the graph against the source it was built from. The
-        whole set at once rather than a page at a time: the comparison is
-        set arithmetic, and half of it is meaningless.
-        """
+        """Return all ids for a label for set-based graph/source comparisons."""
         query = cast(LiteralString, f"MATCH (n:{label}) RETURN n.id AS id")
         with self.driver.session(default_access_mode="READ") as session:
             return session.execute_read(
@@ -879,17 +831,10 @@ class Neo4jClient:
                 for row in rows}
 
     def fetch_canonical_id(self, label: str, node_id: str) -> str | None:
-        """The node this id was folded into, if it was folded into one.
+        """Find the survivor for an id whose node no longer exists.
 
-        Asked about one id rather than taken from `fetch_merged_id_map`: the
-        panel needs this the moment somebody opens an id that has no node,
-        and pulling the whole map of every fold in the graph to answer about
-        one of them would be paid on every such page.
-
-        Returns:
-            The surviving node's id, or None when nothing swallowed this id.
-            A node of its own is not looked for here: the caller has
-            already failed to find one.
+        Uses a targeted lookup instead of loading the full alias map.
+        Returns None if no survivor lists this id in merged_ids.
         """
         query = cast(
             LiteralString,
@@ -1202,11 +1147,12 @@ class Neo4jClient:
         The other end's properties come along because an id does not always
         address it: two of the eleven relationships are matched by `url` or
         `login`, and removing such an edge needs that value, not the id.
+        The edge's own `props` let a caller restore its data after removal.
         """
         text = (
             f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
             "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
-            "properties(other) AS other_props, "
+            "properties(other) AS other_props, properties(r) AS props, "
             "startNode(r).id = n.id AS outgoing "
             "ORDER BY type, other_id"
         )
@@ -1216,27 +1162,11 @@ class Neo4jClient:
         return [dict(row) for row in rows]
 
     def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
-        """Delete nodes by id, optionally taking their relationships with them.
-
-        Nothing in the pipeline deletes a node: the loader only ever
-        MERGEs, and dedup folds duplicates rather than removing them. This
-        exists for manual removal from the admin layer, which is why it
-        reports how many nodes actually went: a caller asking to delete an
-        id that is not there must be able to tell.
+        """Delete nodes by id and return the number removed.
 
         Args:
-            label: Node label. Interpolated into Cypher, so callers must
-                pass a label from a closed whitelist, never user input
-                (see pauk/graph/mutations.py).
-            ids: Node ids to delete.
-            detach: True deletes the node together with its relationships.
-                False leaves a node that still has any relationship
-                untouched. Neo4j refuses to delete a connected node, and
-                that refusal is the point: it stops a careless delete from
-                silently tearing edges out of the graph.
-
-        Returns:
-            Number of nodes deleted.
+            label: A whitelisted label; interpolated into Cypher, never raw user input.
+            detach: True also deletes incident edges; False skips connected nodes.
         """
         if not ids:
             return 0

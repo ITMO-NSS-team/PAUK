@@ -317,6 +317,10 @@ class PersonsStage(EnrichmentStage):
                                 value = _github_login(url) if field == "github" else url
                                 if value and not getattr(person, field):
                                     setattr(person, field, value)
+                                if (field == "github" and value and person.github_match
+                                        and person.github and value.casefold() == person.github.casefold()):
+                                    # ORCID now confirms this independently of account matching.
+                                    person.github_match.github = None
                             refresh_orcid_membership(
                                 person, _orcid_affiliations(payload), orcid_source_owner(person, key), key,
                                 observed_at=observed_at,

@@ -20,6 +20,7 @@ from pauk.models import (
     Affiliation,
     ClassificationStatus,
     CodeLink,
+    GitHubMatchResult,
     LinkOccurrence,
     Person,
     Publication,
@@ -29,6 +30,7 @@ from pauk.models import (
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.models.relations import Contribution
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -735,7 +737,9 @@ class RepositoryDedupTest(unittest.TestCase):
         newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
                            github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
         author = person("A1", "Author One", ["W1"])
-        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        apply_matches(author, [GitHubMatchResult(
+            login="contributor", contributed_to=[Contribution(repository_id=older.id, role="contributor")],
+        )])
         prepared.write_models("persons", [author])
         prepared.write_models("publications", [publication("W1", "One work")])
         prepared.write_models("repositories", [older, newer])
@@ -757,6 +761,10 @@ class RepositoryDedupTest(unittest.TestCase):
         self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
         saved_author, = prepared.read_models("persons", Person)
         self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.matches[0].contributed_to[0].repository_id, newer.id)
+        retract_matches(saved_author)
+        self.assertEqual(saved_author.contributed_to, [])
         self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
 
         for _ in range(2):
@@ -777,6 +785,37 @@ class RepositoryDedupTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_repositories_merged"], 0)
         self.assertEqual(len(repositories), 2)
+
+    def test_withdrawing_a_match_after_repository_dedup_keeps_the_independent_contribution(self):
+        for independent_canonical in (False, True):
+            for source_role in ("contributor", "owner"):
+                with self.subTest(independent_canonical=independent_canonical, source_role=source_role):
+                    prepared = PreparedStore(self.db, "sample")
+                    canonical = repository("R1", "current", "https://github.com/lab/current",
+                                           github_id=42, day="2026-06-01")
+                    duplicate = repository("R2", "old", "https://github.com/lab/old",
+                                           github_id=42, day="2026-01-01")
+                    original_id, added_id = ((canonical.id, duplicate.id) if independent_canonical
+                                            else (duplicate.id, canonical.id))
+                    author = person("A1", "Ivan Petrov", [])
+                    author.contributed_to = [Contribution(repository_id=original_id, role=source_role)]
+                    apply_matches(author, [GitHubMatchResult(
+                        login="coder42", email="account@lab.test",
+                        contributed_to=[Contribution(repository_id=added_id, role="contributor")],
+                    )])
+                    prepared.write_models("persons", [author])
+                    prepared.write_models("repositories", [canonical, duplicate])
+                    stage = DedupStage(prepared, RawStore(self.db, "sample"), self.config)
+
+                    self.assertEqual(stage._dedup_repositories(), {duplicate.id: canonical.id})
+                    self.assertEqual(stage._dedup_repositories(), {})
+                    saved, = prepared.read_models("persons", Person)
+                    matches = retract_matches(saved)
+                    expected = [Contribution(repository_id=canonical.id, role=source_role)]
+                    self.assertEqual(saved.contributed_to, expected)
+                    apply_matches(saved, matches)
+                    retract_matches(saved)
+                    self.assertEqual(saved.contributed_to, expected)
 
 
 class LoaderPublicationMergeTest(unittest.TestCase):
@@ -1489,6 +1528,18 @@ class GraphPassReviewTest(unittest.TestCase):
         self.assertEqual(result["graph_persons_merged"], 1)
         self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
 
+    def test_the_whole_pass_disputes_the_original_refusal_after_a_merge(self):
+        self.publish([person("A2", "Ivan Smirnov", ["W1"], orcid="0000-0002-1825-0097", merged=("A1",)),
+                      person("B1", "Ivan Smirnov", ["W2"], orcid="0000-0002-1825-0097")])
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            result = graph_dedup.run_graph_dedup(self.config, self.db)
+
+        self.assertEqual(result["graph_persons_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
+
     def test_and_writes_down_that_it_carried_them_out(self):
         # This pass leaves the prepared rows alone, so the pair it folds can
         # still be taken apart - but only if the queue knows it was folded.
@@ -1550,6 +1601,16 @@ class DisputedAnswerTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 0)
         remaining = {p.id for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(remaining, {"A1", "A2", "A3"})
+
+    def test_a_prepared_pass_disputes_the_original_refusal_after_a_merge(self):
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        result = self.run_stage([person("A2", "Ivan Smirnov", [], orcid="0000-0002-1825-0097", merged=("A1",)),
+                                 person("B1", "Ivan Smirnov", [], orcid="0000-0002-1825-0097")])
+
+        self.assertEqual(result["dedup_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
 
     def test_an_answered_pair_is_not_asked_again(self):
         self.run_stage(self.apart())

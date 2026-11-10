@@ -6,7 +6,8 @@ from unittest.mock import MagicMock
 
 import mongomock
 
-from pauk.graph.client import Neo4jClient, flatten_merges
+from pauk.aliases import flatten_merges
+from pauk.graph.client import Neo4jClient
 from pauk.graph.dedup import dedup_graph_persons
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.models import Affiliation, Authorship, Person

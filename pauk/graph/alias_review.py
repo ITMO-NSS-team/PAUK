@@ -2,9 +2,8 @@
 
 from pymongo.database import Database
 
+from pauk.aliases import MergeAliasConflict
 from pauk.storage import review
-
-from .client import MergeAliasConflict
 
 
 def record_alias_conflict(db: Database, conflict: MergeAliasConflict, operation: str) -> None:

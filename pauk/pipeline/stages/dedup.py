@@ -62,6 +62,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 from itertools import combinations
 
+from pauk.aliases import flatten_merges
 from pauk.models import (
     ClassificationStatus,
     CodeLink,
@@ -74,6 +75,7 @@ from pauk.models import (
     VersionAuthor,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.membership import apply_membership, coalesce_authorships
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
@@ -810,7 +812,7 @@ def folded_ids(people: Iterable[Person]) -> dict[str, str]:
     an id nothing carries any more. Every reader of those answers needs this,
     which is why it lives here rather than on one stage.
     """
-    return {folded: person.id for person in people for folded in person.merged_ids}
+    return dict(flatten_merges([(folded, person.id) for person in people for folded in person.merged_ids], label="Person"))
 
 
 def staff_identities(catalog: RussianNamesCatalog | None,
@@ -1303,9 +1305,19 @@ class DedupStage(EnrichmentStage):
             "repositories", [row for row in repositories if row.id not in id_map])
         people = list(self.prepared.read_models("persons", Person))
         for person in people:
-            for contribution in person.contributed_to:
+            tracked = person.github_match is not None
+            # Rebuild provenance after renaming: a match may now overlap an independent contribution.
+            matches = retract_matches(person)
+            contributions = list(person.contributed_to)
+            if person.github_match:
+                contributions.extend(person.github_match.cleared_contributions)
+            for match in matches:
+                contributions.extend(match.contributed_to)
+            for contribution in contributions:
                 contribution.repository_id = id_map.get(
                     contribution.repository_id, contribution.repository_id)
+            if tracked:
+                apply_matches(person, matches)
         self.prepared.write_models("persons", people)
         return id_map
 
@@ -1385,7 +1397,7 @@ class DedupStage(EnrichmentStage):
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
-        review.record_disputed(self.prepared.db, report)
+        review.record_disputed(self.prepared.db, report, aliases=folded_ids(people))
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:

@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .processing import ProcessingState
 from .relations import Authorship, Contribution
 
+GitHubMatchField = Literal["github", "email"]
+
 
 class Affiliation(BaseModel):
     """Where a person worked, as one source states it.
@@ -61,6 +63,26 @@ class MembershipOwnerSources(BaseModel):
     policy: str = "itmo-membership-v1"
 
 
+class GitHubMatchResult(BaseModel):
+    """One account's contribution to a prepared person."""
+
+    login: str
+    email: str | None = None
+    contributed_to: list[Contribution] = Field(default_factory=list)
+
+
+class GitHubMatchState(BaseModel):
+    """Applied results and the values they added over independent sources."""
+
+    matches: list[GitHubMatchResult] = Field(default_factory=list)
+    github: str | None = None
+    email: str | None = None
+    contributed_to: list[Contribution] = Field(default_factory=list)
+    cleared_fields: list[GitHubMatchField] = Field(default_factory=list)
+    cleared_contributions: list[Contribution] = Field(default_factory=list)
+    withdrawn_logins: list[str] = Field(default_factory=list)
+
+
 class Person(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -93,6 +115,7 @@ class Person(BaseModel):
     merged_ids: list[str] = Field(default_factory=list)
     authored: list[Authorship] = Field(default_factory=list)
     contributed_to: list[Contribution] = Field(default_factory=list)
+    github_match: GitHubMatchState | None = None
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 
     # Stubs: no source populates these yet.

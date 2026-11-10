@@ -11,7 +11,15 @@ from __future__ import annotations
 from pymongo.database import Database
 
 from pauk.admin import feed
-from pauk.graph.overrides import COLLECTION, CREATE, DELETE, LINK, SET, active_overrides
+from pauk.graph.overrides import (
+    COLLECTION,
+    CREATE,
+    DELETE,
+    LINK,
+    SET,
+    active_overrides,
+    relationship_override_id,
+)
 
 PAGE = 50
 
@@ -176,6 +184,16 @@ def deleted_fields(db: Database, label: str, node_id: str) -> dict:
     if row and row.get("snapshot"):
         return dict(row["snapshot"])
     return feed.deleted_state(db, label, node_id)
+
+
+def deleted_relationship_properties(db: Database, src_label: str, rel_type: str, tgt_label: str,
+                                    src_id: str, tgt_id: str) -> dict:
+    """Read the unlink snapshot; legacy decisions restore a bare edge."""
+    row = db[COLLECTION].find_one({
+        "_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id),
+        "op": DELETE,
+    })
+    return dict(row.get("snapshot") or {}) if row else {}
 
 
 def source_of_truth(db: Database, label: str, node_id: str) -> dict:

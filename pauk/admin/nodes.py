@@ -51,13 +51,18 @@ from pauk.graph.mutations import (
     folded_into,
     node_relationships,
     read_node,
+    read_relationship,
     search_nodes,
+    snapshot_relationships,
     update_node,
 )
 from pauk.graph.overrides import (
     CREATE,
     LINK,
+    DecisionWriteConflict,
+    DecisionWriteUncertain,
     deactivate_override,
+    override_generation,
     record_override,
     record_relationship_override,
 )
@@ -107,7 +112,8 @@ def _record(undo, write) -> None:
 
     Neo4j and Mongo share no transaction, so the decision can fail after the
     graph has moved, and the next publish would silently revert the change.
-    The graph is put back instead, and the undo lands in the audit feed.
+    The graph is put back instead when failure is confirmed. An uncertain
+    commit leaves it in place until the outcome can be checked.
 
     Args:
         undo: Puts the graph back the way it was.
@@ -118,6 +124,13 @@ def _record(undo, write) -> None:
     """
     try:
         write()
+    except DecisionWriteUncertain:
+        logger.exception("decision write outcome could not be verified")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Mongo не подтвердила результат записи решения. Граф не откатывали: "
+            "решение могло сохраниться. Проверьте карточку и ручные решения "
+            "после восстановления соединения") from None
     except PyMongoError as error:
         logger.error("could not record the decision: %s", error)
         try:
@@ -128,6 +141,11 @@ def _record(undo, write) -> None:
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "правка записана в граф, но не сохранилась как решение "
                 f"и не откатилась ({failure}). Следующая публикация её снимет") from None
+        if isinstance(error, DecisionWriteConflict):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "правка отменена: решение параллельно изменялось. "
+                "Обновите карточку и попробуйте снова") from None
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
@@ -210,8 +228,8 @@ async def create(request: Request, label: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Add a node by hand.
 
-    No override is recorded for the id itself: the loader only touches ids it
-    has rows for. A *changed* field on a known node does need one.
+    A creation claim keeps a prune from removing the node and replaces any
+    earlier deletion decision in the same atomic write.
     """
     _known_label(label)
     form = await request.form()
@@ -229,12 +247,8 @@ async def create(request: Request, label: str, user: Editor,
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    # Claimed so a prune keeps it, and any earlier tombstone is withdrawn.
-    def claim() -> None:
-        deactivate_override(db, label, node_id, only_op="delete")
-        record_override(db, label, node_id, CREATE, fields, actor=user.actor)
-
-    _record(undo=lambda: delete_node(graph, label, node_id), write=claim)
+    _record(undo=lambda: delete_node(graph, label, node_id),
+            write=lambda: record_override(db, label, node_id, CREATE, fields, actor=user.actor))
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "created=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -317,9 +331,16 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
         snapshot = read_node(graph, label, node_id)
         kept = {name: value for name, value in snapshot.items()
                 if name in NODE_FIELDS[label] and value is not None}
+        relationships = snapshot_relationships(graph, label, node_id, snapshot) if cascade else []
         delete_node(graph, label, node_id, cascade=cascade)
+
+        def undo():
+            create_node(graph, label, node_id, kept)
+            for relationship in relationships:
+                create_relationship(graph, **relationship)
+
         # Without the tombstone the next publish brings the record back.
-        _record(undo=lambda: create_node(graph, label, node_id, kept),
+        _record(undo=undo,
                 write=lambda: record_override(
                     db, label, node_id, "delete", actor=user.actor,
                     note=str(form.get("note", "")).strip(), snapshot=kept))
@@ -362,6 +383,24 @@ def _triple(raw: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _relationship_choice(label: str, raw: str) -> tuple[str, str, str, bool]:
+    """Read the card's side of a relationship, including older unambiguous forms."""
+    direction, _, triple = raw.partition("|")
+    if direction in ("outgoing", "incoming"):
+        src_label, rel_type, tgt_label = _triple(triple)
+        outgoing = direction == "outgoing"
+    else:
+        src_label, rel_type, tgt_label = _triple(raw)
+        if src_label == tgt_label == label:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "В старой форме не указано направление связи. Откройте карточку заново.")
+        outgoing = src_label == label
+    if label != (src_label if outgoing else tgt_label):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Выбранная сторона связи не относится к этой карточке.")
+    return src_label, rel_type, tgt_label, outgoing
+
+
 # How each link reads in Russian: leaving the node, then entering it.
 LINK_WORDS = {
     ("Department", "PART_OF", "Department"): ("входит в подразделение", "включает подразделение"),
@@ -401,18 +440,17 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     if not other:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the other end is empty")
 
-    # This node takes whichever end its label matches; the other one is typed.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label))
     if match_prop is None:
         return _link_failed(label, node_id,
                             f"Граф не знает связи ({src_label})-[:{rel_type}]->({tgt_label}).")
     try:
-        if src_label == label:
+        if outgoing:
             src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
         else:
             # This node is the target, and a target is matched by match_prop.
@@ -470,25 +508,28 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     # As in the link form: a target is addressed by match_prop, not always by id.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
-    if src_label == label:
+    if outgoing:
         src_id, tgt_id = node_id, other
     else:
         src_id = other
         tgt_id = node_id if match_prop == "id" else _self_match_value(graph, label, node_id, match_prop)
     try:
+        snapshot = read_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         removed = delete_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         if not removed:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "there is no such link")
         _record(
             undo=lambda: create_relationship(graph, src_label, rel_type, tgt_label,
-                                             src_id, tgt_id),
+                                             src_id, tgt_id, snapshot),
             write=lambda: record_relationship_override(
                 db, src_label, rel_type, tgt_label, src_id, tgt_id,
-                actor=user.actor, note=str(form.get("note", "")).strip()))
+                actor=user.actor, note=str(form.get("note", "")).strip(), snapshot=snapshot))
+    except NotFound as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s unlinked (%s %s)-[:%s]->(%s %s)",
@@ -519,14 +560,17 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
             return RedirectResponse(_node_url(label, node_id, "unchanged=1"),
                                     status_code=status.HTTP_303_SEE_OTHER)
         # The updated_at the form was rendered with: parallel saves collide.
-        update_node(graph, label, node_id, changed,
-                    expected_updated_at=str(form.get("seen_at") or "") or None)
+        generation = override_generation(db, label, node_id)
+        updated = update_node(graph, label, node_id, changed,
+                              expected_updated_at=str(form.get("seen_at") or "") or None)
         _record(
             undo=lambda: update_node(graph, label, node_id,
-                                     {name: before.get(name) for name in changed}),
+                                     {name: before.get(name) for name in changed},
+                                     expected_updated_at=updated["updated_at"]),
             write=lambda: record_override(
                 db, label, node_id, "set", changed, actor=user.actor, note=note,
-                auto_value={name: before.get(name) for name in changed}))
+                auto_value={name: before.get(name) for name in changed},
+                graph_updated_at=updated["updated_at"], expected_generation=generation))
     except VersionConflict:
         # Someone got there first: hand the page back with what is there now.
         logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)

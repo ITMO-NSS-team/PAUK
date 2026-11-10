@@ -5,10 +5,13 @@ from unittest.mock import Mock, patch
 
 import mongomock
 
+from pauk.aliases import MergeAliasConflict, flatten_merges
 from pauk.graph.alias_review import record_alias_conflict
-from pauk.graph.client import MergeAliasConflict, Neo4jClient, flatten_merges
+from pauk.graph.client import Neo4jClient
 from pauk.graph.dedup import _dedup_locked
 from pauk.graph.load import _load_locked
+from pauk.models import Person
+from pauk.pipeline.stages.dedup import folded_ids
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
 from tests.bench.mocks import RecordingNeo4jClient
@@ -31,6 +34,18 @@ class AliasReviewTest(unittest.TestCase):
         self.assertEqual(conflict.aliases, [("A", "B"), ("A", "C")])
         self.assertEqual(conflict.label, "Person")
         self.assertIsInstance(conflict, ValueError)
+
+    def test_prepared_alias_conflicts_retain_the_person_label_for_review(self):
+        people = [Person(id=target, is_itmo=True, merged_ids=["A"]) for target in ("B", "C")]
+        with self.assertRaises(MergeAliasConflict) as caught:
+            folded_ids(people)
+
+        record_alias_conflict(self.db, caught.exception, "dedup-graph")
+
+        question = self.db.review_pairs.find_one({"kind": review.ALIAS})
+        self.assertIsNotNone(question)
+        self.assertEqual(question["members"], ["A", "B", "C"])
+        self.assertEqual(question["evidence"]["operation"], "dedup-graph")
 
     def test_cycle_is_structured_and_safe_diamond_still_flattens(self):
         with self.assertRaises(MergeAliasConflict) as caught:

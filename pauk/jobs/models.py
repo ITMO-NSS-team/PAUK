@@ -44,8 +44,10 @@ class JobState(StrEnum):
 #: States a job will never leave.
 FINAL = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
 
-#: Publishing, dedup and a snapshot all touch the whole graph: they take turns.
+# Serialize graph writes and snapshot generation.
 GRAPH = "graph"
+# Serialize cross-group GitHub ownership changes with publishing.
+GITHUB_MATCH = "github_match"
 
 
 def now() -> datetime:

@@ -238,12 +238,18 @@ kinds:
 |---|---|---|
 | are these two records one person? | person dedup: collect stage and whole-graph pass | "один человек" (one person) or "разные" (different) |
 | a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
-| whose GitHub account is this? | `github_match` stage | "это его аккаунт" (this is their account) or "не его" (not theirs) |
+| whose GitHub account is this? | `github_match` stage | choose the author ("это его аккаунт", this is their account) or "никто из них" (none of them); with a single author, "это его аккаунт" or "не его" (not theirs) |
 | which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
 
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
-existing document instead of creating a second one. The default tab is
+existing document instead of creating a second one. An account is asked about
+once, with every author that fits it. An unanswered account question that a
+later run settles by itself (it linked the account, nobody fits it any more, or
+a new namesake joined the question) is closed without an answer. An old "это
+его аккаунт" about one author does not link the account when another author
+fits as well or better: the account is asked about again, with all of them. The
+default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
 accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).
 
@@ -273,6 +279,10 @@ record. Neo4j is not needed to record an answer.
 evidence grows and a rule would now fire, the pair is not merged but goes to
 the "Расхождения" (Discrepancies) tab with the rule that fired. Any answer
 closes the discrepancy: confirm the old one or reverse it.
+For GitHub questions, "оставить как есть" keeps the same evidence out of this tab
+on repeat runs; changed evidence brings it back. A confirmation from an older
+version of the discrepancy asks you to reopen the page. Sending the same
+confirmation twice leaves the saved answer unchanged.
 
 **Whole groups cannot be answered.** A group is rejected because it certainly
 contains more than one person. You mark the ones who are the same person, and
@@ -326,6 +336,8 @@ the rest as failed.
 
 While a resource is busy, jobs that need it wait without blocking others;
 collect by group proceeds even if a publish is waiting for the graph.
+GitHub matching shares a separate lock with publishing and source reconciliation: an account handoff must
+finish saving its former and new owners before publication can read them.
 
 If the worker disappeared **in the middle of a publish**, manual edits in the
 graph have already been overwritten by pipeline values and not restored, since
@@ -427,9 +439,13 @@ Things worth knowing:
 
 - **Concurrent edits to one record are rejected.** If the record changed while
   the form was open, saving fails instead of silently losing the other edit;
-  the page returns with the current values.
+  the page returns with the current values. Version comparison and update
+  run under one Neo4j write lock. A record deleted meanwhile is not recreated.
 - **Undoing a deletion decision restores the record at once**, with all
   fields: a snapshot is stored in the decision when the record is deleted.
+- **Undoing an unlink restores the relationship's properties**, including
+  author position and link evidence. The panel snapshots them before unlinking;
+  Neo4j sets fresh service timestamps when the relationship is recreated.
 - **Creating a record with the id of a deleted one clears the deletion mark**,
   otherwise the next publish would remove it again.
 - **The audit log and manual decisions are different things.** The log is
@@ -458,8 +474,9 @@ query is bounded, and nobody needs last week's bad records.
 
 ### Reconcile with Mongo
 
-Publishing synchronizes confirmed code links and reapplies manual deletions.
-Other stale records and relationships need a separate reconciliation pass: with the "Сверка с источником" button on the "Пайплайн" page, or
+Publishing applies explicit GitHub withdrawals, classified-link changes and manual deletions.
+Other stale records and relationships need a separate reconciliation pass: with the
+"Сверка с источником" button on the "Пайплайн" page, or
 from the terminal:
 
 ```bash
@@ -471,6 +488,8 @@ uv run pauk admin prune --apply    # removes it
 page this is one job with a checkbox: unchecked, it only counts and puts the
 numbers in the result; checked, it removes. Run it unchecked first and read the
 list: manual records created before hand-made records were tracked look extra.
+The preview never forwards writes to Neo4j, including the loader's automatic
+cleanup calls. Manual relationship claims remain protected through graph folds.
 
 It leaves three things alone: records and links made by hand (they are in the
 manual decisions, which is the only reason that record exists), what the next
@@ -502,9 +521,12 @@ changing it requires an explicit database maintenance operation. Do not run
 
 ### Known limitations
 
-- An unlinked relationship is restored from the decision itself, not from
-  history: the decision stores the relationship, the log only records that it
-  appeared and disappeared.
+- Relationship deletion decisions made before property snapshots existed,
+  or outside the panel without a snapshot, restore only the endpoints. A later
+  publish can supply the properties again if the prepared data still has them.
+- Undoing a successful node deletion restores its fields, not its incident
+  relationships. Their snapshot is currently kept in memory only for rolling
+  back a failed deletion; publishing rebuilds edges still present in prepared data.
 - Source history appears on the record card and nowhere else; there is no
   "all changed rows" list, you start from a concrete record.
 - A run stops at the next seam, not instantly. Inside a stage the request is
@@ -529,24 +551,68 @@ Handled from both sides:
   and the graph stays untouched;
 - **if Mongo fails between the two writes**, the graph write is rolled back.
 
+Each decision is committed in one Mongo command, including the original
+field values, operation and claim marker. There is no separate read after a
+successful write. If Mongo loses the reply, the panel checks the decision's
+write token: a confirmed commit succeeds; a confirmed failure permits graph
+rollback. If the result cannot be checked, the response reports uncertainty
+and leaves the graph in place, since the decision may already be committed.
+Repeated contention exhausts a bounded attempt budget; after a successful
+rollback the panel reports a conflict (409), rather than a Mongo outage.
+
+Field edits carry the version returned by Neo4j into the decision write, in
+both the panel and CLI. Mongo merges fields in graph-version order, even when
+requests arrive out of order: each field keeps its newest value and its
+earliest known original for undo. Independent fields are merged separately;
+the actor and note follow the latest graph edit. UTC normalization preserves
+Neo4j's nanosecond precision.
+
+Creation, deletion and undo advance the decision's `generation`. A field edit
+reads that counter before changing the graph; a delayed write from an older
+state is rejected instead of reactivating a cancelled decision or replacing
+a deletion. A new edit after undo starts with only the newly edited fields.
+
 This covers every edit that leaves a decision behind: field change, node
 deletion, linking and unlinking, creation and restoration.
 
-The rollback for creation is pessimistic: it deletes the node even though
-usually there was no deletion mark and the node would have been fine. Only the
-database that is currently down could say, and a node that vanishes on the next
-publish is worse.
+Before unlinking, the panel reads the relationship's properties. A failed
+decision write restores them from memory; a successful write stores the same
+snapshot in Mongo for the later undo button. Empty properties are a valid
+snapshot, and the target keeps its original addressing key (`id`, `url` or
+`login`).
 
-A rollback is visible in the audit log next to the edit. One case remains where
-even that fails (both databases down at once); then the response says
-explicitly that the edit stayed in the graph without a decision and the next
-publish will remove it.
+Before deleting a node with its relationships, the panel snapshots both
+incoming and outgoing edges, including their properties. If recording the
+deletion fails, it recreates the node first and then those edges. An unknown
+relationship type or a missing addressing key refuses deletion before the
+graph changes, since the allowed mutations could not restore that edge.
+
+Field rollback also checks the version its own write produced. If another
+editor saved since then, compensation refuses to overwrite that newer edit
+and reports an incomplete rollback.
+
+Creation records its claim and replaces any old deletion decision atomically.
+If the claim definitely failed, rollback removes the new node: without the
+claim, reconciliation could remove it later anyway.
+
+A rollback is visible in the audit log next to the edit when the audit store
+is available. If graph restoration also fails, the response explicitly reports
+the incomplete rollback. An unconfirmed Mongo write is reported separately;
+it is never described as a successful rollback.
 
 ## Linking nodes
 
 On a node card, under the relationship table, the form offers only the
 relationships allowed for that label, out of the eleven the graph knows. The
 node whose card you opened is filled in; you enter only the other side.
+
+Each choice carries its direction relative to the open card. For
+`Department -> PART_OF -> Department`, "входит в подразделение" makes the card
+the child, and "включает подразделение" makes it the parent. Unlink forms also
+carry this direction, so removing an incoming edge cannot remove an outgoing
+edge between the same two departments. An older form without a direction is
+accepted only when the labels determine the side unambiguously; otherwise the
+panel asks to reopen the card before writing anything.
 
 What matters is **how the other side is addressed**, written in parentheses by
 each option. Usually it is the id, with two exceptions:

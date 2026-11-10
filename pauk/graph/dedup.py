@@ -1,16 +1,7 @@
-"""Deduplication across the whole graph, not one prepared group.
+"""Deduplicate all published groups using the pipeline's merge rules.
 
-The per-group dedup stage only sees one prepared group, but the graph
-accumulates every published group: the same researcher (or work, or
-repository) collected in two periods becomes two nodes that no group-level
-pass will ever compare, since each group's JSONL holds only one of the ids.
-This module applies the same merge rules (pauk/pipeline/stages/dedup.py)
-to all nodes of each kind at once and folds duplicates directly in Neo4j.
-
-The merged ids end up in the canonical node's `merged_ids` property, so a
-later republish of an old group cannot resurrect a folded duplicate: the
-loader re-folds any id found in a graph-side merged_ids map at the end of
-every load (see jsonl_loader.load_prepared_rows).
+Group-scoped dedup cannot compare records collected in separate groups.
+Survivors retain merged_ids so later publishing can reapply graph-only folds.
 """
 
 from __future__ import annotations
@@ -22,6 +13,7 @@ from datetime import date
 
 from pymongo.database import Database
 
+from pauk.aliases import MergeAliasConflict
 from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy, _normalize_orcid
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
@@ -48,7 +40,7 @@ from pauk.urls import normalize_repo_url
 
 from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
-from .client import MergeAliasConflict, chunked
+from .client import chunked
 from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
@@ -146,13 +138,10 @@ def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]]
 
 
 def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
-    """Trusted ORCIDs from every group's raw openalex_authors envelopes.
+    """Read trusted ORCIDs from all groups' raw OpenAlex author records.
 
-    Same reasoning as the per-group stage: the orcid property stored on a
-    node may descend from the surname-only Crossref backfill, which can
-    stamp a namesake's ORCID onto the wrong person. The author's own
-    OpenAlex record is authoritative; a later fetch of the same author
-    overrides an earlier one - across every group, not just one.
+    The latest record for each author wins. Graph ORCIDs may originate from an
+    ambiguous Crossref surname match and are not authoritative here.
     """
     orcids: dict[str, str | None] = {}
     cursor = mongo_db.raw.find({"source": "openalex_authors"}).sort("fetched_at", 1)
@@ -485,7 +474,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # to ask about and no pair of people to key a question on.
         current_aliases = client.fetch_merged_id_map("Person")
         review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
-        review.record_disputed(mongo_db, person_report)
+        review.record_disputed(mongo_db, person_report, aliases=current_aliases)
         # Re-read, not the map from before the pass: what this pass folded
         # is exactly the difference between the two.
         review.mark_applied_merges(mongo_db, current_aliases)

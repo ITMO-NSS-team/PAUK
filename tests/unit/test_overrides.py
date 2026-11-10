@@ -1,7 +1,11 @@
 import unittest
+from itertools import permutations
+from unittest.mock import patch
 
 import mongomock
+from pymongo.errors import AutoReconnect
 
+from pauk.graph import overrides
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import _drop_tombstoned
 from pauk.graph.mutations import MutationError, UnknownEntity
@@ -10,6 +14,7 @@ from pauk.graph.overrides import (
     CREATE,
     DELETE,
     SET,
+    DecisionWriteConflict,
     active_overrides,
     apply_overrides,
     claimed_relationships,
@@ -104,6 +109,197 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(active_overrides(self.db), [])
         # Still on file: the panel has to show the edit existed.
         self.assertEqual(self.db[COLLECTION].count_documents({}), 1)
+
+
+class ConcurrentDecisionTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_concurrent_edits_preserve_both_fields_and_the_first_auto_value(self):
+        collection = self.db[COLLECTION]
+        original = collection.find_one_and_update
+        interleaved = False
+
+        def save_other_field(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                record_override(self.db, "Person", "A1", SET, {"email": "new@example.org"},
+                                auto_value={"email": None})
+            return original(*args, **kwargs)
+
+        with patch.object(collection, "find_one_and_update", save_other_field):
+            record_override(self.db, "Person", "A1", SET, {"name_ru": "Иван"},
+                            auto_value={"name_ru": "Ivan"})
+
+        self.assertTrue(interleaved)
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["fields"], {"email": "new@example.org", "name_ru": "Иван"})
+        self.assertEqual(row["auto_value"], {"email": None, "name_ru": "Ivan"})
+
+    def test_a_stale_undo_cannot_deactivate_a_new_claim(self):
+        record_override(self.db, "Person", "A1", DELETE)
+        collection = self.db[COLLECTION]
+        original = collection.find_one_and_update
+        interleaved = False
+
+        def recreate_before_undo(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                record_override(self.db, "Person", "A1", CREATE, {"name_ru": "Иван"})
+            return original(*args, **kwargs)
+
+        with patch.object(collection, "find_one_and_update", recreate_before_undo):
+            dropped = deactivate_override(self.db, "Person", "A1", only_op=DELETE)
+
+        self.assertTrue(interleaved)
+        self.assertFalse(dropped)
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["op"], CREATE)
+        self.assertEqual(row["fields"], {"name_ru": "Иван"})
+
+    def test_contention_stops_at_the_budget_and_preserves_competing_edits(self):
+        record_override(self.db, "Person", "A1", SET, {"name_ru": "Иван"},
+                        auto_value={"name_ru": "Ivan"})
+        collection = self.db[COLLECTION]
+        original = collection.find_one_and_update
+        writes = 0
+
+        def competing_write(*args, **kwargs):
+            nonlocal writes
+            writes += 1
+            collection.update_one({"_id": "node:Person:A1"}, {"$set": {
+                "write_id": f"competing-{writes}", "fields.email": f"editor-{writes}@example.org"}})
+            return original(*args, **kwargs)
+
+        with patch.object(overrides, "MAX_DECISION_WRITE_ATTEMPTS", 2), \
+                patch.object(collection, "find_one_and_update", competing_write), \
+                self.assertRaises(DecisionWriteConflict):
+            record_override(self.db, "Person", "A1", SET, {"name_ru": "Отклонено"})
+
+        self.assertEqual(writes, 2)
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["fields"], {"name_ru": "Иван", "email": "editor-2@example.org"})
+        self.assertEqual(row["auto_value"], {"name_ru": "Ivan"})
+
+    def test_a_network_error_is_checked_and_not_retried_as_contention(self):
+        collection = self.db[COLLECTION]
+        with patch.object(collection, "find_one_and_update",
+                          side_effect=AutoReconnect("failed before commit")) as write, \
+                self.assertRaises(AutoReconnect):
+            record_override(self.db, "Person", "A1", SET, {"name_ru": "Отклонено"})
+
+        self.assertEqual(write.call_count, 1)
+        self.assertEqual(active_overrides(self.db), [])
+
+
+class OrderedFieldDecisionTest(unittest.TestCase):
+    EARLIER = "2026-10-30T12:00:00.000000001+00:00"
+    LATER = "2026-10-30T12:00:00.000000002+00:00"
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def save(self, value, before, version, **kwargs):
+        return record_override(self.db, "Person", "A1", SET, {"name_ru": value},
+                               auto_value={"name_ru": before}, graph_updated_at=version, **kwargs)
+
+    def test_nanosecond_order_preserves_the_latest_value_and_earliest_original(self):
+        self.save("Иоанн", "Пётр", self.LATER, actor="user:second")
+
+        row = self.save("Пётр", "Иван", self.EARLIER, actor="user:first")
+
+        self.assertEqual(row["fields"]["name_ru"], "Иоанн")
+        self.assertEqual(row["auto_value"]["name_ru"], "Иван")
+        self.assertEqual(row["actor"], "user:second")
+        self.assertEqual(row["field_versions"]["name_ru"], self.LATER)
+        self.assertEqual(row["auto_value_versions"]["name_ru"], self.EARLIER)
+
+    def test_timezone_offsets_do_not_change_the_edit_order_and_none_is_preserved(self):
+        self.save("Иоанн", "Пётр", self.LATER)
+
+        row = self.save("Пётр", None, "2026-10-30T15:00:00.000000001+03:00")
+
+        self.assertEqual(row["fields"]["name_ru"], "Иоанн")
+        self.assertIsNone(row["auto_value"]["name_ru"])
+        self.assertEqual(row["auto_value_versions"]["name_ru"], self.EARLIER)
+
+    def test_a_legacy_original_is_preserved_without_inventing_its_version(self):
+        record_override(self.db, "Person", "A1", SET, {"name_ru": "Иван"},
+                        auto_value={"name_ru": "Ivan"})
+        self.save("Иоанн", "Пётр", self.LATER)
+
+        row = self.save("Пётр", "Иван", self.EARLIER)
+
+        self.assertEqual(row["fields"]["name_ru"], "Иоанн")
+        self.assertEqual(row["auto_value"]["name_ru"], "Ivan")
+        self.assertNotIn("name_ru", row["auto_value_versions"])
+
+    def test_a_concurrent_newer_edit_is_rechecked_after_a_mongo_conflict(self):
+        collection = self.db[COLLECTION]
+        original = collection.find_one_and_update
+        interleaved = False
+
+        def save_newer_first(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                self.save("Иоанн", "Пётр", self.LATER)
+            return original(*args, **kwargs)
+
+        with patch.object(collection, "find_one_and_update", save_newer_first):
+            row = self.save("Пётр", "Иван", self.EARLIER)
+
+        self.assertTrue(interleaved)
+        self.assertEqual(row["fields"]["name_ru"], "Иоанн")
+        self.assertEqual(row["auto_value"]["name_ru"], "Иван")
+
+    def test_undo_invalidates_pending_edits_without_changing_the_cancelled_decision(self):
+        self.save("Пётр", "Иван", self.EARLIER, expected_generation=0)
+        deactivate_override(self.db, "Person", "A1", only_op=SET)
+        before = self.db[COLLECTION].find_one({"_id": "node:Person:A1"})
+
+        with self.assertRaises(DecisionWriteConflict):
+            self.save("Иоанн", "Пётр", self.LATER, expected_generation=0)
+
+        self.assertEqual(self.db[COLLECTION].find_one({"_id": "node:Person:A1"}), before)
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_deletion_or_recreation_invalidates_pending_field_edits(self):
+        for operation in (DELETE, CREATE):
+            with self.subTest(operation=operation):
+                self.db[COLLECTION].delete_many({})
+                self.save("Пётр", "Иван", self.EARLIER, expected_generation=0)
+                record_override(self.db, "Person", "A1", operation,
+                                {"name_ru": "Новая запись"} if operation == CREATE else None)
+                before = self.db[COLLECTION].find_one({"_id": "node:Person:A1"})
+
+                with self.assertRaises(DecisionWriteConflict):
+                    self.save("Иоанн", "Пётр", self.LATER, expected_generation=0)
+
+                self.assertEqual(self.db[COLLECTION].find_one({"_id": "node:Person:A1"}), before)
+
+    def test_three_overlapping_edits_merge_the_same_way_in_every_arrival_order(self):
+        edits = (
+            ({"name_ru": "Пётр", "email": "first@example.org"},
+             {"name_ru": "Иван", "email": None}, self.EARLIER),
+            ({"name_ru": "Иоанн"}, {"name_ru": "Пётр"}, self.LATER),
+            ({"email": "last@example.org"}, {"email": "first@example.org"},
+             "2026-10-30T12:00:00.000000003+00:00"),
+        )
+        for order in permutations(range(len(edits))):
+            with self.subTest(order=order):
+                self.db[COLLECTION].delete_many({})
+                for index in order:
+                    fields, before, version = edits[index]
+                    row = record_override(self.db, "Person", "A1", SET, fields, auto_value=before,
+                                          graph_updated_at=version, actor=f"user:{index}",
+                                          expected_generation=0)
+
+                self.assertEqual(row["fields"], {"name_ru": "Иоанн", "email": "last@example.org"})
+                self.assertEqual(row["auto_value"], {"name_ru": "Иван", "email": None})
+                self.assertEqual(row["actor"], "user:2")
 
 
 class TombstoneTest(unittest.TestCase):
@@ -394,22 +590,28 @@ class ConcurrentEditTest(unittest.TestCase):
         (stored,) = active_overrides(self.db)
         self.assertEqual(stored["fields"], {"name_ru": "Иванов", "email": "i@itmo.ru"})
 
-    def test_the_document_is_written_without_reading_it_first(self):
-        # A read before the write is exactly the window where an edit is
-        # lost; the write has to be one server-side operation.
-        calls = []
+    def test_a_concurrent_first_auto_value_survives_the_retry(self):
+        record_override(self.db, "Person", "A1", SET, {"name_ru": "первый"})
         collection = self.db[COLLECTION]
-        original_find = collection.find_one
+        original = collection.find_one_and_update
+        interleaved = False
 
-        def watched(*args, **kwargs):
-            calls.append("find_one")
-            return original_find(*args, **kwargs)
+        def save_first_auto_value(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                record_override(self.db, "Person", "A1", SET, {"name_ru": "второй"},
+                                auto_value={"name_ru": "исходный"})
+            return original(*args, **kwargs)
 
-        collection.find_one = watched
-        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"})
-        # One read is allowed: the document is read back at the end to
-        # return what was actually stored.
-        self.assertLessEqual(calls.count("find_one"), 1)
+        with patch.object(collection, "find_one_and_update", save_first_auto_value):
+            record_override(self.db, "Person", "A1", SET, {"name_ru": "третий"},
+                            auto_value={"name_ru": "первый"})
+
+        self.assertTrue(interleaved)
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["fields"]["name_ru"], "третий")
+        self.assertEqual(row["auto_value"]["name_ru"], "исходный")
 
     def test_the_first_automatic_value_survives_a_later_edit(self):
         record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"},

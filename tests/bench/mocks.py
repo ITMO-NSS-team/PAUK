@@ -9,12 +9,12 @@ from collections import defaultdict
 
 import requests
 
+from pauk.aliases import flatten_merges
 from pauk.graph.client import (
     MEMBERSHIP_FIELDS,
     _merge_duplicate_properties,
     _person_membership_update,
     _preserve_merged_person_lists,
-    flatten_merges,
 )
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
@@ -409,7 +409,7 @@ class RecordingNeo4jClient:
         duplicate. On both nodes and edges the canonical's own values win,
         but anything only the duplicate knew fills the gap."""
         removed = 0
-        for dup_id, canonical_id in flatten_merges(merges):
+        for dup_id, canonical_id in flatten_merges(merges, label=label):
             if dup_id == canonical_id:
                 continue
             if dup_id not in self.nodes.get(label, {}):
@@ -525,6 +525,15 @@ class RecordingNeo4jClient:
 
     def merge_repository_nodes_batch(self, merges) -> int:
         return self._fold_nodes("Repository", merges)
+
+    def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs, tgt_match_prop="id") -> int:
+        removed = 0
+        for source, target in pairs:
+            key = src_label, rel_type, tgt_label, source, target
+            if key in self.edges:
+                del self.edges[key]
+                removed += 1
+        return removed
 
     def close(self) -> None:
         pass
