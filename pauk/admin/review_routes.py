@@ -112,6 +112,8 @@ SIGNALS = {
 def _asks(row: dict) -> str:
     """What this row is a question about, in two or three words."""
     kind = row["kind"]
+    if kind == review.ALIAS:
+        return "конфликт алиасов"
     if kind == review.GROUP:
         return f"группа из {len(row['members'])}"
     if kind == review.GITHUB:
@@ -161,6 +163,9 @@ def _shown(row: dict, back: str = "") -> dict:
         "asks": _asks(row),
         # A flag rather than a literal in the template.
         "is_group": row["kind"] == review.GROUP,
+        "is_alias": row["kind"] == review.ALIAS,
+        "alias_edges": evidence.get("alias_edges") or [],
+        "operation": evidence.get("operation"),
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
         "chosen": row.get("chosen"),
@@ -313,6 +318,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
+        review.require_answerable(db, kind, members)
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")

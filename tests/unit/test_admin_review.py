@@ -8,6 +8,8 @@ from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
 from pauk.admin.review_routes import _reason_words
+from pauk.graph.alias_review import record_alias_conflict
+from pauk.graph.client import MergeAliasConflict, flatten_merges
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
@@ -16,6 +18,52 @@ from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
+
+
+class AliasIncidentPageTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().alias_review
+        with self.assertRaises(MergeAliasConflict) as caught:
+            flatten_merges([("A", "B"), ("A", "C")], label="Person")
+        record_alias_conflict(self.db, caught.exception, "publish:example")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.get_session] = lambda: {
+            "login": "audit", "role": "editor", "csrf": "local-test-token"}
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        self.client = TestClient(app, follow_redirects=False)
+        self.addCleanup(self.client.close)
+
+    def test_alias_incident_displays_edges_and_no_identity_answer_form(self):
+        response = self.client.get("/review")
+        self.assertEqual(response.status_code, 200)
+        for text in ("конфликт алиасов", "A → B", "A → C", "publish:example",
+                     "Требуется исправить историю слияний"):
+            self.assertIn(text, response.text)
+        self.assertNotIn('action="/review/answer"', response.text)
+        self.assertNotIn('action="/review/withdraw"', response.text)
+
+    def test_alias_actions_and_disguised_group_actions_are_rejected(self):
+        for kind in (review.ALIAS, review.GROUP, review.PAIR):
+            members = "A,B" if kind == review.PAIR else "A,B,C"
+            for verdict in ("same", "different", "split", "skip", "choose"):
+                with self.subTest(kind=kind, verdict=verdict):
+                    response = self.client.post("/review/answer", data={
+                        "csrf": "local-test-token", "kind": kind, "members": members,
+                        "same": ["A", "B"], "verdict": verdict, "tab": "open"})
+                    self.assertEqual(response.status_code, 400)
+            response = self.client.post("/review/withdraw", data={
+                "csrf": "local-test-token", "kind": kind, "members": members})
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(review.count(self.db, answered=False, skipped=False), 1)
+
+    def test_expanded_group_submission_cannot_leave_partial_identity_answers(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": "local-test-token", "kind": review.GROUP, "members": "A,B,C,X",
+            "same": ["A", "X"], "verdict": "split", "tab": "open"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(self.db.review_pairs.count_documents({}), 1)
 
 
 class ReviewPageTest(unittest.TestCase):

@@ -88,6 +88,14 @@
         {% endfor %}
       </td>
       <td>
+        {% if row.is_alias %}
+        <p class="note bad">Требуется исправить историю слияний. Это не вопрос о том,
+          один ли это человек. Обычное решение ревью не исправляет конфликт алиасов.</p>
+        {% if row.operation %}<div>Операция: <span class="val">{{ row.operation }}</span></div>{% endif %}
+        {% for edge in row.alias_edges %}
+        <div class="val">{{ edge.alias }} → {{ edge.target }}</div>
+        {% endfor %}
+        {% endif %}
         {% if row.shared_coauthors is not none %}
         <div>соавторов <b>{{ row.shared_coauthors }}</b>,
           подразделений <b>{{ row.shared_departments }}</b></div>
@@ -154,7 +162,10 @@
         {% elif row.skipped_by %}
         <div class="muted" style="margin-bottom:8px">отложил {{ row.skipped_by }}</div>
         {% endif %}
-        {% if user.can_write %}
+        {% if row.is_alias %}
+        <span class="muted">Ответы и слияния заблокированы до отдельного исправления
+          и проверки алиасов. Эта страница не исправляет данные.</span>
+        {% elif user.can_write %}
         {% if row.verdict and row.disputed_at %}
         <form method="post" action="/review/answer" class="verdicts">
           <input type="hidden" name="csrf" value="{{ csrf }}">

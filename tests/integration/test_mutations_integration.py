@@ -76,6 +76,20 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(_client.delete_nodes_batch("Person", ["A1", "A2"]), 2)
         self.assertIsNone(_client.fetch_node_properties("Person", "A1"))
 
+    def test_corresponding_corrections_only_preserve_aggregated_edges(self):
+        for merged_label in (None, "Person", "Publication"):
+            with self.subTest(merged_label=merged_label):
+                self.setUp()
+                _client.upsert_nodes_batch("Person", [("A1", {"merged_ids": ["A2"] if merged_label == "Person" else []})])
+                _client.upsert_nodes_batch("Publication", [("W1", {"merged_ids": ["W2"] if merged_label == "Publication" else []})])
+                for flag in (True, False):
+                    _client.upsert_relationships_batch(
+                        "Person", "Publication", "AUTHORED", [("A1", "W1", {"is_corresponding": flag})]
+                    )
+                with _client.driver.session() as session:
+                    flag = session.run("MATCH ()-[r:AUTHORED]->() RETURN r.is_corresponding AS flag").single()["flag"]
+                self.assertEqual(flag, merged_label is not None)
+
     def test_a_connected_node_survives_without_detach(self):
         # The guard that stops a careless delete from tearing edges out of
         # the graph, enforced by the query and not by Python.
@@ -166,7 +180,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
 
         for index in (1, 2, 3):
             _client.upsert_person_nodes_batch([(f"A{index}", {
-                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0001",
+                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0002-1825-0097",
                 "emails": [f"a{index}@example.org"], "other_names": [f"Alias {index}"],
                 "affiliations": json.dumps([{"name": f"Institute {index}", "source": "openalex"}]),
                 "biography": f"Profile {index}",
@@ -182,7 +196,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         from pauk.graph.dedup import dedup_graph_persons
 
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="0000-0002-1825-0097",
             emails=[f"p{i}@example.org"], other_names=[f"Alias {i}"],
             affiliations=[{"name": f"University {i}", "source": "openalex"}],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -210,7 +224,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
                 fold = _client.merge_person_nodes_batch if label == "Person" else _client.merge_publication_nodes_batch
                 self.assertEqual(fold(list(order)), 2)
                 survivor = _client.fetch_node_properties(label, "X3")
-                self.assertEqual(set(survivor["merged_ids"]), {"old1", "old2"})
+                self.assertEqual(set(survivor["merged_ids"]), {"old1", "old2", "X1", "X2"})
                 self.assertEqual(survivor["detail"], "value2")
                 with _client.driver.session() as session:
                     flags = session.run("MATCH ()-[r:AUTHORED]->() RETURN r.is_corresponding AS flag").value()
@@ -326,7 +340,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         db = mongomock.MongoClient().dedup_test
         prepared = PreparedStore(db, "test")
         people = [
-            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="same",
+            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="0000-0002-1825-0097",
                    emails=[f"person{i}@example.org"],
                    authored=[{"publication_id": "W1", "is_corresponding": i == 2}])
             for i in (1, 2)

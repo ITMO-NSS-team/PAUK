@@ -19,7 +19,7 @@ class PersonPreservationTest(unittest.TestCase):
     def test_republishing_only_survivor_keeps_all_merged_lists(self):
         client = RecordingNeo4jClient()
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="0000-0002-1825-0097",
             other_names=[f"Alias {i}"], emails=[f"p{i}@example.org"],
             affiliations=[Affiliation(name=f"University {i}", source="openalex")],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -61,7 +61,7 @@ class PersonPreservationTest(unittest.TestCase):
                         {
                             "is_itmo": True,
                             "name_raw": "Ivan Petrov",
-                            "orcid": "0000-0001",
+                            "orcid": "0000-0002-1825-0097",
                             "emails": ["common@example.org", f"a{index}@example.org"],
                             "other_names": [f"Alias {index}"],
                             "affiliations": json.dumps([{"name": f"Institute {index}", "source": "openalex"}]),
@@ -95,7 +95,7 @@ class PersonPreservationTest(unittest.TestCase):
     def test_missing_graph_fields_are_not_written_as_empty_lists(self):
         client = RecordingNeo4jClient()
         client.upsert_person_nodes_batch(
-            [(pid, {"name_raw": "Ivan Petrov", "orcid": "0000-0001"}) for pid in ("A1", "A2")]
+            [(pid, {"name_raw": "Ivan Petrov", "orcid": "0000-0002-1825-0097"}) for pid in ("A1", "A2")]
         )
         dedup_graph_persons(client, {})
         survivor = client.nodes["Person"]["A1"]
@@ -106,7 +106,7 @@ class PersonPreservationTest(unittest.TestCase):
         client = RecordingNeo4jClient()
         client.upsert_person_nodes_batch(
             [
-                (pid, {"name_raw": "Ivan Petrov", "orcid": "0000-0001", "email": email})
+                (pid, {"name_raw": "Ivan Petrov", "orcid": "0000-0002-1825-0097", "email": email})
                 for pid, email in (("A1", "first@example.org"), ("A2", "second@example.org"))
             ]
         )
@@ -188,7 +188,7 @@ class CorrespondingPreservationTest(unittest.TestCase):
                 expected = None if first is None and second is None else bool(first or second)
                 self.assertEqual(props.get("is_corresponding"), expected)
 
-    def test_republishing_conflicting_prepared_rows_keeps_corresponding(self):
+    def test_republishing_merged_prepared_rows_keeps_corresponding(self):
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
         for flags in ((True, False), (False, True), (False,)):
@@ -199,6 +199,7 @@ class CorrespondingPreservationTest(unittest.TestCase):
                         {
                             "id": "A1",
                             "is_itmo": True,
+                            "merged_ids": ["A2"],
                             "authored": [{"publication_id": "W1", "is_corresponding": flag} for flag in flags],
                         }
                     ]

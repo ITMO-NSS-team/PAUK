@@ -23,6 +23,7 @@ from pymongo.database import Database
 
 from pauk.graph.person_resolution import (
     FIRST_STAGE_SYSTEM_PROMPT,
+    MODEL_FEATURES,
     SECOND_STAGE_SYSTEM_PROMPT,
     ModelVerdict,
     PairEvidence,
@@ -31,6 +32,7 @@ from pauk.graph.person_resolution import (
     parse_first_stage_response,
     parse_second_stage_response,
 )
+from pauk.graph.person_resolution_model import load_logistic_model
 from pauk.graph.person_resolution_single import (
     BATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -115,6 +117,9 @@ class ResolutionModels:
         self.config = config
         self.db = db
         self.group = group
+        self.logreg_model = load_logistic_model(
+            config.person_resolution_logreg_model_path, expected_features=MODEL_FEATURES
+        )
         self.workers = max(1, config.person_resolution_concurrency)
         self.batch_size = max(1, config.person_resolution_batch_size)
         self._local = threading.local()
@@ -128,7 +133,8 @@ class ResolutionModels:
         return self._run(
             [
                 _Request(
-                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT, full_payload(context, evidence), 260, parse_response
+                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT,
+                    full_payload(context, evidence, self.logreg_model), 260, parse_response
                 )
                 for context, evidence in items
             ],
@@ -141,7 +147,7 @@ class ResolutionModels:
                 pair_id=pair_id,
                 stage=FIRST_STAGE,
                 system_prompt=FIRST_STAGE_SYSTEM_PROMPT,
-                payload=first_stage_payload(pair_id, evidence),
+                payload=first_stage_payload(pair_id, evidence, self.logreg_model),
                 max_tokens=160,
                 parser=parse_first_stage_response,
             )
