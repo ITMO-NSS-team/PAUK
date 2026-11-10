@@ -24,7 +24,7 @@ from pauk.graph.person_resolution_model import DEFAULT_MODEL_PATH, load_logistic
 from pauk.graph.person_resolution_single import SingleVerdict, full_payload
 from pauk.models import Person
 from pauk.pipeline.person_name_blocking import candidate_person_pairs
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.dedup import plan_person_merges
 from pauk.settings import Settings
@@ -133,7 +133,7 @@ class ResolverFollowupTest(unittest.TestCase):
             payload["surname_counts"] = dict(custom.surname_counts)
             artifact = Path(directory) / "custom.pkl"
             artifact.write_bytes(pickle.dumps(payload))
-            models = OpenRouterResolutionModels(Settings(person_resolution_logreg_model_path=artifact), mongomock.MongoClient().db, "test")
+            models = ResolutionModels(Settings(person_resolution_logreg_model_path=artifact), mongomock.MongoClient().db, "test")
             with patch.object(models, "_run", return_value={}) as run:
                 models.single_many([(context, evidence)])
                 request = run.call_args.args[0][0]
