@@ -45,6 +45,10 @@ payload}`. `append(source, payload, request)` is an `insert_one` with no
 upsert, so fetch history is never overwritten. `read(source)` is
 `find({"source": source, "group": self.group})` sorted by `fetched_at`.
 
+`append()` returns the exact timestamp persisted in `fetched_at`. ORCID
+membership uses that timestamp for `observed_at`, so replaying the same
+stored response cannot falsely look older than its prepared facts.
+
 `ensure_indexes()` creates two compound indexes on `raw`: `{source, group,
 fetched_at}` for the normal read, and `{source, fetched_at}` for cross-group
 scans that also sort responses by time. Cross-group scans (for example

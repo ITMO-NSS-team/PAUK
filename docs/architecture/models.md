@@ -52,9 +52,25 @@ the relation-like models.
   has no author ID, normalization uses `orcid_<orcid>` or `name_<hash>` until
   dedup resolves the identity. ITMO and external authors share the `Person`
   label; there is no `itmo_*`/`external_*` split.
-  - `is_itmo` is a boolean, not a label. At least one ITMO affiliation
-    anywhere makes the person ITMO for good: the property is "sticky" (see
-    `graph/client.py::upsert_person_nodes_batch`).
+  - `is_itmo` remains the boolean used by existing consumers. Membership
+    status and source-specific evidence explain how it was calculated.
+    An explicit institution ROR for this author on a collected work or an
+    ORCID employment can support it; OpenAlex author-profile affiliation
+    alone cannot. Legacy records with incomplete evidence remain unknown.
+  - `membership_evidence` records the original source owner and work or ORCID
+    record. `membership_status` is `supported`, `unsupported` or `unknown`;
+    only a complete source assessment can produce an unsupported result.
+    Authorship institution observations retain their fetch time, so replaying
+    an older source group cannot restore a withdrawn claim.
+    `membership_orcid_sources` retains the source owner even after a successful
+    ORCID refresh returns no qualifying employment.
+    `membership_work_sources` retains each original work version's institution
+    evidence when publication dedup leaves a single display authorship.
+  - `membership_owner_sources` is the inventory of expected original works
+    and ORCID records for each original person. Unknown inventories differ
+    from known empty lists. A negative result requires every owner and every
+    expected source to be accounted for; a completed assessment can therefore
+    clear an old positive flag, including on a merged person.
   - Russian name parts (`first_name_ru`, `second_name_ru`, `surname_ru`) and
     `name_ru`/`name_en` are filled by the `author_names` stage.
   - `email` is the one address shown on the card; `emails` are all known
