@@ -18,16 +18,16 @@ MongoDB: publications/persons/departments/organizations/repositories/github_prof
 pauk run --work W2741809807
 
 # Publications for a period
-pauk run --from 2025-01-01 --to 2025-03-31
+pauk run --from <start-date> --to <end-date>
 
 # Arbitrary list of OpenAlex IDs
 pauk run --works-file selected_works.txt --name selected-july
 
 # Individual steps
-pauk collect --work W2741809807
-pauk normalize --group 2026-07-31__W2741809807
-pauk enrich code_links --group 2026-07-31__W2741809807 --input selected_ids.txt --entity publications
-pauk publish graph --group 2026-07-31__W2741809807
+pauk collect --work W2741809807 --name example-work
+pauk normalize --group example-work
+pauk enrich code_links --group example-work --input selected_ids.txt --entity publications
+pauk publish graph --group example-work
 ```
 
 `enrich --group` is always required; `--input <file> --entity <entity>`
@@ -45,8 +45,9 @@ bare mentions like `github.com/org/repo` and real hyperlinks are found. The PDF
 text is saved in `Publication.full_text`.
 
 `context` and `page_number` on `MENTIONS_LINK` are lists of occurrences per
-publication (abstract and PDF pages). A hyphenated line break is joined; a line
-break without a hyphen is not. If a PDF cannot be downloaded or parsed, the
+publication (abstract and PDF pages). Hyphenated breaks and breaks after underscores preserve alternative URL
+readings. A continuous spelling in the same PDF can resolve the ambiguity;
+other line breaks are not joined. If a PDF cannot be downloaded or parsed, the
 stage is marked `failed` and retried on the next run, but the abstract result
 is kept.
 
@@ -60,7 +61,8 @@ This field is not loaded into the graph.
 from MongoDB into Neo4j with `MERGE`. `id` is unique for every node type;
 `GitHubProfile` also has a unique `login`.
 
-A person's `id` is the bare OpenAlex author ID (one person, one node).
+A person's `id` is normally the bare OpenAlex author ID. Records without it
+use a deterministic ORCID- or name-based fallback until dedup resolves them.
 `is_itmo` is set to `true` if at least one work has an ITMO affiliation, and
 data from other groups never lowers it back to `false`. Repositories whose
 `repositories` stage ended with status `failed` (for example, a 404) are not
@@ -125,8 +127,9 @@ cd pauk/gui/web && npm install && npm run dev
   sizes and field stats; with `--table` and `--sample` it prints N sample rows.
 - `pauk gui build` reads the newest snapshot (`--cache` picks another) and writes
   the site data into `data/gui/public` and `data/gui/private` (`--out-dir` changes
-  the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
-  which holds personal fields, is written only to `private/`.
+  the base folder). `--seed` sets the layout seed (default 42). The public variant
+  masks author names, remaps author IDs and contains only whitelisted fields;
+  personal author fields stay in the private variant.
 - `pauk reports build [<repo id> ...]` runs [OSA](https://github.com/aimclub/OSA)
   on every repository of the newest snapshot that has no report yet, except
   repositories only cited as third-party code, and writes
@@ -137,7 +140,24 @@ cd pauk/gui/web && npm install && npm run dev
   report exists it only rebuilds the index, offline. `PAUK_REPORTS_DIR` moves
   the PDFs elsewhere.
 - The Vite dev server serves `data/gui/private`.
+- `npm run build:public` builds GitHub Pages from `data/gui/public` into
+  `dist-public`. `scripts/publish_pages.sh` validates public data, uploads it
+  and waits for the existing Pages workflow; running it publishes to GitHub.
 
 Details: [`docs/architecture/gui.md`](docs/architecture/gui.md),
 [`docs/architecture/cache.md`](docs/architecture/cache.md) and
 [`docs/architecture/reports.md`](docs/architecture/reports.md).
+
+## Server deployment
+
+The lab server runs Mongo, Neo4j, admin, worker, nginx and OPS from
+`deploy/compose.yml`. The live site is on port 8520, the admin panel on 8505,
+and OPS on 8506 with the `ops` profile enabled.
+Map-data generation and site publication are separate steps. See
+[deployment](docs/architecture/deploy.md) and
+[Compose setup](deploy/README.md).
+
+The optional `ops` Compose profile provides the operations panel without authentication
+on port 8506: service status, full backups and restore, site releases, GitHub
+Pages and persistent operation logs. Its own frontend is built without map
+data. Setup and recovery behavior: [OPS](docs/architecture/ops.md).

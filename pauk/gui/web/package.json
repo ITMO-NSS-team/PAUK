@@ -8,12 +8,16 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:public": "vite --mode public",
     "build": "vite build",
+    "build:public": "vite build --mode public",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:public": "vite build --mode public",
+    "dev:public": "vite --mode public"
   },
   "keywords": [],
   "type": "module",

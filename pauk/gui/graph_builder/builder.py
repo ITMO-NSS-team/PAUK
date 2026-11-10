@@ -7,13 +7,10 @@ The stage logic lives in `authorship.py`, `departments.py`, `layout.py`,
   `graph-data.json`) and "detail" (extended fields `pauk/gui/web` loads lazily).
   Departments have no detail file.
 - Output is plain JSON, read by `core/data.ts::loadGraphData()`.
-- Public/private is decided by disk location, not by trimming content:
-  `authors-detail.json`, the only file with personal fields, goes only into
-  `private/`. The map label is the full form (`author_label(..., public=False)`,
-  see `nodes.py`); switch to `public=True` there for anonymized labels.
-- `graph-data.json` and the non-author detail files are also written into
-  `private/`, because Vite serves ONE folder (`vite.config.ts::publicDir`) and
-  local development needs all four files there. Deploy takes only `public/`.
+- Two variants from one build: `private/` (lab server, full names and personal
+  fields) and `public/` (GitHub Pages), which `public.py::to_public` rewrites
+  from the private one: masked names, renumbered author keys, whitelisted
+  fields only. The site picks one by build mode (`vite.config.ts`).
 """
 
 from __future__ import annotations
@@ -31,6 +28,7 @@ from .departments import DepartmentAssigner, repo_groups
 from .edges import EdgeBuilder
 from .layout import GraphLayoutBuilder
 from .nodes import AuthorNodeBuilder, PubNodeBuilder, RepoNodeBuilder
+from .public import to_public
 
 logger = logging.getLogger(__name__)
 
@@ -138,20 +136,14 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
     private_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    summary, detail = GraphDataBuilder(read_snapshot(snapshot), seed=seed).build()
+    db = read_snapshot(snapshot)
+    summary, detail = GraphDataBuilder(db, seed=seed).build()
+    public_summary, public_detail = to_public(summary, detail, db["persons"])
 
-    # graph-data.json and the detail files without personal fields go into
-    # public (safe to deploy) and are duplicated into private, because
-    # pauk/gui/web serves static files from ONE folder
-    # (vite.config.ts::publicDir). authors-detail.json holds the only truly
-    # personal fields (email/google_scholar/affiliations/...) and goes only
-    # into private.
-    dump_json(summary, public_dir / "graph-data.json")
-    dump_json(summary, private_dir / "graph-data.json")
-    for kind, rows in detail.items():
-        dump_json(rows, private_dir / f"{kind}-detail.json")
-        if kind != "authors":
-            dump_json(rows, public_dir / f"{kind}-detail.json")
+    for folder, (graph, details) in ((private_dir, (summary, detail)), (public_dir, (public_summary, public_detail))):
+        dump_json(graph, folder / "graph-data.json")
+        for kind, rows in details.items():
+            dump_json(rows, folder / f"{kind}-detail.json")
 
     logger.info("Done in %.1f s", time.time() - t0)
     return {

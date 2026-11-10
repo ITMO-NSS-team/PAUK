@@ -13,7 +13,7 @@ from pauk.graph.person_resolution import (
 )
 from pauk.models import Person
 from pauk.pipeline.person_resolution import (
-    OpenRouterResolutionModels,
+    ResolutionModels,
     _Request,
     _Result,
 )
@@ -473,7 +473,7 @@ class DedupStageWiringTest(unittest.TestCase):
             ],
         )
 
-    @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
+    @patch("pauk.pipeline.person_resolution.ResolutionModels")
     def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(self, model_factory):
         model_factory.return_value = FakeModels(ModelVerdict(True, 0.9), ModelVerdict(True, 0.9))
 
@@ -482,7 +482,7 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 1)
         self.assertEqual(review.questions(self.db), [])
 
-    @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
+    @patch("pauk.pipeline.person_resolution.ResolutionModels")
     def test_pipeline_accepts_a_rejected_pair_without_review(self, model_factory):
         model_factory.return_value = FakeModels(ModelVerdict(False, 0.9, "different people"), ModelVerdict(False, 0.9))
 
@@ -494,7 +494,7 @@ class DedupStageWiringTest(unittest.TestCase):
 
     def _assert_pipeline_persists_disagreement(self, first):
         self.assertEqual(review.questions(self.db), [])
-        with patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels") as model_factory:
+        with patch("pauk.pipeline.person_resolution.ResolutionModels") as model_factory:
             model_factory.return_value = FakeModels(
                 ModelVerdict(first, 0.9, "first reason"), ModelVerdict(not first, 0.8, "second reason")
             )
@@ -545,9 +545,11 @@ class ResolverCacheTest(unittest.TestCase):
     the number they were handed this run."""
 
     def setUp(self):
-        self.config = Settings(openrouter_api_key="test-key")
+        self.config = Settings(
+            openrouter_api_key="test-key", person_resolution_provider="openrouter", person_resolution_batch_size=1
+        )
         self.db = mongomock.MongoClient()["pauk_test"]
-        self.models = OpenRouterResolutionModels(self.config, self.db, "sample")
+        self.models = ResolutionModels(self.config, self.db, "sample")
 
     def evidence(self):
         return PairEvidence(
@@ -594,9 +596,14 @@ class ResolverBatchingTest(unittest.TestCase):
     and counted exactly once across block boundaries."""
 
     def models(self, workers):
-        config = Settings(openrouter_api_key="test-key", person_resolution_concurrency=workers)
+        config = Settings(
+            openrouter_api_key="test-key",
+            person_resolution_concurrency=workers,
+            person_resolution_provider="openrouter",
+            person_resolution_batch_size=1,
+        )
         db = mongomock.MongoClient()["pauk_test"]
-        return OpenRouterResolutionModels(config, db, "sample")
+        return ResolutionModels(config, db, "sample")
 
     def evidence(self, number):
         return PairEvidence(
@@ -618,7 +625,7 @@ class ResolverBatchingTest(unittest.TestCase):
             raise KeyboardInterrupt
 
         with (
-            patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False),
+            patch.object(ResolutionModels, "_invoke", side_effect=invoke, autospec=False),
             self.assertRaises(KeyboardInterrupt),
         ):
             models.first_many(items)
@@ -634,7 +641,7 @@ class ResolverBatchingTest(unittest.TestCase):
             seen.append(request.pair_id)
             return _Result(request, ModelVerdict(True, 0.9, "same"), None, None, None, None, False)
 
-        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
+        with patch.object(ResolutionModels, "_invoke", side_effect=invoke, autospec=False):
             verdicts = models.first_many(items)
 
         self.assertEqual(sorted(verdicts), [number for number, _ in items])

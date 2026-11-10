@@ -1,7 +1,7 @@
 """`pauk reports build`: OSA reports on every repository of a graph snapshot.
 
-OSA needs an LLM, which the lab server can't reach, so this runs locally,
-outside the lab VPN, from the same snapshot `pauk gui build` reads.
+Reports use the same graph snapshot as `pauk gui build` and an LLM via
+OpenRouter, optionally through a configured proxy.
 """
 
 from __future__ import annotations
@@ -79,13 +79,13 @@ class ReportsBuilder:
 
         Args:
             config: Project settings, in particular `openrouter_api_key`,
-                `openrouter_proxy_url` and `osa_dir`.
-            settings: OSA version, model, context window and the reports folder.
+                `reports_model`, `openrouter_proxy_url` and `osa_dir`.
+            settings: OSA version, context window and the reports folder.
         """
         self.config = config
         self.settings = settings
         self.llm = OpenRouterClient(
-            config.request_timeout, config.openrouter_api_key, settings.model, config.openrouter_proxy_url
+            config.request_timeout, config.openrouter_api_key, config.reports_model, config.openrouter_proxy_url
         )
 
     def build(
@@ -149,7 +149,10 @@ class ReportsBuilder:
         self, jobs: list[tuple[str, str]], repos: dict[str, str], out_dir: Path, workers: int
     ) -> tuple[int, int]:
         """Runs OSA for every `(key, lang)` job in parallel; returns (generated, failed)."""
-        runner = OsaRunner(self.llm.api_key, self.config.osa_dir, self.config.openrouter_proxy_url, self.settings)
+        runner = OsaRunner(
+            self.llm.api_key, self.config.osa_dir, self.config.openrouter_proxy_url, self.settings,
+            model=self.llm.model,
+        )
         generated = failed = 0
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             futures = [

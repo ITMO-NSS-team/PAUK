@@ -302,7 +302,7 @@ export function mountPanel(
   /** No fallback to another language: a report the reader can't read is no report. */
   function reportLinksOf(key: string, lang: AppState["lang"]): PanelLink[] {
     return reportKeys.get(lang)?.has(key)
-      ? [{ kind: "link", href: `/reports/${lang}/${encodeURIComponent(key)}.pdf`, text: "PDF" }]
+      ? [{ kind: "link", href: `${DATA_CONFIG.reportsUrl}/${lang}/${encodeURIComponent(key)}.pdf`, text: "PDF" }]
       : [];
   }
 
@@ -457,14 +457,25 @@ export function mountPanel(
       let withOrcid = 0;
       let withGithub = 0;
       let withEmail = 0;
+      let hasContacts = false;
       for (const author of authors) {
         const detail = authorDetails.get(author.key);
         if (!detail) continue;
         withDetail++;
+        if (detail.email !== undefined) hasContacts = true;
         if (detail.orcid) withOrcid++;
         if (detail.github) withGithub++;
         if (detail.email) withEmail++;
       }
+      // The public build has no contact fields at all; 0% would read as "nobody has one".
+      const contactRows: PanelRow[] =
+        withDetail > 0 && !hasContacts
+          ? []
+          : [
+              [t("field.orcid", lang), completionRow(withOrcid, withDetail)],
+              [t("field.github", lang), completionRow(withGithub, withDetail)],
+              [t("field.email", lang), completionRow(withEmail, withDetail)],
+            ];
 
       return show(
         t("overview.title", lang),
@@ -475,9 +486,7 @@ export function mountPanel(
           [t("overview.externalAuthors", lang), String(external)],
           [t("field.deptsCount", lang), String(data.departments.length)],
           [t("overview.avgPubsPerAuthor", lang), avgPubs],
-          [t("field.orcid", lang), completionRow(withOrcid, withDetail)],
-          [t("field.github", lang), completionRow(withGithub, withDetail)],
-          [t("field.email", lang), completionRow(withEmail, withDetail)],
+          ...contactRows,
         ]),
         false,
         null,
@@ -626,10 +635,12 @@ export function mountPanel(
         // record means the file has not arrived yet.
         const authorDetail = authorDetails.get(node.key);
         if (authorDetail) {
-          const fullName = localize(authorDetail.name_ru, authorDetail.name_en, lang);
+          const nameRu = authorDetail.name_ru ?? "";
+          const nameEn = authorDetail.name_en ?? "";
+          const fullName = localize(nameRu, nameEn, lang);
           if (fullName) {
             title = fullName;
-            const otherName = localize(authorDetail.name_en, authorDetail.name_ru, lang);
+            const otherName = localize(nameEn, nameRu, lang);
             if (otherName && otherName !== fullName) subtitle = otherName;
           }
           if (authorDetail.openalex_id)
@@ -648,20 +659,20 @@ export function mountPanel(
           }
           if (authorDetail.email)
             privateRows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
-          if (authorDetail.affiliations.length > 0) {
+          if (authorDetail.affiliations?.length) {
             privateRows.push([
               t("field.affiliations", lang),
               { kind: "list", items: affiliationItems(authorDetail.affiliations) },
             ]);
           }
           // Per source, see author_variants() in pauk/gui/graph_builder/nodes.py.
-          if (authorDetail.name_variants.openalex.length > 0) {
+          if (authorDetail.name_variants?.openalex.length) {
             privateRows.push([
               t("field.nameVariantsOpenalex", lang),
               { kind: "list", items: authorDetail.name_variants.openalex },
             ]);
           }
-          if (authorDetail.name_variants.orcid.length > 0) {
+          if (authorDetail.name_variants?.orcid.length) {
             privateRows.push([
               t("field.nameVariantsOrcid", lang),
               { kind: "list", items: authorDetail.name_variants.orcid },
