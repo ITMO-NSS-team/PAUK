@@ -21,8 +21,9 @@ graph even if the pydantic model has them (see
 
 * **`id`** (`ID`, *Unique*): bare OpenAlex author ID, or `orcid_<orcid>` /
   `name_<hash>` when the source has no author ID.
-* **`is_itmo`** (`Boolean`): ITMO membership. A "sticky" property: once set to
-  `true`, a later external row for the same person never lowers it to `false`.
+* **`is_itmo`** (`Boolean`): ITMO membership backed by authorship ROR or ORCID
+  evidence. A complete current assessment of every original owner's sources
+  can clear `true`; partial or older observations cannot.
 * **`openalex_id`** (`String`): OpenAlex identifier.
 * **`orcid`** (`String`): ORCID identifier.
 * **`name_raw`** (`String`): the name as OpenAlex gave it.

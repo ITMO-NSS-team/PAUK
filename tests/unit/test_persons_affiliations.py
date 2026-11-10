@@ -91,14 +91,17 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual(authorship.affiliation, "As printed on the paper")
         self.assertIsNone(authorship.affiliation_source)
 
-    def test_an_itmo_affiliation_no_work_stated_still_marks_the_person(self):
+    def test_profile_only_itmo_affiliation_backfills_without_confirming_membership(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
                         authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Deposit without affiliations", year=2026)],
             openalex_author(affiliations=[(ITMO_INSTITUTION, [2026])]),
         )
-        self.assertTrue(result.is_itmo)
+        self.assertFalse(result.is_itmo)
+        self.assertEqual(result.membership_status, "unknown")
+        self.assertEqual(result.authored[0].affiliation, "ITMO University")
+        self.assertEqual(result.authored[0].affiliation_source, "openalex")
 
     def test_orcid_employment_fills_what_openalex_does_not_know(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False, orcid="0000-0001",

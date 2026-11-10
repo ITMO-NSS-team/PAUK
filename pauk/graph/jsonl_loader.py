@@ -311,8 +311,7 @@ def load_prepared_rows(
 
     # Persons share a single file but is_itmo picks which relationship
     # whitelist applies (person_spec). The node itself always carries the
-    # single :Person label; is_itmo travels as a sticky property (see
-    # upsert_person_nodes_batch).
+    # single :Person label; membership updates are source-aware.
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
         spec = person_spec(row)
