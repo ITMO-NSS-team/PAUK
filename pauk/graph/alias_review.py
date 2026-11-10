@@ -25,3 +25,8 @@ def record_alias_conflict(db: Database, conflict: MergeAliasConflict, operation:
         }],
         source=review.GRAPH,
     )
+
+
+def retire_alias_conflicts(db: Database, operation: str) -> None:
+    """Close diagnostics for an operation that has completed without an alias conflict."""
+    review.retire_alias_conflicts(db, operation)

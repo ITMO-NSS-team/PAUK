@@ -11,7 +11,7 @@ from pauk.jobs.models import GRAPH
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore
 
-from .alias_review import record_alias_conflict
+from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import MergeAliasConflict, Neo4jClient
 from .csv_loader import load_csv_dir
@@ -126,6 +126,8 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.
             counts = apply_overrides(client, mongo_db)
+        retire_alias_conflicts(mongo_db, f"publish:{group}")
+        retire_alias_conflicts(mongo_db, "dedup-graph")
     except MergeAliasConflict as conflict:
         record_alias_conflict(mongo_db, conflict, f"publish:{group}")
         raise

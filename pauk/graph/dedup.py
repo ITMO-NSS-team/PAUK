@@ -46,7 +46,7 @@ from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
-from .alias_review import record_alias_conflict
+from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import MergeAliasConflict, chunked
 from .overrides import apply_overrides
@@ -506,6 +506,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # decisions go back on top here too.
         with actor_context("etl-pipeline", source="dedup-graph"):
             overrides = apply_overrides(client, mongo_db)
+        retire_alias_conflicts(mongo_db, "dedup-graph")
         return {
             "graph_persons_merged": persons_removed,
             "graph_publications_merged": publications_removed,

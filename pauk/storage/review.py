@@ -136,9 +136,19 @@ def require_answerable(db: Database, kind: str, members: list[str]) -> None:
     """Integrity incidents cannot become identity decisions through a forged form."""
     question_id(kind, members)
     if kind == ALIAS or (kind in PERSON_KINDS and db[COLLECTION].find_one(
-        {"kind": ALIAS, "members": {"$all": sorted(set(members))}}, {"_id": 1}
+        {"kind": ALIAS, "members": {"$all": sorted(set(members))},
+         "auto_resolved_at": {"$exists": False}}, {"_id": 1}
     ) is not None):
         raise ReviewError("repair conflicting aliases before answering identity questions")
+
+
+def retire_alias_conflicts(db: Database, operation: str) -> None:
+    """Retire only incidents from a completed pass; another group's input may still conflict."""
+    db[COLLECTION].update_many(
+        {"kind": ALIAS, "evidence.operation": operation,
+         "auto_resolved_at": {"$exists": False}},
+        {"$set": {"auto_resolved_at": _now()}},
+    )
 
 
 def names_of(row: dict, members: list[str]) -> list[str | None]:

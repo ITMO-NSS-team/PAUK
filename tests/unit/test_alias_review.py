@@ -94,6 +94,61 @@ class AliasReviewTest(unittest.TestCase):
         record_alias_conflict(self.db, self.conflict("Publication"), "publish:test")
         self.assertEqual(self.db.review_pairs.count_documents({}), 0)
 
+    def test_successful_publish_retires_stale_conflict_and_repeated_failure_reopens_it(self):
+        record_alias_conflict(self.db, self.conflict(), "publish:test")
+        try:
+            flatten_merges([("X", "Y"), ("X", "Z")], label="Person")
+        except MergeAliasConflict as other_conflict:
+            record_alias_conflict(self.db, other_conflict, "publish:other")
+        with self.assertRaises(review.ReviewError):
+            review.require_answerable(self.db, review.PAIR, ["B", "C"])
+
+        graph = RecordingNeo4jClient()
+        graph.close = Mock()
+        PreparedStore(self.db, "test").write_rows("persons", [{"id": "B"}])
+        with patch("pauk.graph.load.audited_client", return_value=graph), \
+                patch("pauk.graph.load.create_constraints"), \
+                patch("pauk.graph.load.apply_overrides", return_value={}):
+            _load_locked(Settings(), self.db, "test")
+
+        self.assertEqual(review.count(self.db, kind=review.ALIAS, answered=False), 1)
+        review.require_answerable(self.db, review.PAIR, ["B", "C"])
+        with self.assertRaises(review.ReviewError):
+            review.require_answerable(self.db, review.PAIR, ["Y", "Z"])
+        record_alias_conflict(self.db, self.conflict(), "publish:test")
+        self.assertEqual(review.count(self.db, kind=review.ALIAS, answered=False), 2)
+        with self.assertRaises(review.ReviewError):
+            review.require_answerable(self.db, review.PAIR, ["B", "C"])
+
+    def test_failed_publish_does_not_retire_alias_conflict(self):
+        record_alias_conflict(self.db, self.conflict(), "publish:test")
+        graph = RecordingNeo4jClient()
+        graph.close = Mock()
+        PreparedStore(self.db, "test").write_rows("persons", [{"id": "B"}])
+        with patch("pauk.graph.load.audited_client", return_value=graph), \
+                patch("pauk.graph.load.create_constraints"), \
+                patch("pauk.graph.load.apply_overrides", side_effect=RuntimeError("write failed")), \
+                self.assertRaisesRegex(RuntimeError, "write failed"):
+            _load_locked(Settings(), self.db, "test")
+        self.assertEqual(review.count(self.db, kind=review.ALIAS, answered=False), 1)
+        with self.assertRaises(review.ReviewError):
+            review.require_answerable(self.db, review.PAIR, ["B", "C"])
+
+    def test_successful_graph_dedup_retires_its_alias_conflict(self):
+        record_alias_conflict(self.db, self.conflict(), "dedup-graph")
+        graph = Mock()
+        graph.fetch_merged_id_map.return_value = {}
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory), person_resolution_enabled=False)
+            with patch("pauk.graph.dedup.audited_client", return_value=graph), \
+                    patch("pauk.graph.dedup.dedup_graph_persons", return_value=(0, [])), \
+                    patch("pauk.graph.dedup.dedup_graph_publications", return_value=(0, [])), \
+                    patch("pauk.graph.dedup.dedup_graph_repositories", return_value=(0, [])), \
+                    patch("pauk.graph.dedup.apply_overrides", return_value={}):
+                _dedup_locked(config, self.db)
+        self.assertEqual(review.count(self.db, kind=review.ALIAS, answered=False), 0)
+        review.require_answerable(self.db, review.PAIR, ["B", "C"])
+
     def test_publish_queues_conflict_before_any_data_writes_and_closes_client(self):
         graph = RecordingNeo4jClient()
         graph.close = Mock()
