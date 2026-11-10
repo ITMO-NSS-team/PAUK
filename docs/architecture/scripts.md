@@ -79,6 +79,7 @@ to the checkout.
 | `repair_implements.py` | Removes historical `IMPLEMENTS` claims if every link to the repository is classified and none has `is_relevant=true`; leaves `pending`/`failed` alone. Dry run by default, `--apply` writes | Mongo |
 | `plan_author_names_repair.py` | Finds `author_names=completed` rows with empty required name parts and builds a manifest plus per-group id files (unique across groups) for a targeted `--force` rerun; does not change Mongo | only `data/reports/` |
 | `prune_stranger_profiles.py` | Deletes GitHub profiles harvested only from repositories nobody implements. Dry run by default, `--apply` writes | Mongo |
+| `split_publication_versions.py` | Takes apart publications the old dedup folded on one title under two DOIs, where the version rules give the pair a bucket and its raw payload is still there: removes the record from the survivor's `merged_ids`/`versions` in Mongo and Neo4j, and prints the `normalize` → `enrich` → `publish` → `admin prune` → `versions link` sequence that rebuilds it from raw. Holds the graph lock. Dry run by default, `--apply` writes | Mongo, Neo4j |
 
 ## Catalogs and quality measurement
 

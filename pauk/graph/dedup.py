@@ -39,6 +39,7 @@ from pauk.pipeline.stages.dedup import (
     _publication_rank_key,
     _union,
     plan_person_merges,
+    publication_buckets,
     staff_identities,
 )
 from pauk.settings import Settings
@@ -126,22 +127,35 @@ def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
     return json.dumps(list(by_id.values()), ensure_ascii=False)
 
 
+def _bucket_pairs(buckets, pairs: list[tuple[str, str]] | None = None,
+                  pair_rules: dict[frozenset, str] | None = None
+                  ) -> tuple[list[tuple[str, str]], dict[frozenset, str]]:
+    """Pair the ids of each (rule, ids) bucket; remember which rule paired them.
+
+    Extends `pairs`/`pair_rules` when given, so several kinds of evidence
+    land in one union-find input with the first rule that paired them.
+    """
+    pairs = [] if pairs is None else pairs
+    pair_rules = {} if pair_rules is None else pair_rules
+    for rule, ids in buckets:
+        unique = list(dict.fromkeys(ids))
+        for other in unique[1:]:
+            pairs.append((unique[0], other))
+            pair_rules.setdefault(frozenset((unique[0], other)), rule)
+    return pairs, pair_rules
+
+
 def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]], dict[frozenset, str]]:
     """Pair node rows that share a key; remember which rule paired them."""
-    pairs: list[tuple[str, str]] = []
-    pair_rules: dict[frozenset, str] = {}
+    found: list[tuple[str, list[str]]] = []
     for key_of, rule in key_functions:
         buckets: dict[str, list[str]] = defaultdict(list)
         for row in rows:
             key = key_of(row)
             if key:
                 buckets[key].append(row["id"])
-        for bucket in buckets.values():
-            unique = list(dict.fromkeys(bucket))
-            for other in unique[1:]:
-                pairs.append((unique[0], other))
-                pair_rules.setdefault(frozenset((unique[0], other)), rule)
-    return pairs, pair_rules
+        found += [(rule, bucket) for bucket in buckets.values()]
+    return _bucket_pairs(found)
 
 
 def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
@@ -277,13 +291,12 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     """
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
-    pairs, pair_rules = _keyed_pairs(
+    buckets = publication_buckets(
         rows,
-        (
-            (lambda row: _norm_doi(row.get("doi")), "doi"),
-            (lambda row: title if (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES else None, "title"),
-        ),
+        lambda row: _norm_doi(row.get("doi")),
+        lambda row: title if (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES else None,
     )
+    pairs, pair_rules = _bucket_pairs((rule, [row["id"] for row in bucket]) for rule, bucket in buckets)
 
     merges: list[tuple[str, str]] = []
     canonical_updates: list[tuple[str, dict]] = []
@@ -363,11 +376,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
     for row in rows:
         for cited in row.get("cited_urls") or []:
             by_cited[normalize_repo_url(cited)].append(row["id"])
-    for bucket in by_cited.values():
-        unique = list(dict.fromkeys(bucket))
-        for other in unique[1:]:
-            pairs.append((unique[0], other))
-            pair_rules.setdefault(frozenset((unique[0], other)), "cited_url")
+    _bucket_pairs((("cited_url", bucket) for bucket in by_cited.values()), pairs, pair_rules)
 
     merges: list[tuple[str, str]] = []
     canonical_updates: list[tuple[str, dict]] = []

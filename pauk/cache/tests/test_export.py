@@ -98,6 +98,7 @@ TABLE_ORDER = [
     "mentions_candidates",
     "repo_persons",
     "repo_depts",
+    "pub_versions",
 ]
 
 

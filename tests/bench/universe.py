@@ -70,8 +70,10 @@ MARKUP_TITLE_CLEAN = "Growth of CaF2/Si(111) and monolayer WSe2 in vacuo"
 
 # Duplicate publication records (works W111..W120). One work reaches OpenAlex
 # as several records: a re-indexed duplicate of one DOI, a preprint and its
-# version of record, a deposit re-released per version. Titles differing only
-# in case and spacing are the same title; the "Untitled" placeholder is not.
+# version of record, a deposit re-released per version. Only the first is a
+# duplicate: under DOIs of their own the others stay apart as versions.
+# Titles differing only in case and spacing are the same title when one
+# record has no DOI; the "Untitled" placeholder is not a title.
 DUPLICATE_DOI = "https://doi.org/10.7777/synth.dup"
 PUBLICATION_TITLES = {
     111: "Bench duplicate record",
@@ -102,6 +104,8 @@ PUBLICATION_DOIS = {
     116: "https://doi.org/10.7777/deposit.116",
     117: "https://doi.org/10.7777/deposit.117",
 }
+# A record with no DOI folds into the one DOI its title carries.
+NO_DOI_WORKS = (13, 14, 120)
 PUBLICATION_DATES = {
     111: "2026-03-15",
     112: "2026-03-15",  # one DOI, one date: authors decide
@@ -129,11 +133,11 @@ DUPLICATE_WORK_AUTHORS = {
 # Merged-away work id -> the record that survives.
 PUBLICATION_MERGES = {
     "W70000000112": "W70000000111",
-    "W70000000113": "W70000000114",
-    "W70000000115": "W70000000117",
-    "W70000000116": "W70000000117",
     "W70000000120": "W70000000119",
 }
+# Records of one work under DOIs of their own: separate publications.
+PUBLICATION_VERSIONS = ("W70000000113", "W70000000114")
+DEPOSIT_RELEASES = ("W70000000115", "W70000000116", "W70000000117")
 UNTITLED_WORK_IDS = ("W7000000013", "W70000000118")
 
 # A repository renamed on GitHub between two runs: the row written before the
@@ -414,7 +418,7 @@ def build_universe() -> dict:
             work["type"] = "article"
         if n == 15:
             work["doi"] = "https://doi.org/10.9999/unknown-to-crossref"
-        elif n not in (13, 14):
+        elif n not in NO_DOI_WORKS:
             work["doi"] = PUBLICATION_DOIS.get(n, f"https://doi.org/10.7777/synth.{n:03d}")
         if n in PUBLICATION_JOURNALS:
             work["primary_location"] = {"source": {"display_name": PUBLICATION_JOURNALS[n]}}

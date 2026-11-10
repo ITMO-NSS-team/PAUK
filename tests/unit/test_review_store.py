@@ -139,6 +139,18 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(review.count(self.db, answered=True), 0)
         self.assertEqual(review.count(self.db, answered=False), 2)
 
+    def test_withdrawing_a_version_answer_leaves_the_question_too(self):
+        # A version question says which bucket linked the pair, not why it
+        # was held; that still marks it as asked by a run.
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "PREPRINT_PUBLISHED",
+            "mergeable": True, "record_a": "W1", "record_b": "W2"}])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.assertTrue(review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"]))
+        (row,) = self.db[review.COLLECTION].find({"kind": review.PUB_VERSION})
+        self.assertNotIn("verdict", row)
+        self.assertEqual(review.version_decisions(self.db), {})
+
     def test_applying_is_recorded_apart_from_deciding(self):
         # The two happen at different times: a pair answered before its
         # group is published has nothing to merge yet.

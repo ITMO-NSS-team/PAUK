@@ -289,6 +289,7 @@ class WhitelistTest(unittest.TestCase):
     def test_every_relationship_in_the_registry_is_offered(self):
         self.assertIn(("Person", "CONTRIBUTED_TO", "Repository"), RELATIONSHIPS)
         self.assertIn(("Publication", "MENTIONS_LINK", "Repository"), RELATIONSHIPS)
+        self.assertIn(("Publication", "IS_VERSION", "Publication"), RELATIONSHIPS)
 
 
 class NodeEditTest(unittest.TestCase):
