@@ -38,6 +38,7 @@ MONGO_TIMEOUT_MS = 2000
 
 #: Said when Mongo cannot be reached: that is the whole panel, not one page.
 MONGO_SILENT = "MongoDB не отвечает. Панель без неё работать не может."
+AUDIT_UNAVAILABLE = "Не удалось открыть журнал правок. Проверьте каталог аудита и права записи на сервере."
 
 
 def get_session(request: Request, db: Annotated[Database, Depends(get_db)]) -> dict | None:
@@ -126,8 +127,7 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
     The driver is shared by the application; the audited wrapper is per request.
 
     Raises:
-        HTTPException: 503 when the graph cannot be reached (no password
-            configured, or nothing listening).
+        HTTPException: 503 when graph or audit initialization fails.
     """
     try:
         client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
@@ -138,6 +138,9 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
         logger.warning("graph unavailable: %s", error)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"cannot reach Neo4j at {request.app.state.config.neo4j_uri}") from None
+    except OSError:
+        logger.exception("could not initialize the graph audit log")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, AUDIT_UNAVAILABLE) from None
     try:
         yield client
     finally:
@@ -145,14 +148,14 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
 
 
 def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
-    """The audited client, or None when the graph is not answering.
+    """The audited client, or None when it cannot be initialized.
 
     For routes that are still useful without the graph: a review answer is
     written to Mongo and read by the rules on their next run.
     """
     try:
         client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
-    except (ValueError, ServiceUnavailable, AuthError) as error:
+    except (ValueError, ServiceUnavailable, AuthError, OSError) as error:
         logger.warning("graph unavailable, carrying on without it: %s", error)
         yield None
         return

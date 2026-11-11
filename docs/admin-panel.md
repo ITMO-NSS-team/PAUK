@@ -386,6 +386,21 @@ panel sits behind a VPN and often a single proxy.
 
 Every edit is written to the audit log with the author, e.g. `user:ivanov`.
 
+`Publication.code_url` accepts one HTTP(S) URL or a JSON list of URLs.
+The panel and CLI store it as JSON text, as required by the map. Invalid
+input rejects the edit before writing either the graph or the decision.
+Other list fields use their existing model declarations: one string or a
+JSON list for string lists, one JSON object or a list for structured values.
+Clearing a field removes its value; an explicit `[]` stays an empty list.
+JSON whitespace and object-key order alone do not count as an edit or a
+source disagreement. Structured lists reject non-finite numbers such as `NaN`.
+
+Requests that need an unavailable database return 503 with an explanation.
+A failure to open the audit log reports a server configuration problem.
+
+Manual edits with sources `admin-ui` and `admin-cli` are excluded from the
+audit entries used to find later pipeline changes.
+
 ## No draft
 
 "Сохранить" (Save) writes straight to Neo4j, the database named in `.env`.
@@ -413,8 +428,8 @@ search page.
 
 A hand-created node survives publishing on its own: the loader touches only
 ids it has rows for. It is still recorded in `graph_overrides` as a "this
-record was created by hand" claim. There is nothing to reapply, but without it
-reconcile could not tell the record from stale data and would delete it. A
+record was created by hand" claim. Its saved fields are reapplied to the existing
+node, and the claim protects it from reconciliation. A
 field edit on such a record is part of the same claim, so it cannot be undone
 in "Ручные решения" (Manual decisions); delete the record instead.
 
@@ -426,7 +441,7 @@ in "Ручные решения" (Manual decisions); delete the record instead.
 | search | list of nodes per label, search by id and text |
 | record card | all fields, edit, delete with confirmation, edit history in the graph and source-row history |
 | new record | create a record the pipeline does not know |
-| relationships | link to and unlink from another record, over the 11 allowed types |
+| relationships | link to and unlink from another record using the allowed relationship combinations |
 | deleted record | what happened to it, and "Восстановить" (Restore) |
 | "Журнал правок" (Audit log) | who changed what and when, via the panel and via the pipeline; filters and pages |
 | "Ручные решения" (Manual decisions) | what is currently applied over the pipeline, each with "отменить" (undo) |
@@ -628,11 +643,9 @@ enter; nothing breaks.
 
 ## Internals
 
-The panel never edits the graph directly. All changes go through
-`pauk/graph/mutations.py`, which has closed lists: 7 labels, 11 relationship
-types and fields derived from `NODE_REGISTRY`. Neither a label nor a field name
-can come from a form, since they are interpolated into Cypher; arbitrary
-queries are impossible.
+All changes go through `pauk/graph/mutations.py`. Labels, relationship
+combinations and field names are checked against `NODE_REGISTRY` before
+being interpolated into Cypher.
 
 The "Пайплайн" page is the same: the job kind is checked against `JobKind`, the
 group against those that have prepared rows, dates with the same selectors as
@@ -645,10 +658,9 @@ How edits survive publishing:
 - **node deletion** leaves a mark, otherwise `MERGE` would recreate the node on
   the next run;
 - **relationship deletion** also leaves a mark, for the same reason;
-- **creating a record or relationship** is written as a claim. There is nothing
-  to reapply: the loader does not delete what it does not know about, so such a
-  record or link survives publishing by itself. The claim is read only by
-  reconcile, so that hand-made records are not mistaken for leftovers.
+- **creating a record or relationship** is written as a claim that protects it
+  from reconciliation. A node claim also reapplies the saved fields to an
+  existing node. A relationship claim protects the edge without recreating it.
 
 A field change also stores the previous value. The discrepancy screen relies
 on it: when the source starts saying something different from what it said at

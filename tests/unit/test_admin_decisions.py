@@ -98,6 +98,27 @@ class ConflictTest(unittest.TestCase):
                      actor="user:roman", source="admin-ui")
         self.assertEqual(decisions.conflicts(self.db), [])
 
+    def test_cli_edits_do_not_dispute_their_own_manual_decision(self):
+        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Пётр",
+                     actor="user:roman", source="admin-cli")
+        self.assertEqual(decisions.conflicts(self.db), [])
+
+    def test_a_real_source_change_after_a_cli_edit_is_still_disputed(self):
+        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Пётр",
+                     actor="user:roman", source="admin-cli")
+        source_wrote(self.db, "Person", "A1", "name_ru", "Пётр", "Иван Петров", after_hours=2)
+        (conflict,) = decisions.conflicts(self.db)
+        self.assertEqual(conflict["now"], "Иван Петров")
+        self.assertEqual(conflict["ours"], "Пётр")
+
+    def test_json_formatting_changes_are_not_a_new_source_opinion(self):
+        automatic = '[\n  {"grant_id":"42", "funder":"Фонд"}\n]'
+        record_override(self.db, "Publication", "W9", "set", {"funding": [{"grant_id": "99"}]},
+                        auto_value={"funding": automatic})
+        source_wrote(self.db, "Publication", "W9", "funding", automatic,
+                     '[{"funder":"Фонд","grant_id":"42"}]')
+        self.assertFalse([row for row in decisions.conflicts(self.db) if row["target_id"] == "W9"])
+
     def test_writes_from_before_the_decision_are_ignored(self):
         # Deliberately a value that differs from auto_value: otherwise the
         # row would be dropped for repeating itself and the test would pass

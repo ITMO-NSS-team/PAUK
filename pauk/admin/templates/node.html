@@ -36,7 +36,10 @@
       <tr>
         <td>{{ name }}</td>
         <td><input type="text" name="{{ name }}" value="{{ value if value is not none else "" }}"
-                   {% if not user.can_write %}disabled{% endif %}></td>
+                   {% if name in field_hints %}aria-describedby="hint-{{ name }}"{% endif %}
+                   {% if not user.can_write %}disabled{% endif %}>
+          {% if name in field_hints %}<p class="muted field-hint" id="hint-{{ name }}">{{ field_hints[name] }}</p>{% endif %}
+        </td>
       </tr>
       {% endfor %}
       {% for name in reserved %}

@@ -1,4 +1,5 @@
 import argparse
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -70,6 +71,18 @@ class RunTest(unittest.TestCase):
         admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
                       self.config, None)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
+
+    def test_code_urls_use_the_same_format_in_the_graph_and_decision(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        self.graph.add("Publication", "W1", code_url=None)
+        for raw in ('https://github.com/a/b', '["https://github.com/a/b"]'):
+            with self.subTest(raw=raw):
+                admin_cli.run(parse("node", "set", "Publication", "W1", "--set", "code_url=" + raw),
+                              self.config, db)
+                stored = self.graph.nodes["Publication", "W1"]["code_url"]
+                self.assertIsInstance(stored, str)
+                self.assertEqual(json.loads(stored), ["https://github.com/a/b"])
+                self.assertEqual(db.graph_overrides.find_one()["fields"]["code_url"], stored)
 
     def test_delayed_cli_recording_preserves_the_newer_edit_and_original_value(self):
         db = mongomock.MongoClient()["pauk_test"]

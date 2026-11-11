@@ -32,6 +32,60 @@ class RecordTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
 
+    def test_code_urls_are_normalized_before_recording_a_decision(self):
+        record_override(self.db, "Publication", "W1", SET, {"code_url": "https://github.com/a/b"})
+        self.assertEqual(self.db[COLLECTION].find_one()["fields"]["code_url"],
+                         '["https://github.com/a/b"]')
+
+    def test_reapplying_a_legacy_plain_code_url_is_idempotent(self):
+        self.db[COLLECTION].insert_one({
+            "_id": "node:Publication:W1", "label": "Publication", "target_id": "W1",
+            "op": SET, "active": True, "fields": {"code_url": "https://github.com/a/b"}})
+        graph = FakeGraph()
+        graph.add("Publication", "W1", code_url=None)
+        apply_overrides(graph, self.db)
+        self.assertEqual(graph.nodes["Publication", "W1"]["code_url"], '["https://github.com/a/b"]')
+        graph.calls.clear()
+        result = apply_overrides(graph, self.db)
+        self.assertEqual(result["overrides_unchanged"], 1)
+        self.assertEqual(graph.calls, [])
+
+    def test_json_formatting_does_not_rewrite_the_graph_or_claim_a_source_change(self):
+        funding = '[\n  {"grant_id":"42", "funder":"Фонд"}\n]'
+        graph = FakeGraph()
+        graph.add("Publication", "W1", funding=funding)
+        record_override(self.db, "Publication", "W1", SET,
+                        {"funding": [{"funder": "Фонд", "grant_id": "42"}]})
+        result = apply_overrides(graph, self.db)
+        self.assertEqual(result["overrides_unchanged"], 1)
+        self.assertEqual(graph.calls, [])
+        self.assertNotIn("funding", self.db[COLLECTION].find_one().get("source_value", {}))
+
+    def test_reapplying_another_field_preserves_equivalent_json_text(self):
+        funding = '[\n  {"grant_id":"42", "funder":"Фонд"}\n]'
+        graph = FakeGraph()
+        graph.add("Publication", "W1", funding=funding, title="Old")
+        record_override(self.db, "Publication", "W1", SET, {
+            "funding": [{"funder": "Фонд", "grant_id": "42"}], "title": "New"})
+        result = apply_overrides(graph, self.db)
+        self.assertEqual(result["overrides_applied"], 1)
+        self.assertEqual(graph.nodes["Publication", "W1"]["funding"], funding)
+        self.assertEqual(graph.nodes["Publication", "W1"]["title"], "New")
+        self.assertEqual(self.db[COLLECTION].find_one()["source_value"], {"title": "Old"})
+
+    def test_non_json_object_values_are_rejected_before_recording_a_decision(self):
+        with self.assertRaises(MutationError):
+            record_override(self.db, "Publication", "W1", SET, {"funding": [{"funder": {1, 2}}]})
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_json_maps_use_the_graph_text_format_in_saved_decisions(self):
+        graph = FakeGraph()
+        graph.add("Person", "A1", counts_by_year='{\n "2024": 10\n}')
+        record_override(self.db, "Person", "A1", SET, {"counts_by_year": {"2024": 10}})
+        self.assertEqual(self.db[COLLECTION].find_one()["fields"]["counts_by_year"], '{"2024": 10}')
+        self.assertEqual(apply_overrides(graph, self.db)["overrides_unchanged"], 1)
+        self.assertEqual(graph.calls, [])
+
     def test_only_active_manual_links_are_claimed(self):
         record_relationship_override(self.db, "Publication", "MENTIONS_LINK", "Repository",
                                      "W1", "https://github.com/org/repo", op="link")

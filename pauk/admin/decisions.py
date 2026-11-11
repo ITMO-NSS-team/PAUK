@@ -11,6 +11,7 @@ from __future__ import annotations
 from pymongo.database import Database
 
 from pauk.admin import feed
+from pauk.graph.mutations import field_values_equal
 from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
@@ -23,8 +24,7 @@ from pauk.graph.overrides import (
 
 PAGE = 50
 
-# Writes the panel makes itself; anything else is the pipeline's own opinion.
-PANEL = "admin-ui"
+MANUAL_SOURCES = ("admin-ui", "admin-cli")
 
 
 def _moment(value) -> str:
@@ -80,7 +80,7 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
 def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dict]:
     """Fields where the source now says something other than it used to.
 
-    For every hand-edited field, looks for a later non-panel write in the feed
+    For every hand-edited field, looks for a later non-manual write in the feed
     whose value differs from `auto_value`.
 
     Args:
@@ -111,7 +111,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
                 if latest is None or (since is not None and latest[2] <= _moment(since)):
                     continue
                 value, actor, when = latest
-            if value == auto.get(name):
+            if field_values_equal(name, value, auto.get(name)):
                 continue
             found.append({
                 "label": row["label"], "target_id": row["target_id"], "title": _title(row),
@@ -126,7 +126,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
 
 
 def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str], tuple]:
-    """The latest non-panel write to each hand-edited field, in one query.
+    """The latest non-manual write to each hand-edited field, in one query.
 
     Returns:
         (label, node_id, field) -> (value now, who wrote it, when).
@@ -139,7 +139,7 @@ def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str]
     rows = db[feed.COLLECTION].find(
         {"entity_type": {"$in": sorted({label for label, _ in wanted})},
          "entity_id": {"$in": sorted({node_id for _, node_id in wanted})},
-         "source": {"$ne": PANEL}},
+         "source": {"$nin": MANUAL_SOURCES}},
         {"entity_type": True, "entity_id": True, "timestamp": True,
          "actor": True, "diff": True})
 

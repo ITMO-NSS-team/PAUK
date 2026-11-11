@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 from uuid import uuid4
 
 from neo4j.time import DateTime
@@ -25,9 +25,10 @@ from .mutations import (
     UnknownEntity,
     delete_node,
     delete_relationship,
+    field_values_equal,
+    normalize_fields,
     read_node,
     update_node,
-    validate_fields,
     validate_label,
     validate_relationship,
 )
@@ -207,7 +208,7 @@ def record_override(db: Database, label: str, target_id: str, op: str,
     validate_label(label)
     fields = dict(fields or {})
     if op in (SET, CREATE):
-        validate_fields(label, fields)
+        fields = normalize_fields(label, fields)
         if op == SET and not fields:
             raise MutationError("a 'set' override with no fields changes nothing")
 
@@ -388,11 +389,6 @@ def tombstoned_ids(db: Database, label: str) -> set[str]:
     }
 
 
-def _needs_write(current: dict, fields: dict[str, Any]) -> bool:
-    """Skip matching values so reapplying a decision produces no redundant audit entry."""
-    return any(current.get(name) != value for name, value in fields.items())
-
-
 def apply_overrides(client, db: Database) -> dict[str, int]:
     """Reapply every active manual decision to the graph.
 
@@ -449,17 +445,16 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 continue
 
             # A hand-made record carries the same kind of row as a hand edit.
-            fields = override.get("fields") or {}
-            if not fields or not _needs_write(current, fields):
+            fields = normalize_fields(label, override.get("fields") or {})
+            covered = {name: current.get(name) for name, value in fields.items()
+                       if not field_values_equal(name, current.get(name), value)}
+            if not covered:
                 unchanged += 1
                 continue
-            covered = {name: current.get(name) for name, value in fields.items()
-                       if current.get(name) != value}
-            if covered:
-                db[COLLECTION].update_one(
-                    {"_id": override["_id"]},
-                    {"$set": {f"source_value.{name}": value for name, value in covered.items()}})
-            update_node(client, label, target_id, fields)
+            db[COLLECTION].update_one(
+                {"_id": override["_id"]},
+                {"$set": {f"source_value.{name}": value for name, value in covered.items()}})
+            update_node(client, label, target_id, {name: fields[name] for name in covered})
             applied += 1
         except MutationError as error:
             logger.warning("override %s skipped: %s", override["_id"], error)

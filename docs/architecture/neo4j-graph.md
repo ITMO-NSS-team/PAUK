@@ -299,6 +299,15 @@ module: the `pauk admin` commands and the panel's routes. Callers keep only
 argument parsing and `actor_context`; what counts as a valid edit is defined
 here and nowhere else.
 
+`normalize_fields` also handles `Publication.code_url`: a single URL or list
+becomes JSON text. Node mutations and saved overrides use the same conversion;
+form comparisons use it before deciding which fields changed.
+List fields are derived from the existing model annotations. String lists
+accept one element or JSON; structured lists accept one JSON object or a list.
+`as_stored` uses the loader's `JSON_TEXT_FIELDS` to serialize nested values.
+`field_values_equal` ignores JSON formatting and object-key order, so these
+alone do not create edits or source disagreements.
+
 Why a separate layer instead of calling `Neo4jClient` from a handler:
 
 - **Labels and relationship types reach Cypher by interpolation.** They are

@@ -36,6 +36,7 @@ from pauk.admin.deps import (
 from pauk.graph.mutations import (
     LIST_ORDER,
     NODE_FIELDS,
+    NODE_LIST_FIELDS,
     RELATIONSHIPS,
     RESERVED_FIELDS,
     SEARCH_FIELDS,
@@ -48,8 +49,10 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    field_values_equal,
     folded_into,
     node_relationships,
+    normalize_fields,
     read_node,
     read_relationship,
     search_nodes,
@@ -83,11 +86,7 @@ def _worded(relationships: list[dict], label: str) -> list[dict]:
 
 
 def _parse_new_value(raw: str):
-    """A value for a node that does not exist yet.
-
-    With no stored type to go by, JSON decides (42 is a number, `["a"]` a list),
-    and anything JSON refuses is text. Same rule as `pauk admin node create --set`.
-    """
+    """Parse a new non-list field using the CLI's JSON-first rule."""
     text = raw.strip()
     if not text:
         return None
@@ -120,7 +119,8 @@ def _record(undo, write) -> None:
         write: Records the decision.
 
     Raises:
-        HTTPException: 503. The wording says whether the graph was restored.
+        HTTPException: 409 for conflicting decisions, 503 for failed or
+            uncertain writes. The message reports whether the graph was restored.
     """
     try:
         write()
@@ -159,13 +159,7 @@ def _known_label(label: str) -> str:
 
 
 def _parse_value(raw: str, current: object = None):
-    """Turn a form field into what should be stored.
-
-    Browsers submit every box as text, so the type comes from what the field
-    already holds (`"42"` would otherwise differ from 42 and count as an edit).
-    An empty field in the graph stays text. An empty box means "clear this
-    field" and yields None, as the pipeline writes for what it did not find.
-    """
+    """Parse remaining form fields using their stored types; blank clears."""
     text = raw.strip()
     if not text:
         return None
@@ -189,6 +183,30 @@ def _parse_value(raw: str, current: object = None):
             return text
         return parsed if isinstance(parsed, type(current)) else text
     return text
+
+
+def _form_fields(label: str, form, current: dict | None = None) -> dict:
+    """Keep declared lists as text until the shared normalizer parses them."""
+    fields = {}
+    for name in NODE_FIELDS[label]:
+        if name not in form:
+            continue
+        raw = str(form[name])
+        if name in NODE_LIST_FIELDS[label]:
+            fields[name] = raw
+        else:
+            fields[name] = (_parse_new_value(raw) if current is None
+                            else _parse_value(raw, current.get(name)))
+    return normalize_fields(label, fields)
+
+
+def _field_hints(label: str) -> dict[str, str]:
+    hints = {name: ("Одно значение или JSON-список строк." if item_type is str
+                    else "JSON-объект или список объектов.")
+             for name, item_type in NODE_LIST_FIELDS[label].items()}
+    if "code_url" in hints:
+        hints["code_url"] = "Одна ссылка или JSON-список ссылок."
+    return hints
 
 
 @router.get("/nodes/{label}", response_class=HTMLResponse)
@@ -220,7 +238,8 @@ def create_form(request: Request, label: str, user: Editor, session: Session):
     _known_label(label)
     return templates.TemplateResponse(request, "create.html", {
         "user": user, "csrf": session["csrf"], "label": label,
-        "editable": sorted(NODE_FIELDS[label]), "labels": sorted(NODE_FIELDS)})
+        "editable": sorted(NODE_FIELDS[label]), "labels": sorted(NODE_FIELDS),
+        "field_hints": _field_hints(label)})
 
 
 @router.post("/nodes/{label}/new")
@@ -240,10 +259,8 @@ async def create(request: Request, label: str, user: Editor,
     if any(character < " " or character == "\x7f" for character in node_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "the id cannot hold line breaks or control characters")
-    # Nothing to compare against yet: text unless it parses as JSON, as in --set.
-    fields = {name: value for name in NODE_FIELDS[label]
-              if (value := _parse_new_value(str(form.get(name, "")))) is not None}
     try:
+        fields = {name: value for name, value in _form_fields(label, form).items() if value is not None}
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
@@ -308,6 +325,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
+        "field_hints": _field_hints(label),
         # Only an id this record really swallowed: the value comes from the URL.
         "folded": folded if folded in (props.get("merged_ids") or []) else "",
         # Where the reader came from, when that was not the search.
@@ -549,13 +567,13 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
     try:
         # Inside the try: the record can be deleted while the form is open.
         before = read_node(graph, label, node_id)
-        fields = {name: _parse_value(str(form[name]), before.get(name))
-                  for name in NODE_FIELDS[label] if name in form}
+        fields = _form_fields(label, form, before)
         if not fields:
             return RedirectResponse(_node_url(label, node_id),
                                     status_code=status.HTTP_303_SEE_OTHER)
         # Only what differs: an unchanged form must not stamp every field.
-        changed = {name: value for name, value in fields.items() if before.get(name) != value}
+        changed = {name: value for name, value in fields.items()
+                   if not field_values_equal(name, before.get(name), value)}
         if not changed:
             return RedirectResponse(_node_url(label, node_id, "unchanged=1"),
                                     status_code=status.HTTP_303_SEE_OTHER)

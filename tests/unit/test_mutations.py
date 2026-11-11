@@ -19,12 +19,31 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    field_values_equal,
     merge_nodes,
     read_node,
     update_node,
     validate_fields,
     validate_relationship,
 )
+
+
+class FieldComparisonTest(unittest.TestCase):
+    def test_only_json_formatting_is_ignored(self):
+        cases = (
+            ("funding", '[{"funder":"Фонд","grant_id":"42"}]',
+             '[\n {"grant_id":"42", "funder":"Фонд"}\n]', True),
+            ("funding", '[{"amount":true}]', '[{"amount":1}]', False),
+            ("funding", '[{"grant_id":"42"}]', '[{"grant_id":"99"}]', False),
+            ("funding", '[{"grant_id":"42"},{"grant_id":"99"}]',
+             '[{"grant_id":"99"},{"grant_id":"42"}]', False),
+            ("title", '["one","two"]', '["one", "two"]', False),
+            ("emails", ["a@example.org"], '["a@example.org"]', False),
+            ("code_url", "https://example.org/repo", '["https://example.org/repo"]', False),
+        )
+        for field, before, after, expected in cases:
+            with self.subTest(field=field, before=before, after=after):
+                self.assertEqual(field_values_equal(field, before, after), expected)
 
 
 class FakeGraph:
