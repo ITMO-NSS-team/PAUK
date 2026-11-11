@@ -44,6 +44,16 @@ class FakePanelGraph(FakeGraph):
         found.sort(key=lambda row: (not row["exact"], row["id"]))
         return found[skip:skip + limit]
 
+    def fetch_publications_for_dedup(self, ids):
+        return [{"id": work_id, **props} for (label, work_id), props in self.nodes.items()
+                if label == "Publication" and work_id in ids]
+
+    def fetch_version_edges(self, members):
+        return {(src, tgt): props.copy()
+                for (sl, rel, tl, src, tgt), props in self.relationships.items()
+                if (sl, rel, tl) == ("Publication", "IS_VERSION", "Publication")
+                and src in members and tgt in members}
+
     def close(self):
         """The panel closes its client per request; the real one has this."""
 

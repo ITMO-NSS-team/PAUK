@@ -96,6 +96,8 @@ def _payload_lines(kind, payload: dict) -> list[str]:
         return ["удалить найденное" if payload.get("apply")
                 else "только показать список, ничего не удалять"]
     if JobKind(kind) is JobKind.VERSIONS:
+        if members := payload.get("members"):
+            return ["сверка пары " + " / ".join(members)]
         return ["со спорными парами к LLM" if payload.get("llm")
                 else "без LLM, только известные вердикты"]
     lines = []

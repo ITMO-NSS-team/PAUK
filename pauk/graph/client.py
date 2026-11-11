@@ -90,6 +90,17 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
     return updates
 
 
+def resolve_folded_id(client, label: str, node_id: str) -> str:
+    """Resolve an individual ID without loading every fold for its label."""
+    seen = {node_id}
+    while target := client.fetch_canonical_id(label, node_id):
+        if target in seen:
+            raise ValueError(f"{label} merge cycle: {target}")
+        seen.add(target)
+        node_id = target
+    return node_id
+
+
 def flatten_merges(merges: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Resolve aliases to one terminal survivor before any deletion.
 
@@ -521,7 +532,8 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
-    def fetch_publications_for_dedup(self) -> list[dict]:
+    def fetch_publications_for_dedup(self, ids: list[str] | None = None,
+                                     *, folded_only: bool = False) -> list[dict]:
         """Every Publication node with the fields the merge rules consume.
 
         author_count feeds the ranking (between records of one work the
@@ -529,8 +541,10 @@ class Neo4jClient:
         author list feed the version ledger a fold writes onto the
         canonical node before the duplicate disappears.
         """
-        query = """
+        query = cast(LiteralString, """
             MATCH (p:Publication)
+            """ + (" WHERE p.id IN $ids " if ids is not None else
+                   " WHERE size(p.merged_ids) > 0 " if folded_only else "") + """
             OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
             RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
                    p.journal AS journal, p.venue_type AS venue_type,
@@ -542,10 +556,26 @@ class Neo4jClient:
                    collect(CASE WHEN a IS NULL THEN NULL ELSE
                        {person_id: a.id, name: a.name_raw, position: authored.position}
                    END) AS authors
-        """
+        """)
         with self.driver.session() as session:
             return session.execute_read(
-                lambda tx: [dict(record) for record in tx.run(query)])
+                lambda tx: [dict(record) for record in tx.run(query, ids=ids)])
+
+    def fetch_version_edges(self, members: tuple[str, str] | None = None
+                            ) -> dict[tuple[str, str], dict]:
+        if members is None:
+            query = "MATCH (src:Publication)-[r:IS_VERSION]->(tgt:Publication)"
+        else:
+            query = (
+                "UNWIND $members AS id MATCH (src:Publication {id: id})"
+                "-[r:IS_VERSION]->(tgt:Publication) WHERE tgt.id IN $members"
+            )
+        query = cast(LiteralString, query + " RETURN src.id AS src, tgt.id AS tgt, properties(r) AS props")
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: {
+                (row["src"], row["tgt"]): dict(row["props"])
+                for row in tx.run(query, members=members)
+            })
 
     def fetch_publication_fields(self) -> dict[str, set[str]]:
         """Research fields per publication, for the person merge rules."""
@@ -943,7 +973,7 @@ class Neo4jClient:
         text = (
             f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
             "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
-            "properties(other) AS other_props, "
+            "properties(other) AS other_props, properties(r) AS relationship_props, "
             "startNode(r).id = n.id AS outgoing "
             "ORDER BY type, other_id"
         )

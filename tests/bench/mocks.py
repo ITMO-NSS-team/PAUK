@@ -446,10 +446,12 @@ class RecordingNeo4jClient:
             if props.get("fields")
         }
 
-    def fetch_publications_for_dedup(self) -> list[dict]:
+    def fetch_publications_for_dedup(self, ids=None, *, folded_only=False) -> list[dict]:
         """Mirror of Neo4jClient.fetch_publications_for_dedup."""
         rows = []
         for publication_id, props in self.nodes.get("Publication", {}).items():
+            if (ids is not None and publication_id not in ids) or (folded_only and not props.get("merged_ids")):
+                continue
             authors = [
                 {"person_id": src_id,
                  "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_raw"),
@@ -466,6 +468,36 @@ class RecordingNeo4jClient:
                 "authors": authors,
             })
         return rows
+
+    def fetch_version_edges(self, members=None):
+        return {(src, tgt): props.copy() for (sl, rel, tl, src, tgt), props in self.edges.items()
+                if (sl, rel, tl) == ("Publication", "IS_VERSION", "Publication")
+                and (members is None or (src in members and tgt in members))}
+
+    def fetch_canonical_id(self, label, node_id):
+        return self.fetch_merged_id_map(label).get(node_id)
+
+    def fetch_node_properties(self, label, node_id):
+        props = self.nodes.get(label, {}).get(node_id)
+        return {"id": node_id, **props} if props is not None else None
+
+    def fetch_node_relationships(self, label, node_id):
+        from pauk.graph.mutations import RELATIONSHIPS
+
+        result = []
+        for (src, rel, tgt, src_id, tgt_key), props in self.edges.items():
+            match = RELATIONSHIPS.get((src, rel, tgt), "id")
+            target = next((other for other, node in self.nodes[tgt].items()
+                           if node.get(match, other) == tgt_key), tgt_key)
+            if src == label and src_id == node_id:
+                result.append({"type": rel, "labels": [tgt], "other_id": target,
+                               "other_props": self.nodes[tgt].get(target, {}),
+                               "relationship_props": props.copy(), "outgoing": True})
+            elif tgt == label and target == node_id:
+                result.append({"type": rel, "labels": [src], "other_id": src_id,
+                               "other_props": self.nodes[src].get(src_id, {}),
+                               "relationship_props": props.copy(), "outgoing": False})
+        return result
 
     def fetch_repositories_for_dedup(self) -> list[dict]:
         """Mirror of Neo4jClient.fetch_repositories_for_dedup."""

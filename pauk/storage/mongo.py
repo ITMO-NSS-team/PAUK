@@ -76,6 +76,7 @@ def ensure_indexes(db: Database) -> None:
     db.person_merge_sources.create_index([("person_id", 1), ("saved_at", -1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
+    db.raw.create_index([("source", 1), ("payload.id", 1), ("fetched_at", 1)])
     # The panel's change feed reads the audit two ways: the history of one
     # entity, and everything one person did.
     db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])
@@ -98,6 +99,7 @@ def ensure_indexes(db: Database) -> None:
     # and every dedup run reads back every answer given so far.
     db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
     db.review_pairs.create_index([("members", 1)])
+    db.version_llm_verdicts.create_index([("members", 1)])
     # Without these, every tab count walks the collection that grows fastest.
     db.review_pairs.create_index([("kind", 1), ("verdict", 1)])
     db.review_pairs.create_index([("evidence.held_because", 1), ("verdict", 1)])

@@ -1,36 +1,9 @@
-"""Take apart publications folded on a shared title under two different DOIs.
+"""Rebuild publications mistakenly folded together under different DOIs.
 
-Dedup used to fold any two records with one title into one Publication,
-keeping the folded record only as an entry of `versions`. It now folds on a
-DOI, and on a title only where one side has no DOI
-(`pauk.pipeline.stages.dedup.publication_buckets`). A preprint and its
-article, or an original and its translation, are two nodes related by
-IS_VERSION (`pauk versions link`). This repairs what the old rule folded.
-
-A folded record is taken apart when its ledger entry carries a DOI other
-than the survivor's and the version rules (`classify_pair`) give the pair a
-bucket. A record the rules drop (a generic or a too-short title) stays
-folded: nothing says it is a work of its own. So does one whose raw payload
-is gone: its ledger entry would be the only copy left, and nothing could
-rebuild the record from it.
-
-The ledger lacks what a node needs (type, fields, funding, departments), so
-nothing is built from it. Taking an id out of `merged_ids` is what lets the
-ordinary pipeline rebuild the record from its raw OpenAlex payload:
-
-- Mongo: the survivor's `merged_ids` and `versions` lose the entry, and the
-  authors only the folded record listed lose their authorship of the
-  survivor. The next `pauk normalize` of the record's group recreates it
-  with its own authorships, and `pauk enrich` runs every stage on it. The
-  survivor's group is normalized again too, which restores an authorship
-  of the survivor that the ledger did not list.
-- Neo4j: the survivor node's `merged_ids` and `versions` are rewritten too,
-  or the next publish would read the old map and fold the record again.
-  Edges the survivor inherited from it are left to `pauk admin prune`,
-  which removes whatever no prepared row asks for any more.
-
-Holds the graph lock. Dry run by default; `--apply` writes. Prints the
-commands to run afterwards, in order.
+Dry run by default. With --apply, rebuild the affected records from their
+own sources before replacing prepared rows and incident graph edges. Use
+--from-report to repair records detached by the old migration or resume
+an interrupted repair.
 """
 
 from __future__ import annotations
@@ -38,19 +11,34 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
+import shutil
 import sys
 from collections import defaultdict
+from contextlib import ExitStack
 from pathlib import Path
+from uuid import uuid4
 
 from pauk.graph.audit import actor_context, audited_client
-from pauk.graph.client import chunked
+from pauk.graph.client import resolve_folded_id
+from pauk.graph.overrides import override_id, tombstoned_ids
+from pauk.graph.publication_repair import apply_graph_repair, known_version_pairs
 from pauk.graph.version_candidates import classify_pair
 from pauk.jobs.locks import Busy, held
 from pauk.jobs.models import GRAPH
+from pauk.pipeline.publication_repair import (
+    CannotRebuild,
+    _work_sources,
+    apply_prepared_changes,
+    repair_pdf_writes,
+    stage_repair,
+)
 from pauk.pipeline.stages.dedup import _norm_doi
 from pauk.settings import settings
 from pauk.storage import PreparedStore
+from pauk.storage.atomic import AtomicWriter
 from pauk.storage.mongo import get_mongo_client
+from pauk.storage.pdf import PdfStore
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +145,7 @@ def mongo_splits(db, raw_of) -> list[dict]:
 
 def graph_splits(client, raw_of) -> list[dict]:
     splits = []
-    for row in client.fetch_publications_for_dedup():
+    for row in client.fetch_publications_for_dedup(folded_only=True):
         if not row.get("merged_ids"):
             continue
         versions = row.get("versions") or []
@@ -167,96 +155,267 @@ def graph_splits(client, raw_of) -> list[dict]:
     return splits
 
 
-def apply_mongo(db, splits: list[dict]) -> None:
-    publications = db[PreparedStore.COLLECTIONS["publications"]]
-    persons = db[PreparedStore.COLLECTIONS["persons"]]
-    for split in splits:
-        publications.update_one({"_id": split["survivor"]}, {
-            "$pull": {"merged_ids": split["id"], "versions": {"openalex_id": split["id"]}},
-            "$inc": {"_version": 1}})
-        for person_id in split["lone_authors"]:
-            persons.update_one({"_id": person_id},
-                               {"$pull": {"authored": {"publication_id": split["survivor"]}},
-                                "$inc": {"_version": 1}})
+def _report_pairs(report):
+    pairs = set()
+    for field in ("mongo", "graph"):
+        for row in report.get(field, []):
+            pair = (row["survivor"], row["id"])
+            if pair[0] == pair[1] or any(not re.fullmatch(r"W\d+", item) for item in pair):
+                raise CannotRebuild(f"invalid split pair: {pair}")
+            pairs.add(pair)
+    returning = {}
+    for survivor, work_id in sorted(pairs):
+        if work_id in returning and returning[work_id] != survivor:
+            raise CannotRebuild(f"conflicting survivors for {work_id}")
+        returning[work_id] = survivor
+    if returning.keys() & returning.values():
+        raise CannotRebuild("the report names a survivor that is also being split off")
+    return sorted(pairs)
 
 
-def apply_graph(client, splits: list[dict]) -> None:
-    taken: dict[str, set[str]] = defaultdict(set)
-    for split in splits:
-        taken[split["survivor"]].add(split["id"])
-    rows = {row["id"]: row for row in client.fetch_publications_for_dedup() if row["id"] in taken}
-    updates = []
-    for survivor, ids in taken.items():
-        row = rows[survivor]
-        versions = row.get("versions") or []
-        if isinstance(versions, str):
-            versions = json.loads(versions)
-        updates.append((survivor, {
-            "merged_ids": [merged for merged in row.get("merged_ids") or [] if merged not in ids],
-            "versions": json.dumps([entry for entry in versions if entry.get("openalex_id") not in ids],
-                                   ensure_ascii=False),
-        }))
-    for chunk in chunked(updates):
-        client.upsert_nodes_batch("Publication", chunk)
+def _validate_family(client, db, pairs, aliases=None):
+    targets = {work_id for pair in pairs for work_id in pair}
+    if targets & tombstoned_ids(db, "Publication"):
+        raise CannotRebuild("a publication in this family was deleted by hand")
+    returning = {work_id: survivor for survivor, work_id in pairs}
+    for work_id in targets:
+        parent = resolve_folded_id(client, "Publication", work_id)
+        if parent not in {work_id, returning.get(work_id)}:
+            raise CannotRebuild(f"{work_id} is now folded into {parent}")
+    permitted = {**(aliases or {}), **returning}
+    graph_rows = {row["id"]: row for row in client.fetch_publications_for_dedup(sorted(targets))}
+    publications = db.publications.find({"$or": [
+        {"_id": {"$in": sorted(targets)}}, {"merged_ids": {"$in": sorted(targets)}},
+    ]})
+    mongo_rows = {row["_id"]: row for row in publications}
+    retained = {}
+    for rows in (graph_rows, mongo_rows):
+        for work_id, row in rows.items():
+            for alias in row.get("merged_ids") or []:
+                if alias in targets and returning.get(alias) != work_id:
+                    raise CannotRebuild(f"{alias} now belongs to {work_id}")
+                if alias in returning:
+                    continue
+                if work_id not in targets:
+                    continue
+                if alias in retained and retained[alias] != work_id:
+                    raise CannotRebuild(f"conflicting retained fold for {alias}")
+                if aliases is not None and permitted.get(alias) != work_id:
+                    raise CannotRebuild(f"new fold into {work_id} since staging: {alias}")
+                retained[alias] = work_id
+    if aliases is not None and retained != aliases:
+        raise CannotRebuild("retained folds changed since staging")
+    for alias, survivor in retained.items():
+        parent = resolve_folded_id(client, "Publication", alias)
+        if parent not in {alias, survivor}:
+            raise CannotRebuild(f"{alias} is now folded into {parent}")
+    for work_id in targets:
+        override = db.graph_overrides.find_one({
+            "_id": override_id("Publication", work_id), "active": True,
+        })
+        if override:
+            fields = override.get("fields") or {}
+            keep = {alias for alias, parent in retained.items() if parent == work_id}
+            if "merged_ids" in fields and set(fields["merged_ids"] or []) != keep:
+                raise CannotRebuild(f"{work_id}: manual merged_ids conflict with this split")
+            ledger = fields.get("versions") or []
+            if isinstance(ledger, str):
+                ledger = json.loads(ledger)
+            if any(entry.get("openalex_id") not in keep | {work_id} for entry in ledger):
+                raise CannotRebuild(f"{work_id}: manual version ledger conflicts with this split")
+    return targets, retained
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--apply", action="store_true", help="write the splits (default: dry run)")
-    parser.add_argument("--report", type=Path, default=Path("data/reports/split-publication-versions.json"))
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+def _validate_sources(db, targets, pairs, aliases):
+    works, groups = _work_sources(db, targets | aliases.keys())
+    dois = {work_id: _norm_doi(work.get("doi")) for work_id, work in works.items()}
+    for survivor, work_id in pairs:
+        if not dois[survivor] or not dois[work_id] or dois[survivor] == dois[work_id]:
+            raise CannotRebuild(f"{survivor}/{work_id} require different source DOIs")
+    for alias, survivor in aliases.items():
+        if dois[alias] and dois[survivor] and dois[alias] != dois[survivor]:
+            raise CannotRebuild(f"{alias} has its own DOI and is still folded into {survivor}")
+    return works, groups
 
-    mongo = get_mongo_client(settings)
-    db = mongo[settings.mongo_db]
-    client = audited_client(settings, db)
-    cache: dict[str, tuple[dict, str] | None] = {}
 
-    def raw_of(work_id: str):
+def _stage_family(mongo, db, client, pairs):
+    with held(db, GRAPH):
+        targets, aliases = _validate_family(client, db, pairs)
+        version_pairs, version_edges = known_version_pairs(client, db, targets | aliases.keys(), pairs)
+    source_data = _validate_sources(db, targets, pairs, aliases)
+    scratch = mongo[f"pauk_split_{uuid4().hex}"]
+    folder = settings.pdf_dir / ".split-repair" / scratch.name
+    folder.mkdir(mode=0o700, parents=True)
+    try:
+        stage_repair(db, scratch, settings, folder, targets, aliases, source_data)
+        scratch.checkpoint.insert_one({
+            "_id": "repair", "source_db": db.name, "pairs": [list(pair) for pair in pairs],
+            "aliases": aliases, "version_pairs": [list(pair) for pair in version_pairs],
+            "version_edges": [[src, tgt, props] for (src, tgt), props in version_edges.items()],
+        })
+        return scratch.name
+    except BaseException:
+        mongo.drop_database(scratch.name)
+        shutil.rmtree(folder)
+        raise
+
+
+def _commit_family(mongo, db, client, pairs, state, save_report):
+    name = state["scratch"]
+    if not re.fullmatch(r"pauk_split_[a-f0-9]{32}", name):
+        raise CannotRebuild("invalid staging database in the report")
+    scratch = mongo[name]
+    plan = scratch.checkpoint.find_one({
+        "_id": "repair", "source_db": db.name, "pairs": [list(pair) for pair in pairs],
+    })
+    if plan is None:
+        raise CannotRebuild(f"staging database {name} does not match this repair")
+    aliases = plan["aliases"]
+    folder = settings.pdf_dir / ".split-repair" / name
+    with ExitStack() as locks, actor_context("split-publication-versions", source="script"):
+        for group in sorted(scratch.changes.distinct("groups")):
+            locks.enter_context(held(db, f"group:{group}"))
+        locks.enter_context(held(db, GRAPH))
+        targets, _ = _validate_family(client, db, pairs, aliases)
+        pdfs = repair_pdf_writes(db, scratch, settings, folder, targets | aliases.keys())
+        apply_prepared_changes(db, scratch)
+        cache = PdfStore(db, settings.pdf_dir)
+        for work_id, pdf in pdfs.items():
+            cache.save(work_id, pdf)
+        state["status"] = "prepared"
+        save_report()
+        current_pairs, current_edges = known_version_pairs(client, db, targets | aliases.keys(), pairs)
+        version_pairs = sorted(set(map(tuple, plan["version_pairs"])) | set(current_pairs))
+        history = {(src, tgt): props for src, tgt, props in plan["version_edges"]}
+        history.update(current_edges)
+        apply_graph_repair(client, db, scratch, targets, aliases, pairs, version_pairs, history)
+    state["status"] = "done"
+    state.pop("error", None)
+    save_report()
+    mongo.drop_database(name)
+    if folder.exists():
+        shutil.rmtree(folder)
+
+
+def _save_report(path, report):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with AtomicWriter(path) as stream:
+        json.dump(report, stream, ensure_ascii=False, indent=2)
+
+
+def _families(report):
+    families = defaultdict(list)
+    for survivor, work_id in _report_pairs(report):
+        families[survivor].append((survivor, work_id))
+    return sorted(families.items())
+
+
+def _repair(mongo, db, client, report, report_path):
+    progress = report.setdefault("progress", {})
+    failed = False
+    for survivor, pairs in _families(report):
+        state = progress.setdefault(survivor, {})
+        if state.get("status") == "done":
+            continue
+        try:
+            if "scratch" not in state:
+                state["scratch"] = _stage_family(mongo, db, client, pairs)
+                state["status"] = "staged"
+                _save_report(report_path, report)
+            _commit_family(mongo, db, client, pairs, state, lambda: _save_report(report_path, report))
+        except Exception as error:
+            failed = True
+            state["error"] = str(error)
+            logger.exception("repair of %s postponed", survivor)
+            _save_report(report_path, report)
+    return int(failed)
+
+
+def _discover(db, client):
+    cache = {}
+
+    def raw_of(work_id):
         if work_id not in cache:
             cache[work_id] = raw_work(db, work_id)
         return cache[work_id]
 
+    with held(db, GRAPH):
+        return {"mongo": mongo_splits(db, raw_of), "graph": graph_splits(client, raw_of)}
+
+
+def _unfinished_report(path, *, include_unstaged):
+    if not path.exists():
+        return None
+    previous = json.loads(path.read_text(encoding="utf-8"))
+    progress = previous.get("progress", {})
+    if (include_unstaged or progress) and any(
+        progress.get(survivor, {}).get("status") != "done" for survivor, _ in _families(previous)
+    ):
+        return previous
+    return None
+
+
+def _preview(db, client, report):
+    errors = {}
+    progress = report.get("progress", {})
+    with held(db, GRAPH):
+        for survivor, pairs in _families(report):
+            if progress.get(survivor, {}).get("status") == "done":
+                continue
+            try:
+                targets, aliases = _validate_family(client, db, pairs)
+                _validate_sources(db, targets, pairs, aliases)
+            except CannotRebuild as error:
+                errors[survivor] = str(error)
+                logger.warning("repair of %s postponed: %s", survivor, error)
+    return errors
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--apply", action="store_true", help="rebuild and apply (default: dry run)")
+    parser.add_argument("--from-report", type=Path, help="repair or resume the pairs in this JSON report")
+    parser.add_argument("--report", type=Path, help="output JSON report")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    source = args.from_report
+    report_path = args.report or (
+        source.with_name(source.stem + ".repair.json") if source
+        else Path("data/reports/split-publication-versions.json")
+    )
+    if source and source.resolve() == report_path.resolve():
+        parser.error("--report must differ from --from-report")
+
+    mongo = get_mongo_client(settings)
+    db = mongo[settings.mongo_db]
+    client = audited_client(settings, db)
     try:
-        with held(db, GRAPH):
-            in_mongo = mongo_splits(db, raw_of)
-            in_graph = graph_splits(client, raw_of)
-            by_bucket: dict[str, int] = defaultdict(int)
-            for split in {(s["survivor"], s["id"]): s for s in [*in_mongo, *in_graph]}.values():
-                by_bucket[split["bucket"]] += 1
-            print(f"prepared rows to take apart: {len(in_mongo)}")
-            print(f"graph nodes to take apart:   {len(in_graph)}")
-            for bucket, count in sorted(by_bucket.items(), key=lambda item: -item[1]):
-                print(f"  {count:>5}  {bucket}")
-            unknown = sum(not split["survivor_authors_known"] for split in in_mongo)
-            if unknown:
-                print(f"survivors without their own ledger entry (authorships left as they are): {unknown}")
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(json.dumps({"mongo": in_mongo, "graph": in_graph},
-                                              ensure_ascii=False, indent=2))
-            print(f"report: {args.report}")
-            if not args.apply:
-                print("dry run: nothing written, --apply to write")
-                return 0
-            apply_mongo(db, in_mongo)
-            with actor_context("split-publication-versions", source="script"):
-                apply_graph(client, in_graph)
-    except Busy as error:
+        if source:
+            report = json.loads(source.read_text(encoding="utf-8"))
+        else:
+            report = _unfinished_report(report_path, include_unstaged=args.apply) or _discover(db, client)
+        pairs = _report_pairs(report)
+        if source and report_path.exists():
+            previous = json.loads(report_path.read_text(encoding="utf-8"))
+            if _report_pairs(previous) == pairs and previous.get("source_db") == db.name:
+                report = previous
+            elif previous.get("progress") and _unfinished_report(report_path, include_unstaged=False):
+                raise CannotRebuild("the output report holds a different unfinished repair")
+        if report.get("source_db", db.name) != db.name:
+            raise CannotRebuild("this report belongs to another source database")
+        report["source_db"] = db.name
+        print(f"{len(pairs)} publication pair(s) to rebuild. Report: {report_path}")
+        if not args.apply:
+            report["dry_run_errors"] = _preview(db, client, report)
+        _save_report(report_path, report)
+        return _repair(mongo, db, client, report, report_path) if args.apply else int(bool(report["dry_run_errors"]))
+    except (Busy, CannotRebuild, OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
     finally:
         client.close()
         mongo.close()
-
-    groups = sorted({group for split in [*in_mongo, *in_graph] for group in split["groups"]})
-    print("\nnext, in this order:")
-    for group in groups:
-        print(f"  uv run pauk normalize --group {group}")
-        print(f"  uv run pauk enrich --group {group}")
-        print(f"  uv run pauk publish graph --group {group}")
-    print("  uv run pauk admin prune            # look at the plan first, then --apply")
-    print("  uv run pauk versions link --llm")
-    return 0
 
 
 if __name__ == "__main__":

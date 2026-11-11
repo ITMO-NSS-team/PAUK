@@ -18,6 +18,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from pydantic import BaseModel
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
@@ -72,7 +73,10 @@ def _dedup(config: Settings, db: Database, payload, stop: Stop,
 
 def _versions(config: Settings, db: Database, payload, stop: Stop,
               report: Report) -> dict[str, int]:
-    from pauk.graph.version_link import run_version_link
+    from pauk.graph.version_link import run_version_link, run_version_pair
+    if payload.members is not None:
+        report("сверка связи версий публикаций")
+        return run_version_pair(config, db, payload.members)
     report("связи версий публикаций по всему графу")
     return run_version_link(config, db, llm=payload.llm)
 
@@ -321,6 +325,11 @@ class Worker:
             store.cancelled(self.db, job.id)
             return True
         except Exception as error:  # the worker outlives one bad job
+            if (job.kind == JobKind.VERSIONS and payload.members is not None
+                    and isinstance(error, (ServiceUnavailable, SessionExpired))):
+                logger.info("job %s waits for Neo4j: %s", job.id, error)
+                store.requeue(self.db, job.id, delay_seconds=60)
+                return True
             logger.exception("job %s failed", job.id)
             store.fail(self.db, job.id, f"{type(error).__name__}: {error}")
             return True

@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from neo4j.exceptions import AuthError, ServiceUnavailable
+from neo4j.exceptions import AuthError, ServiceUnavailable, SessionExpired
 
 from pauk.admin.deps import (
     CsrfChecked,
@@ -34,9 +34,8 @@ from pauk.graph.mutations import (
     person_facts,
     read_node,
 )
-from pauk.graph.overrides import tombstoned_relationships
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
-from pauk.graph.version_link import REL_TYPE, settle_pair
+from pauk.graph.version_link import reconcile_version_pair
 from pauk.jobs import store
 from pauk.jobs.locks import Busy, held
 from pauk.jobs.models import GRAPH, JobKind, JobState
@@ -329,65 +328,28 @@ def _fold_held(graph, db, members: list[str], actor: str) -> str:
     return "merged"
 
 
-def _version_edges(graph, members: list[str]) -> list[tuple[str, str]]:
-    """The IS_VERSION edges between two publications, whichever way they point."""
-    a, b = members
-    return [(edge_src, edge_tgt) for edge_src, edge_tgt in ((a, b), (b, a))
-            if any(edge["type"] == REL_TYPE and edge["outgoing"] and edge["other_id"] == edge_tgt
-                   for edge in graph.fetch_node_relationships("Publication", edge_src))]
+def _version_answer_to_graph(graph, db, members: list[str], actor: str) -> str:
+    if graph is not None:
+        try:
+            with held(db, GRAPH):
+                done, _, _ = reconcile_version_pair(graph, db, members, reopen=True)
+            return done
+        except Busy:
+            _queue_version_pair(db, members, actor)
+            return "version_busy"
+        except (ServiceUnavailable, SessionExpired, AuthError) as error:
+            logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
+    _queue_version_pair(db, members, actor)
+    return "version_waiting"
 
 
-def _deleted_by_hand(db, members: list[str]) -> bool:
-    a, b = members
-    return any((src_label, rel_type, tgt_label) == ("Publication", REL_TYPE, "Publication")
-               and {src_id, tgt_id} == {a, b}
-               for src_label, rel_type, tgt_label, src_id, tgt_id in tombstoned_relationships(db))
-
-
-def _version_answer_to_graph(graph, db, members: list[str], verdict: str | None, actor: str) -> str:
-    """Put an answer about two publications, or its withdrawal, on their edge now.
-
-    Nothing is folded: "same" marks the edge confirmed, "different" removes
-    it, a withdrawal puts a confirmed edge back on hold. A removed edge
-    cannot be put back from here (its direction and evidence come from the
-    rules), so it waits for `pauk versions link`.
-
-    Under the graph lock: a `pauk versions link` that read the answers
-    before this one would otherwise write its plan over it. With the graph
-    held the answer only waits in Mongo, and a versions run is queued to
-    carry it over once the graph is free.
-
-    Returns:
-        What `settle_pair` did, "no_edge_deleted" for a pair somebody
-        unlinked by hand, "version_busy" when the graph is held, or
-        "version_waiting" when it is down.
-    """
-    if graph is None:
-        return "version_waiting"
-    try:
-        with held(db, GRAPH):
-            done = settle_pair(graph, _version_edges(graph, members), verdict)
-    except Busy as error:
-        logger.info("version answer for %s waits for the graph: %s", members, error)
-        _queue_versions_run(db, actor)
-        return "version_busy"
-    except (ServiceUnavailable, AuthError) as error:
-        logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
-        return "version_waiting"
-    if done == "no_edge" and _deleted_by_hand(db, members):
-        return "no_edge_deleted"
-    return done
-
-
-def _queue_versions_run(db, actor: str) -> None:
-    """Queue `pauk versions link` unless one is already waiting to start.
-
-    One that is waiting reads the answers when it starts, this one
-    included; one already running may have read them before it.
-    """
-    if store.count(db, kind=str(JobKind.VERSIONS), state=str(JobState.QUEUED)):
-        return
-    store.enqueue(db, JobKind.VERSIONS, {}, actor=actor)
+def _queue_version_pair(db, members: list[str], actor: str) -> None:
+    members = sorted(members)
+    queued = db[store.COLLECTION].find_one({
+        "kind": str(JobKind.VERSIONS), "state": str(JobState.QUEUED), "payload.members": members,
+    }, {"_id": 1})
+    if queued is None:
+        store.enqueue(db, JobKind.VERSIONS, {"members": members}, actor=actor)
 
 
 @router.post("/review/answer")
@@ -453,7 +415,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     if verdict == review.SAME and kind == review.PAIR:
         done = _fold_now(graph, db, members, user.actor)
     elif verdict in review.VERDICTS and kind == review.PUB_VERSION:
-        done = _version_answer_to_graph(graph, db, members, verdict, user.actor)
+        done = _version_answer_to_graph(graph, db, members, user.actor)
     return RedirectResponse(f"/review?tab={tab}&done={done}" if done else f"/review?tab={tab}",
                             status_code=status.HTTP_303_SEE_OTHER)
 
@@ -530,7 +492,7 @@ async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     logger.info("%s withdrew the answer about %s %s", user.actor, kind, members)
     tab = _tab(form.get("tab"), "answered")
     if kind == review.PUB_VERSION:
-        done = _version_answer_to_graph(graph, db, members, None, user.actor)
+        done = _version_answer_to_graph(graph, db, members, user.actor)
         return RedirectResponse(f"/review?tab={tab}&done={done}",
                                 status_code=status.HTTP_303_SEE_OTHER)
     return RedirectResponse(f"/review?tab={tab}", status_code=status.HTTP_303_SEE_OTHER)

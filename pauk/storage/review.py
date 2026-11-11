@@ -191,13 +191,14 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
     # Look up the existing queue once, not once per automatically rejected
     # candidate. Large runs can contain millions of rejected pairs.
     pending: dict[str, list[str]] = {}
-    aliases = aliases or {}
-    for question in db[COLLECTION].find(
-        {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
-    ):
-        members = {aliases.get(member, member) for member in question["members"]}
-        if len(members) == 2:
-            pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
+    if any(row.get("status") == "separate" for row in report):
+        aliases = aliases or {}
+        for question in db[COLLECTION].find(
+            {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
+        ):
+            members = {aliases.get(member, member) for member in question["members"]}
+            if len(members) == 2:
+                pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
     for row in report:
         if row.get("status") != "separate":
             continue
@@ -563,24 +564,42 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
                                             "verdict": {"$exists": True}})}
 
 
-def version_decisions(db: Database, aliases: dict[str, str] | None = None
-                      ) -> dict[frozenset[str], str]:
-    """Answers about publication versions, keyed by the two publications.
+def version_pair_filter(scope: tuple[set[str], set[str]]) -> dict:
+    return {"$and": [{"members": {"$in": sorted(ids)}} for ids in scope]}
 
-    Args:
-        aliases: Merged-away id to the id that survived, as for `decisions`.
-            A publication folded since keeps its answers under the survivor.
-    """
+
+def version_answers(db: Database, aliases: dict[str, str] | None = None,
+                    scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
+    """Resolve review rows to the active pair without rewriting their original IDs."""
     aliases = aliases or {}
-    found: dict[frozenset[str], str] = {}
-    for row in db[COLLECTION].find({"kind": PUB_VERSION, "verdict": {"$exists": True}}):
-        members = frozenset(aliases.get(member, member) for member in row["members"])
-        if len(members) == 2:
-            found[members] = row["verdict"]
+    query = {"kind": PUB_VERSION, "verdict": {"$exists": True}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    found: dict[frozenset[str], dict] = {}
+    ranks: dict[frozenset[str], tuple] = {}
+    for row in db[COLLECTION].find(query):
+        original = frozenset(row["members"])
+        members = frozenset(aliases.get(member, member) for member in original)
+        if len(members) != 2:
+            continue
+        decided_at = row.get("decided_at")
+        if decided_at is None:
+            decided_at = datetime.min.replace(tzinfo=UTC)
+        elif decided_at.tzinfo is None:
+            decided_at = decided_at.replace(tzinfo=UTC)
+        rank = (decided_at, original == members, row["_id"])
+        if members not in ranks or rank > ranks[members]:
+            ranks[members] = rank
+            found[members] = row
     return found
 
 
-def retire_versions(db: Database, asked: list[dict]) -> int:
+def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> dict[frozenset[str], str]:
+    return {pair: row["verdict"] for pair, row in version_answers(db, aliases).items()}
+
+
+def retire_versions(db: Database, asked: list[dict], *,
+                    scope: tuple[set[str], set[str]] | None = None) -> int:
     """Drop open version questions the rules no longer ask.
 
     Unlike a person pair, a version question is about an edge: once the
@@ -595,9 +614,11 @@ def retire_versions(db: Database, asked: list[dict]) -> int:
         How many questions were dropped.
     """
     keep = [question_id(PUB_VERSION, members_of(row)) for row in asked]
-    result = db[COLLECTION].delete_many({
-        "kind": PUB_VERSION, "_id": {"$nin": keep},
-        "verdict": {"$exists": False}, "skipped_at": {"$exists": False}})
+    query = {"kind": PUB_VERSION, "_id": {"$nin": keep},
+             "verdict": {"$exists": False}, "skipped_at": {"$exists": False}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    result = db[COLLECTION].delete_many(query)
     if result.deleted_count:
         logger.info("review: %d version question(s) no longer asked", result.deleted_count)
     return result.deleted_count

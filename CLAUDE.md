@@ -49,6 +49,7 @@ cd pauk/gui/web && npm install
 npm run dev                                                 # данные берёт из data/gui/private/
 npm test && npm run typecheck && npm run lint               # vitest, tsc, eslint (в CI не входят)
 npm run build                                               # dist/ для деплоя
+npm run dev:public / npm run build:public                   # то же на маскированных data/gui/public/ → dist-public/
 ```
 
 Точка входа CLI — `pauk` (`pauk/cli.py::main`, argparse, без typer/click):
@@ -65,6 +66,7 @@ pauk cache inspect [<снепшот>] [--table T] [--sample N]
 pauk gui build [--cache <снепшот>] [--out-dir <dir>] [--seed 42] # снепшот → data/gui/{public,private}/
 pauk versions link [--llm] [--force]                            # связи IS_VERSION между публикациями, по всему графу
 pauk versions report [--output <путь>]                          # те же пары, только журнал
+pauk reports build [<repo_id>...] [--force]                     # PDF-отчёты OSA по репозиториям снепшота (нужен LLM, вне VPN)
 pauk admin ...    # ручная правка графа, prune/trim, worker, аккаунты панели; см. docs/admin-panel.md
 ```
 
@@ -152,11 +154,17 @@ data/gui/{public,private}/*.json             данные для сайта pauk
   бакета, mergeable-пары — в очередь `/review`. Рёбра принадлежат команде,
   а не publish, поэтому prune их не трогает (`GRAPH_OWNED_RELATIONSHIPS`).
   См. [`docs/architecture/pipeline/version-candidates.md`](docs/architecture/pipeline/version-candidates.md).
-- **GUI: приватность решается папкой, а не содержимым.** `pauk gui build`
-  (`pauk/gui/graph_builder/`) пишет `graph-data.json` и `*-detail.json`;
-  `authors-detail.json` (персональные поля) — только в `data/gui/private/`,
-  остальное — в обе папки. `vite.config.ts::publicDir` смотрит в
-  `data/gui/private/`. Карта показывает только публикации хотя бы с одним
+- **GUI: две сборки данных, приватность — в сборщике, а не на сайте.**
+  `pauk gui build` (`pauk/gui/graph_builder/`) пишет все четыре файла
+  (`graph-data.json`, `*-detail.json`) в обе папки: `data/gui/private/` —
+  полные имена и персональные поля, только для лабораторного сервера за VPN;
+  `data/gui/public/` — для GitHub Pages, `public.py::to_public` маскирует
+  имена, перенумеровывает ключи авторов и режет строки по белому списку.
+  Новое поле билдера в `public/` не попадёт, пока его явно не добавят в
+  белый список; `tests/unit/test_gui_public.py` ловит утечки. Vite выбирает
+  папку по режиму: `npm run dev`/`build` → `private/` и `dist/`,
+  `dev:public`/`build:public` → `public/` и `dist-public/`; выкладка на
+  Pages — `scripts/publish_pages.sh`. Карта показывает только публикации хотя бы с одним
   автором из ИТМО; внешние соавторы в ForceAtlas2 не участвуют, их ставят
   в центроид ИТМО-соавторов. Раскладку проверять глазами — метрики не
   отражают, как она выглядит. Подробно: [`docs/architecture/gui.md`](docs/architecture/gui.md).
@@ -191,6 +199,7 @@ data/gui/{public,private}/*.json             данные для сайта pauk
 | `pauk/graph/` | prepared → Neo4j, дедуп/анмерж/prune на уровне графа | [neo4j-graph.md](docs/architecture/neo4j-graph.md) |
 | `pauk/cache/` | снепшот графа на диск, дальше его читает `pauk/gui/` | [cache.md](docs/architecture/cache.md) |
 | `pauk/gui/` | снепшот → раскладка → JSON + сайт на TS | [gui.md](docs/architecture/gui.md) |
+| `pauk/reports/` | PDF-отчёты OSA по репозиториям (кнопка «Отчёт» на карточке) | [reports.md](docs/architecture/reports.md) |
 | `pauk/admin/` | веб-панель (FastAPI + Jinja): правка графа, ревью, здоровье БД | [admin-panel.md](docs/admin-panel.md) |
 | `pauk/jobs/` | очередь задач панели, воркер, Mongo-локи | [admin-panel.md](docs/admin-panel.md) |
 | `pauk/cli.py` | команды `pauk ...` | [cli.md](docs/architecture/cli.md) |

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,7 +9,7 @@ import mongomock
 from pauk.graph import version_link
 from pauk.graph.overrides import DELETE, LINK, record_relationship_override
 from pauk.graph.version_judge import VERDICTS_COLLECTION, VersionJudge, build_prompt, parse_verdict, stored_verdicts
-from pauk.graph.version_link import edge_direction, plan_version_edges, run_version_link
+from pauk.graph.version_link import edge_direction, plan_version_edges, run_version_link, run_version_pair
 from pauk.settings import Settings
 from pauk.storage import review
 from tests.bench.mocks import RecordingNeo4jClient
@@ -128,6 +129,54 @@ class VersionLinkTest(unittest.TestCase):
         self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
         self.assertEqual(result["version_edges_removed"], 0)
 
+    def test_a_held_edge_is_confirmed_after_the_pair_drops_out_of_the_rules(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {
+            "bucket": "STRONG_FUZZY", "status": "held"}
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.assertEqual(self.run_link()["version_edges"], 1)
+        self.assertEqual(versions(self.graph)[("W1", "W2")]["status"], "same")
+        self.assertEqual(self.run_link()["version_edges"], 0)
+
+    def test_late_same_recovers_the_edge_the_current_run_removed(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {
+            "bucket": "STRONG_FUZZY", "status": "held"}
+        self.answered_mid_run(lambda: review.record_verdict(
+            self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME))
+        self.assertEqual(versions(self.graph), {("W1", "W2"): {"bucket": "STRONG_FUZZY", "status": "same"}})
+
+    def test_the_newest_answer_wins_when_original_pairs_fold_onto_one(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        self.graph.nodes["Publication"]["W2"]["merged_ids"] = ["W9"]
+        newer = review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        older = review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W9"], review.SAME)
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
+        self.db[review.COLLECTION].update_one({"_id": older["_id"]}, {"$set": {"decided_at": moment}})
+        self.db[review.COLLECTION].update_one({"_id": newer["_id"]}, {
+            "$set": {"decided_at": moment + timedelta(days=1)}})
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+        self.db[review.COLLECTION].update_one({"_id": newer["_id"]}, {"$set": {"decided_at": moment}})
+        self.assertEqual(review.version_decisions(self.db, {"W9": "W2"}),
+                         {frozenset(("W1", "W2")): review.DIFFERENT})
+
+    def test_pair_job_uses_the_latest_answer_and_skips_global_search(self):
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        with patch.object(version_link, "find_version_candidates") as search, patch.object(
+            self.graph, "fetch_publications_for_dedup", wraps=self.graph.fetch_publications_for_dedup,
+        ) as read:
+            self.assertEqual(run_version_pair(self.config, self.db, ("W1", "W2"))["version_edges"], 1)
+            read.assert_called_once_with(["W1", "W2"])
+            search.assert_not_called()
+        self.assertEqual(run_version_pair(self.config, self.db, ("W1", "W2"))["version_edges"], 0)
+
     def test_an_edge_deleted_by_hand_is_not_written_again(self):
         pub(self.graph, "W1", "Deep learning for spider web classification",
             doi="10.48550/arxiv.2501.00001", journal="arXiv", type="preprint", day="2025-01-01")
@@ -180,8 +229,10 @@ class VersionLinkTest(unittest.TestCase):
         self.graph.edges[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {}
         record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
                                      "W1", "W2", LINK)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
         self.run_link()
         self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
+        self.assertEqual(versions(self.graph)[("W1", "W2")]["status"], "same")
 
     def test_a_verdict_follows_a_folded_publication(self):
         pub(self.graph, "W1", "Robust output feedback MPC: an interval observer approach",

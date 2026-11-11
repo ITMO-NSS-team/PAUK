@@ -8,8 +8,8 @@ graph says why two near-identical records are *not* one work as plainly as
 why they are. Nothing is folded: a version keeps its own node, DOI and
 authors.
 
-The edges belong to this command, not to a publish (no prepared row carries
-them), and each run rebuilds them whole. An edge the rules no longer produce
+The command reconciles these graph-owned edges with the latest rules and
+review decisions. A review action can reconcile one pair directly. An edge the rules no longer produce
 is removed, unless somebody added it by hand; one somebody deleted by hand
 is not written again. A person's answer in the review queue outranks the
 rules: "different" removes the edge for good, "same" marks it confirmed and
@@ -32,10 +32,17 @@ from pauk.storage import LlmLogStore, review
 from pauk.storage.atomic import AtomicWriter
 
 from .audit import actor_context, audited_client
-from .client import chunked
+from .client import chunked, resolve_folded_id
 from .dedup import _ordinal
-from .overrides import apply_overrides, claimed_relationships, tombstoned_relationships
-from .version_candidates import CANDIDATES_FILENAME, find_version_candidates
+from .overrides import DELETE, LINK, apply_overrides, relationship_override_id
+from .version_candidates import (
+    CANDIDATES_FILENAME,
+    MEDIUM_FUZZY,
+    MERGE_BUCKETS,
+    classify_pair,
+    find_version_candidates,
+    route_medium_fuzzy,
+)
 from .version_judge import LOG_COLLECTION, VersionJudge, stored_verdicts
 
 logger = logging.getLogger(__name__)
@@ -80,52 +87,10 @@ def plan_version_edges(rows: list[dict], report: list[dict],
     edges: dict[tuple[str, str], dict] = {}
     for row in report:
         a_id, b_id = row["record_a"], row["record_b"]
-        answer = answers.get(frozenset((a_id, b_id)))
-        if answer == review.DIFFERENT:
-            continue
-        # A look-alike is explained, not asked about: nobody confirms that an
-        # erratum is an erratum.
-        status = CONFIRMED if answer == review.SAME else HELD if row["mergeable"] else None
-        edges[edge_direction(by_id[a_id], by_id[b_id], row)] = {
-            "bucket": row["bucket"], "mergeable": row["mergeable"], "status": status,
-            **{name: row.get(name) for name in _EDGE_FIELDS},
-        }
+        verdict = answers.get(frozenset((a_id, b_id)))
+        answer = {"verdict": verdict} if verdict else None
+        edges.update(_desired_pair([by_id[a_id], by_id[b_id]], {}, row, answer, None, False))
     return edges
-
-
-def settle_pair(client, current: list[tuple[str, str]], verdict: str | None,
-                planned: tuple[tuple[str, str], dict] | None = None) -> str:
-    """Put one answer about two publications, or its withdrawal, on their edge.
-
-    The panel calls it when somebody answers, and `pauk versions link` for
-    an answer that came in while it ran. The caller holds the graph:
-    otherwise a run that read the answers earlier writes its plan over this.
-
-    Args:
-        current: The pair's IS_VERSION edges as they are, either direction.
-        verdict: The answer now standing, None once it is withdrawn.
-        planned: The edge this run's rules give the pair, as
-            `plan_version_edges` names it. The panel has no plan, so a
-            removed edge waits for the next run there.
-
-    Returns:
-        "unlinked", "linked", "reopened", "no_edge" (an answer of "same" with
-        nothing to confirm) or "relink" (withdrawn, no edge to put back).
-    """
-    if verdict == review.DIFFERENT:
-        client.delete_relationships_batch("Publication", "Publication", REL_TYPE, current)
-        return "unlinked"
-    status = CONFIRMED if verdict == review.SAME else HELD
-    if current:
-        client.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
-                                          [(src, tgt, {"status": status}) for src, tgt in current])
-    elif planned is not None:
-        (src, tgt), props = planned
-        client.upsert_relationships_batch("Publication", "Publication", REL_TYPE,
-                                          [(src, tgt, {**props, "status": status})])
-    else:
-        return "no_edge" if verdict == review.SAME else "relink"
-    return "linked" if verdict == review.SAME else "reopened"
 
 
 def run_version_link(config: Settings, mongo_db: Database, llm: bool = False,
@@ -179,117 +144,208 @@ def _ask_llm(config: Settings, mongo_db: Database, force: bool) -> tuple[int, in
         client.close()
 
 
-def _own(triples: set[tuple[str, str, str, str, str]],
-         aliases: dict[str, str]) -> set[tuple[str, str]]:
-    """The IS_VERSION pairs among override triples, on the nodes they live on now.
+def _version_overrides(db, aliases, scope=None):
+    query = {"active": True, "kind": "rel", "rel_type": REL_TYPE,
+             "src_label": "Publication", "tgt_label": "Publication"}
+    if scope is not None:
+        left, right = scope
+        query["_id"] = {"$in": [
+            relationship_override_id("Publication", REL_TYPE, "Publication", src, tgt)
+            for a in left for b in right for src, tgt in ((a, b), (b, a))
+        ]}
+    claims = {}
+    deleted = set()
+    for row in db.graph_overrides.find(query).sort([("updated_at", 1), ("_id", 1)]):
+        direction = tuple(aliases.get(row[key], row[key]) for key in ("src_id", "target_id"))
+        pair = frozenset(direction)
+        if len(pair) == 2:
+            if row["op"] == DELETE:
+                deleted.add(pair)
+            elif row["op"] == LINK:
+                claims[pair] = direction
+    return claims, deleted
 
-    An override names the ids it was made on; a fold since moved the edge to
-    the survivor, and the override has to follow it there or stop matching.
-    A pair folded into one node has no edge left to speak of.
-    """
-    pairs = {(aliases.get(src_id, src_id), aliases.get(tgt_id, tgt_id))
-             for src_label, rel_type, tgt_label, src_id, tgt_id in triples
-             if (src_label, rel_type, tgt_label) == ("Publication", REL_TYPE, "Publication")}
-    return {(src, tgt) for src, tgt in pairs if src != tgt}
+
+def _candidate(a, b, judge):
+    result = classify_pair(a, b)
+    if result is None:
+        return None
+    bucket, signals = result
+    if bucket == MEDIUM_FUZZY:
+        bucket = route_medium_fuzzy(a, b, signals, judge)
+    return {"status": HELD, "entity": "publication", "bucket": bucket,
+            "mergeable": bucket in MERGE_BUCKETS, **signals}
+
+
+def _desired_pair(rows, existing, candidate, answer, claim, deleted, *,
+                  reopen=False, previous=None, restore_claim=False):
+    if deleted or (answer and answer["verdict"] == review.DIFFERENT):
+        return {}
+    confirmed = answer is not None and answer["verdict"] == review.SAME
+    if len(rows) != 2:
+        return {}
+    if candidate:
+        direction = claim or edge_direction(*rows, candidate)
+        status = HELD if candidate["mergeable"] or (reopen and existing) else None
+        return {direction: {
+            "bucket": candidate["bucket"], "mergeable": candidate["mergeable"],
+            "status": CONFIRMED if confirmed else status,
+            **{field: candidate.get(field) for field in _EDGE_FIELDS},
+        }}
+    if confirmed:
+        prior = existing or previous
+        preferred = edge_direction(*rows, {})
+        if prior:
+            direction = claim or (preferred if preferred in prior else min(prior))
+            if direction in existing:
+                return {direction: {"status": CONFIRMED}}
+            props = prior.get(direction) or next(iter(prior.values()))
+            return {direction: {
+                **{key: props[key] for key in ("bucket", "mergeable", *_EDGE_FIELDS) if key in props},
+                "status": CONFIRMED,
+            }}
+        evidence = answer.get("evidence") or {}
+        if evidence.get("bucket") in MERGE_BUCKETS:
+            return {claim or preferred: {
+                "bucket": evidence["bucket"], "mergeable": True, "status": CONFIRMED,
+                **{field: evidence.get(field) for field in _EDGE_FIELDS},
+            }}
+    if reopen and existing:
+        preferred = edge_direction(*rows, {})
+        direction = claim if claim in existing else preferred if preferred in existing else min(existing)
+        return {direction: {"status": HELD}}
+    if claim in existing:
+        return {claim: {"status": None}}
+    if restore_claim and previous and claim in previous:
+        return {claim: {**previous[claim], "status": None}}
+    return {}
+
+
+def _diff(existing, desired):
+    stale = sorted(existing.keys() - desired.keys())
+    updates = [(src, tgt, props) for (src, tgt), props in sorted(desired.items())
+               if (src, tgt) not in existing
+               or any(existing[(src, tgt)].get(key) != value for key, value in props.items())]
+    return stale, updates
+
+
+def _write_diff(client, stale, updates):
+    written = sum(client.upsert_relationships_batch("Publication", "Publication", REL_TYPE, chunk)
+                  for chunk in chunked(updates))
+    removed = sum(client.delete_relationships_batch("Publication", "Publication", REL_TYPE, chunk)
+                  for chunk in chunked(stale))
+    return written, removed
+
+
+def reconcile_version_pair(client, db, members, *, reopen=False, record_question=False, previous=None):
+    """Reconcile one pair while the caller holds GRAPH."""
+    resolved = [resolve_folded_id(client, "Publication", member) for member in members]
+    if resolved[0] == resolved[1]:
+        return "version_folded", 0, 0
+
+    ids = tuple(sorted(resolved))
+    rows = sorted(client.fetch_publications_for_dedup(list(ids)), key=lambda row: row["id"])
+    if len(rows) != 2:
+        return "version_missing", 0, 0
+    aliases = dict(zip(members, resolved, strict=True))
+    for row in rows:
+        aliases.update(dict.fromkeys(row.get("merged_ids") or [], row["id"]))
+    scope = tuple({work_id, *(alias for alias, target in aliases.items() if target == work_id)}
+                  for work_id in ids)
+    pair = frozenset(ids)
+    answer = review.version_answers(db, aliases, scope).get(pair)
+    claims, deleted = _version_overrides(db, aliases, scope)
+    existing = client.fetch_version_edges(ids)
+    candidate = None
+    if pair not in deleted and (answer is None or answer["verdict"] != review.DIFFERENT):
+        candidate = _candidate(*rows, VersionJudge(known=stored_verdicts(db, aliases, scope)))
+    desired = _desired_pair(rows, existing, candidate, answer, claims.get(pair), pair in deleted,
+                            reopen=reopen, previous=previous, restore_claim=record_question)
+    written, removed = _write_diff(client, *_diff(existing, desired))
+    if record_question:
+        held_rows = [candidate] if candidate and candidate["mergeable"] and answer is None else []
+        review.record_held(db, held_rows, source=review.GRAPH)
+        review.retire_versions(db, held_rows, scope=scope)
+    if pair in deleted:
+        done = "no_edge_deleted"
+    elif answer and answer["verdict"] == review.DIFFERENT:
+        done = "unlinked" if removed else "already_unlinked"
+    elif answer:
+        done = "linked" if desired else "no_edge"
+    else:
+        done = "reopened" if desired else "relink"
+    return done, written, removed
+
+
+def run_version_pair(config: Settings, db: Database, members: tuple[str, str]) -> dict[str, int]:
+    with held(db, GRAPH), actor_context("etl-pipeline", source="versions-review"):
+        client = audited_client(config, db)
+        try:
+            _, written, removed = reconcile_version_pair(client, db, members, reopen=True)
+            return {"version_edges": written, "version_edges_removed": removed}
+        finally:
+            client.close()
 
 
 def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
     client = audited_client(config, mongo_db)
     try:
         rows = client.fetch_publications_for_dedup()
+        by_id = {row["id"]: row for row in rows}
         aliases = client.fetch_merged_id_map("Publication")
-        answers = review.version_decisions(mongo_db, aliases)
+        answers = review.version_answers(mongo_db, aliases)
         judge = VersionJudge(known=stored_verdicts(mongo_db, aliases))
         report = find_version_candidates(client, judge, rows)
-        # An edge deleted by hand is left out rather than written and taken
-        # away again by the overrides: that would log a creation and a
-        # deletion on every run, and readers would see it in between.
-        deleted_pairs = {frozenset(pair) for pair in _own(tombstoned_relationships(mongo_db), aliases)}
-        report = [row for row in report
-                  if frozenset((row["record_a"], row["record_b"])) not in deleted_pairs]
-        claimed = _own(claimed_relationships(mongo_db), aliases)
-        # The hand-made direction wins: writing the rules' one beside it
-        # would leave the pair pointing both ways.
-        edges = _unclaimed(plan_version_edges(rows, report, answers), claimed)
+        claims, deleted = _version_overrides(mongo_db, aliases)
+        candidates = {frozenset((row["record_a"], row["record_b"])): row for row in report}
+        previous = {}
+        for direction, props in client.fetch_version_edges().items():
+            previous.setdefault(frozenset(direction), {})[direction] = props
 
-        existing = client.fetch_relationship_pairs("Publication", REL_TYPE, "Publication")
-        # A pair a person called one work stays linked when the rules lose
-        # it: a retitled record does not make the answer wrong. Unless the
-        # rules now point it the other way; the answer then rides on the
-        # new edge, and keeping the old one would link the pair twice.
-        confirmed = {pair for pair in existing
-                     if answers.get(frozenset(pair)) == review.SAME
-                     and frozenset(pair) not in deleted_pairs and pair[::-1] not in edges}
-        # A hand-made edge is kept, but not over an answer of "different":
-        # the panel removes it when the answer is given, and only a graph
-        # that was down then leaves it for this run.
-        kept = {pair for pair in claimed if answers.get(frozenset(pair)) != review.DIFFERENT}
-        stale = sorted(existing - set(edges) - kept - confirmed)
-        written = removed = 0
+        stale = []
+        updates = []
+        for pair in sorted(previous.keys() | candidates.keys() | answers.keys(), key=sorted):
+            existing = previous.get(pair, {})
+            desired = _desired_pair([by_id[work_id] for work_id in sorted(pair) if work_id in by_id],
+                                    existing, candidates.get(pair), answers.get(pair),
+                                    claims.get(pair), pair in deleted)
+            removals, changes = _diff(existing, desired)
+            stale.extend(removals)
+            updates.extend(changes)
+
+        report = [row for pair, row in candidates.items() if pair not in deleted]
         with actor_context("etl-pipeline", source="versions-graph"):
-            for chunk in chunked(stale):
-                removed += client.delete_relationships_batch("Publication", "Publication", REL_TYPE, chunk)
-            for chunk in chunked([(src, tgt, props) for (src, tgt), props in sorted(edges.items())]):
-                written += client.upsert_relationships_batch("Publication", "Publication", REL_TYPE, chunk)
+            written, removed = _write_diff(client, stale, updates)
+            overrides = apply_overrides(client, mongo_db)
+            fresh = review.version_answers(mongo_db, aliases)
+            late = sorted((pair for pair in answers.keys() | fresh.keys()
+                           if answers.get(pair) != fresh.get(pair)), key=sorted)
+            for pair in late:
+                existing = client.fetch_version_edges(tuple(sorted(pair)))
+                desired = _desired_pair(
+                    [by_id[work_id] for work_id in sorted(pair) if work_id in by_id],
+                    existing, candidates.get(pair), fresh.get(pair), claims.get(pair),
+                    pair in deleted, reopen=fresh.get(pair) is None, previous=previous.get(pair),
+                )
+                added, dropped = _write_diff(client, *_diff(existing, desired))
+                written += added
+                removed += dropped
 
-        # Only what a person can usefully answer goes to the queue. An
-        # answered pair is not asked again: after a fold its answer sits
-        # under the old ids, and the new ones would open a second question.
-        held_rows = [row for row in report if row["mergeable"]
-                     and frozenset((row["record_a"], row["record_b"])) not in answers]
+        held_rows = [row for pair, row in candidates.items()
+                     if pair not in deleted and pair not in fresh and row["mergeable"]]
         asked = review.record_held(mongo_db, held_rows, source=review.GRAPH)
         retired = review.retire_versions(mongo_db, held_rows)
         config.cache_dir.mkdir(parents=True, exist_ok=True)
         with AtomicWriter(config.cache_dir / CANDIDATES_FILENAME) as fh:
             for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        logger.info("versions: %d IS_VERSION edge(s) written, %d stale removed, %d question(s) "
-                    "(%d retired)", written, removed, asked, retired)
-
-        with actor_context("etl-pipeline", source="versions-graph"):
-            overrides = apply_overrides(client, mongo_db)
-            late = _settle_late_answers(client, mongo_db, aliases, answers, rows, report, claimed)
         return {
             "version_edges": written,
             "version_edges_removed": removed,
             "version_questions": asked,
             "version_questions_retired": retired,
-            "version_late_answers": late,
+            "version_late_answers": len(late),
             **overrides,
         }
     finally:
         client.close()
-
-
-def _unclaimed(edges: dict[tuple[str, str], dict],
-               claimed: set[tuple[str, str]]) -> dict[tuple[str, str], dict]:
-    return {pair: props for pair, props in edges.items() if pair[::-1] not in claimed}
-
-
-def _settle_late_answers(client, mongo_db: Database, aliases: dict[str, str],
-                         answers: dict[frozenset[str], str], rows: list[dict],
-                         report: list[dict], claimed: set[tuple[str, str]]) -> int:
-    """Apply the answers given while this run was writing its plan.
-
-    The panel cannot touch the edges while the graph is held, so an answer
-    given since the run read them would be overwritten by a plan made
-    without it. Read again just before the lock goes; one given after this
-    finds the graph held too and queues a run of its own.
-
-    Returns:
-        How many pairs had their answer change during the run.
-    """
-    fresh = review.version_decisions(mongo_db, aliases)
-    changed = sorted((pair for pair in answers.keys() | fresh.keys()
-                      if answers.get(pair) != fresh.get(pair)), key=sorted)
-    if not changed:
-        return 0
-    existing = client.fetch_relationship_pairs("Publication", REL_TYPE, "Publication")
-    planned = {frozenset(pair): (pair, props)
-               for pair, props in _unclaimed(plan_version_edges(rows, report, fresh), claimed).items()}
-    for pair in changed:
-        a, b = sorted(pair)
-        current = [edge for edge in ((a, b), (b, a)) if edge in existing]
-        done = settle_pair(client, current, fresh.get(pair), planned.get(pair))
-        logger.info("versions: %s / %s answered during the run, %s", a, b, done)
-    return len(changed)

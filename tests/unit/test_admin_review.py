@@ -1097,10 +1097,12 @@ class VersionQuestionTest(unittest.TestCase):
         body = self.body()
         self.assertLess(body.index("/nodes/Publication/W2"), body.index("Sensors"))
 
-    def test_same_without_an_edge_says_so(self):
+    def test_same_restores_an_edge_from_the_review_evidence(self):
         del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
         response = self.answer("same")
-        self.assertIn("done=no_edge", response.headers["location"])
+        self.assertIn("done=linked", response.headers["location"])
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual((edge["bucket"], edge["status"]), ("PREPRINT_PUBLISHED", "same"))
 
     def test_different_removes_the_edge(self):
         response = self.answer("different")
@@ -1133,6 +1135,8 @@ class VersionQuestionTest(unittest.TestCase):
         self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
         response = self.answer("same")
         self.assertIn("done=version_waiting", response.headers["location"])
+        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        self.assertEqual(job.payload["members"], ["W1", "W2"])
 
     def test_a_held_graph_keeps_the_edge_and_queues_one_run(self):
         # A `versions link` holding the graph has read the answers already:
@@ -1147,6 +1151,35 @@ class VersionQuestionTest(unittest.TestCase):
         (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
         self.assertEqual(job.state, JobState.QUEUED)
         self.assertFalse(job.payload.get("llm"))
+        self.assertEqual(job.payload["members"], ["W1", "W2"])
+
+    def fold_publication(self):
+        old_key = ("Publication", "IS_VERSION", "Publication", "W1", "W2")
+        new_key = ("Publication", "IS_VERSION", "Publication", "W3", "W2")
+        del self.graph.nodes["Publication", "W1"]
+        self.graph.add("Publication", "W3", merged_ids=["W1"])
+        self.graph.relationships[new_key] = self.graph.relationships.pop(old_key)
+        return new_key
+
+    def test_different_removes_the_edge_on_the_survivor(self):
+        new_key = self.fold_publication()
+        self.assertIn("done=unlinked", self.answer("different").headers["location"])
+        self.assertNotIn(new_key, self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+
+    def test_same_and_withdraw_update_the_edge_on_the_survivor(self):
+        new_key = self.fold_publication()
+        self.assertIn("done=linked", self.answer("same").headers["location"])
+        self.assertEqual(self.graph.relationships[new_key]["status"], "same")
+        self.assertIn("done=reopened", self.withdraw().headers["location"])
+        self.assertEqual(self.graph.relationships[new_key]["status"], "held")
+
+    def test_folded_members_do_not_create_a_self_loop(self):
+        del self.graph.nodes["Publication", "W1"]
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W1"]
+        self.graph.relationships.clear()
+        self.assertIn("done=version_folded", self.answer("same").headers["location"])
+        self.assertEqual(self.graph.relationships, {})
 
     def test_same_on_an_edge_deleted_by_hand_says_it_stays_deleted(self):
         del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]

@@ -98,6 +98,14 @@ class VersionsPayload(BaseModel):
     """Whether to ask the LLM about MEDIUM_FUZZY pairs nobody asked about yet."""
 
     llm: bool = False
+    members: tuple[str, str] | None = None
+
+    @field_validator("members")
+    @classmethod
+    def _pair(cls, value: tuple[str, str] | None) -> tuple[str, str] | None:
+        if value is not None and (not all(value) or value[0] == value[1]):
+            raise ValueError("a version pair needs two distinct publication IDs")
+        return value
 
 
 class HealthPayload(BaseModel):

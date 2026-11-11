@@ -162,8 +162,8 @@ pauk versions link [--llm] [--force]
 pauk versions report [--output <path>]
 ```
 
-`link` takes the graph lock, like `pauk dedup graph`, and rebuilds every
-`IS_VERSION` edge from the current graph. With `--llm` the model is asked
+`link` takes the graph lock, like `pauk dedup graph`, and compares the
+current `IS_VERSION` edges with the planned edges. It writes only changes. With `--llm` the model is asked
 first, before the lock: a few hundred sequential calls would otherwise keep
 every publish waiting on Busy. Then:
 
@@ -184,19 +184,24 @@ every publish waiting on Busy. Then:
   confirmation; a direction added by hand wins over the rules';
 - mergeable pairs become `publication_version` questions (the "Версии
   публикаций" tab of `/review`); an answer there changes the edge at once,
-  and withdrawing it puts a confirmed edge back to `held` (a removed one comes
-  back with the next `link`).
+  and withdrawing it puts a confirmed edge back to `held`. A removed edge
+  returns if the rules still find a candidate for that pair.
   An open question the rules no longer ask is dropped; an answered or
   skipped one stays, and an answered pair is not asked again under the ids
   of a fold since;
 - an answer of "different" removes a hand-added edge too.
 
-The panel changes the edge under the graph lock as well. Otherwise a `link`
-that read the answers before somebody clicked writes its plan over the
-answer: the edge comes back after "different". With the graph held, the
-answer waits in Mongo, the panel says so and queues a `versions` job (one,
-however many answers wait). `link` reads the answers once more right
-before it lets the lock go and applies the ones given while it ran.
+The panel changes the edge under the graph lock. It resolves the original
+review IDs through the publication folds and uses the most recent answer
+when several questions now refer to the same pair. A confirmed edge survives
+a rule change. If the edge has disappeared, `same` can restore it from the
+review evidence when both nodes exist. A manual deletion takes precedence.
+
+When the graph is busy or unavailable, the panel queues a `versions` job for
+that pair. The job reads the latest decision and classifies just those
+publications using stored LLM verdicts. A temporary Neo4j outage delays the
+job by one minute. The full `link` run also checks for decisions made while
+it was writing and applies the changes before releasing the lock.
 
 The edges belong to this command: no prepared row carries them, so a publish
 never writes them, and `pauk admin prune` leaves them alone
@@ -221,17 +226,26 @@ after publishing.
 
 ## Records the old rule folded
 
-Before DOI-only folding, dedup folded one title under two DOIs into one node
-and kept the second record only as an entry of `Publication.versions`. That
-ledger lacks what a node needs (type, fields, funding, departments), so the
-record is rebuilt from its raw OpenAlex payload instead:
-`scripts/split_publication_versions.py` takes the id out of the survivor's
-`merged_ids` and `versions` (Mongo and graph) where `classify_pair` gives the
-pair a bucket and the raw payload is still there (without it the ledger entry
-is the last copy, and the record stays folded), and prints the `normalize` → `enrich` → `publish` → `prune` →
-`versions link` sequence that recreates the record as its own node and runs
-every stage, the code-link classifier included, on it. See
-[../scripts.md](../scripts.md).
+Before DOI-only folding, dedup could fold a preprint and its article into
+one publication, along with their authorship, PDF evidence and repository
+claims. The version ledger preserves bibliographic clues. The repair uses
+each record's raw OpenAlex response and attributable PDFs to recover its data.
+
+```sh
+uv run python scripts/split_publication_versions.py
+uv run python scripts/split_publication_versions.py --from-report path/to/split-report.json --apply
+```
+
+Dry run reports the pairs and checks their raw sources. With `--apply`, the
+script stages each survivor and its versions in a temporary Mongo database
+and a private PDF cache. It replaces the affected prepared rows with revision
+history, updates the PDF cache, and reconciles the publications' incident
+edges. It keeps repository claims outside the split and claims with separate
+manual or imported evidence. The repair records per-family progress in a
+separate report when given `--from-report`. To resume after interruption, run
+the same command or pass the repair report as input from the same data
+directory. A failed reconstruction leaves its source rows available and
+reports which source or stage failed.
 
 ## Where this goes next
 

@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import mongomock
+from neo4j.exceptions import ServiceUnavailable
 from pymongo.errors import AutoReconnect
 
 from pauk.jobs import locks, store, worker
@@ -98,6 +99,22 @@ class WorkerTest(unittest.TestCase):
         # spinning on the same job while somebody else holds the graph.
         self.queue()
         self.assertFalse(self.run_once(raises=locks.Busy("graph is busy")))
+
+    def test_an_unavailable_graph_delays_only_the_version_pair_job(self):
+        job = self.queue(JobKind.VERSIONS, {"members": ["W1", "W2"]})
+        with patch("pauk.graph.version_link.run_version_pair", side_effect=[
+            ServiceUnavailable("offline"), {"version_edges": 1},
+        ]) as pair, patch("pauk.graph.version_link.run_version_link") as full:
+            self.assertTrue(self.worker.run_once())
+            self.assertEqual(store.read(self.db, job.id).state, JobState.QUEUED)
+            self.assertFalse(self.worker.run_once())
+            self.db[store.COLLECTION].update_one({"_id": job.id}, {
+                "$set": {"available_at": now() - timedelta(seconds=1)},
+            })
+            self.assertTrue(self.worker.run_once())
+            self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
+            self.assertEqual(pair.call_count, 2)
+            full.assert_not_called()
 
     def test_a_job_cancelled_in_the_queue_is_never_claimed(self):
         job = self.queue()

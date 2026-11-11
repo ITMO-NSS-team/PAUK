@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 
 from pauk.sources import OpenRouterClient
-from pauk.storage import LlmLogStore
+from pauk.storage import LlmLogStore, review
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,8 @@ def _pair_key(a_id: str, b_id: str) -> str:
     return ":".join(sorted((a_id, b_id)))
 
 
-def stored_verdicts(db, aliases: dict[str, str] | None = None) -> dict[frozenset[str], dict]:
+def stored_verdicts(db, aliases: dict[str, str] | None = None,
+                    scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
     """Every verdict an earlier run paid for, keyed as `VersionJudge` looks it up.
 
     Args:
@@ -97,7 +98,8 @@ def stored_verdicts(db, aliases: dict[str, str] | None = None) -> dict[frozenset
     """
     aliases = aliases or {}
     found: dict[frozenset[str], dict] = {}
-    for row in db[VERDICTS_COLLECTION].find():
+    query = review.version_pair_filter(scope) if scope is not None else {}
+    for row in db[VERDICTS_COLLECTION].find(query).sort("_id", 1):
         members = frozenset(aliases.get(member, member) for member in row["members"])
         if len(members) == 2:
             found[members] = {"same_work": row["same_work"], "reason": row.get("reason")}

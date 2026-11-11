@@ -72,8 +72,8 @@ remove values; a partial source record cannot erase another merged record's data
 paper, a cover, an erratum) to the work it relates to, and carries `bucket`,
 `mergeable`, `status` (`held`, `same` once a person confirmed it, absent for
 a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`. No publish
-writes it: `pauk versions link` (`version_link.py`) rebuilds it from the
-graph, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
+writes it: `pauk versions link` (`version_link.py`) reconciles it with
+current graph data and review decisions, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
 prune` from reading its absence in the prepared rows as staleness; see
 [pipeline/version-candidates.md](pipeline/version-candidates.md).
 `Publication.venue_type` is the OpenAlex source type of the primary venue
