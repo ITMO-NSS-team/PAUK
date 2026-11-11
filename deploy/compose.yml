@@ -74,6 +74,7 @@ services:
       PAUK_ADMIN_SECURE_COOKIE: ${PAUK_ADMIN_SECURE_COOKIE:-}
     volumes:
       - ${PAUK_HOME}/logs/admin:/logs
+      - ${PAUK_ESSDATA}/runs/${PAUK_STAND}/audit:/app/data/audit
     ports: ["8505:8505"]
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8505/login', timeout=5)"]
