@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -1466,6 +1468,13 @@ class CollectOccurrencesTest(unittest.TestCase):
 
 
 class GithubUrlRegexTest(unittest.TestCase):
+    def test_long_owner_without_repo_does_not_backtrack(self):
+        script = (
+            "from pauk.pipeline.stages.code_links import GITHUB_URL; "
+            "assert GITHUB_URL.search('github.com/' + 'a' * 5000 + ' end') is None"
+        )
+        subprocess.run([sys.executable, "-c", script], check=True, timeout=10, capture_output=True)
+
     def test_matches_bare_domain_without_scheme(self):
         found = _occurrences_in_text("code at github.com/org/repo, see paper", None)
         self.assertEqual(list(found), ["https://github.com/org/repo"])

@@ -22,9 +22,10 @@ from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
-_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)?"
+_LINE_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)"
+_WRAP = _LINE_WRAP + "?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
-_SEGMENT = _CHAR + r"+(?:" + _WRAP + _CHAR + r"+)*"
+_SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github"
     + _WRAP

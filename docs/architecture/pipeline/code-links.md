@@ -36,9 +36,10 @@ occurrence list is replaced.
 ## The regex `GITHUB_URL`
 
 ```python
-_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)?"
+_LINE_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)"
+_WRAP = _LINE_WRAP + "?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
-_SEGMENT = _CHAR + r"+(?:" + _WRAP + _CHAR + r"+)*"
+_SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github" + _WRAP + r"\.com" + _WRAP + r"/"
     + _SEGMENT + r"/" + _SEGMENT, re.IGNORECASE)
@@ -48,11 +49,12 @@ GITHUB_URL = re.compile(
   not only `https://...`. The lookbehind `(?<![\w.])` stops a match inside a
   longer host (`mygithub.com` and `sub.github.com` do not match).
 - **A hyphenated line break is recognized, but only inside an already started
-  match**: `_WRAP` is built into the pattern's segments rather than applied as
+  match**: `_LINE_WRAP` is built into the pattern's segments rather than applied as
   preprocessing of the whole text. A break is handled only while the regex
   engine is still parsing `github.com/owner/repo`, not after it. The next
   line's continuation may be ordinary text, so the joined result is kept as a
-  candidate.
+  candidate. The break is required inside the repeated segment; making it
+  optional causes exponential backtracking on a long owner without a repo.
 - **A break after `_` is also recognized**: both the short address and the one
   with the next line's continuation are kept. Other ordinary line breaks are not
   joined; blank lines and page boundaries are not crossed.
