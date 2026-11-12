@@ -191,16 +191,48 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertIn("not an object", client.last_error)
 
 
+HAIKU_REPLY_ANSWERED_TWICE = """\
+```json
+{
+  "matched_candidate": null,
+  "surname_local": "Alonso",
+  "first_name_local": "F",
+  "second_name_local": null,
+  "surname_en": "Alonso",
+  "first_name_en": "F",
+  "second_name_en": null,
+  "reason": "Only initial 'F' appears as bare initial in all spellings; full name 'Francisco' appears in known spellings"
+}
+```
+
+Wait, let me reconsider. The known spellings include "Alonso, Francisco" which spells out the first name in full. According to rule 1, if a name part is spelled out in full somewhere in the input, extract it in full.
+
+```json
+{
+  "matched_candidate": null,
+  "surname_local": "Alonso",
+  "first_name_local": "Francisco",
+  "second_name_local": null,
+  "surname_en": "Alonso",
+  "first_name_en": "Francisco",
+  "second_name_en": null,
+  "reason": "Full name 'Francisco' appears in known spellings; extracted in full per rule 1."
+}
+```"""
+
+
 class ParseJsonBodyTest(unittest.TestCase):
     def test_a_clean_reply_parses_as_is(self):
         self.assertEqual(_parse_json_body('{"a": 1}'), {"a": 1})
         self.assertEqual(_parse_json_body('```json\n{"a": 1}\n```'), {"a": 1})
         self.assertEqual(_parse_json_body("[1, 2]"), [1, 2])
 
-    def test_a_second_fenced_answer_wins(self):
-        reply = '```json\n{"a": 1}\n```\nWait, let me reconsider.\n```json\n{"a": 2}\n```'
+    def test_a_reconsidered_answer_in_a_second_fence_wins(self):
+        """A real claude-haiku-4.5 reply from an author_names run, which failed with "Extra data"."""
+        parsed = _parse_json_body(HAIKU_REPLY_ANSWERED_TWICE)
 
-        self.assertEqual(_parse_json_body(reply), {"a": 2})
+        self.assertEqual(parsed["first_name_local"], "Francisco")
+        self.assertEqual(parsed["first_name_en"], "Francisco")
 
     def test_a_second_bare_answer_wins(self):
         self.assertEqual(_parse_json_body('{"a": 1}\nWait, let me reconsider.\n{"a": 2}'), {"a": 2})
