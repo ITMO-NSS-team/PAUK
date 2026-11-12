@@ -23,6 +23,7 @@ from pauk.sources.llm import (
     OpenRouterClient,
     SubscriptionCliClient,
     SubscriptionLimitError,
+    _parse_json_body,
     _run_cli,
     check_providers,
     kill_running_clis,
@@ -58,6 +59,14 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
 
         self.assertEqual(result, {"ok": True})
         self.assertEqual(client.last_response, payload)
+
+    def test_a_reconsidered_answer_is_read_from_the_last_block(self):
+        client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
+        content = '```json\n{"ok": false}\n```\nWait, let me reconsider.\n```json\n{"ok": true}\n```'
+        client.session.post = MagicMock(return_value=self.response(200, {"choices": [{"message": {"content": content}}]}))
+
+        self.assertEqual(client.chat_json("some prompt"), {"ok": True})
+        self.assertIsNone(client.last_error)
 
     def test_last_response_is_none_when_no_api_key(self):
         client = OpenRouterClient(timeout=5, api_key="", model="test-model")
@@ -180,6 +189,36 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertIsNone(client.chat_json("some prompt"))
         self.assertEqual(client.last_response, [])
         self.assertIn("not an object", client.last_error)
+
+
+class ParseJsonBodyTest(unittest.TestCase):
+    def test_a_clean_reply_parses_as_is(self):
+        self.assertEqual(_parse_json_body('{"a": 1}'), {"a": 1})
+        self.assertEqual(_parse_json_body('```json\n{"a": 1}\n```'), {"a": 1})
+        self.assertEqual(_parse_json_body("[1, 2]"), [1, 2])
+
+    def test_a_second_fenced_answer_wins(self):
+        reply = '```json\n{"a": 1}\n```\nWait, let me reconsider.\n```json\n{"a": 2}\n```'
+
+        self.assertEqual(_parse_json_body(reply), {"a": 2})
+
+    def test_a_second_bare_answer_wins(self):
+        self.assertEqual(_parse_json_body('{"a": 1}\nWait, let me reconsider.\n{"a": 2}'), {"a": 2})
+
+    def test_prose_after_the_object_is_ignored(self):
+        self.assertEqual(_parse_json_body('{"a": {"b": 1}}\nThe name is Portuguese.'), {"a": {"b": 1}})
+        self.assertEqual(_parse_json_body('```json\n{"a": 1}\n```\nNote: initials kept.'), {"a": 1})
+
+    def test_braces_inside_strings_do_not_split_the_object(self):
+        self.assertEqual(_parse_json_body('Answer: {"a": "x { y } z"} done'), {"a": "x { y } z"})
+
+    def test_a_truncated_second_answer_leaves_the_first(self):
+        self.assertEqual(_parse_json_body('{"a": 1}\nWait.\n{"a": 2, "b": '), {"a": 1})
+
+    def test_a_reply_without_an_object_still_raises(self):
+        for reply in ("Sorry, I cannot help { with that", "[1, 2] and more"):
+            with self.subTest(reply=reply), self.assertRaises(json.JSONDecodeError):
+                _parse_json_body(reply)
 
 
 @patch("pauk.sources.llm.shutil.which", return_value="/usr/bin/claude")
@@ -314,6 +353,12 @@ class ClaudeCliTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(client.last_response["_raw_text"], "Something broke")
         self.assertIn("not JSON", client.last_error)
+
+    def test_prose_after_the_json_does_not_fail_the_call(self, _which):
+        client, result, _ = self.run_client(self.reply('{"ok": true}\n\nI kept the initials as given.'))
+
+        self.assertEqual(result, {"ok": True})
+        self.assertIsNone(client.last_error)
 
     def test_a_non_object_reply_is_a_failure(self, _which):
         client, result, _ = self.run_client(self.reply("[1, 2]"))

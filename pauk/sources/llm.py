@@ -99,6 +99,40 @@ def _strip_code_fence(content: str) -> str:
     return match.group(1) if match else content
 
 
+def _parse_json_body(content: str) -> Any:
+    """The JSON a reply carries, fenced or not.
+
+    A clean reply (a bare body or one fence around it) parses as is, a top-level
+    list included. Otherwise the reply is scanned for JSON objects and the last
+    one wins: a model sometimes answers, writes "Wait, let me reconsider" and
+    answers again, or adds an explanation after the object (seen with
+    claude-haiku-4.5 on real names). A JSON example quoted in trailing prose
+    would win over the answer too; models have not been seen doing that.
+
+    Raises:
+        json.JSONDecodeError: the reply holds no JSON object.
+    """
+    try:
+        return json.loads(_strip_code_fence(content))
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        found = None
+        position = content.find("{")
+        while position >= 0:
+            try:
+                value, end = decoder.raw_decode(content, position)
+            except json.JSONDecodeError:
+                position = content.find("{", position + 1)
+                continue
+            if isinstance(value, dict):
+                found = value
+            position = content.find("{", end)
+        if found is None:
+            raise
+        _warn.warning("salvaged", "LLM reply was not clean JSON, took the last object in it")
+        return found
+
+
 class OpenRouterClient(HttpClient):
     """Minimal OpenRouter chat-completions client, JSON-object mode only."""
 
@@ -244,7 +278,7 @@ class OpenRouterClient(HttpClient):
                 self.last_error = "empty model response"
                 _warn.warning("empty", "OpenRouter: %s returned an empty response body", self.model)
                 return None
-            parsed = json.loads(_strip_code_fence(content))
+            parsed = _parse_json_body(content)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             self.last_error = f"could not parse model response: {type(exc).__name__}"
             _warn.warning("unparsable", "OpenRouter: could not parse %s's response: %s", self.model, exc)
@@ -566,7 +600,7 @@ class SubscriptionCliClient:
             self._fail("empty model response")
             return None
         try:
-            parsed = json.loads(_strip_code_fence(reply.text))
+            parsed = _parse_json_body(reply.text)
         except json.JSONDecodeError as exc:
             self._fail(f"could not parse model response: {type(exc).__name__}")
             return None
