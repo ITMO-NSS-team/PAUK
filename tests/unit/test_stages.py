@@ -1471,7 +1471,7 @@ class GithubUrlRegexTest(unittest.TestCase):
     def test_long_owner_without_repo_does_not_backtrack(self):
         script = (
             "from pauk.pipeline.stages.code_links import GITHUB_URL; "
-            "assert GITHUB_URL.search('github.com/' + 'a' * 5000 + ' end') is None"
+            "assert GITHUB_URL.search('github.com/' + 'a' * 200000 + ' end') is None"
         )
         subprocess.run([sys.executable, "-c", script], check=True, timeout=10, capture_output=True)
 

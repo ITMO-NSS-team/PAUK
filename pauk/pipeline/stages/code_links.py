@@ -32,8 +32,9 @@ GITHUB_URL = re.compile(
     + r"\.com"
     + _WRAP
     + r"/"
+    + "(?>"
     + _SEGMENT
-    + r"/"
+    + r")/"
     + _SEGMENT,
     re.IGNORECASE,
 )

@@ -42,7 +42,7 @@ _CHAR = r"(?:-(?!\n)|[\w.])"
 _SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github" + _WRAP + r"\.com" + _WRAP + r"/"
-    + _SEGMENT + r"/" + _SEGMENT, re.IGNORECASE)
+    + "(?>" + _SEGMENT + r")/" + _SEGMENT, re.IGNORECASE)
 ```
 
 - **The scheme is optional**: it catches a bare `github.com/org/repo` in prose,
@@ -55,6 +55,7 @@ GITHUB_URL = re.compile(
   line's continuation may be ordinary text, so the joined result is kept as a
   candidate. The break is required inside the repeated segment; making it
   optional causes exponential backtracking on a long owner without a repo.
+  The atomic owner group avoids retrying shorter prefixes when `/` is absent.
 - **A break after `_` is also recognized**: both the short address and the one
   with the next line's continuation are kept. Other ordinary line breaks are not
   joined; blank lines and page boundaries are not crossed.
