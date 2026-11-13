@@ -310,6 +310,11 @@ alone do not create edits or source disagreements.
 Rollback and undo use `from_snapshot=True` to preserve legacy values.
 Saved decisions are normalized where possible and retain legacy values otherwise.
 The field whitelist, audit and version checks still apply; new input remains validated.
+Unchanged legacy fields that fail validation do not block editing other fields.
+`persist_decision` is shared by the panel and CLI: a confirmed write failure
+compensates the graph mutation, while an uncertain commit does not trigger rollback.
+Withdrawal can require the decision's write token, rejecting changes made since
+the form was rendered. `apply_overrides(document_id=...)` limits an undo to its target.
 
 Why a separate layer instead of calling `Neo4jClient` from a handler:
 

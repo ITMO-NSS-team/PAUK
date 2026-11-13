@@ -13,7 +13,7 @@ from pymongo.errors import AutoReconnect
 from pauk.admin import deps, nodes
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
-from pauk.graph.mutations import RELATIONSHIPS, MutationError
+from pauk.graph.mutations import NODE_LIST_FIELDS, RELATIONSHIPS, MutationError
 from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
@@ -1311,6 +1311,62 @@ class FieldNormalizationTest(unittest.TestCase):
         self.assertIsNone(self.graph.nodes["Publication", "W1"]["code_url"])
         self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
+    def test_unchanged_invalid_fields_do_not_block_editing_other_fields(self):
+        cases = self.LEGACY_FIELDS + (
+            ("Person", "A10", "emails", {"old": True}, '["new@example.org"]'),
+            ("Repository", "R10", "topics", [False], '["science"]'),
+        )
+        for label, node_id, field, legacy, _ in cases:
+            with self.subTest(label=label, field=field, legacy=legacy):
+                self.graph.add(label, node_id, **{field: legacy})
+                changed = "name_ru" if label == "Person" else "title" if label == "Publication" else "name"
+                response = self.submit(f"/nodes/{label}/{node_id}", **{changed: "Edited"})
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertEqual(self.db[COLLECTION].find_one({"target_id": node_id})["fields"], {changed: "Edited"})
+                version = self.graph.nodes[label, node_id]["updated_at"]
+                self.assertIn("unchanged=1", self.submit(f"/nodes/{label}/{node_id}").headers["location"])
+                self.assertEqual(self.graph.nodes[label, node_id]["updated_at"], version)
+
+    def test_a_stale_restore_form_cannot_withdraw_a_new_deletion(self):
+        self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+        old = RenderedForms(self.client.get("/nodes/Publication/W1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 303)
+        self.assertEqual(self.submit(title="New deletion").status_code, 303)
+        self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+        response = self.client.post(old["action"], data=old["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn(("Publication", "W1"), self.graph.nodes)
+        row = self.db[COLLECTION].find_one({"target_id": "W1"})
+        self.assertTrue(row["active"])
+        self.assertEqual(row["snapshot"]["title"], "New deletion")
+
+    def test_undo_then_edit_again_does_not_make_the_old_undo_form_current(self):
+        self.assertEqual(self.submit(code_url="https://github.com/org/first").status_code, 303)
+        old = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 303)
+        self.assertEqual(self.submit(code_url="https://github.com/org/second").status_code, 303)
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 409)
+        self.assertEqual(json.loads(self.graph.nodes["Publication", "W1"]["code_url"]), ["https://github.com/org/second"])
+        self.assertTrue(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+
+    def test_every_declared_list_field_round_trips_and_rejects_wrong_item_types(self):
+        for label, fields in NODE_LIST_FIELDS.items():
+            for name, item_type in fields.items():
+                with self.subTest(label=label, field=name):
+                    node_id = f"list-{label}-{name}"
+                    value = ["https://example.org/repo"] if name == "code_url" else ["value"] if item_type is str else [{}]
+                    response = self.submit(f"/nodes/{label}/new", "Создать", id=node_id, **{name: json.dumps(value)})
+                    self.assertEqual(response.status_code, 303)
+                    node = self.graph.nodes[label, node_id]
+                    actual = json.loads(node[name]) if isinstance(node[name], str) else node[name]
+                    self.assertEqual(actual, value)
+                    before = dict(node)
+                    invalid = "[false]" if item_type is str else '["not an object"]'
+                    response = self.submit(f"/nodes/{label}/{node_id}", **{name: invalid})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(self.graph.nodes[label, node_id], before)
+
     def test_a_plain_url_survives_creation_editing_and_republishing(self):
         url = "https://github.com/be2rlab/QUORUM"
         response = self.submit("/nodes/Publication/new", "Создать", id="W9", title="New paper",
@@ -1622,8 +1678,8 @@ class UrlAsIdTest(unittest.TestCase):
 
     def test_restoring_works(self):
         self.client.post(f"/nodes/LinkCandidate/delete/{self.path}", data={"csrf": self.csrf})
-        response = self.client.post(f"/nodes/LinkCandidate/restore/{self.path}",
-                                    data={"csrf": self.csrf})
+        form = RenderedForms(self.client.get(f"/nodes/LinkCandidate/{self.path}").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 303)
         self.assertIn(("LinkCandidate", self.URL), self.graph.nodes)
 
@@ -2248,9 +2304,9 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
     def test_restoring_takes_the_record_away_again(self):
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
                         snapshot={"name_ru": "Петров"})
+        form = RenderedForms(self.client.get("/nodes/Person/A2").text).with_button("Восстановить")
         with patch.object(nodes, "deactivate_override", self.unreachable):
-            response = self.client.post("/nodes/Person/restore/A2",
-                                        data={"csrf": self.csrf})
+            response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 503)
         self.assertNotIn(("Person", "A2"), self.graph.nodes)
 
@@ -2260,9 +2316,9 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
                         snapshot={"name_ru": "Петров"})
         self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W1")] = {}
+        form = RenderedForms(self.client.get("/nodes/Person/A2").text).with_button("Восстановить")
         with patch.object(nodes, "deactivate_override", self.unreachable):
-            response = self.client.post("/nodes/Person/restore/A2",
-                                        data={"csrf": self.csrf})
+            response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 503)
         self.assertIn("не откатилась", response.json()["detail"])
 

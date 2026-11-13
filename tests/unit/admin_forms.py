@@ -50,8 +50,10 @@ class RenderedForms(HTMLParser):
         elif tag == "option":
             self.option = None
 
-    def with_button(self, caption):
+    def with_button(self, caption, **fields):
         for form in self.forms:
+            if any(form["fields"].get(name) != value for name, value in fields.items()):
+                continue
             for button in form["buttons"]:
                 if caption in button["text"]:
                     fields = dict(form["fields"])

@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import uuid4
 
+from neo4j.exceptions import DriverError, Neo4jError
 from neo4j.time import DateTime
 from pymongo import ReturnDocument
 from pymongo.database import Database
@@ -52,6 +53,24 @@ class DecisionWriteUncertain(PyMongoError):
 
 class DecisionWriteConflict(PyMongoError):
     """A decision changed state or exhausted its bounded write attempts."""
+
+
+class DecisionRollbackFailed(MutationError):
+    """The graph could not be restored after a confirmed decision-write failure."""
+
+
+def persist_decision(undo: Callable, write: Callable) -> None:
+    """Compensate a graph change only when the decision write definitely failed."""
+    try:
+        write()
+    except DecisionWriteUncertain:
+        raise
+    except PyMongoError:
+        try:
+            undo()
+        except (MutationError, Neo4jError, DriverError) as error:
+            raise DecisionRollbackFailed(f"graph rollback failed: {error}") from error
+        raise
 
 
 def _write_decision(db: Database, document_id: str,
@@ -294,7 +313,7 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
 
 def deactivate_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
                                      src_id: str, tgt_id: str,
-                                     only_op: str | None = None) -> bool:
+                                     only_op: str | None = None, *, expected_write_id: str | None = None) -> bool:
     """Stop keeping a relationship unlinked; the next publish restores it.
 
     Args:
@@ -302,10 +321,13 @@ def deactivate_relationship_override(db: Database, src_label: str, rel_type: str
             document id, so "restore the link somebody removed" would
             otherwise withdraw the claim on a link somebody added and
             report that a publish will rebuild it.
+        expected_write_id: Refuse if the decision changed after it was read.
     """
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
 
     def build(existing: dict) -> dict | None:
+        if expected_write_id is not None and (existing.get("write_id") or "") != expected_write_id:
+            raise DecisionWriteConflict("the relationship decision changed")
         if not existing.get("active") or (only_op is not None and existing.get("op") != only_op):
             return None
         return {"$set": {"active": False}}
@@ -333,7 +355,7 @@ def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]
 
 
 def deactivate_override(db: Database, label: str, target_id: str,
-                        only_op: str | None = None) -> bool:
+                        only_op: str | None = None, *, expected_write_id: str | None = None) -> bool:
     """Stop applying an override without losing the record of it.
 
     Undoing an edit is switching this off and reapplying, not deleting the
@@ -353,6 +375,7 @@ def deactivate_override(db: Database, label: str, target_id: str,
             a node by hand withdraws the tombstone that would delete it
             again, and nothing else. Left unset, the decision is withdrawn
             whatever it says.
+        expected_write_id: Refuse if the decision changed after it was read.
 
     Returns:
         Whether anything was withdrawn.
@@ -360,6 +383,8 @@ def deactivate_override(db: Database, label: str, target_id: str,
     document_id = override_id(label, target_id)
 
     def build(row: dict) -> dict | None:
+        if expected_write_id is not None and (row.get("write_id") or "") != expected_write_id:
+            raise DecisionWriteConflict("the node decision changed")
         if not row.get("active") or (only_op is not None and row.get("op") != only_op):
             return None
         update: dict = {"$set": {"generation": row.get("generation", 0) + 1,
@@ -375,8 +400,11 @@ def deactivate_override(db: Database, label: str, target_id: str,
     return _write_decision(db, document_id, build) is not None
 
 
-def active_overrides(db: Database) -> list[dict]:
-    return list(db[COLLECTION].find({"active": True}))
+def active_overrides(db: Database, *, document_id: str | None = None) -> list[dict]:
+    query: dict = {"active": True}
+    if document_id is not None:
+        query["_id"] = document_id
+    return list(db[COLLECTION].find(query))
 
 
 def tombstoned_ids(db: Database, label: str) -> set[str]:
@@ -389,24 +417,23 @@ def tombstoned_ids(db: Database, label: str) -> set[str]:
     }
 
 
-def apply_overrides(client, db: Database) -> dict[str, int]:
-    """Reapply every active manual decision to the graph.
+def apply_overrides(client, db: Database, *, document_id: str | None = None) -> dict[str, int]:
+    """Reapply decisions after publishing, dedup or `pauk admin overrides apply`.
 
-    Called right after an edit is saved (so it takes effect at once), at
-    the end of a publish and at the end of a graph-wide dedup (both of
-    which can undo manual work) and by `pauk overrides apply`.
+    The panel limits reapplication after undo to the selected record.
 
     Args:
         client: Graph client; pass the audited one so real changes are
             recorded.
         db: Mongo database holding the overrides.
+        document_id: Apply only this decision; omitted for a full publish.
 
     Returns:
         Counts: how many overrides were applied, how many were already in
         place, and how many targets no longer exist.
     """
     applied = unchanged = missing = 0
-    for override in active_overrides(db):
+    for override in active_overrides(db, document_id=document_id):
         if override.get("op") == LINK:
             # A claim, not an instruction: only a prune reads these.
             unchanged += 1
@@ -445,12 +472,12 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 continue
 
             # A hand-made record carries the same kind of row as a hand edit.
-            fields = override.get("fields") or {}
-            try:
-                fields = normalize_fields(label, fields)
-            except MutationError:
-                # Stored decisions can predate the current input rules.
-                fields = normalize_fields(label, fields, from_snapshot=True)
+            fields = {}
+            for name, value in (override.get("fields") or {}).items():
+                try:
+                    fields.update(normalize_fields(label, {name: value}))
+                except MutationError:
+                    fields.update(normalize_fields(label, {name: value}, from_snapshot=True))
             covered = {name: current.get(name) for name, value in fields.items()
                        if not field_values_equal(name, current.get(name), value)}
             if not covered:

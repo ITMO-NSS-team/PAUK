@@ -18,8 +18,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from neo4j.exceptions import Neo4jError
-from pymongo.errors import PyMongoError
 
 from pauk.admin import decisions, feed, source
 from pauk.admin.deps import (
@@ -62,8 +60,6 @@ from pauk.graph.mutations import (
 from pauk.graph.overrides import (
     CREATE,
     LINK,
-    DecisionWriteConflict,
-    DecisionWriteUncertain,
     deactivate_override,
     override_generation,
     record_override,
@@ -106,51 +102,6 @@ def _node_url(label: str, node_id: str, query: str = "") -> str:
     return f"{address}?{query}" if query else address
 
 
-def _record(undo, write) -> None:
-    """Write the decision that protects a change already made to the graph.
-
-    Neo4j and Mongo share no transaction, so the decision can fail after the
-    graph has moved, and the next publish would silently revert the change.
-    The graph is put back instead when failure is confirmed. An uncertain
-    commit leaves it in place until the outcome can be checked.
-
-    Args:
-        undo: Puts the graph back the way it was.
-        write: Records the decision.
-
-    Raises:
-        HTTPException: 409 for conflicting decisions, 503 for failed or
-            uncertain writes. The message reports whether the graph was restored.
-    """
-    try:
-        write()
-    except DecisionWriteUncertain:
-        logger.exception("decision write outcome could not be verified")
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Mongo не подтвердила результат записи решения. Граф не откатывали: "
-            "решение могло сохраниться. Проверьте карточку и ручные решения "
-            "после восстановления соединения") from None
-    except PyMongoError as error:
-        logger.error("could not record the decision: %s", error)
-        try:
-            undo()
-        except (MutationError, Neo4jError) as failure:
-            logger.exception("and the graph could not be put back")
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                "правка записана в граф, но не сохранилась как решение "
-                f"и не откатилась ({failure}). Следующая публикация её снимет") from None
-        if isinstance(error, DecisionWriteConflict):
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                "правка отменена: решение параллельно изменялось. "
-                "Обновите карточку и попробуйте снова") from None
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
-
-
 def _known_label(label: str) -> str:
     """Reject an unknown label with 404 rather than let it reach Cypher."""
     if label not in NODE_FIELDS:
@@ -186,13 +137,22 @@ def _parse_value(raw: str, current: object = None):
 
 
 def _form_fields(label: str, form, current: dict | None = None) -> dict:
-    """Keep declared lists as text until the shared normalizer parses them."""
+    """Parse submitted fields, leaving untouched invalid legacy values out."""
     fields = {}
     for name in NODE_FIELDS[label]:
         if name not in form:
             continue
         raw = str(form[name])
         if name in NODE_LIST_FIELDS[label]:
+            if current is not None:
+                previous = current.get(name)
+                displayed = (str(templates.env.call_filter("tojson", previous))
+                             if isinstance(previous, (list, dict)) else "" if previous is None else str(previous))
+                if raw == displayed:
+                    try:
+                        normalize_fields(label, {name: previous})
+                    except MutationError:
+                        continue
             fields[name] = raw
         else:
             fields[name] = (_parse_new_value(raw) if current is None
@@ -264,7 +224,7 @@ async def create(request: Request, label: str, user: Editor,
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    _record(undo=lambda: delete_node(graph, label, node_id),
+    decisions.record_change(undo=lambda: delete_node(graph, label, node_id),
             write=lambda: record_override(db, label, node_id, CREATE, fields, actor=user.actor))
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "created=1"),
@@ -272,7 +232,7 @@ async def create(request: Request, label: str, user: Editor,
 
 
 @router.post("/nodes/{label}/restore/{node_id:path}")
-async def restore(label: str, node_id: str, user: Editor,
+async def restore(request: Request, label: str, node_id: str, user: Editor,
                   db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Put a deleted node back as it was, from the snapshot on its decision.
 
@@ -283,14 +243,19 @@ async def restore(label: str, node_id: str, user: Editor,
     if not fields:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "не сохранилось данных, чтобы восстановить эту запись")
+    form = await request.form()
+    version = decisions.decision_version(db, label, node_id)
+    if "seen_write" not in form or str(form["seen_write"]) != version:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Решение изменилось. Обновите страницу перед восстановлением.")
     try:
         create_node(graph, label, node_id,
                     {name: value for name, value in fields.items()
                      if name in NODE_FIELDS[label]}, from_snapshot=True)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    _record(undo=lambda: delete_node(graph, label, node_id),
-            write=lambda: deactivate_override(db, label, node_id, only_op="delete"))
+    decisions.record_change(undo=lambda: delete_node(graph, label, node_id),
+                            write=lambda: deactivate_override(db, label, node_id, only_op="delete",
+                                                              expected_write_id=version))
     logger.info("%s restored %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "restored=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -319,6 +284,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
             "history": gone, "restorable": restorable,
+            "decision_version": decisions.decision_version(db, label, node_id),
             "labels": sorted(NODE_FIELDS)},
             status_code=status.HTTP_404_NOT_FOUND)
     editable = sorted(NODE_FIELDS[label])
@@ -358,7 +324,7 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
                 create_relationship(graph, **relationship)
 
         # Without the tombstone the next publish brings the record back.
-        _record(undo=undo,
+        decisions.record_change(undo=undo,
                 write=lambda: record_override(
                     db, label, node_id, "delete", actor=user.actor,
                     note=str(form.get("note", "")).strip(), snapshot=kept))
@@ -491,7 +457,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
     # Claimed so a prune tells it from an edge the pipeline stopped making.
-    _record(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
+    decisions.record_change(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
                                              src_id, tgt_id),
             write=lambda: record_relationship_override(
                 db, src_label, rel_type, tgt_label, src_id, tgt_id,
@@ -540,7 +506,7 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
         removed = delete_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         if not removed:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "there is no such link")
-        _record(
+        decisions.record_change(
             undo=lambda: create_relationship(graph, src_label, rel_type, tgt_label,
                                              src_id, tgt_id, snapshot),
             write=lambda: record_relationship_override(
@@ -581,7 +547,7 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
         generation = override_generation(db, label, node_id)
         updated = update_node(graph, label, node_id, changed,
                               expected_updated_at=str(form.get("seen_at") or "") or None)
-        _record(
+        decisions.record_change(
             undo=lambda: update_node(graph, label, node_id,
                                      {name: before.get(name) for name in changed},
                                      expected_updated_at=updated["updated_at"], from_snapshot=True),

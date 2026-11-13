@@ -169,6 +169,34 @@ class ConcurrentDecisionTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
 
+    def test_node_withdrawal_rechecks_the_page_version_after_a_write_race(self):
+        first = record_override(self.db, "Person", "A1", SET, {"name_ru": "First"})
+        collection = self.db[COLLECTION]
+        original = collection.find_one_and_update
+        raced = False
+
+        def save_another_edit(*args, **kwargs):
+            nonlocal raced
+            if not raced:
+                raced = True
+                record_override(self.db, "Person", "A1", SET, {"name_ru": "Later"})
+            return original(*args, **kwargs)
+
+        with patch.object(collection, "find_one_and_update", save_another_edit), self.assertRaises(DecisionWriteConflict):
+            deactivate_override(self.db, "Person", "A1", only_op=SET, expected_write_id=first["write_id"])
+        row = collection.find_one({"target_id": "A1"})
+        self.assertTrue(row["active"])
+        self.assertEqual(row["fields"]["name_ru"], "Later")
+
+    def test_relationship_withdrawal_requires_the_same_saved_decision(self):
+        triple = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        first = record_relationship_override(self.db, *triple)
+        latest = record_relationship_override(self.db, *triple, snapshot={"is_corresponding": True})
+        with self.assertRaises(DecisionWriteConflict):
+            deactivate_relationship_override(self.db, *triple, only_op=DELETE, expected_write_id=first["write_id"])
+        self.assertEqual(self.db[COLLECTION].find_one()["write_id"], latest["write_id"])
+
+
     def test_concurrent_edits_preserve_both_fields_and_the_first_auto_value(self):
         collection = self.db[COLLECTION]
         original = collection.find_one_and_update
@@ -380,6 +408,15 @@ class ApplyTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.graph = FakeGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov", name_ru="Ivanov I.")
+
+    def test_one_invalid_legacy_field_does_not_disable_normalization_of_other_fields(self):
+        self.graph.add("Publication", "W1")
+        record_override(self.db, "Publication", "W1", SET, {"code_url": "https://github.com/org/repo"})
+        self.db[COLLECTION].update_one({"target_id": "W1"}, {"$set": {
+            "fields": {"code_url": "https://github.com/org/repo", "funding": "unknown"}}})
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], '["https://github.com/org/repo"]')
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["funding"], "unknown")
 
     def test_an_override_is_written_to_the_graph(self):
         record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов И. И."})

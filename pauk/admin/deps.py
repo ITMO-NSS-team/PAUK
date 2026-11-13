@@ -79,7 +79,7 @@ def require_stores(db: Annotated[Database, Depends(get_db)]) -> None:
     A graph change is protected only by a decision in Mongo, and there is no
     transaction across the two. This catches sustained Mongo outages; a failure
     in the instant between check and write is handled by putting the graph
-    back (see `pauk.admin.nodes._record`).
+    back (see `pauk.admin.decisions.record_change`).
 
     Raises:
         HTTPException: 503.

@@ -566,6 +566,9 @@ Handled from both sides:
   and the graph stays untouched;
 - **if Mongo fails between the two writes**, the graph write is rolled back.
 
+The panel and CLI share `persist_decision` for confirmed-failure compensation.
+CLI cascade deletion preserves incident edges, and unlinking keeps edge properties.
+
 Each decision is committed in one Mongo command, including the original
 field values, operation and claim marker. There is no separate read after a
 successful write. If Mongo loses the reply, the panel checks the decision's
@@ -586,6 +589,12 @@ Creation, deletion and undo advance the decision's `generation`. A field edit
 reads that counter before changing the graph; a delayed write from an older
 state is rejected instead of reactivating a cancelled decision or replacing
 a deletion. A new edit after undo starts with only the newly edited fields.
+
+Undo and restore forms carry the decision's write token. A stale form or one
+opened before tokens were added returns 409 and asks for a reload.
+Undo restores the graph first, then withdraws that exact decision. A graph
+failure leaves it active; a confirmed Mongo failure compensates the graph change.
+Only the selected record's remaining field decisions are reapplied.
 
 This covers every edit that leaves a decision behind: field change, node
 deletion, linking and unlinking, creation and restoration.

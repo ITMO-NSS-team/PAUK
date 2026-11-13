@@ -80,6 +80,7 @@
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="kind" value="{{ row.kind }}">
             <input type="hidden" name="op" value="{{ row.op }}">
+            <input type="hidden" name="seen_write" value="{{ row.write_id or '' }}">
             <input type="hidden" name="tab" value="{{ tab }}">
             {% if row.kind == "rel" %}
             <input type="hidden" name="src_label" value="{{ row.src_label }}">
