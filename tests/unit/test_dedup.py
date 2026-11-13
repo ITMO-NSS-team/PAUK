@@ -303,6 +303,37 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
         self.assertEqual(len(people), 2)
 
+    def test_disjoint_emails_and_shared_department_need_review(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], email="one@itmo.ru", departments=("D",)),
+            person("A2", "Ivan Petrov", ["W2"], email="two@itmo.ru", departments=("D",)),
+        ])
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
+        self.assertEqual(len(people), 2)
+        (question,) = self.journal("held")
+        self.assertIn("distinct contact emails with only department or field corroboration", question["held_because"])
+
+    def test_shared_secondary_email_removes_weak_email_disagreement(self):
+        first = person("A1", "Ivan Petrov", ["W1"], email="one@itmo.ru", departments=("D",))
+        second = person("A2", "Ivan Petrov", ["W2"], email="two@itmo.ru", departments=("D",))
+        first.emails = ["one@itmo.ru", "shared@gmail.com"]
+        second.emails = ["two@itmo.ru", "SHARED@gmail.com"]
+        result, people = self.run_stage([first, second])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(len(people), 1)
+
+    def test_email_free_bridge_cannot_merge_disjoint_contact_records(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], email="one@itmo.ru", departments=("D",)),
+            person("A2", "Ivan Petrov", ["W2"], email="two@itmo.ru", departments=("D",)),
+            person("A3", "Ivan Petrov", ["W3"], departments=("D",)),
+        ])
+
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(len(people), 3)
+        self.assertTrue(any("component has disjoint contact emails" in row.get("reason", "")
+                            for row in self.journal("held")))
+
     def test_same_name_with_external_half_is_only_a_candidate(self):
         result, _ = self.run_stage([
             person("A1", "Ivan Petrov", ["W1"]),

@@ -81,6 +81,31 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(len(models.first_calls), 1)
         self.assertEqual(len(models.second_calls), 1)
 
+    def test_two_positive_models_cannot_merge_weak_namesakes_with_disjoint_emails(self):
+        people = [person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")]
+        people[0].email, people[1].email = "one@itmo.ru", "two@itmo.ru"
+        people[0].department_ids = ["D"]
+        people[1].department_ids = ["D"]
+        models = FakeModels(ModelVerdict(True, 0.99, "same name"), ModelVerdict(True, 0.99, "same department"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        self.assertEqual(report[0]["route"], "weak_contact_review")
+
+    def test_matching_orcid_can_merge_despite_disjoint_emails(self):
+        people = [
+            person("A1", "Ivan Petrov", orcid="0000-0002-1825-0097"),
+            person("A2", "Ivan Petrov", orcid="0000-0002-1825-0097"),
+        ]
+        people[0].email, people[1].email = "one@itmo.ru", "two@itmo.ru"
+
+        groups, report = plan_person_merges_resolved(people, {}, models=FakeModels())
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(report[-1]["status"], "merged")
+
     def test_two_negative_verdicts_separate_without_review(self):
         models = FakeModels(ModelVerdict(False, 0.8), ModelVerdict(False, 0.8))
 
@@ -409,6 +434,81 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         )
         self.assertEqual(len(groups), 1)
         self.assertEqual({groups[0][0].id, *(value.id for value in groups[0][1])}, {"A1", "A2"})
+
+    def test_email_bridge_preserves_a_verified_orcid_subgroup(self):
+        first = person("A1", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        middle = person("A2", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        third = person("A3", "Ivan Petrov")
+        first.email, third.email = "one@itmo.ru", "two@itmo.ru"
+        groups, report = _finalize_person_merge_groups(
+            [("A1", "A2"), ("A2", "A3")],
+            {frozenset(("A1", "A2")): "same_orcid", frozenset(("A2", "A3")): "same_name"},
+            {value.id: value for value in (first, middle, third)},
+            {"A1": first.orcid, "A2": middle.orcid},
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual({groups[0][0].id, groups[0][1][0].id}, {"A1", "A2"})
+        self.assertTrue(any(row.get("route") == "component_conflict" for row in report))
+
+    def test_hard_identifier_conflict_precedes_email_ambiguity(self):
+        first = person("A1", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        middle = person("A2", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        third = person("A3", "Ivan Petrov", orcid="0000-0001-5109-3700")
+        first.email, third.email = "one@itmo.ru", "two@itmo.ru"
+        groups, report = _finalize_person_merge_groups(
+            [("A1", "A2"), ("A2", "A3")],
+            {frozenset(("A1", "A2")): "same_orcid", frozenset(("A2", "A3")): "manual"},
+            {value.id: value for value in (first, middle, third)},
+            {"A1": first.orcid, "A2": middle.orcid, "A3": third.orcid},
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual({groups[0][0].id, groups[0][1][0].id}, {"A1", "A2"})
+        self.assertTrue(any("ORCID" in row.get("reason", "") for row in report))
+
+    def test_contact_ambiguity_does_not_discard_strong_identifier_fold(self):
+        first = person("A1", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        middle = person("A2", "Ivan Petrov", orcid="0000-0002-1825-0097")
+        third = person("A3", "Ivan Petrov")
+        first.email, middle.email, third.email = "one@itmo.ru", "three@itmo.ru", "two@itmo.ru"
+        groups, _report = _finalize_person_merge_groups(
+            [("A1", "A2"), ("A2", "A3")],
+            {frozenset(("A1", "A2")): "same_orcid", frozenset(("A2", "A3")): "name_variant"},
+            {value.id: value for value in (first, middle, third)},
+            {"A1": first.orcid, "A2": middle.orcid},
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual({groups[0][0].id, groups[0][1][0].id}, {"A1", "A2"})
+
+    def test_transitive_confirmed_identity_overrides_email_ambiguity(self):
+        people = [person(f"A{i}", "Ivan Petrov") for i in range(1, 4)]
+        for index, value in enumerate(people):
+            value.email = f"mail-{index}@itmo.ru"
+        by_id = {value.id: value for value in people}
+        pairs = [("A1", "A2"), ("A2", "A3")]
+
+        manual_groups, _ = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pair): "manual" for pair in pairs},
+            by_id,
+            {},
+            decisions={frozenset(pair): SAME for pair in pairs},
+        )
+        self.assertEqual(len(manual_groups), 1)
+        self.assertEqual({manual_groups[0][0].id, *(value.id for value in manual_groups[0][1])}, set(by_id))
+
+        by_id["A1"].orcid = by_id["A2"].orcid = "0000-0002-1825-0097"
+        strong_groups, _ = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pairs[0]): "same_orcid", frozenset(pairs[1]): "same_staff"},
+            by_id,
+            {"A1": by_id["A1"].orcid, "A2": by_id["A2"].orcid},
+            {"A2": "staff-1", "A3": "staff-1"},
+        )
+        self.assertEqual(len(strong_groups), 1)
+        self.assertEqual({strong_groups[0][0].id, *(value.id for value in strong_groups[0][1])}, set(by_id))
 
     def test_other_profile_identifier_conflicts_remain_hard_vetoes(self):
         first = person("A1", "Sergey Makarov")

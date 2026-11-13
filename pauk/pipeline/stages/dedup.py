@@ -10,7 +10,8 @@ Persons
        name variants, both are ITMO-affiliated, and they share a coauthor.
     3. Identical name plus corroboration: two ITMO-affiliated persons with
        identical full display names who also share a coauthor, a department
-       or a research field.
+       or a research field. Disjoint contact addresses make department/field
+       corroboration too weak for an automatic merge.
     4. Staff record: two ITMO-affiliated persons whose names resolve to the
        same row of the official staff catalog (one row is one employee). This
        bridges spellings the other rules cannot, e.g. "Alexey Valentinovich
@@ -158,6 +159,22 @@ def _profiles_conflict(first: Person, second: Person) -> bool:
         getattr(first, field) and getattr(second, field)
         and getattr(first, field) != getattr(second, field)
         for field in PROFILE_FIELDS
+    )
+
+
+def _disjoint_contact_emails(first: Person, second: Person) -> bool:
+    def addresses(person: Person) -> set[str]:
+        return {
+            address.strip().casefold()
+            for address in (person.email, *person.emails)
+            if isinstance(address, str) and "@" in address
+        }
+
+    first_addresses, second_addresses = addresses(first), addresses(second)
+    return bool(
+        first_addresses
+        and second_addresses
+        and first_addresses.isdisjoint(second_addresses)
     )
 
 
@@ -411,6 +428,7 @@ def plan_person_merges(
         shared = corroborating_coauthors(first, second)
         shared_departments = set(first.department_ids) & set(second.department_ids)
         shared_fields = research_fields(first) & research_fields(second)
+        weak_email_disagreement = not shared and _disjoint_contact_emails(first, second)
         # A name on its own is never enough; see the merge policy above.
         corroboration = bool(shared or shared_departments or shared_fields)
         initials_only = _is_initials_name(first.name_raw or "")
@@ -419,7 +437,14 @@ def plan_person_merges(
             plan_pair(first, second, "staff_catalog")
         elif variant_evidence and both_itmo and shared:
             plan_pair(first, second, "name_variant")
-        elif same_name and both_itmo and multi_token and not initials_only and corroboration:
+        elif (
+            same_name
+            and both_itmo
+            and multi_token
+            and not initials_only
+            and corroboration
+            and not weak_email_disagreement
+        ):
             plan_pair(first, second, "same_name")
         elif (first.is_itmo or second.is_itmo) and frozenset(
                 (first.id, second.id)) not in decisions:
@@ -435,6 +460,8 @@ def plan_person_merges(
                 reasons.append("identical name with nothing corroborating it")
             if variant_evidence and both_itmo and not shared:
                 reasons.append("no shared coauthors")
+            if same_name and corroboration and weak_email_disagreement:
+                reasons.append("distinct contact emails with only department or field corroboration")
             reason = "; ".join(reasons)
             report.append({
                 "status": "held",
@@ -505,6 +532,24 @@ def _finalize_person_merge_groups(
     accepted: list[list[str]] = []
     conflicts: list[tuple[list[str], str, set[str], list[tuple[str, str]]]] = []
 
+    def contact_ambiguity(
+        members: list[str], strong_component: dict[str, int]
+    ) -> tuple[str, str] | None:
+        contact_members = [member for member in members if by_id[member].email or by_id[member].emails]
+        if len(contact_members) < 2:
+            return None
+        return next(
+            (
+                (first, second)
+                for first, second in combinations(contact_members, 2)
+                if _disjoint_contact_emails(by_id[first], by_id[second])
+                and frozenset((first, second)) not in direct_pairs
+                and not (first in strong_component and strong_component[first] == strong_component.get(second))
+            ),
+            None,
+        )
+
+    direct_pairs = {frozenset(pair) for pair in merge_pairs}
     for members in _grouped(merge_pairs):
         manual_conflicts = [
             tuple(sorted(pair))
@@ -517,25 +562,43 @@ def _finalize_person_merge_groups(
 
         conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
         if conflict is None:
-            accepted.append(members)
-            continue
-
-        field, values = conflict
-        component_pairs = [
-            pair for pair in merge_pairs if pair[0] in members and pair[1] in members
-        ]
-        accepted.extend(
-            subgroup
-            for subgroup in _partition_conflicted_component(
-                members,
-                component_pairs,
-                by_id,
-                trusted_orcid,
-                staff_ids,
+            subgroups = [members]
+        else:
+            field, values = conflict
+            member_set = set(members)
+            component_pairs = [
+                pair for pair in merge_pairs if pair[0] in member_set and pair[1] in member_set
+            ]
+            subgroups = _partition_conflicted_component(
+                members, component_pairs, by_id, trusted_orcid, staff_ids,
             )
-            if len(subgroup) > 1
-        )
-        conflicts.append((members, field, values, []))
+            conflicts.append((members, field, values, []))
+
+        for subgroup in subgroups:
+            if len(subgroup) < 2:
+                continue
+            subgroup_members = set(subgroup)
+            verified_pairs = [
+                pair for pair in merge_pairs
+                if pair[0] in subgroup_members and pair[1] in subgroup_members
+                and (
+                    decisions.get(frozenset(pair)) == SAME
+                    or (trusted_orcid.get(pair[0]) and trusted_orcid[pair[0]] == trusted_orcid.get(pair[1]))
+                    or (staff_ids.get(pair[0]) and staff_ids[pair[0]] == staff_ids.get(pair[1]))
+                )
+            ]
+            verified_groups = list(_grouped(verified_pairs))
+            strong_component = {
+                member: index
+                for index, group in enumerate(verified_groups)
+                for member in group
+            }
+            ambiguous_pair = contact_ambiguity(subgroup, strong_component)
+            if ambiguous_pair is None:
+                accepted.append(subgroup)
+                continue
+            accepted.extend(verified_groups)
+            conflicts.append((subgroup, "contact email ambiguity", set(ambiguous_pair), []))
 
     groups: list[tuple[Person, list[Person]]] = []
     representative: dict[str, str] = {}
@@ -612,14 +675,12 @@ def _finalize_person_merge_groups(
                 }
             )
         else:
-            logger.warning(
-                "dedup: keeping the conflicted remainder of group %s for review; "
-                "it spans %d distinct %s values",
-                sorted(members),
-                len(values),
-                field,
-            )
-            reason = f"group spans {len(values)} distinct {field} values"
+            if field == "contact email ambiguity":
+                reason = "component has disjoint contact emails without a corroborated direct pair"
+            else:
+                reason = f"group spans {len(values)} distinct {field} values"
+            logger.warning("dedup: keeping the conflicted remainder of group %s for review: %s",
+                           sorted(members), reason)
             row.update(
                 {
                     "held_because": [reason],

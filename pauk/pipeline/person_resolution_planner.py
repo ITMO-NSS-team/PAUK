@@ -55,6 +55,7 @@ def plan_person_merges_resolved(
     # Imported lazily to avoid a module cycle: DedupStage calls this adapter,
     # and these helpers are the shared candidate generation and component safety checks.
     from pauk.pipeline.stages.dedup import (
+        _disjoint_contact_emails,
         _finalize_person_merge_groups,
         _initials_conflict,
         _is_pooled_record,
@@ -191,6 +192,15 @@ def plan_person_merges_resolved(
                 row["model_verdicts"] = {"single": asdict(single_verdict) if single_verdict is not None else None}
         report.append(row)
 
+    def weak_contact_disagreement(first: Person, second: Person, evidence: PairEvidence) -> bool:
+        same_orcid = bool(evidence.orcid_a) and evidence.orcid_a == evidence.orcid_b
+        same_staff = bool(evidence.staff_id_a) and evidence.staff_id_a == evidence.staff_id_b
+        return (
+            _disjoint_contact_emails(first, second)
+            and not (same_orcid or same_staff)
+            and evidence.small_team_shared_coauthors == 0
+        )
+
     def name_the_model() -> None:
         model = getattr(models, "model", None)
         if isinstance(model, str):
@@ -256,10 +266,14 @@ def plan_person_merges_resolved(
         pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
         resolution = resolve_pair(evidence, policy, logreg_model)
         if resolution.decision is Decision.MERGE:
-            plan_merge(
-                first, second, resolution.route, reason=resolution.reason,
-                logreg_probability=round(resolution.probability, 6),
-            )
+            if weak_contact_disagreement(first, second, evidence):
+                hold(first, second, evidence, shared_fields, "weak_contact_review",
+                     "distinct contact emails without independent corroboration")
+            else:
+                plan_merge(
+                    first, second, resolution.route, reason=resolution.reason,
+                    logreg_probability=round(resolution.probability, 6),
+                )
         elif resolution.decision is Decision.SEPARATE:
             separate(first, second, resolution)
         elif resolution.decision is Decision.FIRST_MODEL:
@@ -535,15 +549,25 @@ def plan_person_merges_resolved(
                 verdict,
             )
         if resolution.decision is Decision.MERGE:
-            plan_merge(
-                first, second, resolution.route,
-                reason=resolution.reason, model_confidence=verdict.confidence,
-                logreg_probability=round(resolution.probability, 6),
-                input_route=input_routes[pair_id],
-                model_verdicts={"single": asdict(verdict)} if single_mode else {
-                    "first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)
-                },
-            )
+            if weak_contact_disagreement(first, second, evidence):
+                hold(
+                    first, second, evidence, shared_fields, "weak_contact_review",
+                    "distinct contact emails without independent corroboration", verdict.confidence,
+                    input_route=input_routes[pair_id],
+                    first_verdict=first_verdicts.get(pair_id),
+                    second_verdict=None if single_mode else verdict,
+                    single_verdict=verdict if single_mode else None,
+                )
+            else:
+                plan_merge(
+                    first, second, resolution.route,
+                    reason=resolution.reason, model_confidence=verdict.confidence,
+                    logreg_probability=round(resolution.probability, 6),
+                    input_route=input_routes[pair_id],
+                    model_verdicts={"single": asdict(verdict)} if single_mode else {
+                        "first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)
+                    },
+                )
         elif resolution.decision is Decision.SEPARATE:
             separate(
                 first,

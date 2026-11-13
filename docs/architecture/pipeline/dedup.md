@@ -59,6 +59,12 @@ Different email addresses are not an identity conflict: one person may have
 several addresses over time. A shared address also does not establish a match
 by itself. This applies to both pair decisions and conflict checks on a
 proposed merge group.
+When contact addresses are disjoint and the only corroboration is a shared
+department or broad field, the pair is held for review. A matching trusted
+identifier or independent coauthor evidence can still support merging.
+An uncorroborated third record with no address cannot bridge two such
+records into one merge group. If a larger group remains ambiguous, directly
+verified ORCID, staff or manual subgroups are retained for merging.
 
 **Candidate generation.** Surname-aware blocking handles token order,
 transliteration and compound names. Given names and initials alone are not

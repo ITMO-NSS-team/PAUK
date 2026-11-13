@@ -58,6 +58,48 @@ def evidence(**changes):
 
 
 class SingleResolutionTest(unittest.TestCase):
+    def test_single_positive_verdict_cannot_merge_weak_namesakes_with_disjoint_emails(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru", department_ids=["D"]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru", department_ids=["D"]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same name and department"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        self.assertEqual(report[0]["route"], "weak_contact_review")
+
+    def test_shared_paper_does_not_rescue_disjoint_email_namesakes(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru",
+                   authored=[Authorship(publication_id="W1")]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru",
+                   authored=[Authorship(publication_id="W1")]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same work"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        self.assertEqual(report[0]["route"], "weak_contact_review")
+
+    def test_email_free_bridge_cannot_merge_disjoint_contact_records(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru", department_ids=["D"]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru", department_ids=["D"]),
+            Person(id="A3", name_raw="Ivan Petrov", is_itmo=True, department_ids=["D"]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same name and department"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertTrue(any("component has disjoint contact emails" in row.get("reason", "")
+                            for row in report if row["status"] == "held"))
+
     def test_all_three_actions_are_explicit(self):
         for action in ("merge", "separate", "review"):
             with self.subTest(action=action):
