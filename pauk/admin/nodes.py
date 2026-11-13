@@ -286,7 +286,7 @@ async def restore(label: str, node_id: str, user: Editor,
     try:
         create_node(graph, label, node_id,
                     {name: value for name, value in fields.items()
-                     if name in NODE_FIELDS[label]})
+                     if name in NODE_FIELDS[label]}, from_snapshot=True)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     _record(undo=lambda: delete_node(graph, label, node_id),
@@ -353,7 +353,7 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
         delete_node(graph, label, node_id, cascade=cascade)
 
         def undo():
-            create_node(graph, label, node_id, kept)
+            create_node(graph, label, node_id, kept, from_snapshot=True)
             for relationship in relationships:
                 create_relationship(graph, **relationship)
 
@@ -584,7 +584,7 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
         _record(
             undo=lambda: update_node(graph, label, node_id,
                                      {name: before.get(name) for name in changed},
-                                     expected_updated_at=updated["updated_at"]),
+                                     expected_updated_at=updated["updated_at"], from_snapshot=True),
             write=lambda: record_override(
                 db, label, node_id, "set", changed, actor=user.actor, note=note,
                 auto_value={name: before.get(name) for name in changed},

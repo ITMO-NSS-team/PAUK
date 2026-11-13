@@ -445,7 +445,12 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 continue
 
             # A hand-made record carries the same kind of row as a hand edit.
-            fields = normalize_fields(label, override.get("fields") or {})
+            fields = override.get("fields") or {}
+            try:
+                fields = normalize_fields(label, fields)
+            except MutationError:
+                # Stored decisions can predate the current input rules.
+                fields = normalize_fields(label, fields, from_snapshot=True)
             covered = {name: current.get(name) for name, value in fields.items()
                        if not field_values_equal(name, current.get(name), value)}
             if not covered:
@@ -454,7 +459,7 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
             db[COLLECTION].update_one(
                 {"_id": override["_id"]},
                 {"$set": {f"source_value.{name}": value for name, value in covered.items()}})
-            update_node(client, label, target_id, {name: fields[name] for name in covered})
+            update_node(client, label, target_id, {name: fields[name] for name in covered}, from_snapshot=True)
             applied += 1
         except MutationError as error:
             logger.warning("override %s skipped: %s", override["_id"], error)

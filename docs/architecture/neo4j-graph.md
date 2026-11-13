@@ -307,6 +307,9 @@ accept one element or JSON; structured lists accept one JSON object or a list.
 `as_stored` uses the loader's `JSON_TEXT_FIELDS` to serialize nested values.
 `field_values_equal` ignores JSON formatting and object-key order, so these
 alone do not create edits or source disagreements.
+Rollback and undo use `from_snapshot=True` to preserve legacy values.
+Saved decisions are normalized where possible and retain legacy values otherwise.
+The field whitelist, audit and version checks still apply; new input remains validated.
 
 Why a separate layer instead of calling `Neo4jClient` from a handler:
 

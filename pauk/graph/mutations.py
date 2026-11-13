@@ -218,9 +218,11 @@ def _code_url_text(value: object) -> str | None:
     return json.dumps(urls, ensure_ascii=False)
 
 
-def normalize_fields(label: str, props: dict) -> dict:
-    """Validate manual fields and keep graph values and saved decisions consistent."""
+def normalize_fields(label: str, props: dict, *, from_snapshot: bool = False) -> dict:
+    """Validate new input; preserve stored values when restoring a snapshot."""
     validate_fields(label, props)
+    if from_snapshot:
+        return as_stored(props)
     fields = dict(props)
     for name in fields:
         if label == "Publication" and name == "code_url":
@@ -370,27 +372,29 @@ def snapshot_relationships(client: Neo4jClient, label: str, node_id: str,
     return snapshots
 
 
-def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
+def create_node(client: Neo4jClient, label: str, node_id: str, props: dict,
+                *, from_snapshot: bool = False) -> dict:
     """Add a node the pipeline does not know about.
 
     Such a node survives publishing: the loader only touches ids it has
     rows for, so a hand-made id is never overwritten.
+    `from_snapshot` restores stored values without applying new input rules.
 
     Raises:
         UnknownEntity: Unknown label or field.
         MutationError: A node with this id already exists; creating it
             again would silently turn into an update.
     """
-    props = normalize_fields(label, props)
+    props = normalize_fields(label, props, from_snapshot=from_snapshot)
     if client.fetch_node_properties(label, node_id) is not None:
         raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
-    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
+    client.upsert_nodes_batch(label, [(node_id, props)])
     logger.info("created %s %s with %d field(s)", label, node_id, len(props))
     return read_node(client, label, node_id)
 
 
 def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
-                expected_updated_at: object | None = None) -> dict:
+                expected_updated_at: object | None = None, *, from_snapshot: bool = False) -> dict:
     """Change fields on an existing node.
 
     Args:
@@ -399,6 +403,7 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         label: Node label, from the whitelist.
         node_id: Which node.
         patch: Fields to set. Only the listed ones change.
+        from_snapshot: Restore stored values without applying new input rules.
         expected_updated_at: The `updated_at` the editor saw when the form
             was opened. When given and the node has moved on since, the
             write is refused instead of overwriting someone else's edit.
@@ -411,9 +416,9 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         VersionConflict: Someone else changed the node in the meantime.
         UnknownEntity: Unknown label or field.
     """
-    patch = normalize_fields(label, patch)
+    patch = normalize_fields(label, patch, from_snapshot=from_snapshot)
     current, updated = client.update_node_properties(
-        label, node_id, as_stored(patch), expected_updated_at)
+        label, node_id, patch, expected_updated_at)
     if current is None:
         raise NotFound(f"{label} {node_id} does not exist")
     if updated is None:

@@ -21,6 +21,7 @@ from pauk.graph.mutations import (
     MutationError,
     create_node,
     create_relationship,
+    normalize_fields,
     update_node,
 )
 from pauk.graph.overrides import (
@@ -89,11 +90,13 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
             if op == DELETE:
                 snapshot = decisions.deleted_fields(db, label, node_id)
             elif op == SET:
-                back = decisions.source_of_truth(db, label, node_id)
+                back = normalize_fields(label, decisions.source_of_truth(db, label, node_id), from_snapshot=True)
             # Only the decision the page showed: it may be another one by now.
             dropped = deactivate_override(db, label, node_id, only_op=op or None)
     except KeyError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "не хватает данных о решении") from None
+    except MutationError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     if not dropped:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такого решения нет")
 
@@ -103,7 +106,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
         if op == SET and kind == "node":
             # The same for a field: nothing else would put it back.
             if back:
-                update_node(graph, label, node_id, back)
+                update_node(graph, label, node_id, back, from_snapshot=True)
                 restored = "field"
         elif op == DELETE and kind == "rel":
             create_relationship(graph, *triple, src_id, tgt_id, snapshot)
@@ -111,7 +114,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
         elif op == DELETE and snapshot:
             create_node(graph, label, node_id,
                         {name: value for name, value in snapshot.items()
-                         if name in NODE_FIELDS[label]})
+                         if name in NODE_FIELDS[label]}, from_snapshot=True)
             restored = "node"
         apply_overrides(graph, db)
     except MutationError as error:

@@ -605,6 +605,8 @@ graph changes, since the allowed mutations could not restore that edge.
 Field rollback also checks the version its own write produced. If another
 editor saved since then, compensation refuses to overwrite that newer edit
 and reports an incomplete rollback.
+Undo and rollback restore saved values without applying new input validation.
+This also permits restoring legacy field formats that new edits cannot submit.
 
 Creation records its claim and replaces any old deletion decision atomically.
 If the claim definitely failed, rollback removes the new node: without the

@@ -1217,6 +1217,12 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
 
 
 class FieldNormalizationTest(unittest.TestCase):
+    LEGACY_FIELDS = (
+        ("Publication", "W9", "code_url", "N/A", "https://github.com/org/repo"),
+        ("Person", "A9", "emails", False, '["author@example.org"]'),
+        ("Publication", "W10", "funding", "unknown", '[{"funder":"RSF"}]'),
+    )
+
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
@@ -1231,6 +1237,79 @@ class FieldNormalizationTest(unittest.TestCase):
         form = RenderedForms(self.client.get(path).text).with_button(caption)
         form["fields"].update(values)
         return self.client.post(form["action"], data=form["fields"])
+
+    def test_undo_restores_legacy_field_values_exactly(self):
+        for label, node_id, field, legacy, replacement in self.LEGACY_FIELDS:
+            with self.subTest(label=label, field=field):
+                self.graph.add(label, node_id, **{field: legacy})
+                self.assertEqual(self.submit(f"/nodes/{label}/{node_id}", **{field: replacement}).status_code, 303)
+                form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+                response = self.client.post(form["action"], data=form["fields"])
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertFalse(self.db[COLLECTION].find_one({"target_id": node_id})["active"])
+
+    def test_failed_decision_write_restores_legacy_field_values_exactly(self):
+        for label, node_id, field, legacy, replacement in self.LEGACY_FIELDS:
+            with self.subTest(label=label, field=field):
+                self.graph.add(label, node_id, **{field: legacy})
+                with patch.object(nodes, "record_override", side_effect=AutoReconnect("failed before commit")):
+                    response = self.submit(f"/nodes/{label}/{node_id}", **{field: replacement})
+                self.assertEqual(response.status_code, 503)
+                self.assertIn("граф возвращён как был", response.json()["detail"])
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertIsNone(self.db[COLLECTION].find_one({"target_id": node_id}))
+
+    def test_failed_delete_restores_legacy_fields_and_relationships(self):
+        self.graph.nodes["Publication", "W1"]["code_url"] = "N/A"
+        self.graph.add("Person", "A1")
+        edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        self.graph.relationships[edge] = {"is_corresponding": True}
+        with patch.object(nodes, "record_override", side_effect=AutoReconnect("failed before commit")):
+            response = self.submit(caption="Удалить", cascade="1")
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("граф возвращён как был", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+        self.assertEqual(self.graph.relationships[edge], {"is_corresponding": True})
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_deleted_legacy_node_can_be_restored_from_either_page(self):
+        for caption in ("Восстановить", "отменить"):
+            with self.subTest(caption=caption):
+                self.graph.nodes["Publication", "W1"]["code_url"] = "N/A"
+                self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+                path = "/nodes/Publication/W1" if caption == "Восстановить" else "/overrides"
+                response = self.submit(path, caption)
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+                self.assertFalse(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+
+    def test_a_saved_legacy_decision_is_reapplied_without_new_input_validation(self):
+        record_override(self.db, "Publication", "W1", "set", {"code_url": "https://github.com/org/repo"})
+        self.db[COLLECTION].update_one({"target_id": "W1"}, {"$set": {"fields.code_url": "N/A"}})
+        result = apply_overrides(self.graph, self.db)
+        self.assertEqual(result["overrides_applied"], 1)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+        version = self.graph.nodes["Publication", "W1"]["updated_at"]
+        self.assertEqual(apply_overrides(self.graph, self.db)["overrides_unchanged"], 1)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["updated_at"], version)
+
+    def test_invalid_snapshot_fields_do_not_withdraw_the_decision(self):
+        record_override(self.db, "Publication", "W1", "set", {"title": "Manual title"})
+        self.db[COLLECTION].update_one({"target_id": "W1"}, {"$set": {
+            "fields": {"removed_field": "manual"}, "auto_value": {"removed_field": "original"}}})
+        before = dict(self.graph.nodes["Publication", "W1"])
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+        self.assertEqual(self.graph.nodes["Publication", "W1"], before)
+
+    def test_a_form_cannot_bypass_new_input_validation(self):
+        response = self.submit(code_url="N/A", from_snapshot="1")
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(self.graph.nodes["Publication", "W1"]["code_url"])
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
     def test_a_plain_url_survives_creation_editing_and_republishing(self):
         url = "https://github.com/be2rlab/QUORUM"

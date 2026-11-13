@@ -493,6 +493,20 @@ class StoredShapeTest(unittest.TestCase):
         self.graph = FakeGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
 
+    def test_snapshot_restoration_keeps_the_field_whitelist_and_version_check(self):
+        for patch in ({"id": "other"}, {"updated_at": "old"}, {"unknown": "value"}):
+            with self.subTest(patch=patch), self.assertRaises(UnknownEntity):
+                update_node(self.graph, "Person", "A1", patch, from_snapshot=True)
+            with self.subTest(create=patch), self.assertRaises(UnknownEntity):
+                create_node(self.graph, "Person", "A2", patch, from_snapshot=True)
+        seen = self.graph.nodes["Person", "A1"]["updated_at"]
+        update_node(self.graph, "Person", "A1", {"name_en": "New name"})
+        with self.assertRaises(VersionConflict):
+            update_node(self.graph, "Person", "A1", {"emails": False},
+                        expected_updated_at=seen, from_snapshot=True)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_en"], "New name")
+        self.assertNotIn("emails", self.graph.nodes["Person", "A1"])
+
     def test_a_nested_field_is_stored_the_way_the_loader_stores_it(self):
         node = update_node(self.graph, "Person", "A1",
                            {"affiliations": [{"name": "ITMO", "years": [2026]}]})
