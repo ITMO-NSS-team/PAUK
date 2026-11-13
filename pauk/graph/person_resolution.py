@@ -234,6 +234,7 @@ class SecondStageContext:
     impact_not_identity_evidence: Mapping[str, int] | None = None
     collaboration_evidence: Mapping[str, int] | None = None
     identity_facts: Mapping[str, Any] | None = None
+    source_context: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         valid_relations = {"same", "conflict", "one_missing", "both_missing"}
@@ -275,6 +276,8 @@ class SecondStageContext:
         payload = self.as_payload()
         for field in ("first_stage", "logreg_probability", "impact_not_identity_evidence"):
             payload.pop(field, None)
+        if self.source_context is not None:
+            payload["source_context"] = dict(self.source_context)
         return payload
 
 

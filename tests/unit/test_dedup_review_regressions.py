@@ -39,7 +39,7 @@ class DedupReviewRegressionTest(unittest.TestCase):
                 self.assertEqual(list(candidate_person_pairs(people, None)), [])
 
     def test_connected_ambiguous_bridges_remain_separate(self):
-        for field in ("orcid", "email"):
+        for field in ("orcid", "github", "google_scholar"):
             with self.subTest(field=field):
                 people = {identifier: Person(id=identifier, is_itmo=True) for identifier in ("A", "B", "M", "N")}
                 setattr(people["A"], field, "0000-0002-1825-0097" if field == "orcid" else "one")

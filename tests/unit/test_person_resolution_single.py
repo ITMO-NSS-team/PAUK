@@ -28,7 +28,7 @@ from pauk.graph.person_resolution_single import (
     parse_response,
     split_batch_response,
 )
-from pauk.models import Person
+from pauk.models import Authorship, Person
 from pauk.pipeline.person_resolution import LOG_COLLECTION, ResolutionModels, _Request
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.dedup import DedupStage
@@ -58,6 +58,48 @@ def evidence(**changes):
 
 
 class SingleResolutionTest(unittest.TestCase):
+    def test_single_positive_verdict_cannot_merge_weak_namesakes_with_disjoint_emails(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru", department_ids=["D"]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru", department_ids=["D"]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same name and department"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        self.assertEqual(report[0]["route"], "weak_contact_review")
+
+    def test_shared_paper_does_not_rescue_disjoint_email_namesakes(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru",
+                   authored=[Authorship(publication_id="W1")]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru",
+                   authored=[Authorship(publication_id="W1")]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same work"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        self.assertEqual(report[0]["route"], "weak_contact_review")
+
+    def test_email_free_bridge_cannot_merge_disjoint_contact_records(self):
+        people = [
+            Person(id="A1", name_raw="Ivan Petrov", is_itmo=True, email="one@itmo.ru", department_ids=["D"]),
+            Person(id="A2", name_raw="Ivan Petrov", is_itmo=True, email="two@itmo.ru", department_ids=["D"]),
+            Person(id="A3", name_raw="Ivan Petrov", is_itmo=True, department_ids=["D"]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.MERGE, 0.99, "same name and department"))
+
+        groups, report = plan_person_merges_resolved(people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertTrue(any("component has disjoint contact emails" in row.get("reason", "")
+                            for row in report if row["status"] == "held"))
+
     def test_all_three_actions_are_explicit(self):
         for action in ("merge", "separate", "review"):
             with self.subTest(action=action):
@@ -153,6 +195,7 @@ class SingleResolutionTest(unittest.TestCase):
                 groups, report = plan_person_merges_resolved(people, {}, models=models)
                 self.assertEqual(len(models.calls), 1)
                 self.assertIsNone(models.calls[0][0].first_verdict)
+                self.assertIsNone(models.calls[0][0].source_context)
                 if action is Decision.MERGE:
                     self.assertEqual(len(groups), 1)
                     self.assertEqual(report[-1]["route"], "qwen_single")
@@ -163,6 +206,113 @@ class SingleResolutionTest(unittest.TestCase):
                     db = mongomock.MongoClient().db
                     review.record_held(db, report, source=review.STAGE)
                     self.assertEqual(len(review.questions(db)), int(action is Decision.REVIEW))
+
+    def test_publication_details_reach_judge_with_positions_and_independent_paths(self):
+        people = [
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True, authored=[
+                Authorship(publication_id="W1", position=2, affiliation="A" * 300),
+                Authorship(publication_id="W2", position=1),
+            ]),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True, authored=[
+                Authorship(publication_id="W1", position=2),
+                Authorship(publication_id="W3", position=3),
+            ]),
+            Person(id="C1", name_raw="Jane Smith", is_itmo=True, authored=[
+                Authorship(publication_id="W2"), Authorship(publication_id="W3"),
+            ]),
+        ]
+        models = SingleModels(SingleVerdict(Decision.REVIEW, 0.7, "ambiguous"))
+        details = {work_id: {"doi": f"10.123/{work_id}", "title": "T" * 400, "year": 2025}
+                   for work_id in ("W1", "W2", "W3")}
+
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
+            plan_person_merges_resolved(people, {}, models=models, publication_details=details)
+
+        self.assertEqual(len(models.calls), 1)
+        context, pair_evidence = models.calls[0]
+        source = full_payload(context, pair_evidence)["source_context"]
+        self.assertEqual(source["documents_available"], 3)
+        self.assertEqual(source["documents_shown"], 3)
+        self.assertEqual(source["nonshared_work_collaborator_paths"], [
+            {"id": "C1", "name": "Jane Smith", "a_work_ids": ["W2"], "b_work_ids": ["W3"]}
+        ])
+        shared = next(document for document in source["documents"] if document["id"] == "W1")
+        self.assertEqual(shared["a_stored_authorships"][0]["position"], 2)
+        self.assertEqual(shared["b_stored_authorships"][0]["position"], 2)
+        self.assertEqual(len(shared["title"]), 180)
+        self.assertEqual(len(shared["a_stored_authorships"][0]["affiliation"]), 160)
+        self.assertFalse(source["publication_version_families_verified"])
+
+        swapped = [
+            people[0].model_copy(update={"authored": people[1].authored}),
+            people[1].model_copy(update={"authored": people[0].authored}),
+            people[2],
+        ]
+        reversed_models = SingleModels(SingleVerdict(Decision.REVIEW, 0.7, "ambiguous"))
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
+            plan_person_merges_resolved(swapped, {}, models=reversed_models, publication_details=details)
+        reversed_source = reversed_models.calls[0][0].source_context
+        self.assertEqual(reversed_source["nonshared_work_collaborator_paths"], [
+            {"id": "C1", "name": "Jane Smith", "a_work_ids": ["W3"], "b_work_ids": ["W2"]}
+        ])
+        self.assertEqual(
+            {doc["id"] for doc in source["documents"]},
+            {doc["id"] for doc in reversed_source["documents"]},
+        )
+
+    def test_source_document_selection_is_bounded(self):
+        people = [
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True,
+                   authored=[Authorship(publication_id=f"W{i}") for i in range(30)]),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True,
+                   authored=[Authorship(publication_id=f"W{i}") for i in range(30, 60)]),
+        ]
+        details = {f"W{i}": {"title": "T" * 400} for i in range(60)}
+        models = SingleModels(SingleVerdict(Decision.REVIEW, 0.7, "ambiguous"))
+
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
+            plan_person_merges_resolved(people, {}, models=models, publication_details=details)
+
+        source = models.calls[0][0].source_context
+        self.assertEqual(source["documents_available"], 60)
+        self.assertEqual(source["documents_shown"], 4)
+        self.assertTrue(all(len(document["title"]) <= 180 for document in source["documents"]))
+
+    def test_collaborator_paths_only_reference_shown_documents(self):
+        shared = [f"W{i}" for i in range(3)]
+        people = [
+            Person(id="A1", name_raw="Nikolay O. Nikitin", is_itmo=True,
+                   authored=[Authorship(publication_id=work) for work in
+                             shared + [f"A{i}" for i in range(6)]]),
+            Person(id="A2", name_raw="Nikolay Nikitin", is_itmo=True,
+                   authored=[Authorship(publication_id=work) for work in
+                             shared + [f"B{i}" for i in range(6)]]),
+            *[
+                Person(id=f"C{i}", name_raw=f"Coauthor {i}", is_itmo=True,
+                       authored=[Authorship(publication_id=f"A{i+2}"),
+                                 Authorship(publication_id=f"B{i+2}")])
+                for i in range(3)
+            ],
+        ]
+        people[2].authored.append(Authorship(publication_id="A5"))
+        details = {work: {"title": "Paper"} for person in people for work in
+                   (authorship.publication_id for authorship in person.authored)}
+        models = SingleModels(SingleVerdict(Decision.REVIEW, 0.7, "ambiguous"))
+
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
+            plan_person_merges_resolved(people, {}, models=models, publication_details=details)
+
+        context = next(context for context, pair in models.calls
+                       if {pair.person_a, pair.person_b} == {"A1", "A2"})
+        source = context.source_context
+        shown = {document["id"] for document in source["documents"]}
+        self.assertLessEqual(source["documents_shown"], 10)
+        self.assertEqual(source["collaborators_available"], 3)
+        self.assertLess(source["collaborators_shown"], 3)
+        for collaborator in source["nonshared_work_collaborator_paths"]:
+            self.assertTrue(collaborator["a_work_ids"])
+            self.assertTrue(collaborator["b_work_ids"])
+            self.assertTrue(set(collaborator["a_work_ids"] + collaborator["b_work_ids"]) <= shown)
 
     def test_the_report_names_the_model_that_decided(self):
         people = [
@@ -245,6 +395,29 @@ class SingleResolutionTest(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(first[7], second[99])
         self.assertEqual(first[7].decision, Decision.REVIEW)
+
+    def test_source_context_change_invalidates_cached_answer(self):
+        models = ResolutionModels(
+            Settings(openrouter_api_key="test-key", person_resolution_provider="openrouter"),
+            mongomock.MongoClient().db, "test",
+        )
+        context = SecondStageContext(
+            7, ResearcherContext("A1", "Nikitin"), ResearcherContext("A2", "Nikitin"),
+            "both_missing", "both_missing",
+        )
+        requests = []
+
+        def respond(client, prompt, **kwargs):
+            requests.append(json.loads(prompt))
+            return {"id": 7, "decision": "review", "confidence": 0.8, "reason": "uncertain"}
+
+        with patch("pauk.sources.OpenRouterClient.chat_json", respond):
+            models.single_many([(context, evidence())])
+            models.single_many([(replace(context, source_context={"documents": [{"id": "W1"}]}), evidence())])
+
+        self.assertEqual(len(requests), 2)
+        self.assertNotIn("source_context", requests[0])
+        self.assertEqual(requests[1]["source_context"]["documents"], [{"id": "W1"}])
 
     def test_actual_stage_sends_one_request_and_persists_each_action(self):
         for action in ("merge", "separate", "review"):

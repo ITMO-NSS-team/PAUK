@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import asdict, replace
+from typing import Any
 
 from pauk.graph.person_resolution import (
     DEFAULT_POLICY,
@@ -40,6 +42,9 @@ def plan_person_merges_resolved(
     *,
     in_scope: set[str] | None = None,
     fields_of: dict[str, set[str]] | None = None,
+    publication_details: Mapping[str, Mapping[str, Any]] | None = None,
+    publication_context_source: str = "prepared",
+    person_affiliations: Mapping[str, list[Mapping[str, Any]] | None] | None = None,
     staff_ids: dict[str, str] | None = None,
     decisions: dict[frozenset[str], str] | None = None,
     models=None,
@@ -50,6 +55,7 @@ def plan_person_merges_resolved(
     # Imported lazily to avoid a module cycle: DedupStage calls this adapter,
     # and these helpers are the shared candidate generation and component safety checks.
     from pauk.pipeline.stages.dedup import (
+        _disjoint_contact_emails,
         _finalize_person_merge_groups,
         _initials_conflict,
         _is_pooled_record,
@@ -186,6 +192,15 @@ def plan_person_merges_resolved(
                 row["model_verdicts"] = {"single": asdict(single_verdict) if single_verdict is not None else None}
         report.append(row)
 
+    def weak_contact_disagreement(first: Person, second: Person, evidence: PairEvidence) -> bool:
+        same_orcid = bool(evidence.orcid_a) and evidence.orcid_a == evidence.orcid_b
+        same_staff = bool(evidence.staff_id_a) and evidence.staff_id_a == evidence.staff_id_b
+        return (
+            _disjoint_contact_emails(first, second)
+            and not (same_orcid or same_staff)
+            and evidence.small_team_shared_coauthors == 0
+        )
+
     def name_the_model() -> None:
         model = getattr(models, "model", None)
         if isinstance(model, str):
@@ -251,10 +266,14 @@ def plan_person_merges_resolved(
         pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
         resolution = resolve_pair(evidence, policy, logreg_model)
         if resolution.decision is Decision.MERGE:
-            plan_merge(
-                first, second, resolution.route, reason=resolution.reason,
-                logreg_probability=round(resolution.probability, 6),
-            )
+            if weak_contact_disagreement(first, second, evidence):
+                hold(first, second, evidence, shared_fields, "weak_contact_review",
+                     "distinct contact emails without independent corroboration")
+            else:
+                plan_merge(
+                    first, second, resolution.route, reason=resolution.reason,
+                    logreg_probability=round(resolution.probability, 6),
+                )
         elif resolution.decision is Decision.SEPARATE:
             separate(first, second, resolution)
         elif resolution.decision is Decision.FIRST_MODEL:
@@ -282,6 +301,129 @@ def plan_person_merges_resolved(
     first_verdicts: dict[int, ModelVerdict] = {}
 
     context_cache: dict[str, ResearcherContext] = {}
+    authorship_cache: dict[str, dict[str, list[Any]]] = {}
+
+    def authored_on(person: Person, work_id: str) -> list[Any]:
+        if person.id not in authorship_cache:
+            by_work: dict[str, list[Any]] = defaultdict(list)
+            for authorship in person.authored:
+                by_work[authorship.publication_id].append(authorship)
+            authorship_cache[person.id] = by_work
+        return authorship_cache[person.id].get(work_id, [])
+
+    def source_context(first: Person, second: Person, shared_coauthors: set[str]) -> dict[str, Any] | None:
+        if publication_details is None:
+            return None
+        shared_works = publication_ids[first.id] & publication_ids[second.id]
+        selected = set(sorted(shared_works)[:3])
+        for person in (first, second):
+            selected.update(sorted(publication_ids[person.id] - shared_works)[:2])
+        collaborator_options = []
+        small_team = corroborating_coauthors(first.id, second.id, small_team_only=True)
+        for coauthor_id in sorted(
+            shared_coauthors, key=lambda identifier: (identifier not in small_team, identifier)
+        )[:3]:
+            path_options = {}
+            for side, person in (("a", first), ("b", second)):
+                path_options[side] = sorted(
+                    (publication_ids[person.id] & publication_ids[coauthor_id]) - shared_works
+                )[:2]
+            required = {path_options[side][0] for side in ("a", "b") if path_options[side]}
+            if not all(path_options.values()):
+                continue
+            if len(selected | required) > 10:
+                continue
+            selected.update(required)
+            collaborator_options.append((coauthor_id, path_options))
+        for _, path_options in collaborator_options:
+            for side in ("a", "b"):
+                if len(path_options[side]) > 1 and len(selected) < 10:
+                    selected.add(path_options[side][1])
+        collaborators = [
+            {
+                "id": coauthor_id,
+                "name": (by_id[coauthor_id].name_raw or "")[:120] if coauthor_id in by_id else None,
+                "a_work_ids": [work_id for work_id in path_options["a"] if work_id in selected],
+                "b_work_ids": [work_id for work_id in path_options["b"] if work_id in selected],
+            }
+            for coauthor_id, path_options in collaborator_options
+        ]
+
+        def clipped(value: Any, limit: int) -> str | None:
+            return value[:limit] if isinstance(value, str) else None
+
+        persons = {}
+        for side, person in (("a", first), ("b", second)):
+            years = sorted({
+                publication_details[work_id]["year"]
+                for work_id in publication_ids[person.id]
+                if work_id in publication_details
+                and type(publication_details[work_id].get("year")) is int
+                and publication_details[work_id]["year"] > 0
+            })
+            affiliations = (
+                person_affiliations.get(person.id)
+                if person_affiliations is not None
+                else [item.model_dump() for item in person.affiliations]
+            )
+            shown_affiliations = None if affiliations is None else [
+                {
+                    "name": clipped(item.get("name"), 160),
+                    "ror": clipped(item.get("ror"), 120),
+                    "years": [year for year in item.get("years") or () if type(year) is int][:4],
+                    "source": clipped(item.get("source"), 80),
+                }
+                for item in affiliations[:8] if isinstance(item, Mapping)
+            ]
+            persons[side] = {
+                "observed_work_year_range": [years[0], years[-1]] if years else [],
+                "observed_affiliations": shown_affiliations,
+                "affiliations_total": len(affiliations) if affiliations is not None else None,
+                "orcid_owner_verified": None,
+                "original_authorship_raw_name": None,
+                "original_authorship_raw_orcid": None,
+            }
+
+        documents = []
+        for work_id in sorted(selected):
+            details = publication_details.get(work_id, {})
+            document = {
+                "id": work_id,
+                "doi": clipped(details.get("doi"), 120),
+                "title": clipped(details.get("title"), 180),
+                "year": details.get("year") if type(details.get("year")) is int else None,
+                "observed_team_size": len(publication_authors.get(work_id, ())),
+                "source_team_complete": None,
+            }
+            for side, person in (("a", first), ("b", second)):
+                records = sorted(
+                    authored_on(person, work_id),
+                    key=lambda row: (row.position is None, row.position or 0, row.affiliation or ""),
+                )
+                document[f"{side}_stored_authorships"] = [
+                    {
+                        "position": row.position,
+                        "affiliation": clipped(row.affiliation, 160),
+                        "affiliation_source": clipped(row.affiliation_source, 80),
+                        "is_corresponding": True if row.is_corresponding else None,
+                    }
+                    for row in records[:3]
+                ]
+                document[f"{side}_authorships_available"] = len(records)
+            documents.append(document)
+        return {
+            "basis": f"{publication_context_source} records; source ownership and version families unverified",
+            "original_source_team_completeness_verified": False,
+            "publication_version_families_verified": False,
+            "nonshared_work_collaborator_paths": collaborators,
+            "collaborators_available": len(shared_coauthors),
+            "collaborators_shown": len(collaborators),
+            "document_selection": "Up to 3 shared works, 2 separate works per side, and 2 per side for 3 shared collaborators; 10 works total",
+            "documents": documents,
+            "documents_shown": len(documents),
+            "documents_available": len(publication_ids[first.id] | publication_ids[second.id]),
+            "persons": persons,
+        }
 
     def researcher_context(person: Person) -> ResearcherContext:
         if person.id in context_cache:
@@ -375,6 +517,7 @@ def plan_person_merges_resolved(
                     "shared_neighbors": len(coauthors_a & coauthors_b),
                     "potential_cross_neighbor_pairs": len(coauthors_a - coauthors_b) * len(coauthors_b - coauthors_a),
                 },
+                source_context=source_context(first, second, shared_coauthors),
             )
         )
 
@@ -406,15 +549,25 @@ def plan_person_merges_resolved(
                 verdict,
             )
         if resolution.decision is Decision.MERGE:
-            plan_merge(
-                first, second, resolution.route,
-                reason=resolution.reason, model_confidence=verdict.confidence,
-                logreg_probability=round(resolution.probability, 6),
-                input_route=input_routes[pair_id],
-                model_verdicts={"single": asdict(verdict)} if single_mode else {
-                    "first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)
-                },
-            )
+            if weak_contact_disagreement(first, second, evidence):
+                hold(
+                    first, second, evidence, shared_fields, "weak_contact_review",
+                    "distinct contact emails without independent corroboration", verdict.confidence,
+                    input_route=input_routes[pair_id],
+                    first_verdict=first_verdicts.get(pair_id),
+                    second_verdict=None if single_mode else verdict,
+                    single_verdict=verdict if single_mode else None,
+                )
+            else:
+                plan_merge(
+                    first, second, resolution.route,
+                    reason=resolution.reason, model_confidence=verdict.confidence,
+                    logreg_probability=round(resolution.probability, 6),
+                    input_route=input_routes[pair_id],
+                    model_verdicts={"single": asdict(verdict)} if single_mode else {
+                        "first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)
+                    },
+                )
         elif resolution.decision is Decision.SEPARATE:
             separate(
                 first,

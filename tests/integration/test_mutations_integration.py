@@ -508,5 +508,32 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(rows[0]["affiliation"], "Keep this")
 
 
+class PersonResolutionContextAgainstRealGraphTest(unittest.TestCase):
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (node) DETACH DELETE node").consume()
+
+    def test_bulk_authorship_context_preserves_source_properties(self):
+        _client.upsert_nodes_batch("Person", [
+            ("A1", {"affiliations": '[{"name":"Lab A","source":"openalex"}]'}),
+            ("A2", {}),
+        ])
+        _client.upsert_nodes_batch("Publication", [
+            ("W1", {"doi": "10.123/test", "title": "Shared paper", "year": 2025}),
+        ])
+        _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", [
+            ("A1", "W1", {"position": 2, "affiliation": "Lab A", "is_corresponding": True}),
+        ])
+
+        rows = {row["person_id"]: row for row in _client.fetch_person_authorships_for_dedup()}
+        self.assertEqual(rows["A1"]["authorships"], [{
+            "publication_id": "W1", "position": 2, "affiliation": "Lab A",
+            "affiliation_source": None, "is_corresponding": True,
+            "doi": "10.123/test", "title": "Shared paper", "year": 2025,
+        }])
+        self.assertEqual(rows["A1"]["affiliations"], '[{"name":"Lab A","source":"openalex"}]')
+        self.assertEqual(rows["A2"]["authorships"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
