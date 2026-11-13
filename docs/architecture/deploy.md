@@ -60,7 +60,7 @@ Do not infer a writable quota from `df` free space on the share.
 | `~/pauk/site/itmo/` | published builds, nginx `/srv/site`, read-only mount |
 | `/var/essdata/pauk/pdf/itmo/` | worker `/app/data/pdf` |
 | `/var/essdata/pauk/snapshots/itmo/` | worker `/app/data/cache` |
-| `/var/essdata/pauk/runs/itmo/audit/` | worker `/app/data/audit` |
+| `/var/essdata/pauk/runs/itmo/audit/` | admin and worker `/app/data/audit` |
 | `/var/essdata/pauk/runs/itmo/osa/` | OSA clones and logs, worker `/app/data/osa` |
 | `/var/essdata/pauk/reports/itmo/` | worker `/reports`, nginx `/srv/reports` |
 | `/var/essdata/pauk/dumps/<stand>/` | Mongo archives and Neo4j database dumps |

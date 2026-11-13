@@ -51,6 +51,26 @@ writable by that user. Mongo and Neo4j run as their own users inside the
 image; their `db/` and `logs/` folders are made writable for them once,
 when the host is set up. Database folders stay on local storage.
 
+Admin and worker share `runs/<stand>/audit/` at `/app/data/audit`. The admin
+needs this writable mount even to read the graph: its audited client creates
+the JSONL audit directory during initialization. Without it, the overview
+can report an unavailable graph even when Neo4j itself is reachable.
+
+After obtaining the audit mount fix in the server checkout, run:
+
+```bash
+bash deploy/update_admin_audit.sh
+```
+
+The script uses `~/pauk/secrets/pauk.env` by default (or the path in its first
+argument), builds the admin image, checks write access to both the audit directory
+and `audit.jsonl` under the configured UID/GID, and recreates only admin. The
+journal is opened for append without writing any entries; a missing file is
+created. It then checks graph counts through the application's audited client.
+If the write check fails, correct the host audit directory and journal permissions
+for `PAUK_UID:PAUK_GID` before retrying. It does not restart worker or databases,
+or update the checkout itself.
+
 The worker's uv cache uses the Compose volume `uv-cache`, mounted at
 `/home/pauk/.cache/uv`; the host's `~/.cache/uv` is not mounted. The server
 project is named `deploy`. Changing that name also selects a different cache
