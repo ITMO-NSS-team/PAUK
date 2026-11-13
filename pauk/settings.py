@@ -19,7 +19,7 @@ CROSSREF_CONCURRENCY = 3
 CROSSREF_PUBLIC_RPS = 5
 CROSSREF_PUBLIC_CONCURRENCY = 1
 SEMANTIC_SCHOLAR_RPS = 1
-ARXIV_RPS = 1 / 3
+ARXIV_RPS = 1 / 15
 
 
 def _path_setting(name: str, default: Path) -> Path:

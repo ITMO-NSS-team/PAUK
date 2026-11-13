@@ -50,14 +50,19 @@ Default profiles (`pauk/settings.py`):
 | `api.crossref.org` | contact email supplied | 10 | 3 |
 | `api.crossref.org` | anonymous | 5 | 1 |
 | `api.semanticscholar.org` | with or without a key | 1 | 1 |
-| `arxiv.org`, `www.arxiv.org`, `export.arxiv.org` | public, every client | 1/3 | 1 |
+| `arxiv.org`, `www.arxiv.org`, `export.arxiv.org` | public, every client | 1/15 | 1 |
 
 `OpenAlexClient` sends the key as `Authorization: Bearer ...`.
 `SemanticScholarClient` sends its optional key as `x-api-key` to Semantic
 Scholar only. Public arXiv PDF downloads in `code_links` use no separate
-arXiv API key. Their `PUBLIC_LIMITS` profiles apply the project's conservative
-pace of one request every three seconds per host, shared by all clients in
-the process. This is distinct from arXiv's documented legacy API limit; see
+arXiv API key. Local `PUBLIC_LIMITS` profiles space request starts by 15 seconds
+for each of the three hosts, shared by all clients in the process. The main
+site's [robots.txt](https://arxiv.org/robots.txt) (also
+[www](https://www.arxiv.org/robots.txt)) allows `/pdf` with wildcard `Crawl-delay: 15`,
+not the legacy API's three-second rule. [Export's robots.txt](https://export.arxiv.org/robots.txt)
+has wildcard `Disallow: /`, despite the [bulk-data guide](https://info.arxiv.org/help/bulk_data.html)
+recommending export. Its local profile is not permission to crawl or a new faster
+route. Host aliases and separate processes do not share a single budget; see
 [arxiv-versions.md](pipeline/arxiv-versions.md#limits-and-settings).
 `CrossrefClient` sends `mailto` in the query and `User-Agent` so redirects
 retain polite-pool access. Requests handles authorization on redirects.

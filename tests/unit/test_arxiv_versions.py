@@ -18,13 +18,16 @@ from pauk.pipeline.stages.arxiv_versions import (
 from pauk.pipeline.stages.code_links import CodeLinksStage
 from pauk.settings import ARXIV_RPS, Settings
 from pauk.sources.base import HttpClient, HttpRequestError
+from pauk.sources.rate_limit import HostRateLimiter
 from pauk.sources.semantic_scholar import (
     BATCH_URL,
     MAX_BATCH,
     SemanticScholarClient,
     arxiv_id,
 )
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PdfStore, PreparedStore, RawStore
+from tests.unit.test_http_rate_limit import _attach
+from tests.unit.test_rate_limit import _Clock
 
 STAGE_CLIENT = "pauk.pipeline.stages.arxiv_versions.SemanticScholarClient"
 
@@ -85,7 +88,36 @@ class ArxivDownloadPaceTest(unittest.TestCase):
         for host in ARXIV_HOSTS:
             with self.subTest(host=host):
                 self.assertEqual(limits[host].requests_per_second, ARXIV_RPS)
+                self.assertEqual(1 / limits[host].requests_per_second, 15)
                 self.assertEqual(limits[host].max_concurrent, 1)
+
+    def test_arxiv_request_starts_include_transfer_time_in_the_interval(self) -> None:
+        """Space short requests by 15 seconds without delaying an already slow transfer."""
+        for host in ARXIV_HOSTS:
+            for duration in (1, 20):
+                with self.subTest(host=host, duration=duration):
+                    clock = _Clock()
+                    limiter = HostRateLimiter(clock=clock)
+                    client = HttpClient(timeout=5, rate_limiter=limiter)
+                    starts = []
+
+                    def download(
+                        _request: object,
+                        starts: list[float] = starts,
+                        clock: _Clock = clock,
+                        duration: int = duration,
+                    ) -> tuple[int, dict, dict]:
+                        starts.append(clock())
+                        clock.now += duration
+                        return 200, {}, {}
+
+                    _attach(client, download)
+                    self.addCleanup(client.session.close)
+                    state = limiter._state(host, client.rate_limits[host])
+                    with mock.patch.object(state.condition, "wait", side_effect=clock.wait):
+                        client.get_bytes(f"https://{host}/pdf/2201.06114")
+                        client.get_bytes(f"https://{host}/pdf/2201.06115")
+                    self.assertEqual(starts[1] - starts[0], max(15, duration))
 
 
 class ArxivVersionsStageTest(unittest.TestCase):
@@ -104,6 +136,39 @@ class ArxivVersionsStageTest(unittest.TestCase):
 
     def _queried(self) -> list[list[str]]:
         return [call.args[0] for call in self.client.papers_by_doi.call_args_list]
+
+    def test_settings_rate_reaches_the_semantic_scholar_client(self) -> None:
+        """Forward explicitly configured Semantic Scholar quotas independently of the environment."""
+        for config, expected in ((Settings(semantic_scholar_rps=1), 1), (Settings(semantic_scholar_rps=2.5), 2.5)):
+            with self.subTest(rate=expected):
+                limiter = HostRateLimiter(clock=_Clock())
+                clients = []
+
+                def create_client(
+                    timeout: int,
+                    api_key: str,
+                    *,
+                    requests_per_second: float,
+                    clients: list[SemanticScholarClient] = clients,
+                ) -> SemanticScholarClient:
+                    client = SemanticScholarClient(timeout, api_key, requests_per_second=requests_per_second)
+                    clients.append(client)
+                    self.addCleanup(client.session.close)
+                    return client
+
+                with (
+                    mock.patch("pauk.sources.base.RATE_LIMITER", limiter),
+                    mock.patch(STAGE_CLIENT, side_effect=create_client),
+                    mock.patch.object(SemanticScholarClient, "papers_by_doi", return_value=[]),
+                ):
+                    ArxivVersionsStage(self.prepared, self.raw, config=config).run()
+                self.assertEqual(len(clients), 1)
+                client = clients[0]
+                limit = client.rate_limits["api.semanticscholar.org"]
+                self.assertEqual(config.semantic_scholar_rps, expected)
+                self.assertEqual(limit.requests_per_second, expected)
+                self.assertEqual(limit.max_concurrent, 1)
+                self.assertIs(client.rate_limiter, limiter)
 
     def test_the_stage_runs_before_code_links(self):
         names = [stage.name for stage in ALL_STAGES]
@@ -261,6 +326,27 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.config = Settings(data_dir=Path(tmp.name) / "data", pdf_crawler_url="")
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_valid_cached_preprint_does_not_fetch_a_pdf(self, http: mock.Mock) -> None:
+        """Read cached PDF text without making an HTTP PDF request."""
+        self.prepared.write_models(
+            "publications",
+            [
+                Publication(
+                    id="W1",
+                    title="t",
+                    doi="10.1/a",
+                    pdf_urls=["https://arxiv.org/pdf/2201.06114"],
+                )
+            ],
+        )
+        PdfStore(self.db, self.config.pdf_dir).save("W1", _pdf("https://github.com/org/cached"))
+        CodeLinksStage(self.prepared, self.raw, config=self.config).run()
+        http.return_value.get_bytes.assert_not_called()
+        pub = next(iter(self.prepared.read_models("publications", Publication)))
+        self.assertIn("github.com/org/cached", pub.full_text)
+        self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.COMPLETED)
 
     @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
     @mock.patch(STAGE_CLIENT)

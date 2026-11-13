@@ -72,12 +72,19 @@ guarantee that the shared public pool will accept a request.
 The stage queries Semantic Scholar, not the arXiv API. `code_links`
 downloads public arXiv PDF URLs without a separate arXiv API key. The
 project's `PUBLIC_LIMITS` pace requests to each of `arxiv.org`,
-`www.arxiv.org` and `export.arxiv.org` at one every three seconds, with one
+`www.arxiv.org` and `export.arxiv.org` at one every 15 seconds, with one
 request in flight per host, shared by all HTTP clients in the process.
-Separate processes are not coordinated. This is the project's conservative
-download pace; arXiv's documented
-[one-request-per-three-seconds rule](https://info.arxiv.org/help/api/tou.html)
-applies to its legacy APIs.
+Spacing is start-to-start: a transfer lasting longer than 15 seconds does not
+incur another 15-second wait. Limits are per host and per process, not a
+single budget shared across host aliases or separate processes.
+
+The main site's [robots.txt](https://arxiv.org/robots.txt) (also
+[www](https://www.arxiv.org/robots.txt)) allows `/pdf` with wildcard
+`Crawl-delay: 15`; the legacy API's three-second rule is not the PDF rule.
+[Export's robots.txt](https://export.arxiv.org/robots.txt) instead has wildcard
+`Disallow: /`, conflicting with the [bulk-data guide's](https://info.arxiv.org/help/bulk_data.html)
+recommendation to use export. The local 15-second profile for all three hosts
+is not permission to crawl export, nor does it introduce a faster download route.
 
 An arXiv copy is usually the preprint, not the published version: its text,
 page numbers and, occasionally, its links can differ from the journal's.
