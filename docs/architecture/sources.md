@@ -4,10 +4,10 @@
 per external API.
 
 **Files:** `pauk/sources/base.py`, `rate_limit.py`, `openalex.py`, `github.py`,
-`crossref.py`, `orcid.py`, `llm.py`.
+`crossref.py`, `orcid.py`, `llm.py`, `pdf.py`.
 
-Thin wrappers, each knowing only its own API. All except `SubscriptionCliClient`,
-which runs a local CLI, inherit from `base.py::HttpClient`.
+API wrappers inherit from `base.py::HttpClient`; `SubscriptionCliClient` runs
+a local CLI. `PdfDownloader` manages a separate HTTP client per download thread.
 
 ## `base.py::HttpClient`
 
@@ -30,12 +30,19 @@ which runs a local CLI, inherit from `base.py::HttpClient`.
   For example, the crawler health check in `code_links.py` runs with
   `retries=0`, so a dead service does not delay the whole run.
 
+With `deadline` or `max_wait`, `get_bytes` streams the body inside the same
+retry loop. Network errors during reading retry the request; the host slot stays
+occupied until reading ends. `cancel()` stops reads and waits; `close()` also
+closes the session. PDF timeouts and cancellation limits are documented in
+[code-links.md](pipeline/code-links.md#download-and-cache).
+
 ## Request limits
 
 `base.py::RATE_LIMITER` is one `rate_limit.py::HostRateLimiter` shared by
 all HTTP clients in the process. It spaces requests without catch-up bursts
 and caps concurrency per host. Retries and redirects from a limited API
 request each pass through the limiter. Separate processes are not coordinated.
+`PdfDownloader` adds a per-host concurrency cap; API rate profiles still apply.
 
 Clients sharing a host use the stricter profile. Server headers can only
 lower its limits; raising them requires a process restart.
@@ -94,6 +101,5 @@ Settings:
 Fallback PDF download by DOI through the external
 [PDF-Crawler-Service](https://github.com/gurinboru/PDF-Crawler-Service) lives
 in `pipeline/stages/code_links.py` (`_crawler_available` and `_pdf_pages`),
-not here. It is stage-specific logic on top of the ordinary `HttpClient`, not
-a general-purpose client. See [pipeline/code-links.md](pipeline/code-links.md)
-and [deploy.md](deploy.md).
+not here. `pdf.py::PdfDownloader` manages thread-local HTTP clients and shutdown.
+See [pipeline/code-links.md](pipeline/code-links.md) and [deploy.md](deploy.md).

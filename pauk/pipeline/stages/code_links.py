@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import logging
+import queue
 import re
+import threading
 import unicodedata
 from bisect import bisect_right
-from collections import defaultdict
+from collections import Counter, defaultdict, deque
+from collections.abc import Iterator
+from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPoolExecutor, wait
+from contextlib import closing, suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import monotonic
 from typing import cast
 from urllib.parse import urlencode, urlparse
 
@@ -15,6 +22,7 @@ from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publicat
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
+from pauk.sources.pdf import PdfDownloader
 from pauk.storage import PdfStore
 from pauk.urls import normalize_repo_url
 
@@ -22,9 +30,11 @@ from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
-_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)?"
+_LINE_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)"
+_WRAP = _LINE_WRAP + "?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
-_SEGMENT = _CHAR + r"+(?:" + _WRAP + _CHAR + r"+)*"
+# Repetition must consume a line break to avoid exponential backtracking.
+_SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github"
     + _WRAP
@@ -66,6 +76,7 @@ _BODY_HEADING = re.compile(r"(?im)^[ \t]*(?:abstract|аннотация)(?=[\s:.
 
 CONTEXT_WINDOW = 500
 CRAWLER_DOWNLOAD_TIMEOUT = 180
+PDF_POLL_SECONDS = 0.05
 
 
 def _normalize_ligatures(text: str) -> str:
@@ -578,6 +589,15 @@ def _archived_repository_url(publication: Publication) -> str | None:
     return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
+@dataclass
+class _PdfResult:
+    pages: list[str]
+    occurrences: list[dict[str, list[LinkOccurrence]]]
+    error: str | None
+    parsed_ids: set[str]
+    failed_ids: set[str]
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
     progress_label = "Publications: finding code links in abstracts and PDFs"
@@ -587,26 +607,128 @@ class CodeLinksStage(EnrichmentStage):
         links_by_publication = {
             row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
-        self.http = HttpClient(self.config.request_timeout)
+        self.http = PdfDownloader(self.config, client_factory=HttpClient)
+        self._parse_queue = queue.SimpleQueue()
         self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
-        self.crawler_available = self._crawler_available()
         candidates = [
             publication
             for publication in publications
             if self.selected("publications", publication.id)
             and self.needs_attempt(publication.processing.get(self.name))
         ]
+        with closing(self._fetch_all(candidates)) as results:
+            return self._apply_results(results, links_by_publication)
+
+    def _extract(self, data: bytes):
+        if threading.current_thread() is threading.main_thread():
+            return _extract_pdf(data)
+        future = Future()
+        self._parse_queue.put((data, future))
+        while not self.http.cancelled:
+            try:
+                return future.result(timeout=PDF_POLL_SECONDS)
+            except TimeoutError:
+                if future.done():
+                    raise
+        future.cancel()
+        raise CancelledError
+
+    def _parse_ready(self, heartbeat) -> None:
+        while not self._parse_queue.empty():
+            data, future = self._parse_queue.get()
+            heartbeat()
+            if future.set_running_or_notify_cancel():
+                try:
+                    future.set_result(_extract_pdf(data))
+                except Exception as error:
+                    future.set_exception(error)
+                except BaseException:
+                    future.set_exception(CancelledError())
+                    raise
+
+    def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
+        pool = ThreadPoolExecutor(max_workers=self.config.code_links_concurrency, thread_name_prefix="pauk-pdf")
+        pending = {}
+        remaining: dict[str, deque[Publication]] = {}
+        reserved = Counter()
+        done_count = 0
+        reported = 0.0
+
+        def heartbeat():
+            nonlocal reported
+            if self.on_progress is not None and monotonic() - reported >= self.REPORT_SECONDS:
+                reported = monotonic()
+                self.on_progress(self.progress_label, done_count, len(candidates))
+
+        def fill_window():
+            while len(pending) < self.config.code_links_concurrency:
+                submitted = False
+                for host in list(remaining):
+                    if host and reserved[host] >= self.config.pdf_host_concurrency:
+                        continue
+                    publication = remaining[host].popleft()
+                    if not remaining[host]:
+                        del remaining[host]
+                    pending[pool.submit(self._pdf_pages, publication)] = (publication, host)
+                    reserved[host] += 1
+                    submitted = True
+                    if len(pending) >= self.config.code_links_concurrency:
+                        break
+                if not submitted:
+                    break
+
+        try:
+            if not candidates:
+                return
+            probe = pool.submit(self._crawler_available)
+            while not probe.done():
+                heartbeat()
+                wait((probe,), timeout=PDF_POLL_SECONDS)
+            self.crawler_available = probe.result()
+            for publication in candidates:
+                heartbeat()
+                host = ""
+                if not self.pdf_store.exists(publication.id):
+                    source = next(iter(publication.pdf_urls), self.config.pdf_crawler_url if publication.doi else "")
+                    with suppress(ValueError):
+                        host = urlparse(source).hostname or ""
+                remaining.setdefault(host, deque()).append(publication)
+            fill_window()
+            with self.progress_bar(total=len(candidates)) as bar:
+                while pending or remaining:
+                    heartbeat()
+                    self._parse_ready(heartbeat)
+                    ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                    for future in ready:
+                        publication, host = pending.pop(future)
+                        reserved[host] -= 1
+                        yield publication, future.result()
+                        done_count += 1
+                        bar.update()
+                        fill_window()
+                heartbeat()
+        finally:
+            self.http.cancel()
+            for future in pending:
+                future.cancel()
+            pool.shutdown(wait=True, cancel_futures=True)
+            while not self._parse_queue.empty():
+                _data, future = self._parse_queue.get()
+                future.cancel()
+            self.http.close()
+
+    def _apply_results(self, results, links_by_publication: dict[str, RepoLink]) -> dict[str, int]:
         changed = 0
-        for pub in self.progress(candidates, total=len(candidates)):
+        for pub, fetched in results:
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
+            pdf_pages, pdf_page_occurrences, pdf_error = fetched.pages, fetched.occurrences, fetched.error
             previous = links_by_publication.get(pub.id)
             missing_pdf_ids = {
                 occ.pdf_id for link in previous.links for occ in link.occurrences
-                if occ.pdf_id and occ.pdf_id not in self.parsed_pdf_ids
+                if occ.pdf_id and occ.pdf_id not in fetched.parsed_ids
             } if previous else set()
-            self.failed_pdf_ids.update(missing_pdf_ids)
+            fetched.failed_ids.update(missing_pdf_ids)
             if missing_pdf_ids:
                 pdf_error = "; ".join(filter(None, (pdf_error, f"PDF evidence unavailable: {', '.join(sorted(missing_pdf_ids))}")))
             if pdf_pages and (not pdf_error or not pub.full_text):
@@ -618,7 +740,7 @@ class CodeLinksStage(EnrichmentStage):
             )
             if pdf_error:
                 occurrences_by_url = _preserve_pdf_occurrences(
-                    occurrences_by_url, previous, self.failed_pdf_ids,
+                    occurrences_by_url, previous, fetched.failed_ids,
                 )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority as code_url.
@@ -663,9 +785,10 @@ class CodeLinksStage(EnrichmentStage):
                     for url, occurrences in occurrences_by_url.items()
                 ],
             )
+            # Evidence must be durable before the publication is marked completed.
+            self.prepared.upsert_models("repo_links", [links_by_publication[pub.id]])
+            self.prepared.upsert_models("publications", [pub])
             changed += 1
-        self.prepared.write_models("publications", publications)
-        self.prepared.write_models("repo_links", links_by_publication.values())
         return {"publications": changed, "repo_links": len(links_by_publication)}
 
     def _crawler_available(self) -> bool:
@@ -675,6 +798,8 @@ class CodeLinksStage(EnrichmentStage):
         try:
             self.http.get_bytes(f"{self.config.pdf_crawler_url}/health", retries=0)
             return True
+        except CancelledError:
+            raise
         except Exception as exc:
             logger.warning(
                 "code_links: PDF-Crawler-Service unavailable at %s: %s",
@@ -686,7 +811,7 @@ class CodeLinksStage(EnrichmentStage):
     def _pdf_pages(
         self,
         pub: Publication,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
+    ) -> _PdfResult:
         version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
         cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
         # An already cached version makes a new download of a missing survivor unnecessary.
@@ -694,8 +819,8 @@ class CodeLinksStage(EnrichmentStage):
             pages, occurrences, error = [], [], None
         else:
             pages, occurrences, error = self._primary_pdf_pages(pub)
-        self.parsed_pdf_ids = {pub.id} if pages else set()
-        self.failed_pdf_ids = {pub.id} if error else set()
+        parsed_pdf_ids = {pub.id} if pages else set()
+        failed_pdf_ids = {pub.id} if error else set()
         for page_found in occurrences:
             for found in page_found.values():
                 for occurrence in found:
@@ -704,12 +829,14 @@ class CodeLinksStage(EnrichmentStage):
         errors = [error] if error else []
         for pdf_id in cached_versions:
             try:
-                version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
+                version_pages, version_occurrences = self._extract(self.pdf_store.read(pdf_id))
+            except CancelledError:
+                raise
             except Exception as exc:
-                self.failed_pdf_ids.add(pdf_id)
+                failed_pdf_ids.add(pdf_id)
                 errors.append(f"{pdf_id}: {redact_text(exc)}")
                 continue
-            self.parsed_pdf_ids.add(pdf_id)
+            parsed_pdf_ids.add(pdf_id)
             for page_found in version_occurrences:
                 for found in page_found.values():
                     for occurrence in found:
@@ -720,17 +847,17 @@ class CodeLinksStage(EnrichmentStage):
             # Broken version caches must not prevent recovery from the primary sources.
             primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub)
             if primary_error:
-                self.failed_pdf_ids.add(pub.id)
+                failed_pdf_ids.add(pub.id)
                 errors.append(primary_error)
             if primary_pages:
-                self.parsed_pdf_ids.add(pub.id)
+                parsed_pdf_ids.add(pub.id)
                 for page_found in primary_occurrences:
                     for found in page_found.values():
                         for occurrence in found:
                             occurrence.pdf_id = pub.id
                 pages.extend(primary_pages)
                 occurrences.extend(primary_occurrences)
-        return pages, occurrences, "; ".join(errors) or None
+        return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_pdf_ids, failed_pdf_ids)
 
     def _primary_pdf_pages(
         self,
@@ -749,24 +876,28 @@ class CodeLinksStage(EnrichmentStage):
         errors = []
         if self.pdf_store.exists(pub.id):
             try:
-                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
+                pages, occurrences = self._extract(self.pdf_store.read(pub.id))
                 return pages, occurrences, None
+            except CancelledError:
+                raise
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        sources = [(url, {}) for url in pub.pdf_urls]
+        sources = [(url, {}) for url in dict.fromkeys(pub.pdf_urls)]
         if self.crawler_available and pub.doi:
             sources.append((
                 f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),
-                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
+                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0, "deadline": CRAWLER_DOWNLOAD_TIMEOUT},
             ))
         for source_url, kwargs in sources:
             try:
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
-                pages, occurrences = _extract_pdf(pdf_bytes)
+                pages, occurrences = self._extract(pdf_bytes)
                 # Error pages must never poison the cache for subsequent attempts.
                 self.pdf_store.save(pub.id, pdf_bytes)
                 return pages, occurrences, None
+            except CancelledError:
+                raise
             except Exception as exc:
                 errors.append(redact_text(exc))
         return [], [], "; ".join(errors) or None

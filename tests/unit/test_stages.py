@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,7 +80,10 @@ class StagesTest(unittest.TestCase):
         valid_pdf = _make_pdf_bytes(["https://github.com/org/repo"])
         http_client.return_value.get_bytes.return_value = valid_pdf
         CodeLinksStage(prepared, RawStore(self.db, "sample"), config=config).run()
-        http_client.return_value.get_bytes.assert_called_once_with("https://example.org/paper.pdf")
+        http_client.return_value.get_bytes.assert_called_once_with(
+            "https://example.org/paper.pdf", retries=config.pdf_retries,
+            timeout=(config.pdf_connect_timeout, config.pdf_read_timeout),
+            deadline=config.pdf_download_deadline, max_wait=config.pdf_max_retry_wait)
         self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), valid_pdf)
 
     def setUp(self):
@@ -933,10 +938,13 @@ class StagesTest(unittest.TestCase):
     def test_code_links_falls_back_to_crawler_when_no_pdf_urls(self, http_client):
         pdf_bytes = _make_pdf_bytes(["From the crawler: https://github.com/org/repo"])
 
-        def get_bytes(url, retries=3, timeout=None):
+        def get_bytes(url, retries=3, timeout=None, deadline=None, max_wait=None):
             self.assertTrue(url.startswith("http://crawler.local/api/v1/"))
             if url.endswith("/health"):
                 return b"ok"
+            self.assertEqual(retries, 0)
+            self.assertEqual(timeout, (config.pdf_connect_timeout, 180))
+            self.assertEqual(deadline, 180)
             query = parse_qs(urlparse(url).query)
             self.assertEqual(query["url"], ["https://doi.org/10.1234/abc"])
             return pdf_bytes
@@ -1466,6 +1474,23 @@ class CollectOccurrencesTest(unittest.TestCase):
 
 
 class GithubUrlRegexTest(unittest.TestCase):
+    def test_long_owner_only_urls_do_not_block_later_repository_links(self):
+        # A subprocess bounds a regex hang without leaving the test runner blocked.
+        script = (
+            "import json\n"
+            "from pauk.pipeline.stages.code_links import _occurrences_in_text\n"
+            "owners = ['a' * 4096, 'a' * 4096 + '-\\n' + 'b' * 4096, 'a_' * 2048]\n"
+            "print(json.dumps([list(_occurrences_in_text(\n"
+            "    'https://github.com/' + owner + '\\nhttps://github.com/org/repo', None\n"
+            ")) for owner in owners]))\n"
+        )
+        try:
+            result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                                    check=True, timeout=10, cwd=Path(__file__).resolve().parents[2])
+        except subprocess.TimeoutExpired:
+            self.fail("GitHub URL matching hung on an owner-only URL")
+        self.assertEqual(json.loads(result.stdout), [["https://github.com/org/repo"]] * 3)
+
     def test_matches_bare_domain_without_scheme(self):
         found = _occurrences_in_text("code at github.com/org/repo, see paper", None)
         self.assertEqual(list(found), ["https://github.com/org/repo"])

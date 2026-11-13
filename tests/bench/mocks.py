@@ -240,6 +240,12 @@ class MockPdfHttpClient:
     def get_bytes(self, url: str, **kwargs) -> bytes:
         raise HttpRequestError("GET", url, status_code=404)
 
+    def cancel(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
 
 class RecordingNeo4jClient:
     """In-memory double of Neo4jClient with just enough MERGE semantics.

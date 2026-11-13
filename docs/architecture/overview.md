@@ -82,8 +82,9 @@ enrichment stage on that row: `not_started`, `completed`, `completed_empty`,
 `not_applicable`, `failed`. `EnrichmentStage.needs_attempt()`
 (`pauk/pipeline/stages/base.py`) decides whether to touch a row again:
 `FAILED` and `NOT_STARTED` yes, anything else no, unless `--force` is passed.
-This makes `pauk enrich` resumable between runs; `write_models()` persists the
-result at the end of each `run()`. Because entities in MongoDB are global,
+Stages save complete working sets with `write_models()` or completed rows
+with `upsert_models()`. The latter preserves finished work if a run stops
+before the stage ends. Because entities in MongoDB are global,
 `processing` is visible to the next group that touches the same entity, so
 reprocessing does not start from zero (see [storage.md](storage.md)).
 

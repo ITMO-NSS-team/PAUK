@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,13 @@ CROSSREF_RPS = 10
 CROSSREF_CONCURRENCY = 3
 CROSSREF_PUBLIC_RPS = 5
 CROSSREF_PUBLIC_CONCURRENCY = 1
+PDF_CONCURRENCY = 8
+PDF_HOST_CONCURRENCY = 2
+PDF_CONNECT_TIMEOUT = 10.0
+PDF_READ_TIMEOUT = 15.0
+PDF_DOWNLOAD_DEADLINE = 300.0
+PDF_RETRIES = 2
+PDF_MAX_RETRY_WAIT = 120.0
 
 
 def _path_setting(name: str, default: Path) -> Path:
@@ -80,9 +88,27 @@ class Settings:
     # over TLS, and the browser stops sending the cookie unencrypted.
     admin_secure_cookie: bool = os.getenv("PAUK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
+    code_links_concurrency: int = int(os.getenv("PAUK_CODE_LINKS_CONCURRENCY") or PDF_CONCURRENCY)
+    pdf_host_concurrency: int = int(os.getenv("PAUK_PDF_HOST_CONCURRENCY") or PDF_HOST_CONCURRENCY)
+    pdf_connect_timeout: float = float(os.getenv("PAUK_PDF_CONNECT_TIMEOUT") or PDF_CONNECT_TIMEOUT)
+    pdf_read_timeout: float = float(os.getenv("PAUK_PDF_READ_TIMEOUT") or PDF_READ_TIMEOUT)
+    pdf_download_deadline: float = float(os.getenv("PAUK_PDF_DOWNLOAD_DEADLINE") or PDF_DOWNLOAD_DEADLINE)
+    pdf_retries: int = int(os.getenv("PAUK_PDF_RETRIES") or PDF_RETRIES)
+    pdf_max_retry_wait: float = float(os.getenv("PAUK_PDF_MAX_RETRY_WAIT") or PDF_MAX_RETRY_WAIT)
     # Official ITMO staff records (personal data, never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
+
+    def __post_init__(self) -> None:
+        for name in ("code_links_concurrency", "pdf_host_concurrency", "pdf_retries"):
+            value = getattr(self, name)
+            minimum = 0 if name == "pdf_retries" else 1
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}")
+        for name in ("pdf_connect_timeout", "pdf_read_timeout", "pdf_download_deadline", "pdf_max_retry_wait"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not math.isfinite(value) or value < 0 or (name != "pdf_max_retry_wait" and value == 0):
+                raise ValueError(f"invalid {name}")
 
     def provider_for(self, stage: str) -> str:
         """LLM provider for a stage: its own setting, else PAUK_LLM_PROVIDER; dedup only by its own.
