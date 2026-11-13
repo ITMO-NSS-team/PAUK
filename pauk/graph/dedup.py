@@ -184,6 +184,56 @@ def dedup_graph_persons(
         journal rows (applied merges marked "merged", held-back pairs
         marked "held").
     """
+    person_rows = client.fetch_persons_for_dedup()
+    context_owner = getattr(client, "_client", client)
+    supports_context = callable(getattr(type(context_owner), "fetch_person_authorships_for_dedup", None))
+    if models is not None and supports_context:
+        fetch_context = client.fetch_person_authorships_for_dedup
+        context_by_id = {row["person_id"]: row for row in fetch_context()}
+        person_rows = [{**row, **context_by_id.get(row["id"], {})} for row in person_rows]
+
+    def stored_affiliations(value: object) -> list[dict] | None:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+            return value
+        return None
+
+    person_affiliations = {row["id"]: stored_affiliations(row.get("affiliations")) for row in person_rows}
+    publication_details = {
+        authorship["publication_id"]: {
+            "doi": authorship.get("doi"),
+            "title": authorship.get("title"),
+            "year": authorship.get("year"),
+        }
+        for row in person_rows
+        for authorship in row.get("authorships") or ()
+        if isinstance(authorship, dict) and authorship.get("publication_id")
+    }
+
+    def authored_rows(row: dict) -> list[Authorship]:
+        records = [
+            Authorship(
+                publication_id=authorship["publication_id"],
+                position=authorship.get("position"),
+                affiliation=authorship.get("affiliation"),
+                affiliation_source=authorship.get("affiliation_source"),
+                is_corresponding=bool(authorship.get("is_corresponding")),
+            )
+            for authorship in row.get("authorships") or ()
+            if isinstance(authorship, dict) and authorship.get("publication_id")
+        ]
+        present = {authorship.publication_id for authorship in records}
+        records.extend(
+            Authorship(publication_id=publication_id)
+            for publication_id in row.get("publication_ids") or ()
+            if publication_id not in present
+        )
+        return records
+
     people = [
         Person(
             id=row["id"],
@@ -202,17 +252,20 @@ def dedup_graph_persons(
             google_scholar=row.get("google_scholar"),
             merged_ids=list(row.get("merged_ids") or []),
             department_ids=list(row.get("department_ids") or []),
-            authored=[
-                Authorship(publication_id=publication_id, position=0)
-                for publication_id in row.get("publication_ids") or []
-            ],
+            authored=authored_rows(row),
         )
-        for row in client.fetch_persons_for_dedup()
+        for row in person_rows
     ]
     trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
     planner = plan_person_merges_resolved if models is not None else plan_person_merges
     options = (
-        {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}
+        {
+            "models": models, "policy": policy, "decisions": decisions,
+            "logreg_model": logreg_model,
+            "publication_details": publication_details or None,
+            "publication_context_source": "graph",
+            "person_affiliations": person_affiliations,
+        }
         if models is not None
         else {"decisions": decisions}
     )

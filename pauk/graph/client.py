@@ -699,6 +699,24 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
+    def fetch_person_authorships_for_dedup(self) -> list[dict]:
+        """Bulk source details for the person judge, without per-pair graph reads."""
+        query = """
+            MATCH (p:Person)
+            OPTIONAL MATCH (p)-[authored:AUTHORED]->(w:Publication)
+            RETURN p.id AS person_id, p.affiliations AS affiliations,
+                   collect(CASE WHEN w IS NULL THEN NULL ELSE {
+                       publication_id: w.id, position: authored.position,
+                       affiliation: authored.affiliation,
+                       affiliation_source: authored.affiliation_source,
+                       is_corresponding: authored.is_corresponding,
+                       doi: w.doi, title: w.title, year: w.year
+                   } END) AS authorships
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
     def fetch_publications_for_dedup(self) -> list[dict]:
         """Every Publication node with the fields the merge rules consume.
 

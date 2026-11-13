@@ -48,12 +48,17 @@ names into one Latin string, and common surnames (Smirnov, Novikov, Ivanov)
 collide inside one university's author pool. An audit of name-only merging
 found a real case: "I. V. Smirnov", a reviewer on medical anthropology, merged
 with "I. V. Smirnov" the chemist. An explicitly different identity field
-(ORCID, email, GitHub login, Google Scholar id, staff record) keeps a pair
+(ORCID, GitHub login, Google Scholar id, staff record) keeps a pair
 apart for good, even if everything else matches. Pairs with weak evidence (a
 variant without a shared coauthor, a namesake outside ITMO, a single-token
 name, an identical name with no corroboration) are never merged automatically.
 They go into the journal with a reason and stay separate until someone confirms
 them by hand.
+
+Different email addresses are not an identity conflict: one person may have
+several addresses over time. A shared address also does not establish a match
+by itself. This applies to both pair decisions and conflict checks on a
+proposed merge group.
 
 **Candidate generation.** Surname-aware blocking handles token order,
 transliteration and compound names. Given names and initials alone are not
@@ -110,6 +115,16 @@ transliteration similarity, identifiers, catalog status, publications,
 collaborators and institutional context. The single Qwen request includes
 both researcher contexts and computed name facts, without the LogReg score or
 a previous model verdict. It returns `merge`, `separate` or `review`.
+
+For unresolved pairs, the request also includes bounded publication evidence:
+DOI, title, year, stored author positions and affiliations, plus the specific
+works linking up to three shared collaborators to each side outside the pair's
+shared-work set.
+Prepared-data and graph runs use their own stored authorships; missing source
+fields remain missing, and the payload marks source ownership and publication
+version families as unverified. These details inform the judge but do not
+create an automatic merge rule. The extra evidence is assembled only for
+pairs routed to the model, with no database query per pair.
 
 Role alignment prefers explicit and primary readings over alphabetical order.
 Unresolved reversed names use the more frequent surname interpretation; missing

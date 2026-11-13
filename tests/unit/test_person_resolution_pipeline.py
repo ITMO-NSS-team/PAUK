@@ -26,6 +26,7 @@ from pauk.pipeline.stages.dedup import (
     DedupStage,
     _finalize_person_merge_groups,
     _group_conflict,
+    _profiles_conflict,
 )
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore, review
@@ -317,13 +318,13 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         conflict = next(row for row in report if row.get("route") == "component_conflict")
         self.assertEqual(conflict["persons"], ["A", "C", "X"])
 
-    def test_partition_repeats_for_a_second_identity_conflict(self):
+    def test_partition_repeats_for_a_second_profile_conflict(self):
         first = person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097")
         second = person("A2", "S. Makarov", orcid="0000-0002-1825-0097")
         other = person("B", "Sergey Makarov", orcid="0000-0002-1825-0097")
-        first.email = "one@example.org"
-        second.email = "one@example.org"
-        other.email = "two@example.org"
+        first.github = "one"
+        second.github = "one"
+        other.github = "two"
         people = [first, second, other]
         pairs = [("A1", "A2"), ("A2", "B")]
 
@@ -368,8 +369,8 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
         first = person("A1", "Sergey Makarov", orcid="0000-0002-1825-0097")
         second = person("A2", "S. Makarov", orcid="0000-0002-1825-0097")
         other = person("C", "Sergey Makarov", orcid="0000-0001-5109-3700")
-        first.email = "first@example.org"
-        second.email = "second@example.org"
+        first.github = "first"
+        second.github = "second"
         pairs = [("A1", "A2"), ("A2", "C")]
 
         groups, report = _finalize_person_merge_groups(
@@ -381,6 +382,47 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
 
         self.assertEqual(groups, [])
         self.assertEqual(report[-1]["persons"], ["A1", "A2", "C"])
+
+    def test_different_primary_emails_are_not_a_pair_or_group_veto(self):
+        first = person("A1", "Sergey Makarov")
+        second = person("A2", "Sergey Makarov")
+        first.email = "old@example.org"
+        first.emails = ["old@example.org", "shared@example.org"]
+        second.email = "new@example.org"
+        second.emails = ["new@example.org", "shared@example.org"]
+        by_id = {value.id: value for value in (first, second)}
+
+        self.assertFalse(_profiles_conflict(first, second))
+        self.assertIsNone(_group_conflict(["A1", "A2"], by_id, {}))
+
+    def test_disjoint_addresses_are_not_a_hard_veto_but_not_a_merge_reason(self):
+        first = person("A1", "Sergey Makarov")
+        second = person("A2", "Sergey Makarov")
+        first.email, first.emails = "old@example.org", ["old@example.org"]
+        second.email, second.emails = "new@example.org", ["new@example.org"]
+        by_id = {value.id: value for value in (first, second)}
+
+        self.assertFalse(_profiles_conflict(first, second))
+        self.assertIsNone(_group_conflict(["A1", "A2"], by_id, {}))
+        groups, _report = _finalize_person_merge_groups(
+            [("A1", "A2")], {frozenset(("A1", "A2")): "qwen_merge"}, by_id, {},
+        )
+        self.assertEqual(len(groups), 1)
+        self.assertEqual({groups[0][0].id, *(value.id for value in groups[0][1])}, {"A1", "A2"})
+
+    def test_other_profile_identifier_conflicts_remain_hard_vetoes(self):
+        first = person("A1", "Sergey Makarov")
+        second = person("A2", "Sergey Makarov")
+        first.email, second.email = "old@example.org", "new@example.org"
+        for field in ("github", "google_scholar"):
+            with self.subTest(field=field):
+                setattr(first, field, "one")
+                setattr(second, field, "two")
+                self.assertTrue(_profiles_conflict(first, second))
+                self.assertEqual(_group_conflict(["A1", "A2"], {"A1": first, "A2": second}, {}),
+                                 (field, {"one", "two"}))
+                setattr(first, field, None)
+                setattr(second, field, None)
 
     def test_partition_is_independent_of_pair_order(self):
         people = [

@@ -295,12 +295,12 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
         self.assertEqual(len(people), 2)
 
-    def test_same_name_with_different_emails_stays_separate(self):
+    def test_same_name_with_different_emails_still_needs_corroboration(self):
         result, people = self.run_stage([
             person("A1", "Ivan Petrov", ["W1"], email="one@itmo.ru"),
             person("A2", "Ivan Petrov", ["W2"], email="two@itmo.ru"),
         ])
-        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
         self.assertEqual(len(people), 2)
 
     def test_same_name_with_external_half_is_only_a_candidate(self):
@@ -1637,7 +1637,7 @@ class DisputedAnswerTest(unittest.TestCase):
 class SplitGroupEndToEndTest(unittest.TestCase):
     """A group refused by the rules, resolved by a person, applied by the rules.
 
-    Three records under one name, two addresses between them, and a bridge record carrying no address at
+    Three records under one name, two GitHub IDs between them, and a bridge record carrying no ID at
     all, which is how the group forms in the first place.
     """
 
@@ -1650,9 +1650,9 @@ class SplitGroupEndToEndTest(unittest.TestCase):
         self.raw = RawStore(self.db, "sample")
 
     def trio(self):
-        return [person("A1", "Andrey Bogdanov", ["W1"], email="ab@itmo.ru"),
+        return [person("A1", "Andrey Bogdanov", ["W1"], github="andrey-one"),
                 person("A2", "Andrey Bogdanov", ["W2"]),
-                person("A3", "Andrey Bogdanov", ["W3"], email="other@itmo.ru"),
+                person("A3", "Andrey Bogdanov", ["W3"], github="andrey-other"),
                 person("A9", "Petr Volkov", ["W1", "W2", "W3"])]
 
     def run_stage(self):

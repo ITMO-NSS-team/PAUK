@@ -20,7 +20,7 @@ Persons
     distinct Russian names and common surnames (Smirnov, Ivanov) collide
     within one university, so rule 3 requires an independent signal and a name
     given as initials is never enough alone. An explicitly different identity
-    field (ORCID, email, GitHub login, Google Scholar id, staff record) always
+    field (ORCID, GitHub login, Google Scholar id, staff record) always
     keeps a pair separate. Pairs with weaker evidence (a variant match without
     a shared coauthor, a namesake outside ITMO, a single-token name, an
     identical name with nothing corroborating it) are not merged automatically;
@@ -149,9 +149,8 @@ def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
 
-# Identity fields a person can carry explicitly; two persons differing in any
-# of them are two real people no matter how similar their names are.
-PROFILE_FIELDS = ("email", "github", "google_scholar")
+# Conflicting contact addresses alone do not establish distinct identities.
+PROFILE_FIELDS = ("github", "google_scholar")
 
 
 def _profiles_conflict(first: Person, second: Person) -> bool:
@@ -1324,11 +1323,17 @@ class DedupStage(EnrichmentStage):
 
     def _dedup_persons(self) -> tuple[int, int, int]:
         people = list(self.prepared.read_models("persons", Person))
-        fields_of = {
-            publication.id: set(publication.fields)
-            for publication in self.prepared.read_models("publications", Publication)
-            if publication.fields
-        }
+        fields_of: dict[str, set[str]] = {}
+        publication_details: dict[str, dict[str, str | int | None]] = {}
+        for publication in self.prepared.read_models("publications", Publication):
+            if publication.fields:
+                fields_of[publication.id] = set(publication.fields)
+            if self.config.person_resolution_enabled:
+                publication_details[publication.id] = {
+                    "doi": publication.doi,
+                    "title": publication.title,
+                    "year": publication.year,
+                }
         trusted_orcids = self._trusted_orcids(people)
         staff_ids = self._staff_ids(people)
         answers = review.decisions(self.prepared.db, folded_ids(people))
@@ -1343,6 +1348,7 @@ class DedupStage(EnrichmentStage):
                 trusted_orcids,
                 in_scope=self._person_scope(people),
                 fields_of=fields_of,
+                publication_details=publication_details,
                 staff_ids=staff_ids,
                 decisions=answers,
                 models=ResolutionModels(self.config, self.prepared.db, self.prepared.group),
