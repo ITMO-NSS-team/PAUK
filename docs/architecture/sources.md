@@ -53,10 +53,12 @@ Default profiles (`pauk/settings.py`):
 | `arxiv.org`, `www.arxiv.org`, `export.arxiv.org` | public, every client | 1/3 | 1 |
 
 `OpenAlexClient` sends the key as `Authorization: Bearer ...`.
-`SemanticScholarClient` sends its key, when there is one, as `x-api-key`. The
-arXiv limits are in `PUBLIC_LIMITS`, so they apply to every client,
-including the PDF downloads in `code_links`: arXiv asks automated clients for
-no more than one request every three seconds.
+`SemanticScholarClient` sends its optional key as `x-api-key` to Semantic
+Scholar only. Public arXiv PDF downloads in `code_links` use no separate
+arXiv API key. Their `PUBLIC_LIMITS` profiles apply the project's conservative
+pace of one request every three seconds per host, shared by all clients in
+the process. This is distinct from arXiv's documented legacy API limit; see
+[arxiv-versions.md](pipeline/arxiv-versions.md#limits-and-settings).
 `CrossrefClient` sends `mailto` in the query and `User-Agent` so redirects
 retain polite-pool access. Requests handles authorization on redirects.
 
@@ -84,7 +86,7 @@ Settings:
 | `PAUK_CROSSREF_CONCURRENCY` | `3` | Crossref requests in flight; one without a contact |
 | `CROSSREF_MAILTO` | empty | Contact email for Crossref polite-pool access |
 | `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
-| `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Semantic Scholar requests/s |
+| `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Optional Semantic Scholar pace override: lower it or match a higher quota assigned to the key |
 
 ## Clients
 

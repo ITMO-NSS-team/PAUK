@@ -56,13 +56,28 @@ every run.
 
 ## Limits and settings
 
-The public pool answers 429 often; a batch is retried up to eight times,
-following `Retry-After`, so one batch can take a few minutes and a stop request
-is noticed between batches. With `SEMANTIC_SCHOLAR_API_KEY` the key goes into
-the `x-api-key` header; `PAUK_SEMANTIC_SCHOLAR_RPS` (default 1) sets the pace.
-Downloads from `arxiv.org`, `www.arxiv.org` and `export.arxiv.org` are paced at
-one every three seconds for every client (`PUBLIC_LIMITS`), as arXiv asks of
-automated access.
+`SEMANTIC_SCHOLAR_API_KEY` is optional and goes into the `x-api-key` header
+for Semantic Scholar requests only. Without it, requests share the public
+pool with other unauthenticated users. The default pace is 1 request/s,
+matching Semantic Scholar's introductory key quota. The advanced setting
+`PAUK_SEMANTIC_SCHOLAR_RPS` can lower that pace or match a higher quota
+assigned to the key; it does not change the server's quota. See
+[Semantic Scholar's API guide](https://www.semanticscholar.org/product/api/tutorial).
+
+A batch is retried up to eight times, following `Retry-After` when provided
+and using exponential backoff otherwise. A batch can take a few minutes,
+and a stop request is noticed between batches. A local rate limit does not
+guarantee that the shared public pool will accept a request.
+
+The stage queries Semantic Scholar, not the arXiv API. `code_links`
+downloads public arXiv PDF URLs without a separate arXiv API key. The
+project's `PUBLIC_LIMITS` pace requests to each of `arxiv.org`,
+`www.arxiv.org` and `export.arxiv.org` at one every three seconds, with one
+request in flight per host, shared by all HTTP clients in the process.
+Separate processes are not coordinated. This is the project's conservative
+download pace; arXiv's documented
+[one-request-per-three-seconds rule](https://info.arxiv.org/help/api/tou.html)
+applies to its legacy APIs.
 
 An arXiv copy is usually the preprint, not the published version: its text,
 page numbers and, occasionally, its links can differ from the journal's.
