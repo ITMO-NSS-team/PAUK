@@ -19,7 +19,9 @@ directory.mkdir(parents=True, exist_ok=True)
 with TemporaryFile(dir=directory) as stream:
     stream.write(b"audit mount check\n")
     stream.flush()
-print("audit directory is writable")
+with (directory / "audit.jsonl").open("a", encoding="utf-8"):
+    pass
+print("audit directory and journal are writable")
 '
 
 "${compose[@]}" up -d --no-deps --force-recreate admin

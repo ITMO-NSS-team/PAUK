@@ -63,11 +63,13 @@ bash deploy/update_admin_audit.sh
 ```
 
 The script uses `~/pauk/secrets/pauk.env` by default (or the path in its first
-argument), builds the admin image, checks audit write access under the configured
-UID/GID, and recreates only admin. It then checks graph counts through the
-application's audited client. If the write check fails, correct the host audit
-directory permissions for `PAUK_UID:PAUK_GID` before retrying. It does not restart
-worker or databases, or update the checkout itself.
+argument), builds the admin image, checks write access to both the audit directory
+and `audit.jsonl` under the configured UID/GID, and recreates only admin. The
+journal is opened for append without writing any entries; a missing file is
+created. It then checks graph counts through the application's audited client.
+If the write check fails, correct the host audit directory and journal permissions
+for `PAUK_UID:PAUK_GID` before retrying. It does not restart worker or databases,
+or update the checkout itself.
 
 The worker's uv cache uses the Compose volume `uv-cache`, mounted at
 `/home/pauk/.cache/uv`; the host's `~/.cache/uv` is not mounted. The server
