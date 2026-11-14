@@ -19,12 +19,31 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    field_values_equal,
     merge_nodes,
     read_node,
     update_node,
     validate_fields,
     validate_relationship,
 )
+
+
+class FieldComparisonTest(unittest.TestCase):
+    def test_only_json_formatting_is_ignored(self):
+        cases = (
+            ("funding", '[{"funder":"Фонд","grant_id":"42"}]',
+             '[\n {"grant_id":"42", "funder":"Фонд"}\n]', True),
+            ("funding", '[{"amount":true}]', '[{"amount":1}]', False),
+            ("funding", '[{"grant_id":"42"}]', '[{"grant_id":"99"}]', False),
+            ("funding", '[{"grant_id":"42"},{"grant_id":"99"}]',
+             '[{"grant_id":"99"},{"grant_id":"42"}]', False),
+            ("title", '["one","two"]', '["one", "two"]', False),
+            ("emails", ["a@example.org"], '["a@example.org"]', False),
+            ("code_url", "https://example.org/repo", '["https://example.org/repo"]', False),
+        )
+        for field, before, after, expected in cases:
+            with self.subTest(field=field, before=before, after=after):
+                self.assertEqual(field_values_equal(field, before, after), expected)
 
 
 class FakeGraph:
@@ -473,6 +492,20 @@ class StoredShapeTest(unittest.TestCase):
     def setUp(self):
         self.graph = FakeGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
+
+    def test_snapshot_restoration_keeps_the_field_whitelist_and_version_check(self):
+        for patch in ({"id": "other"}, {"updated_at": "old"}, {"unknown": "value"}):
+            with self.subTest(patch=patch), self.assertRaises(UnknownEntity):
+                update_node(self.graph, "Person", "A1", patch, from_snapshot=True)
+            with self.subTest(create=patch), self.assertRaises(UnknownEntity):
+                create_node(self.graph, "Person", "A2", patch, from_snapshot=True)
+        seen = self.graph.nodes["Person", "A1"]["updated_at"]
+        update_node(self.graph, "Person", "A1", {"name_en": "New name"})
+        with self.assertRaises(VersionConflict):
+            update_node(self.graph, "Person", "A1", {"emails": False},
+                        expected_updated_at=seen, from_snapshot=True)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_en"], "New name")
+        self.assertNotIn("emails", self.graph.nodes["Person", "A1"])
 
     def test_a_nested_field_is_stored_the_way_the_loader_stores_it(self):
         node = update_node(self.graph, "Person", "A1",

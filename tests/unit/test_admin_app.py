@@ -7,13 +7,17 @@ from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.exceptions import AuthError as Neo4jAuthError
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from neo4j.time import DateTime
+from pymongo.errors import AutoReconnect, ExecutionTimeout
 
 from pauk.admin import app as app_module
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key, set_active
 from pauk.admin.deps import stamp
 from pauk.settings import Settings
+from tests.unit.test_admin_nodes import FakePanelGraph
 
 
 class PanelTest(unittest.TestCase):
@@ -248,6 +252,78 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ServiceErrorsTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="admin")
+        self.app = build(Settings(neo4j_password="test"), self.db)
+        self.graph = FakePanelGraph()
+        self.client = TestClient(self.app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.graph_patch = patch.object(self.app.state.graph, "audited", return_value=self.graph)
+        self.graph_patch.start()
+        self.addCleanup(self.graph_patch.stop)
+
+    def test_missing_audit_permissions_show_an_explanation(self):
+        with patch.object(self.app.state.graph, "audited",
+                          side_effect=PermissionError("/private/internal/audit")):
+            response = self.client.get("/nodes/Person", headers={"accept": "text/html"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("журнал", response.text)
+        self.assertNotIn("/private/internal/audit", response.text)
+
+    def test_graph_failure_during_a_read_is_a_503_response(self):
+        for error in (ServiceUnavailable, SessionExpired, TransientError, Neo4jAuthError):
+            with (self.subTest(error=error.__name__),
+                  patch.object(self.graph, "list_nodes", side_effect=error("private details"))):
+                response = self.client.get("/nodes/Person", headers={"accept": "text/html"})
+                self.assertEqual(response.status_code, 503)
+                self.assertIn("Neo4j", response.text)
+                self.assertNotIn("private details", response.text)
+
+    def test_mongo_failure_on_each_tab_does_not_leak_an_internal_error(self):
+        for path, target in (("/audit", "pauk.admin.feed.entries"),
+                             ("/overrides", "pauk.admin.decisions.count_in_force"),
+                             ("/review", "pauk.storage.review.count"),
+                             ("/health", "pauk.admin.health.latest"),
+                             ("/jobs", "pauk.jobs.store.count")):
+            with self.subTest(path=path), patch(target, side_effect=AutoReconnect("private details")):
+                response = self.client.get(path, headers={"accept": "text/html"})
+                self.assertEqual(response.status_code, 503)
+                self.assertIn("MongoDB", response.text)
+                self.assertNotIn("private details", response.text)
+
+    def test_a_tab_recovers_after_a_temporary_read_failure(self):
+        with patch("pauk.admin.feed.entries", side_effect=AutoReconnect("temporary")):
+            self.assertEqual(self.client.get("/audit").status_code, 503)
+        self.assertEqual(self.client.get("/audit").status_code, 200)
+
+    def test_an_unreachable_mongo_during_error_rendering_still_returns_a_page(self):
+        with (patch("pauk.admin.feed.entries", side_effect=ExecutionTimeout("private details")),
+              patch("pauk.admin.app.read_session", side_effect=AutoReconnect("still down"))):
+            response = self.client.get("/audit", headers={"accept": "text/html"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("MongoDB", response.text)
+        self.assertNotIn("private details", response.text)
+
+    def test_non_browser_clients_get_a_json_error(self):
+        with patch.object(self.graph, "list_nodes", side_effect=ServiceUnavailable("private details")):
+            response = self.client.get("/nodes/Person", headers={"accept": "application/json"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Neo4j", response.json()["detail"])
+        self.assertNotIn("private details", response.text)
+
+    def test_missing_audit_permissions_do_not_close_mongo_only_review(self):
+        with patch.object(self.app.state.graph, "audited", side_effect=PermissionError("audit")):
+            response = self.client.get("/review")
+        self.assertEqual(response.status_code, 200)
+
+    def test_unexpected_programming_errors_are_not_reported_as_an_outage(self):
+        with (patch("pauk.admin.feed.entries", side_effect=TypeError("bad application code")),
+              self.assertRaisesRegex(TypeError, "bad application code")):
+            self.client.get("/audit")
+
+
 class GraphUnavailableTest(unittest.TestCase):
     """What the panel does when Neo4j is not configured or not running."""
 
@@ -266,7 +342,7 @@ class GraphUnavailableTest(unittest.TestCase):
     def test_a_browser_is_told_what_is_wrong_in_words(self):
         response = self.client.get("/nodes/Person", headers={"accept": "text/html"})
         self.assertEqual(response.status_code, 503)
-        self.assertIn("База графа не отвечает", response.text)
+        self.assertIn("Сервис временно недоступен", response.text)
         self.assertIn("NEO4J_PASSWORD", response.text)
 
     def test_the_parts_that_do_not_need_the_graph_keep_working(self):
