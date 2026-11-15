@@ -13,7 +13,7 @@ from disk, not the database.
 ## `export.py`
 
 `GraphSnapshotExporter.export(path=None, only=None)` opens a driver, runs
-the queries behind `load_db()` (one per table, thirteen in all), and writes
+the queries behind `load_db()` (one per table, fourteen in all), and writes
 `data/cache/graph_snapshot_<dd-mm-yyyy>.json` (or the path given with
 `--output`). An empty Neo4j password raises `ValueError` immediately, before
 the driver gets a chance to fail late.
@@ -46,13 +46,14 @@ attempts with a growing pause. Two thin wrappers sit on top of it:
   used only for `persons`, the one table that keeps gaining fields, so a new
   column does not require changing positional unpacking in callers.
 
-`load_db(driver, tables=None)` returns a flat dict of thirteen tables:
+`load_db(driver, tables=None)` returns a flat dict of fourteen tables:
 `persons`, `publications`, `repositories`, `departments`, `organizations`,
 `authorship`, `person_depts`, `pub_depts`, `repo_pubs`, `mentions_repos`,
-`mentions_candidates`, `repo_persons`, `repo_depts`. The first ten are what
-`pauk/gui/graph_builder/builder.py::GraphDataBuilder` consumes;
-`organizations`, `mentions_repos` and `mentions_candidates` have no consumer
-yet. Author departments and repository owners are relationships
+`mentions_candidates`, `repo_persons`, `repo_depts`, `pub_versions`. The
+first ten are what `pauk/gui/graph_builder/builder.py::GraphDataBuilder`
+consumes; `organizations`, `mentions_repos`, `mentions_candidates` and
+`pub_versions` (IS_VERSION: `version_pid` is a version of `pid`, with its
+`bucket`, `mergeable` and review `status`) have no consumer yet. Author departments and repository owners are relationships
 (`BELONGS_TO`, `OWNED_BY`) in the graph model, not columns, so each gets its
 own query with `OPTIONAL MATCH`.
 

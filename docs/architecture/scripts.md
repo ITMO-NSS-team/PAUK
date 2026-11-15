@@ -126,6 +126,7 @@ to the checkout.
 | `repair_implements.py` | Removes historical `IMPLEMENTS` claims if every link to the repository is classified and none has `is_relevant=true`; leaves `pending`/`failed` alone. Dry run by default, `--apply` writes | Mongo |
 | `plan_author_names_repair.py` | Finds `author_names=completed` rows with empty required name parts and builds a manifest plus per-group id files (unique across groups) for a targeted `--force` rerun; does not change Mongo | only `data/reports/` |
 | `prune_stranger_profiles.py` | Deletes GitHub profiles harvested only from repositories nobody implements. Dry run by default, `--apply` writes | Mongo |
+| `split_publication_versions.py` | Rebuilds publications folded under different DOIs from their own sources and reconciles their prepared rows and incident graph edges. Dry run by default. `--apply` writes. `--from-report PATH` repairs a legacy split or resumes from a saved checkpoint. | Mongo, Neo4j |
 
 ## Catalogs and quality measurement
 

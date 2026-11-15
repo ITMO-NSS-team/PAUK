@@ -8,7 +8,7 @@ rather than patched over its result. A fold can be taken apart afterwards
 (`pauk.graph.unmerge`), but only by rebuilding the record from the prepared
 row it was published from, and only for as long as that row is there.
 
-Four shapes of question:
+Five shapes of question:
 
 - a **pair** the person merge rules would not fold, answered "same" or
   "different";
@@ -21,7 +21,11 @@ Four shapes of question:
   a single author, "same" or "different";
 - a **catalog record**, where the staff directory holds several people under
   one name. Both namesakes are plausible and exactly one is right, so
-  `record_choice` names the record instead of taking a side.
+  `record_choice` names the record instead of taking a side;
+- a **publication version**, two Publication records the version rules
+  linked with IS_VERSION (`pauk.graph.version_candidates`), answered "same"
+  (one work) or "different". Nothing is folded either way: the answer only
+  confirms the link or removes it.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`: these are
 written long before anything is published, and `pauk/pipeline/` imports
@@ -48,8 +52,10 @@ GROUP = "person_group"
 GITHUB = "github_person"
 #: A person against the catalog records their name matches; answered by choice.
 STAFF = "staff_record"
+#: Two publications linked as versions of one work.
+PUB_VERSION = "publication_version"
 ALIAS = "person_alias_conflict"
-KINDS = (PAIR, GROUP, GITHUB, STAFF, ALIAS)
+KINDS = (PAIR, GROUP, GITHUB, STAFF, PUB_VERSION, ALIAS)
 
 #: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
@@ -105,12 +111,14 @@ def members_of(row: dict) -> list[str]:
 
     Not always people: a catalog question pairs a person with directory
     rows, and a github question with an account. Callers should not have to
-    know which shape they are holding, so the four are read in one place,
+    know which shape they are holding, so the five are read in one place,
     together with `kind_of` and `names_of` just below, which split on the
     same fields.
     """
     if "records" in row:
         return sorted({row["person"], *row["records"]})
+    if row.get("entity") == "publication":
+        return sorted({row["record_a"], row["record_b"]})
     if "login" in row:
         return sorted({row["login"], row["person"],
                        *(candidate["person"] for candidate in row.get("candidates") or [])})
@@ -125,12 +133,15 @@ def kind_of(row: dict) -> str:
     Each producer names its subjects its own way: the catalog check a
     `person` and `records`, the github matcher a `login`, a `person` and the
     `candidates` beside them, a refused group a list of `persons`, a held
-    pair a `person_a` and a `person_b`.
+    pair a `person_a` and a `person_b`, the version rules a `record_a` and a
+    `record_b` with `entity: "publication"`.
     """
     if row.get("kind") == ALIAS:
         return ALIAS
     if "records" in row:
         return STAFF
+    if row.get("entity") == "publication":
+        return PUB_VERSION
     if "login" in row:
         return GITHUB
     if "persons" in row:
@@ -169,6 +180,9 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
     if "records" in row:
         by_id = {row["person"]: row.get("name_raw"),
                  **dict(zip(row["records"], row.get("record_names") or [], strict=False))}
+    elif row.get("entity") == "publication":
+        # A publication is named by its title.
+        by_id = {row["record_a"]: row.get("title_a"), row["record_b"]: row.get("title_b")}
     elif "login" in row:
         # The account is named by its login; there is nothing else to call it.
         by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw"),
@@ -207,13 +221,14 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
     # Look up the existing queue once, not once per automatically rejected
     # candidate. Large runs can contain millions of rejected pairs.
     pending: dict[str, list[str]] = {}
-    aliases = aliases or {}
-    for question in db[COLLECTION].find(
-        {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
-    ):
-        members = {aliases.get(member, member) for member in question["members"]}
-        if len(members) == 2:
-            pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
+    if any(row.get("status") == "separate" for row in report):
+        aliases = aliases or {}
+        for question in db[COLLECTION].find(
+            {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
+        ):
+            members = {aliases.get(member, member) for member in question["members"]}
+            if len(members) == 2:
+                pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
     for row in report:
         if row.get("status") != "separate":
             continue
@@ -578,7 +593,8 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     Unless no run ever asked it. A split writes answers about pairs the
     rules never held, and keeping one of those after withdrawal would leave
     a row in the queue with no reason and nothing to decide on. A held
-    question always says why it was held; that is what tells the two apart.
+    question always says why it was held, or for a version which bucket
+    linked the pair; that is what tells the two apart.
 
     Raises:
         ReviewError: The answer has already folded two records into one.
@@ -589,7 +605,8 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     if asked is not None and asked.get("applied_at"):
         # They are one node by now: dropping the answer strands both.
         raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
-    if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
+    evidence = (asked or {}).get("evidence") or {}
+    if asked is not None and not (evidence.get("held_because") or evidence.get("bucket")):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(
         {"_id": key},
@@ -801,6 +818,66 @@ def _github_answers(db: Database, aliases: dict[str, str]) -> dict[frozenset[str
             found.pop(key, None)
             found[key] = verdict, row
     return found
+
+
+def version_pair_filter(scope: tuple[set[str], set[str]]) -> dict:
+    return {"$and": [{"members": {"$in": sorted(ids)}} for ids in scope]}
+
+
+def version_answers(db: Database, aliases: dict[str, str] | None = None,
+                    scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
+    """Resolve review rows to the active pair without rewriting their original IDs."""
+    aliases = aliases or {}
+    query = {"kind": PUB_VERSION, "verdict": {"$exists": True}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    found: dict[frozenset[str], dict] = {}
+    ranks: dict[frozenset[str], tuple] = {}
+    for row in db[COLLECTION].find(query):
+        original = frozenset(row["members"])
+        members = frozenset(aliases.get(member, member) for member in original)
+        if len(members) != 2:
+            continue
+        decided_at = row.get("decided_at")
+        if decided_at is None:
+            decided_at = datetime.min.replace(tzinfo=UTC)
+        elif decided_at.tzinfo is None:
+            decided_at = decided_at.replace(tzinfo=UTC)
+        rank = (decided_at, original == members, row["_id"])
+        if members not in ranks or rank > ranks[members]:
+            ranks[members] = rank
+            found[members] = row
+    return found
+
+
+def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> dict[frozenset[str], str]:
+    return {pair: row["verdict"] for pair, row in version_answers(db, aliases).items()}
+
+
+def retire_versions(db: Database, asked: list[dict], *,
+                    scope: tuple[set[str], set[str]] | None = None) -> int:
+    """Drop open version questions the rules no longer ask.
+
+    Unlike a person pair, a version question is about an edge: once the
+    rules stop linking the pair (the evidence moved, or the LLM routed it out
+    of the mergeable buckets) there is nothing left for an answer to
+    confirm. Answered and skipped questions stay, so a decision is never lost.
+
+    Args:
+        asked: The rows this run held, as given to `record_held`.
+
+    Returns:
+        How many questions were dropped.
+    """
+    keep = [question_id(PUB_VERSION, members_of(row)) for row in asked]
+    query = {"kind": PUB_VERSION, "_id": {"$nin": keep},
+             "verdict": {"$exists": False}, "skipped_at": {"$exists": False}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    result = db[COLLECTION].delete_many(query)
+    if result.deleted_count:
+        logger.info("review: %d version question(s) no longer asked", result.deleted_count)
+    return result.deleted_count
 
 
 def decisions(db: Database, aliases: dict[str, str] | None = None,

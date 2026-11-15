@@ -20,13 +20,15 @@ class VersionAuthor(BaseModel):
 
 
 class PublicationVersion(BaseModel):
-    """One place a work appeared: a preprint, dataset deposit, journal version or duplicate record.
+    """One record folded into a Publication: a duplicate of its DOI, or a record with its title and no DOI.
 
     The dedup stage folds such records into a single Publication and keeps
     one entry here per record, including the surviving one, so that no
     venue, DOI, abstract or author list is lost by merging. This is a
     ledger, not the graph: nodes and AUTHORED edges are always drawn from
-    the merged state of the surviving publication.
+    the merged state of the surviving publication. A version under a DOI of
+    its own (a preprint, a translation) is not folded at all: it stays a
+    Publication, related by IS_VERSION (pauk/graph/version_link.py).
     """
 
     openalex_id: str
@@ -55,6 +57,10 @@ class Publication(BaseModel):
     # two persons' fields as evidence that they are one researcher.
     fields: list[str] = Field(default_factory=list)
     journal: str | None = None
+    # OpenAlex source type of the primary venue: "journal", "conference",
+    # "repository", ... The version rules tell a conference paper and its
+    # journal extension from two talks at two conferences by it.
+    venue_type: str | None = None
     doi: str | None = None
     publication_date: date | None = None
     year: int | None = None
