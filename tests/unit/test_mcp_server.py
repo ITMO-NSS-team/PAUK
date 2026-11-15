@@ -1,0 +1,304 @@
+"""Real SDK client and HTTP-boundary checks using synthetic graph records only."""
+
+import importlib.util
+import json
+import unittest
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
+
+from pauk.mcp.service import Service
+from tests.mcp_support import TEST_TOKEN, SyntheticReader, live_server
+
+HAS_MCP = importlib.util.find_spec("mcp") is not None
+if HAS_MCP:
+    import httpx
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+    from starlette.applications import Starlette
+
+    from pauk.mcp.contracts import MCPError
+    from pauk.mcp.server import Boundary, create_app
+
+
+class _CloseSpyReader(SyntheticReader):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+        self.close_calls = 0
+
+    async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
+        """Fail if application resources were closed by an individual MCP session."""
+        if self.closed:
+            raise RuntimeError("Shared reader already closed")
+        return await super().query(query, parameters)
+
+    async def close(self) -> None:
+        """Record application resource teardown."""
+        self.closed = True
+        self.close_calls += 1
+
+
+@unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for lifecycle tests")
+class LifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_shared_reader_closes_once_after_http_server_exit(self) -> None:
+        reader = _CloseSpyReader()
+
+        @asynccontextmanager
+        async def lifespan(_: Starlette) -> AsyncIterator[None]:
+            try:
+                yield
+            finally:
+                await reader.close()
+
+        app = create_app(Service(reader, b"synthetic-key"), TEST_TOKEN, lifespan=lifespan)
+        with live_server(app) as url:
+            async with (
+                httpx.AsyncClient(headers={"Authorization": "Bearer " + TEST_TOKEN}, timeout=5) as client,
+                streamable_http_client(url, http_client=client) as (rx, tx, _),
+                ClientSession(rx, tx) as session,
+            ):
+                await session.initialize()
+                self.assertFalse(reader.closed)
+                await session.list_tools()
+                self.assertFalse(reader.closed)
+                for name, arguments in (
+                    ("search_publications", {"doi": "10.1234/pauk-test"}),
+                    ("get_repository", {"repository_id": "r-code"}),
+                ):
+                    result = await session.call_tool(name, arguments)
+                    self.assertFalse(result.isError)
+                    self.assertFalse(reader.closed)
+            self.assertEqual(reader.close_calls, 0)
+        self.assertTrue(reader.closed)
+        self.assertEqual(reader.close_calls, 1)
+
+
+@unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for protocol tests")
+class ProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.reader = SyntheticReader()
+        self.manager = live_server(create_app(Service(self.reader, b"synthetic-key"), TEST_TOKEN, tool_timeout=0.1))
+        self.url = self.manager.__enter__()
+        self.http = httpx.AsyncClient(headers={"Authorization": "Bearer " + TEST_TOKEN}, timeout=5)
+
+    async def asyncTearDown(self) -> None:
+        await self.http.aclose()
+        self.manager.__exit__(None, None, None)
+
+    def _assert_tools_contract(self, tools: list[Any]) -> None:
+        expected = {
+            "search_publications": {"doi", "title_contains", "page_size", "cursor"},
+            "get_publication_repositories": {"publication_id", "page_size", "cursor"},
+            "get_repository": {"repository_id"},
+            "explain_link": {"publication_id", "repository_id", "page_size", "cursor"},
+        }
+        self.assertEqual({tool.name for tool in tools}, set(expected))
+        for tool in tools:
+            self.assertEqual(set(tool.inputSchema["properties"]), expected[tool.name])
+            self.assertEqual(tool.outputSchema["properties"]["source_system"]["const"], "PAUK")
+            self.assertEqual(tool.outputSchema["properties"]["retrieval_mode"]["const"], "cached_prepared_graph")
+
+    def _assert_pauk_source(self, result: Any) -> None:
+        self.assertFalse(result.isError)
+        self.assertEqual(result.structuredContent["source_system"], "PAUK")
+        self.assertEqual(result.structuredContent["retrieval_mode"], "cached_prepared_graph")
+
+    async def test_real_client_four_flat_tools_and_structured_results(self) -> None:
+        async with (
+            streamable_http_client(self.url, http_client=self.http) as (rx, tx, _),
+            ClientSession(rx, tx) as session,
+        ):
+            await session.initialize()
+            tools = (await session.list_tools()).tools
+            self._assert_tools_contract(tools)
+            search = next(t for t in tools if t.name == "search_publications")
+            self.assertEqual(search.inputSchema["properties"]["page_size"]["maximum"], 25)
+            result = await session.call_tool("search_publications", {"doi": "https://doi.org/10.1234/PAUK-TEST"})
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["items"][0]["publication_id"], "p-paper")
+            result = await session.call_tool("get_publication_repositories", {"publication_id": "old-paper"})
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["publication_id"], "p-paper")
+            self.assertEqual([r["repository_id"] for r in result.structuredContent["items"]], ["r-code"])
+            result = await session.call_tool("get_repository", {"repository_id": "r-code"})
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["description"]["status"], "withheld")
+            self.assertIn("not an access check", result.structuredContent["metadata_note"])
+            self.assertIn("This call did not", result.structuredContent["verification_note"])
+            result = await session.call_tool(
+                "explain_link", {"publication_id": "p-paper", "repository_id": "r-dependency"}
+            )
+            self._assert_pauk_source(result)
+            self.assertIn("not independent sources", result.structuredContent["evidence_note"])
+            self.assertEqual(result.structuredContent["evidence"][0]["unit"], "extraction_occurrence")
+            self.assertFalse(result.structuredContent["implements"])
+            self.assertEqual(result.structuredContent["evidence"][0]["verdict"], "rejected")
+            self.assertIsNone(result.structuredContent["evidence"][0]["confidence"])
+
+    async def test_safe_errors_sdk_validation_unknown_alias_backend_and_timeout(self) -> None:
+        async with (
+            streamable_http_client(self.url, http_client=self.http) as (rx, tx, _),
+            ClientSession(rx, tx) as session,
+        ):
+            await session.initialize()
+            cases = [
+                ("get_repository", {"repository_id": "PRIVATE_CANARY" * 100}, "INPUT"),
+                ("get_repository", {"repository_id": "r-code", "secret": "PRIVATE_CANARY"}, "INPUT"),
+                ("get_repository", {"repository_id": "missing"}, "NOT_FOUND"),
+                ("get_repository", {"repository_id": "ambiguous-repo"}, "AMBIGUOUS_ID"),
+                ("search_publications", {"doi": "x", "cursor": "PRIVATE_CANARY"}, "CURSOR"),
+            ]
+            for name, arguments, code in cases:
+                result = await session.call_tool(name, arguments)
+                self.assertTrue(result.isError)
+                self.assertEqual(result.content[0].text, code)
+            for error, code in (
+                (RuntimeError("SECRET_PRIVATE_BACKEND"), "INTERNAL"),
+                (MCPError("BACKEND"), "BACKEND"),
+            ):
+                self.reader.error = error
+                result = await session.call_tool("get_repository", {"repository_id": "r-code"})
+                self.assertEqual(result.content[0].text, code)
+            self.reader.error = None
+            self.reader.delay = 2
+            result = await session.call_tool("get_repository", {"repository_id": "r-code"})
+            self.assertEqual(result.content[0].text, "TIMEOUT")
+            self.assertTrue(self.reader.cancelled)
+
+    async def test_auth_before_body_or_db_and_dns_rebinding(self) -> None:
+        for authorization in (None, "Bearer wrong"):
+            async with httpx.AsyncClient() as client:
+                headers = {} if authorization is None else {"Authorization": authorization}
+                response = await client.post(self.url, content=b"x" * 10000, headers=headers)
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(self.reader.calls, 0)
+        response = await self.http.post(self.url, content=b"x" * 8193)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.reader.calls, 0)
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1"},
+            },
+        }
+        response = await self.http.post(self.url, json=request, headers={**headers, "Host": "evil.example"})
+        self.assertEqual(response.status_code, 421)
+        response = await self.http.post(self.url, json=request, headers={**headers, "Origin": "https://evil.example"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.reader.calls, 0)
+
+    async def test_sdk_envelope_validation_never_echoes_input_or_logs(self) -> None:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-11-25",
+        }
+        messages = [
+            {"method": {"secret": "PRIVATE_CANARY"}},
+            {"method": "ping", "id": {"secret": "PRIVATE_CANARY"}},
+            {"method": "ping", "id": True},
+            {"method": "PRIVATE_CANARY"},
+            {"method": "tools/call", "params": {"name": "get_repository", "arguments": "PRIVATE_CANARY"}},
+            {"method": "tools/call", "params": {"name": ["PRIVATE_CANARY"], "arguments": {}}},
+            {"method": "tools/call", "params": {"name": "PRIVATE_CANARY", "arguments": {}}},
+            {
+                "method": "tools/call",
+                "params": {"name": "get_repository", "arguments": {"repository_id": ["PRIVATE_CANARY"]}},
+            },
+        ]
+        notifications = [
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": "PRIVATE_CANARY"},
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": {"requestId": {"secret": "PRIVATE_CANARY"}},
+            },
+            {"jsonrpc": "2.0", "method": {"secret": "PRIVATE_CANARY"}},
+        ]
+        with self.assertLogs(level="INFO") as captured:
+            for message in [{"jsonrpc": "2.0", "id": 7, **m} for m in messages] + notifications:
+                response = await self.http.post(self.url, headers=headers, json=message)
+                self.assertNotIn("PRIVATE_CANARY", response.text)
+                self.assertLessEqual(len(response.content), 65536)
+        self.assertNotIn("PRIVATE_CANARY", "\n".join(captured.output))
+        self.assertEqual(self.reader.calls, 0)
+
+    async def test_wire_response_cap_unicode_and_framing(self) -> None:
+        class LargeReader(SyntheticReader):
+            async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
+                """Fill the largest allowed publication page."""
+                return [{"id": f"p-{i}", "title": "\U0001f600" * 1001, "doi": None, "year": 2026} for i in range(25)]
+
+        manager = live_server(create_app(Service(LargeReader(), b"key"), TEST_TOKEN))
+        with manager as url:
+            request = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_publications",
+                    "arguments": {"title_contains": "abc", "page_size": 25},
+                },
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": "2025-11-25",
+            }
+            response = await self.http.post(url, json=request, headers=headers)
+            self.assertLessEqual(len(response.content), 65536)
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.json(), {"error": "INTERNAL"})
+        request["params"]["arguments"]["page_size"] = 1
+        response = await self.http.post(self.url, json=request, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(response.content), 65536)
+        self.assertIn("structuredContent", response.json()["result"])
+
+
+@unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for boundary tests")
+class BoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unauthorized_does_not_read_body(self) -> None:
+        calls = 0
+
+        async def app(*args: Any) -> None:
+            nonlocal calls
+            calls += 1
+
+        async def receive() -> dict[str, Any]:
+            self.fail("Unauthorized request body was read")
+
+        sent: list[dict[str, Any]] = []
+
+        async def send(message: dict[str, Any]) -> None:
+            sent.append(message)
+
+        await Boundary(app, TEST_TOKEN)({"type": "http", "headers": [], "method": "POST"}, receive, send)
+        self.assertEqual(calls, 0)
+        self.assertEqual(sent[0]["status"], 401)
+
+    async def test_escaping_and_exact_response_boundary(self) -> None:
+        for size in (65536, 65537):
+            payload = b'"' + b"x" * (size - 2) + b'"'
+
+            async def app(scope: Any, receive: Any, send: Any, payload: bytes = payload) -> None:
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": payload[:32000], "more_body": True})
+                await send({"type": "http.response.body", "body": payload[32000:]})
+
+            transport = httpx.ASGITransport(app=Boundary(app, TEST_TOKEN))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/mcp",
+                    headers={"Authorization": "Bearer " + TEST_TOKEN},
+                    json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+                )
+                self.assertLessEqual(len(response.content), 65536)
+                self.assertEqual(response.status_code, 200 if size == 65536 else 500)
+                json.loads(response.content)

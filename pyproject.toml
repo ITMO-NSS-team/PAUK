@@ -25,6 +25,12 @@ dependencies = [
 
 [project.scripts]
 pauk = "pauk.cli:main"
+pauk-mcp = "pauk.mcp.server:main"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp==1.28.0",
+]
 
 [build-system]
 requires = ["hatchling"]
