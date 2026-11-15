@@ -62,6 +62,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 from itertools import combinations
 
+from pauk.aliases import flatten_merges
 from pauk.models import (
     ClassificationStatus,
     CodeLink,
@@ -74,6 +75,8 @@ from pauk.models import (
     VersionAuthor,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.github_matches import apply_matches, retract_matches
+from pauk.pipeline.membership import apply_membership, coalesce_authorships
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
     _abstract,
@@ -278,6 +281,9 @@ def plan_person_merges(
         status "merged" plus their rule(s); held-back pairs and groups carry
         status "held" plus the reasons.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _orcid_relation
+
+    trusted_orcid = {identifier: _normalize_orcid(value) or None for identifier, value in trusted_orcid.items()}
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
@@ -354,10 +360,16 @@ def plan_person_merges(
     malformed_pairs: set[frozenset[str]] = set()
 
     def hold_multi_person(first: Person, second: Person) -> bool:
-        from pauk.graph.person_resolution import is_multi_person_name
+        from pauk.graph.person_resolution import _normalize_orcid, is_multi_person_name
 
         if not (is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")):
             return False
+        first_identity = _normalize_orcid(trusted_orcid.get(first.id) or first.orcid)
+        second_identity = _normalize_orcid(trusted_orcid.get(second.id) or second.orcid)
+        if _orcid_relation(first_identity, second_identity) == "conflict":
+            return True
+        if staff_ids.get(first.id) and staff_ids.get(second.id) and staff_ids[first.id] != staff_ids[second.id]:
+            return True
         members = frozenset((first.id, second.id))
         if members not in malformed_pairs:
             malformed_pairs.add(members)
@@ -391,21 +403,27 @@ def plan_person_merges(
             continue
         first_orcid = trusted_orcid.get(first.id)
         second_orcid = trusted_orcid.get(second.id)
+        relation = _orcid_relation(first_orcid or first.orcid, second_orcid or second.orcid)
+        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
+        if first_staff and second_staff and first_staff != second_staff:
+            continue
+        if relation == "unverified":
+            report.append({
+                "status": "held", "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "route": "invalid_orcid_reference",
+                "reason": "unverified ORCID reference cannot establish identity or conflict",
+            })
+            continue
         if first_orcid and second_orcid and first_orcid == second_orcid:
             plan_pair(first, second, "orcid")
             continue
         # Merging asks for the trusted ORCID, refusing takes any one on
         # record: an ORCID the crossref backfill supplied is weak evidence
         # that two persons are one, and full evidence that they are not.
-        if (first_orcid or first.orcid) and (second_orcid or second.orcid) \
-                and (first_orcid or first.orcid) != (second_orcid or second.orcid):
+        if relation == "conflict":
             # Different ORCIDs are explicit evidence of two distinct people:
             # never merge and not worth reporting.
-            continue
-        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
-        # Two official staff records are two employees, however alike the
-        # romanized names look. Like a differing ORCID, this needs no report.
-        if first_staff and second_staff and first_staff != second_staff:
             continue
         if _profiles_conflict(first, second):
             continue
@@ -666,6 +684,8 @@ def _partition_conflicted_component(
     Such a choice would make an arbitrary edge decide an identity and recreate
     the false-merge risk this safety check exists to prevent.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     member_set = set(members)
     adjacency: dict[str, set[str]] = {member: set() for member in members}
     for first, second in pairs:
@@ -692,7 +712,8 @@ def _partition_conflicted_component(
 
     def value_for(member: str, field: str) -> str | None:
         if field == "ORCID":
-            return trusted_orcid.get(member) or None
+            value = _normalize_orcid(trusted_orcid.get(member))
+            return value if value and not _unverified_orcid_reference(value) else None
         if field == "staff record":
             return staff_ids.get(member) or None
         value = getattr(by_id[member], field)
@@ -769,10 +790,15 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     # An empty string is an absent identity, not a second one: counting it
     # as a value splits a group on nothing, and the partitioner reads the
     # same field back as absent, so the two disagree about the same record.
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
+    orcids = {
+        orcid for member in members
+        if (orcid := _normalize_orcid(trusted_orcid.get(member))) and not _unverified_orcid_reference(orcid)
+    }
     if len(orcids) > 1:
         return "ORCID", orcids
     staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
@@ -818,7 +844,7 @@ def folded_ids(people: Iterable[Person]) -> dict[str, str]:
     an id nothing carries any more. Every reader of those answers needs this,
     which is why it lives here rather than on one stage.
     """
-    return {folded: person.id for person in people for folded in person.merged_ids}
+    return dict(flatten_merges([(folded, person.id) for person in people for folded in person.merged_ids], label="Person"))
 
 
 def staff_identities(catalog: RussianNamesCatalog | None,
@@ -1179,13 +1205,14 @@ class DedupStage(EnrichmentStage):
                 canonical.versions,
                 [_version_of(canonical, version_authors.get(canonical.id, ()))])
             for duplicate in duplicates:
-                logger.info("dedup: merging publication %s (%s) into %s (%s)",
+                logger.debug("dedup: merging publication %s (%s) into %s (%s)",
                             duplicate.id, duplicate.journal, canonical.id, canonical.journal)
                 _merge_publication(canonical, duplicate,
                                    version_authors.get(duplicate.id, ()))
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d publication(s)", len(id_map))
 
         if not id_map:
             # Ledger rebuilds still have to reach disk when nothing merged.
@@ -1211,6 +1238,10 @@ class DedupStage(EnrichmentStage):
                 if authorship not in authored:
                     authored.append(authorship)
             person.authored = authored
+            for source in person.membership_work_sources:
+                source.publication_id = id_map.get(source.publication_id, source.publication_id)
+            coalesce_authorships(person)
+            apply_membership(person)
         self.prepared.write_models("persons", people)
 
         repositories = list(self.prepared.read_models("repositories", Repository))
@@ -1294,12 +1325,13 @@ class DedupStage(EnrichmentStage):
             )
             canonical, duplicates = ranked[0], ranked[1:]
             for duplicate in duplicates:
-                logger.info("dedup: merging repository %s (%s) into %s (%s)",
+                logger.debug("dedup: merging repository %s (%s) into %s (%s)",
                             duplicate.id, duplicate.url, canonical.id, canonical.url)
                 _merge_repository(canonical, duplicate)
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d repository(ies)", len(id_map))
 
         if not id_map:
             return {}
@@ -1307,9 +1339,19 @@ class DedupStage(EnrichmentStage):
             "repositories", [row for row in repositories if row.id not in id_map])
         people = list(self.prepared.read_models("persons", Person))
         for person in people:
-            for contribution in person.contributed_to:
+            tracked = person.github_match is not None
+            # Rebuild provenance after renaming: a match may now overlap an independent contribution.
+            matches = retract_matches(person)
+            contributions = list(person.contributed_to)
+            if person.github_match:
+                contributions.extend(person.github_match.cleared_contributions)
+            for match in matches:
+                contributions.extend(match.contributed_to)
+            for contribution in contributions:
                 contribution.repository_id = id_map.get(
                     contribution.repository_id, contribution.repository_id)
+            if tracked:
+                apply_matches(person, matches)
         self.prepared.write_models("persons", people)
         return id_map
 
@@ -1327,7 +1369,7 @@ class DedupStage(EnrichmentStage):
         if self.config.person_resolution_enabled:
             from pauk.graph.person_resolution import MODEL_FEATURES, ResolverPolicy
             from pauk.graph.person_resolution_model import load_logistic_model
-            from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+            from pauk.pipeline.person_resolution import ResolutionModels
             from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 
             groups, report = plan_person_merges_resolved(
@@ -1337,7 +1379,7 @@ class DedupStage(EnrichmentStage):
                 fields_of=fields_of,
                 staff_ids=staff_ids,
                 decisions=answers,
-                models=OpenRouterResolutionModels(self.config, self.prepared.db, self.prepared.group),
+                models=ResolutionModels(self.config, self.prepared.db, self.prepared.group),
                 policy=ResolverPolicy(
                     separate_below=self.config.person_resolution_separate_below,
                     merge_from=self.config.person_resolution_merge_from,
@@ -1364,14 +1406,16 @@ class DedupStage(EnrichmentStage):
         removed: set[str] = set()
         for canonical, duplicates in groups:
             for duplicate in duplicates:
-                logger.info("dedup: merging %s (%s) into %s (%s)",
+                logger.debug("dedup: merging %s (%s) into %s (%s)",
                             duplicate.id, duplicate.name_raw, canonical.id, canonical.name_raw)
                 _merge_person(canonical, duplicate)
                 if duplicate.name_raw:
                     canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
+            apply_membership(canonical)
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d person(s)", len(removed))
         if removed:
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
@@ -1387,7 +1431,7 @@ class DedupStage(EnrichmentStage):
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
-        review.record_disputed(self.prepared.db, report)
+        review.record_disputed(self.prepared.db, report, aliases=folded_ids(people))
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:
@@ -1424,13 +1468,15 @@ class DedupStage(EnrichmentStage):
         OpenAlex author record was fetched it overrides the prepared value,
         including with None when OpenAlex knows no ORCID.
         """
+        from pauk.graph.person_resolution import _normalize_orcid
+
         raw_orcids: dict[str, str | None] = {}
         for envelope in self.raw.read("openalex_authors"):
             payload = envelope.get("payload") or {}
             author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
             if author_id:
-                raw_orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
-        return {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+                raw_orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
+        return {person.id: _normalize_orcid(raw_orcids.get(person.id, person.orcid)) or None for person in people}
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
         """Person ids the selection allows to participate in merging."""

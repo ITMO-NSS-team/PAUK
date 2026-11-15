@@ -1,8 +1,5 @@
 name: Deploy map to GitHub Pages
 
-# Run by scripts/publish_pages.sh after it uploads the public site data to the
-# `pages-data` release. The data is never committed: it is regenerated from the
-# graph and would grow every clone by hundreds of MB per update.
 on:
   workflow_dispatch:
 

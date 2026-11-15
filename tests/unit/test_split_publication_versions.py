@@ -167,8 +167,9 @@ class ApplyTest(unittest.TestCase):
         cache.save("W2", pdfs["https://example.org/W1.pdf"])
         with patch.object(split, "settings", config), patch(
             "pauk.pipeline.stages.code_links.HttpClient"
-        ) as http, patch("pauk.pipeline.stages.link_relevance.OpenRouterClient") as llm:
+        ) as http, patch("pauk.pipeline.stages.link_relevance.llm_client") as llm:
             http.return_value.get_bytes.side_effect = lambda url, **kwargs: pdfs[url]
+            llm.return_value.model = config.llm_model
             llm.return_value.chat_json.return_value = {"is_authors_artifact": True, "confidence": 0.99}
             llm.return_value.last_response = None
             llm.return_value.last_usage = None

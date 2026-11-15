@@ -55,11 +55,29 @@ the relation-like models.
   platforms (Zenodo, SSRN) often omit a coauthor's affiliation on a given
   work; `PersonsStage` then picks the affiliation for that year from the
   author's own OpenAlex/ORCID records instead of what the work says.
-- **`Person`**: id is the bare OpenAlex author ID (one person, one node; there
-  is no `itmo_*`/`external_*` split).
-  - `is_itmo` is a boolean, not a label. At least one ITMO affiliation
-    anywhere makes the person ITMO for good: the property is "sticky" (see
-    `graph/client.py::upsert_person_nodes_batch`).
+- **`Person`**: id is normally the bare OpenAlex author ID. When the source
+  has no author ID, normalization uses `orcid_<orcid>` or `name_<hash>` until
+  dedup resolves the identity. ITMO and external authors share the `Person`
+  label; there is no `itmo_*`/`external_*` split.
+  - `is_itmo` remains the boolean used by existing consumers. Membership
+    status and source-specific evidence explain how it was calculated.
+    An explicit institution ROR for this author on a collected work or an
+    ORCID employment can support it; OpenAlex author-profile affiliation
+    alone cannot. Legacy records with incomplete evidence remain unknown.
+  - `membership_evidence` records the original source owner and work or ORCID
+    record. `membership_status` is `supported`, `unsupported` or `unknown`;
+    only a complete source assessment can produce an unsupported result.
+    Authorship institution observations retain their fetch time, so replaying
+    an older source group cannot restore a withdrawn claim.
+    `membership_orcid_sources` retains the source owner even after a successful
+    ORCID refresh returns no qualifying employment.
+    `membership_work_sources` retains each original work version's institution
+    evidence when publication dedup leaves a single display authorship.
+  - `membership_owner_sources` is the inventory of expected original works
+    and ORCID records for each original person. Unknown inventories differ
+    from known empty lists. A negative result requires every owner and every
+    expected source to be accounted for; a completed assessment can therefore
+    clear an old positive flag, including on a merged person.
   - Russian name parts (`first_name_ru`, `second_name_ru`, `surname_ru`) and
     `name_ru`/`name_en` are filled by the `author_names` stage.
   - `email` is the one address shown on the card; `emails` are all known
@@ -68,6 +86,13 @@ the relation-like models.
     display).
   - `github` is filled from ORCID links and by the `github_match` stage;
     `google_scholar` comes from ORCID links.
+  - `github_match` records applied account matches and their additions over
+    independent sources. `GitHubMatchResult` holds one account's login, address
+    and contributions; `GitHubMatchState` also records which displayed values
+    and contributions were added by applying those results. This metadata stays
+    in Mongo and is not part of the graph schema.
+    `cleared_fields` and `cleared_contributions` retain explicit withdrawals for
+    publishing; `withdrawn_logins` carries earlier owners into later handoffs.
 - The block under the `# Stubs` comment (`scopus_id`, `researcher_id`,
   `h_index`, `wikipedia` and others) holds fields no pipeline stage fills.
   The exceptions are `other_names`, `homepage`, `linkedin`, `gitlab_username`
@@ -116,8 +141,9 @@ the relation-like models.
   identity in commits, because profile pages usually hide the address) and
   `repos` (repositories where the account appeared). `profile_fetched` marks
   whether `GET /users/{login}` has answered, as opposed to a stub built from a
-  nested owner object. Only `company` goes into the graph; the rest is
-  matcher evidence and real people's addresses (see
+  nested owner object. Profile fields `login`, `name`, `html_url`,
+  `description`, `location`, `company` and `type` go into the graph; matcher
+  evidence `emails`, `commit_names` and `repos` stays in Mongo (see
   [neo4j-graph.md](neo4j-graph.md)).
 - **`LinkCandidate`**: a code link found in a paper but not yet matched to a
   known `Repository` (`id` is the URL itself).

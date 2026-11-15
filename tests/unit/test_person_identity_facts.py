@@ -16,7 +16,7 @@ from pauk.graph.person_resolution import (
 )
 from pauk.models import Person
 from pauk.pipeline.person_name_facts import name_comparison_facts
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.settings import Settings
 
@@ -78,7 +78,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         self.assertEqual(logistic_probability(pair), logistic_probability(enriched))
 
     def test_identifier_relations_are_normalized_in_shared_facts(self):
-        pair = PairEvidence("A1", "Name", "A2", "Name", orcid_a="https://orcid.org/0000-0001", orcid_b="0000-0001")
+        pair = PairEvidence("A1", "Name", "A2", "Name", orcid_a="https://orcid.org/0000-0002-1825-0097", orcid_b="0000-0002-1825-0097")
         self.assertEqual(shared_identity_facts(pair)["orcid_relation"], "same")
 
     def test_pipeline_sends_identical_facts_to_both_views(self):
@@ -125,7 +125,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         self.assertEqual(context.as_judge_payload(), changed.as_judge_payload())
         for field in ("first_stage", "logreg_probability", "impact_not_identity_evidence"):
             self.assertNotIn(field, context.as_judge_payload())
-        models = OpenRouterResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
+        models = ResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
         with patch.object(models, "_run", return_value={}) as run:
             models.second_many([context, changed])
         left, right = run.call_args.args[0]
@@ -136,7 +136,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         base = SecondStageContext(
             0, ResearcherContext("A1", "Name"), ResearcherContext("A2", "Name"), "both_missing", "both_missing"
         )
-        models = OpenRouterResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
+        models = ResolutionModels(Settings(), mongomock.MongoClient()["test"], "group")
         with patch.object(models, "_run", return_value={}) as run:
             models.second_many([base, replace(base, identity_facts={"schema_version": 1})])
         left, right = run.call_args.args[0]

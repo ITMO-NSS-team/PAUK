@@ -58,7 +58,7 @@ class CollaborationSafetyTest(unittest.TestCase):
     def test_identifier_match_and_independent_small_team_support_survive(self):
         base = evidence(shared_coauthors=200, small_team_shared_coauthors=0, small_team_shared_publications=0)
         for pair in (
-            replace(base, orcid_a="0000-1", orcid_b="0000-1"),
+            replace(base, orcid_a="0000-0002-1825-0097", orcid_b="0000-0002-1825-0097"),
             replace(base, staff_id_a="staff", staff_id_b="staff"),
             replace(base, small_team_shared_coauthors=8),
         ):
@@ -71,7 +71,7 @@ class CollaborationSafetyTest(unittest.TestCase):
 
     def test_matching_identifier_and_conflicting_initials_require_review(self):
         for identifiers in (
-            {"orcid_a": "https://orcid.org/same", "orcid_b": "same"},
+            {"orcid_a": "https://orcid.org/0000-0002-1825-0097", "orcid_b": "0000-0002-1825-0097"},
             {"staff_id_a": "staff", "staff_id_b": "staff"},
         ):
             with self.subTest(identifiers=identifiers):
@@ -80,7 +80,7 @@ class CollaborationSafetyTest(unittest.TestCase):
                 self.assertEqual(result.route, "identity_name_conflict")
 
     def test_conflicting_identifiers_still_veto_conflicting_initials(self):
-        result = resolve_pair(evidence(initials_conflict=True, orcid_a="one", orcid_b="two"))
+        result = resolve_pair(evidence(initials_conflict=True, orcid_a="0000-0002-1825-0097", orcid_b="0000-0001-5109-3700"))
         self.assertEqual(result.decision, Decision.SEPARATE)
 
     def test_optional_counts_are_validated(self):
@@ -106,22 +106,22 @@ class CollaborationSafetyTest(unittest.TestCase):
             self.assertFalse(is_multi_person_name(name))
 
     def test_malformed_record_is_reviewed_even_with_same_orcid(self):
-        pair = replace(evidence(orcid_a="same", orcid_b="same"), name_a="Ivan Petrov and Anna Sidorova")
+        pair = replace(evidence(orcid_a="0000-0002-1825-0097", orcid_b="0000-0002-1825-0097"), name_a="Ivan Petrov and Anna Sidorova")
         resolution = resolve_pair(pair, model=ConstantModel(1))
         self.assertEqual(resolution.decision, Decision.REVIEW)
         self.assertEqual(resolution.route, "multiple_people_record")
 
     def test_malformed_pair_does_not_call_models_or_merge_in_either_planner(self):
         people = [
-            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_itmo=True, orcid="same"),
-            Person(id="b", name_raw="Anna Sidorova", is_itmo=True, orcid="same"),
+            Person(id="a", name_raw="Ivan Petrov and Anna Sidorova", is_itmo=True, orcid="0000-0002-1825-0097"),
+            Person(id="b", name_raw="Anna Sidorova", is_itmo=True, orcid="0000-0002-1825-0097"),
         ]
         models = FakeModels(ModelVerdict(True, 1), ModelVerdict(True, 1))
-        groups, report = plan_person_merges_resolved(people, {"a": "same", "b": "same"}, models=models)
+        groups, report = plan_person_merges_resolved(people, {"a": "0000-0002-1825-0097", "b": "0000-0002-1825-0097"}, models=models)
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["route"], "multiple_people_record")
         self.assertEqual((models.first_calls, models.second_calls), ([], []))
-        groups, report = plan_person_merges(people, {"a": "same", "b": "same"})
+        groups, report = plan_person_merges(people, {"a": "0000-0002-1825-0097", "b": "0000-0002-1825-0097"})
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["route"], "multiple_people_record")
 

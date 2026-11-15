@@ -83,7 +83,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertAlmostEqual(logistic_probability(evidence()), 0.9819791912082376, places=12)
 
     def test_conflicting_identifier_is_a_hard_veto(self):
-        result = resolve_pair(evidence(orcid_a="0000-0001", orcid_b="0000-0002"))
+        result = resolve_pair(evidence(orcid_a="0000-0002-1825-0097", orcid_b="0000-0001-5109-3700"))
 
         self.assertEqual(result.decision, Decision.SEPARATE)
         self.assertEqual(result.route, "hard_veto")
@@ -111,8 +111,8 @@ class PersonResolutionTest(unittest.TestCase):
                 shared_fields=0,
                 works_a=0,
                 works_b=0,
-                orcid_a="0000-0001",
-                orcid_b="0000-0001",
+                orcid_a="0000-0002-1825-0097",
+                orcid_b="0000-0002-1825-0097",
             )
         )
 
@@ -124,8 +124,8 @@ class PersonResolutionTest(unittest.TestCase):
             evidence(
                 name_a="A. Petrov",
                 name_b="Alexander Petrov",
-                orcid_a="https://orcid.org/0000-0001",
-                orcid_b="0000-0001",
+                orcid_a="https://orcid.org/0000-0002-1825-0097",
+                orcid_b="0000-0002-1825-0097",
             )
         )
 
@@ -295,8 +295,8 @@ class PersonResolutionTest(unittest.TestCase):
             42,
             evidence(
                 person_a="name_fallback",
-                orcid_a="https://orcid.org/0000-0001",
-                orcid_b="0000-0001",
+                orcid_a="https://orcid.org/0000-0002-1825-0097",
+                orcid_b="0000-0002-1825-0097",
                 shared_publications=1,
             ),
         )

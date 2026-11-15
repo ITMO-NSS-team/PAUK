@@ -1,22 +1,9 @@
-"""Taking a fold apart: the person a merge removed, put back.
+"""Undo a Person fold using prepared rows or durable pre-merge snapshots.
 
-`merge_nodes` moves the duplicate's relationships onto the survivor and
-deletes it, and the graph keeps no record of which edge came from where.
-The prepared rows and durable pre-merge snapshots do. A person's edges are
-declared by that person's own row and by nothing else (no spec in the registry points *at* a Person),
-so the row says exactly what node the merge removed and exactly what the
-survivor took from it.
-
-That is what makes an undo possible, and why it is built out of the
-loader's own parts (`person_spec`, `extract_node`, `extract_relationships`).
-A fold that came apart differently from the way it was built would be
-worse than no undo at all.
-
-Two things it cannot give back. An edge somebody added by hand is written
-down nowhere, so an edge neither row claims stays on the survivor rather
-than being guessed at. And a manual field edit that the fold had covered
-comes back from `apply_overrides` at the end, the same way a publish
-restores it.
+The graph loses edge provenance during a fold, so reconstruction uses the
+loader's extractors and the source rows. Registry-defined Person edges are
+outgoing and can be recovered from those rows. Edges attributable to neither
+source stay on the survivor. Manual overrides are reapplied after reconstruction.
 """
 
 from __future__ import annotations
@@ -27,6 +14,7 @@ from collections.abc import Iterable
 from pymongo.database import Database
 
 from pauk.models import Person
+from pauk.pipeline.membership import apply_membership
 from pauk.pipeline.normalize import _merge_person
 from pauk.storage.person_merge_sources import snapshots
 from pauk.storage.prepared import PreparedStore
@@ -52,8 +40,11 @@ def _check_archived_aggregate(current: dict | None, sources: list[dict]) -> None
         _merge_person(expected, Person.model_validate(row))
         if row.get("name_raw") and row["name_raw"] not in expected.name_variants:
             expected.name_variants.append(row["name_raw"])
+    apply_membership(expected)
+    actual = Person.model_validate(current)
+    apply_membership(actual)
     before = expected.model_dump(mode="json")
-    after = Person.model_validate(current).model_dump(mode="json")
+    after = actual.model_dump(mode="json")
     for field, value in after.items():
         if field in {"processing", "merged_ids"}:
             continue
@@ -70,16 +61,21 @@ def _check_archived_aggregate(current: dict | None, sources: list[dict]) -> None
             raise NothingToRebuild(f"{current['id']} has later changes in {field}; source reconciliation is required")
 
 
+def _refresh_membership_row(row: dict) -> dict:
+    person = Person.model_validate(row)
+    apply_membership(person)
+    fields = person.model_dump(mode="json")
+    return {**row, **{key: fields[key] for key in (
+        "is_itmo", "membership_status", "membership_policy", "membership_evidence"
+    )}}
+
+
 #: Edges of one person, keyed the way `extract_relationships` keys them.
 Edges = dict[tuple[str, str, str, str], list[tuple[str, str, dict]]]
 
 
 def _prepared_persons(db: Database, ids: list[str]) -> dict[str, dict]:
-    """Prepared rows for these people, whichever group holds them.
-
-    `get_rows` looks across groups, so the store's own group is not used
-    here (and the panel has no group to name anyway).
-    """
+    """Read source rows across groups, falling back to pre-merge snapshots."""
     rows = {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
     for person_id, versions in snapshots(db, set(ids) - rows.keys()).items():
         rows[person_id] = versions[0]
@@ -95,15 +91,10 @@ def rebuildable(db: Database, ids: Iterable[str]) -> set[str]:
 
 
 def _folded_side(client, members: list[str]) -> tuple[str, str, dict]:
-    """Which of the two survived the merge, and which one it swallowed.
-
-    Read from the graph rather than taken from the caller: the merge chose
-    the survivor by `merge_rank` and wrote that choice nowhere except into
-    the survivor's `merged_ids`, which is also what proves this is the fold
-    being undone and not some other one.
+    """Verify the fold against the survivor's merged_ids, ignoring caller order.
 
     Returns:
-        (duplicate_id, canonical_id, the survivor's properties).
+        (duplicate_id, canonical_id, survivor properties).
     """
     if len(set(members)) != 2:
         raise MutationError("a fold is taken apart two records at a time")
@@ -124,24 +115,12 @@ def _folded_side(client, members: list[str]) -> tuple[str, str, dict]:
 
 def _survivor_patch(node: dict, canonical_props: dict | None, duplicate_props: dict,
                     duplicate_id: str, swallowed: list[str]) -> dict:
-    """What to set on the survivor to take the duplicate back out of it.
-
-    A fold fills the survivor's empty fields from the duplicate, unions its
-    lists and ORs `is_itmo`. The inverse is narrow on purpose: only fields
-    the duplicate's row explains are touched, and each goes back to what
-    the survivor's own row says, or to None, which removes it. Fields the
-    duplicate never had are left alone, so an edit somebody made to one of
-    them is not caught in the crossfire.
+    """Restore survivor fields affected by the duplicate, leaving other fields intact.
 
     Args:
-        canonical_props: What the survivor's own row says, or None when it
-            has no row left. None means the fields are not touched at all:
-            without a row there is no telling which of the survivor's
-            values were its own, and clearing them all would take away more
-            than the fold ever added.
-        swallowed: Ids the duplicate had swallowed before it was swallowed
-            itself. They came along with it and leave with it, which is why
-            `merged_ids` is handled apart from the other fields.
+        canonical_props: Survivor source properties. If absent, preserve field
+            values because their origin cannot be established.
+        swallowed: Aliases brought in by the duplicate, which leave with it.
     """
     patch = {}
     for name in duplicate_props if canonical_props is not None else ():
@@ -158,17 +137,9 @@ def _survivor_patch(node: dict, canonical_props: dict | None, duplicate_props: d
 
 
 def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) -> int:
-    """Recreate the removed person and the edges their own row declares.
+    """Recreate the person and source-declared edges, excluding manual tombstones.
 
-    Edges somebody unlinked by hand are skipped, exactly as a publish skips
-    them, otherwise the undo would recreate them and the next
-    `apply_overrides` would delete them again, writing a creation and a
-    deletion into the journal every time.
-
-    Returns:
-        How many edges the graph actually took. Fewer than the row declares
-        means the other end is not published, which is the same thing that
-        happens on a publish.
+    Returns the number of edges restored; missing targets are skipped as in publishing.
     """
     create_node(client, "Person", node_id,
                 {name: value for name, value in props.items() if name not in RESERVED_FIELDS})
@@ -184,15 +155,9 @@ def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) ->
 
 
 def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges: Edges) -> int:
-    """Remove from the survivor the edges only the duplicate's row claims.
+    """Remove edges declared only by the duplicate and return their count.
 
-    An edge both rows declare stays: the fold merged the two into one, and
-    the survivor had it in its own right. An edge neither row declares is
-    left alone too: it was put there by hand, and nothing says by whom or
-    onto which of the two.
-
-    Returns:
-        How many edges were removed.
+    Edges declared by both sources or neither source stay on the survivor.
     """
     removed = 0
     for key, rels in duplicate_edges.items():
@@ -207,18 +172,35 @@ def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges
 
 
 def _restore_corresponding(client, canonical_id: str, duplicate_edges: Edges, remaining_edges: Edges) -> None:
+    """Rebuild shared-edge evidence rather than keeping the folded union."""
     key = ("Person", "Publication", "AUTHORED", "id")
     affected = {target for _src, target, _props in duplicate_edges.get(key, ())}
     flags: dict[str, bool | None] = {}
+    sources: dict[str, list[dict]] = {}
     for _src, target, props in remaining_edges.get(key, ()):
         if target not in affected:
             continue
+        sources.setdefault(target, []).append(props)
         value = props.get("is_corresponding")
         if value is not None:
             flags[target] = bool(flags.get(target) or value)
         else:
             flags.setdefault(target, None)
-    rows = [(canonical_id, target, {"is_corresponding": value}) for target, value in flags.items()]
+    rows = []
+    for target, value in flags.items():
+        evidence = sources[target]
+        known = [props["institution_rors"] for props in evidence if props.get("institution_rors") is not None]
+        properties = {
+            "is_corresponding": value,
+            "institution_rors": sorted({ror for rors in known for ror in rors}) if known else None,
+        }
+        # The first surviving source has the same scalar precedence as a fold.
+        for name in ("position", "affiliation", "affiliation_source"):
+            properties[name] = evidence[0].get(name)
+        for name in ("institution_source_person_id", "institution_source_id"):
+            owners = {props.get(name) for props in evidence}
+            properties[name] = next(iter(owners)) if len(owners) == 1 else None
+        rows.append((canonical_id, target, properties))
     for chunk in chunked(rows):
         client.set_relationship_properties_batch("Person", "Publication", "AUTHORED", chunk)
 
@@ -296,7 +278,18 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         sources.append(row)
         covered.update(coverage)
 
-    canonical_row = rows.get(canonical_id)
+    complete = remaining <= covered
+    if used_archive and not complete:
+        raise NothingToRebuild("independent source rows for all remaining people are required to restore prepared data")
+    if used_archive:
+        _check_archived_aggregate(live.get(canonical_id), [*sources, duplicate_row])
+    source_rows = {row["id"]: row for row in [*sources, duplicate_row]}
+    sources = [_refresh_membership_row(row) for row in sources]
+    duplicate_row = _refresh_membership_row(duplicate_row)
+    duplicate_spec = person_spec(duplicate_row)
+    _labels, (node_id, duplicate_props) = extract_node(duplicate_row, duplicate_spec)
+    duplicate_edges = extract_relationships(duplicate_row, duplicate_spec)
+    canonical_row = next((row for row in sources if row["id"] == canonical_id), None)
     canonical_props: dict | None = None
     canonical_edges: Edges = {}
     if canonical_row is not None:
@@ -310,11 +303,6 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
 
     # Undoing one member must not retract facts supplied by another member
     # which remains folded. Missing source rows are not evidence of false.
-    complete = remaining <= covered
-    if used_archive and not complete:
-        raise NothingToRebuild("independent source rows for all remaining people are required to restore prepared data")
-    if used_archive:
-        _check_archived_aggregate(live.get(canonical_id), [*sources, duplicate_row])
     for row in sources:
         if row["id"] == canonical_id:
             continue
@@ -349,12 +337,16 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
                     survivor.name_variants.append(row["name_raw"])
         survivor.merged_ids = [identifier for identifier in (canonical.get("merged_ids") or [])
                                if identifier not in returning]
+        apply_membership(survivor)
         for row, restored in (
             (canonical_row, survivor.model_dump(mode="json", by_alias=True)),
             (duplicate_row, Person.model_validate(duplicate_row).model_dump(mode="json", by_alias=True)),
         ):
             current = db.persons.find_one({"id": row["id"]}) or {}
-            content = {key: value for key, value in row.items() if key not in {"_id", "_version", "groups"}}
+            content = {
+                key: value for key, value in source_rows[row["id"]].items()
+                if key not in {"_id", "_version", "groups"}
+            }
             archived_groups = next(
                 (version.get("groups") or [] for version in archives.get(row["id"], [])
                  if {key: value for key, value in version.items() if key not in {"_id", "_version", "groups"}} == content),
@@ -367,7 +359,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
                 raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
             prepared_updates.append((groups, content | restored))
     if patch:
-        # The plain upsert: `is_itmo` is sticky in the person one.
+        # Source reconstruction, unlike an ordinary partial import, may retract values.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0

@@ -1,3 +1,4 @@
+import time
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from pauk.jobs import locks, store
 from pauk.jobs.models import (
+    GITHUB_MATCH,
     GRAPH,
     Job,
     JobKind,
@@ -19,11 +21,35 @@ from pauk.jobs.models import (
 from pauk.settings import Settings
 
 
+class LlmJobStartTest(unittest.TestCase):
+    """A job from the panel fails at its start on a bad provider, as a command does."""
+
+    def test_a_provider_typo_fails_the_job_before_any_work(self):
+        from pauk.jobs import worker
+
+        config = Settings(person_resolution_provider="claud")
+        for step in (worker.STEPS[JobKind.DEDUP], worker.STEPS[JobKind.COLLECT]):
+            with self.subTest(step=step.__name__), self.assertRaisesRegex(ValueError, "person_resolution"):
+                step(config, None, None, None, lambda *_args, **_kwargs: None)
+
+
 class LockTest(unittest.TestCase):
     """Only one runner writes the graph at a time."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_a_long_hold_keeps_its_lease_without_a_worker(self):
+        with (
+            patch.object(locks, "RENEW_SECONDS", 0.01),
+            patch.object(locks, "renew") as renew,
+            locks.held(self.db, GRAPH, "terminal"),
+        ):
+            deadline = time.monotonic() + 10
+            while not renew.called and time.monotonic() < deadline:
+                time.sleep(0.01)
+
+        renew.assert_called_with(self.db, GRAPH, "terminal")
 
     def test_a_free_resource_is_taken(self):
         self.assertTrue(locks.acquire(self.db, GRAPH, "worker-1"))
@@ -348,6 +374,14 @@ class GraphIsHeldWhilePublishingTest(unittest.TestCase):
         from pauk.graph.load import load_jsonl_group
         with locks.held(self.db, GRAPH, "someone-else"), self.assertRaises(locks.Busy):
             load_jsonl_group(self.config, self.db, "2024")
+
+    def test_publishing_does_not_read_a_half_finished_account_transfer(self):
+        from pauk.graph import load
+        with (locks.held(self.db, GITHUB_MATCH, "matcher"), patch.object(load, "_load_locked") as work,
+              self.assertRaises(locks.Busy)):
+            load.load_jsonl_group(self.config, self.db, "2024")
+        work.assert_not_called()
+        self.assertIsNone(locks.holder(self.db, GRAPH))
 
     def test_a_dedup_is_refused_while_the_graph_is_held(self):
         from pauk.graph.dedup import run_graph_dedup

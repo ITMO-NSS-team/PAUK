@@ -75,8 +75,8 @@ BUCKETS = {
 RULES = {
     "orcid": "совпал ORCID",
     "staff_catalog": "одна запись в каталоге сотрудников",
-    "name_variant": "имя одного значится вариантом имени другого",
-    "same_name": "одинаковое имя, и есть чем подтвердить",
+    "name_variant": "имя одного есть среди вариантов имени другого",
+    "same_name": "одинаковое имя и есть подтверждение",
     "manual": "решение человека",
 }
 
@@ -84,14 +84,17 @@ WORDS = {
     "only one person is ITMO-affiliated": "только один из двоих в ИТМО",
     "no shared coauthors": "нет общих соавторов",
     "single-token display name": "имя из одного слова",
-    "name is given as initials": "имя дано инициалами",
+    "name is given as initials": "имя указано инициалами",
     "identical name with nothing corroborating it": "одинаковое имя, ничем не подтверждено",
-    "the name matches exactly and nothing else backs it":
-        "имя совпадает целиком, больше ничего не подтверждает",
+    # Beside the signals column, which already says the name matched.
+    "the name matches exactly and nothing else backs it": "кроме имени, подтверждений нет",
     "a similar name and a shared publication, nothing more":
-        "похожее имя и общая публикация, больше ничего",
+        "кроме похожего имени и общей статьи, подтверждений нет",
+    "several authors fit this account equally well": "одинаково подходят несколько авторов",
+    "answered before, but the question did not name every author that fits":
+        "уже отвечали, но тогда в вопросе были не все подходящие авторы",
     "the catalog holds several people under this name":
-        "каталог знает нескольких человек с таким именем",
+        "каталог имеет нескольких человек с таким именем",
 }
 
 
@@ -116,13 +119,14 @@ def _reason_words(reason: str) -> str:
 
 #: What each github signal says, for the column that explains a match.
 SIGNALS = {
-    "email_exact": "тот же адрес",
+    "email_exact": "совпала почта",
     "name_exact": "имя совпадает целиком",
+    "name_alternative": "имя совпадает с вариантом из OpenAlex",
     "name_fuzzy": "имя похоже",
-    "itmo_email": "адрес в домене ИТМО",
+    "itmo_email": "почта на itmo.ru",
     "login_surname": "фамилия в логине",
     "owner": "владелец репозитория",
-    "org_itmo": "состоит в организации ИТМО",
+    "org_itmo": "репозиторий организации ИТМО",
     "itmo_profile": "ИТМО указан в профиле",
 }
 
@@ -130,6 +134,8 @@ SIGNALS = {
 def _asks(row: dict) -> str:
     """What this row is a question about, in two or three words."""
     kind = row["kind"]
+    if kind == review.ALIAS:
+        return "конфликт алиасов"
     if kind == review.GROUP:
         return f"группа из {len(row['members'])}"
     if kind == review.GITHUB:
@@ -150,6 +156,9 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     login = evidence.get("login")
     # In a staff question only the person has a card to open.
     person = row.get("person") or evidence.get("person")
+    # Several authors fit one account, each for reasons of their own.
+    signals = {candidate["person"]: candidate.get("signals") or []
+               for candidate in evidence.get("candidates") or []} if _is_choice(row) else {}
     shown = []
     for index, member in enumerate(row["members"]):
         # An answer given before the question has no names to pair with.
@@ -168,13 +177,25 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
             "account": account,
             "record": record,
             "publication": publication,
+            # A person's facts come from the graph; an account's from its profile.
+            "facts": (evidence.get("profile") or {}) if account else {},
+            "signals": [SIGNALS.get(name, name) for name in signals.get(member, [])],
         })
-    return shown
+    # The account on top: sorted ids can put it between two people.
+    return sorted(shown, key=lambda who: not who["account"])
+
+
+def _is_choice(row: dict) -> bool:
+    """Whether an account question names several authors to choose from."""
+    return row["kind"] == review.GITHUB and len(row["members"]) > 2
 
 
 def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
+    if row["kind"] == review.GITHUB and row.get("login") and not evidence.get("login"):
+        # A choice can be recorded before a run supplies any evidence.
+        evidence = {**evidence, "login": row["login"]}
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.
@@ -184,6 +205,9 @@ def _shown(row: dict, back: str = "") -> dict:
         "asks": _asks(row),
         # A flag rather than a literal in the template.
         "is_group": row["kind"] == review.GROUP,
+        "is_alias": row["kind"] == review.ALIAS,
+        "alias_edges": evidence.get("alias_edges") or [],
+        "operation": evidence.get("operation"),
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
         "is_version": row["kind"] == review.PUB_VERSION,
@@ -193,7 +217,9 @@ def _shown(row: dict, back: str = "") -> dict:
         "title_sim": evidence.get("title_sim"),
         "abstract_sim": evidence.get("abstract_sim"),
         "llm_reason": evidence.get("llm_reason"),
+        "is_choice": _is_choice(row),
         "chosen": row.get("chosen"),
+        "login": evidence.get("login"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
         "people": _people(row, evidence,
@@ -218,6 +244,7 @@ def _shown(row: dict, back: str = "") -> dict:
         "skipped_by": row.get("skipped_by"),
         "applied_at": row.get("applied_at"),
         "disputed_at": row.get("disputed_at"),
+        "disputed_token": row.get("disputed_token"),
         "disputed_rule": RULES.get(row.get("disputed_rule"), row.get("disputed_rule")),
     }
 
@@ -265,7 +292,8 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
         return rows
     for row in rows:
         for person in row["people"]:
-            person["facts"] = facts.get(person["id"], {})
+            if not person["account"] and not person["record"]:
+                person["facts"] = facts.get(person["id"], {})
     return rows
 
 
@@ -366,6 +394,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     verdict = str(form.get("verdict", ""))
     tab = _tab(form.get("tab"), "pressing")
     note = str(form.get("note", "")).strip()
+    dispute_token = str(form.get("dispute_token", ""))
 
     def back(problem: str = "", done: str = ""):
         """To the queue, with a word about what happened.
@@ -380,9 +409,22 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
+        review.require_answerable(db, kind, members)
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
+        elif verdict == "choose" and kind == review.GITHUB:
+            # The answer names an author; "none of them" comes as "different".
+            login = str(form.get("login", ""))
+            if login not in members:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "не указано, о каком аккаунте вопрос")
+            chosen = str(form.get("chosen", "")).strip()
+            if not chosen:
+                return back("Отметьте, чей это аккаунт.")
+            review.record_account_choice(db, login,
+                                         [member for member in members if member != login],
+                                         chosen, actor=user.actor, note=note, dispute_token=dispute_token)
         elif verdict == "choose":
             # Not a yes or no: the answer names a record. Empty means none fits.
             person = str(form.get("person", ""))
@@ -407,7 +449,8 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             review.record_split(db, members, same, actor=user.actor, note=note)
             return back(done="split")
         else:
-            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note)
+            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note,
+                                  dispute_token=dispute_token)
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s answered %s %s: %s", user.actor, kind, members, verdict)

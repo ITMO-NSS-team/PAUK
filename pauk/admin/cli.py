@@ -37,6 +37,7 @@ from pauk.graph.overrides import (
     apply_overrides,
     deactivate_override,
     deactivate_relationship_override,
+    override_generation,
     record_override,
     record_relationship_override,
 )
@@ -178,6 +179,10 @@ def add_parser(subparsers) -> None:
         "--apply", action="store_true",
         help="delete them; without it the counts are printed and nothing changes")
 
+    serve = commands.add_parser("serve", help="run the panel's web server")
+    serve.add_argument("--host", default="0.0.0.0", help="address to listen on (default: 0.0.0.0)")
+    serve.add_argument("--port", type=int, default=8505, help="port to listen on (default: 8505)")
+
     worker = commands.add_parser(
         "worker", help="perform the scheduled runs, one at a time")
     worker.add_argument("--once", action="store_true",
@@ -234,6 +239,10 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_trim(args, db)
         return
 
+    if args.admin_command == "serve":
+        _run_serve(args)
+        return
+
     # The worker opens its own connections per job: one held for hours dies.
     if args.admin_command == "worker":
         _run_worker(args, config, db)
@@ -251,6 +260,17 @@ def run(args, config: Settings, db: Database | None) -> None:
         raise SystemExit(str(error)) from None
     finally:
         client.close()
+
+
+def _run_serve(args) -> None:
+    """Serve the panel with the same log lines as the rest of PAUK.
+
+    uvicorn is told to leave logging alone, so its access and error loggers
+    reach the handlers `configure_logging` installed.
+    """
+    import uvicorn
+
+    uvicorn.run("pauk.admin.app:build", factory=True, host=args.host, port=args.port, log_config=None)
 
 
 def _run_worker(args, config: Settings, db: Database) -> None:
@@ -394,13 +414,16 @@ def _set_fields(args, client, db, actor: str) -> dict:
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
+    generation = (override_generation(db, args.label, args.id)
+                  if db is not None and not args.once else None)
     # Graph first: it is the step that can be refused.
     node = update_node(client, args.label, args.id, fields,
                        expected_updated_at=args.expect_updated_at)
     if db is not None and not args.once:
         record_override(db, args.label, args.id, "set", fields, actor=actor,
                         note=args.note or "",
-                        auto_value={name: before.get(name) for name in fields})
+                        auto_value={name: before.get(name) for name in fields},
+                        graph_updated_at=node["updated_at"], expected_generation=generation)
     logger.info("updated %s %s%s", args.label, args.id,
                 "" if db is not None and not args.once else " (not recorded as an override)")
     return node

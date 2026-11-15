@@ -12,8 +12,8 @@ in the UI, with an English gloss the first time.
 ### Start
 
 Databases first: the panel does not start without Mongo, and shows no graph
-without Neo4j. On a workstation they run in Docker and do not restart after a
-reboot:
+without Neo4j. For an existing workstation setup with standalone database
+containers:
 
 ```bash
 open -a Docker                              # macOS, if the daemon is not running
@@ -27,8 +27,8 @@ Then two processes, both from the repository root. The panel shows and edits;
 the worker executes what the buttons start:
 
 ```bash
-uv run uvicorn pauk.admin.app:build --factory --port 8600   # window 1
-uv run pauk admin worker                                    # window 2
+uv run pauk admin serve --host 127.0.0.1 --port 8600
+uv run pauk admin worker
 ```
 
 Open `http://127.0.0.1:8600`. Create an account first (the command prompts for
@@ -38,8 +38,8 @@ the password):
 uv run pauk admin user add <login> --role admin
 ```
 
-On the server the same processes run as systemd services (or screen sessions)
-on port 8505, see "On the server".
+On the server these processes run as Compose services `admin` and `worker`,
+with the panel on port 8505; see "On the server".
 
 ### Roles
 
@@ -74,23 +74,24 @@ Mongo the panel does not start and says so in the window it was started from.
 On the server, check that the processes are alive before restarting:
 
 ```bash
-systemctl status pauk-admin pauk-worker   # systemd
-screen -list                              # screen
+cd ~/pauk/code
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml ps
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml logs --since 30m admin worker
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
 ```
 
-`200` means the panel is up and the problem is the network or VPN. Empty
-output means start it again as described in "On the server". Do not restart
-the worker while it is running a job: that interrupts the run.
+`200` confirms that the login page responds. If it fails, inspect Compose
+status and logs before restarting. Check the job queue before stopping a worker.
 
 ### After a machine restart
 
-systemd services come back by themselves. Screen sessions do not survive a
-reboot: start the panel and the worker again. Accounts, answers, the audit
-log and sessions live in Mongo, so nobody has to log in again.
+On the server, Docker restarts the Compose containers unless they were
+explicitly stopped. Locally, start the databases and the two development
+processes again if they are not managed by Compose. Accounts, answers, audit
+records and sessions live in Mongo and survive process restarts.
 
-After a code change, **restart the panel**: it reloads templates by itself but
-not Python code.
+Deploy Python changes by rebuilding the PAUK image and recreating `admin`
+and `worker`; a plain container restart still runs the previous image.
 
 ## Setup
 
@@ -132,94 +133,34 @@ panel, so a panel started on a fresh database works but is slow.
 
 ### On the server
 
-The panel listens on its own address only, hence `--host 0.0.0.0`. On
-`einsteinium.nsslab` it uses port 8505.
-
-**As services.** They survive reboots and restart after a crash. The units are
-in `scripts/systemd/` and are installed once.
-
-First stop the old screen sessions, otherwise port 8505 stays busy and the
-service crash-loops:
+The checkout is `~/pauk/code`; services are defined in `deploy/compose.yml`
+and configured through `~/pauk/secrets/pauk.env`. The panel listens on
+`0.0.0.0:8505` inside the container, published on host port 8505.
 
 ```bash
-ssh asteb@einsteinium.nsslab
-screen -S pauk-admin -X quit
-screen -S pauk-worker -X quit
-screen -list                  # neither pauk-admin nor pauk-worker may remain
+cd ~/pauk/code
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml ps
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml logs --since 30m admin worker
+curl -fsS http://127.0.0.1:8505/login -o /dev/null
 ```
 
-Find where `uv` lives and put that path into both unit files instead of
-`/home/asteb/.local/bin/uv` (systemd does not read the shell profile and will
-not find a bare `uv`). Adjust `User=` and `WorkingDirectory=` if the repository
-is not in `/home/asteb/PAUK`.
+Create accounts inside the running service:
 
 ```bash
-cd ~/PAUK
-which uv
+sudo docker compose --env-file /home/asteb/pauk/secrets/pauk.env -f deploy/compose.yml exec admin pauk admin user add <login> --role admin
 ```
 
-Before enabling, check that `uv` works without a shell profile, exactly as
-systemd will run it. It must print the help text, not "command not found" or a
-cache error:
+After an approved checkout update, apply it with `up -d --build` using the
+same env file and Compose path. The worker handles SIGTERM by finishing its
+current job; Docker allows five minutes before killing it. Prefer an idle
+queue for updates. A terminated job is reaped after its lease expires; inspect
+its state rather than assuming that a restart completed it.
 
-```bash
-sudo -u asteb env -i HOME=/home/asteb PATH=/usr/bin:/bin /home/asteb/.local/bin/uv run pauk --help
-```
-
-Install, verify the unit syntax (`systemd-analyze verify` prints nothing when
-all is well) and enable:
-
-```bash
-sudo cp scripts/systemd/pauk-admin.service scripts/systemd/pauk-worker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-systemd-analyze verify /etc/systemd/system/pauk-admin.service /etc/systemd/system/pauk-worker.service
-sudo systemctl enable --now pauk-admin pauk-worker
-```
-
-Check all three signals, not just one:
-
-```bash
-systemctl status pauk-admin pauk-worker                              # active (running)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login # 200
-journalctl -u pauk-worker -n 20 --no-pager                           # "worker ... started"
-```
-
-Day-to-day:
-
-```bash
-git pull && sudo systemctl restart pauk-admin pauk-worker   # deploy new code
-journalctl -u pauk-worker -f                                # what the worker is doing
-sudo systemctl stop pauk-worker                             # pause it
-```
-
-The worker does not stop instantly: SIGTERM means "finish the current job and
-exit". After 300 seconds (`TimeoutStopSec`) systemd kills it, and the next
-worker picks up the abandoned job when its lock lease expires. The panel must
-be restarted after every `git pull`.
-
-If a service does not start, the reason is in the journal
-(`journalctl -u pauk-admin -n 50 --no-pager`). Common causes: `command not
-found` (wrong `uv` path in `ExecStart`); `Address already in use` (old screen
-session still alive); a Mongo error (database not up yet; the service retries
-after five seconds).
-
-**As screen sessions.** Used until the units are installed; they do not
-survive a reboot. Run both from the repository root, otherwise `uv run` does
-not find the project and the session dies silently:
-
-```bash
-screen -dmS pauk-admin uv run uvicorn pauk.admin.app:build --factory --host 0.0.0.0 --port 8505
-screen -dmS pauk-worker uv run pauk admin worker
-screen -list
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
-```
-
-The only boundary here is the lab VPN. Passwords travel over plain HTTP, as do
-Mongo and Neo4j traffic on the same machine. If the panel ever leaves the VPN,
-it needs TLS and `PAUK_ADMIN_SECURE_COOKIE=1`.
-
-Sessions are stored in Mongo, not in process memory, so restarting the panel
-does not log anyone out.
+Access is through the lab VPN over HTTP. Enable TLS and
+`PAUK_ADMIN_SECURE_COOKIE=1` if the panel is exposed outside that boundary.
+Sessions live in Mongo, so a panel restart does not log users out. The full
+storage layout, service checks and site publication are in
+[architecture/deploy.md](architecture/deploy.md).
 
 ## Worker
 
@@ -263,8 +204,9 @@ and the selection. Publishing works on one group at a time; there is no
 Each step shows when it last completed, which answers the usual question
 "did anyone publish after the last collect?". The map rebuild writes both
 variants: `private/` with personal fields and `public/` without
-`authors-detail.json`. Deploying the site to the server is a separate step,
-`scripts/deploy.sh`.
+`authors-detail.json`. Publishing a built site is separate: nginx reads
+`~/pauk/site/itmo/main`, not the worker's generated data directory. See
+[deployment](architecture/deploy.md#static-site-and-reports).
 
 ### Two different dedups
 
@@ -283,9 +225,9 @@ Disputed pairs are not merged but held: written to
 `data/cache/dedup_candidates_graph.jsonl` with status `held` and a reason, and
 put in the "Спорные случаи" (Disputed cases) queue for a human answer.
 
-Rule-based merges cannot be undone, so the button asks for confirmation, like
-deleting a node. Only a pair merged by an answer in the queue can be split
-again (next section).
+The panel offers a split action for pairs merged through answers in the review
+queue. Other merges do not get that action; deduplication asks for confirmation
+before changing the graph.
 
 ## Review queue
 
@@ -296,16 +238,30 @@ kinds:
 |---|---|---|
 | are these two records one person? | person dedup: collect stage and whole-graph pass | "один человек" (one person) or "разные" (different) |
 | a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
-| whose GitHub account is this? | `github_match` stage | "это его аккаунт" (this is their account) or "не его" (not theirs) |
+| whose GitHub account is this? | `github_match` stage | choose the author ("это его аккаунт", this is their account) or "никто из них" (none of them); with a single author, "это его аккаунт" or "не его" (not theirs) |
 | which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
 | are these two publications one work? | `pauk versions link` / the "Версии публикаций" job, for a mergeable version bucket | "одна работа" (one work) confirms the `IS_VERSION` edge, "разные" (different) removes it for good; nothing is merged |
 
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
-existing document instead of creating a second one. The default tab is
+existing document instead of creating a second one. An account is asked about
+once, with every author that fits it. An unanswered account question that a
+later run settles by itself (it linked the account, nobody fits it any more, or
+a new namesake joined the question) is closed without an answer. An old "это
+его аккаунт" about one author does not link the account when another author
+fits as well or better: the account is asked about again, with all of them. The
+default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
 accounts and the catalog. The rest is under "Все нерешенные" (All unresolved);
 publication versions also have a tab of their own, "Версии публикаций".
+
+Conflicting historical person aliases are separate `person_alias_conflict`
+diagnostics in the priority queue, not identity questions. The page shows the
+competing alias edges, the failing operation and a repair warning. Ordinary
+answers, splits and skips are disabled for these incidents and rejected by the
+server, including identity questions wholly inside the affected component.
+Existing identity answers remain intact. No review action repairs aliases or
+closes the incident; repair and validated incident closure need a separate workflow.
 
 **An answer beats the rules, both ways.** Rules read answers before deciding
 anything. "One person" merges the pair even with no evidence; "different"
@@ -325,6 +281,10 @@ record. Neo4j is not needed to record an answer.
 evidence grows and a rule would now fire, the pair is not merged but goes to
 the "Расхождения" (Discrepancies) tab with the rule that fired. Any answer
 closes the discrepancy: confirm the old one or reverse it.
+For GitHub questions, "оставить как есть" keeps the same evidence out of this tab
+on repeat runs; changed evidence brings it back. A confirmation from an older
+version of the discrepancy asks you to reopen the page. Sending the same
+confirmation twice leaves the saved answer unchanged.
 
 **Whole groups cannot be answered.** A group is rejected because it certainly
 contains more than one person. You mark the ones who are the same person, and
@@ -342,11 +302,13 @@ using the latest answer in MongoDB.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record
-from its prepared row (node and all its relationships), strips from the
+from its independent prepared row or a durable pre-merge snapshot (node and
+all its relationships), strips from the
 surviving record what came only from the removed one, and records "different"
-so the next run does not merge them again. It works while the prepared row
-exists. The collect stage deletes rows it folded itself, so such pairs have no
-button and the panel says so. Merges done by dedup rules without a question
+so the next run does not merge them again. `person_merge_sources` preserves
+complete source rows before dedup removes them. The split restores prepared
+rows and group membership too; missing source data or later changes that cannot
+be reconciled make it refuse rather than overwrite enrichment. Merges done by dedup rules without a question
 and merges via `pauk admin merge` are not in the queue and cannot be undone
 from the panel.
 
@@ -379,6 +341,8 @@ the rest as failed.
 
 While a resource is busy, jobs that need it wait without blocking others;
 collect by group proceeds even if a publish is waiting for the graph.
+GitHub matching shares a separate lock with publishing and source reconciliation: an account handoff must
+finish saving its former and new owners before publication can read them.
 
 If the worker disappeared **in the middle of a publish**, manual edits in the
 graph have already been overwritten by pipeline values and not restored, since
@@ -480,9 +444,13 @@ Things worth knowing:
 
 - **Concurrent edits to one record are rejected.** If the record changed while
   the form was open, saving fails instead of silently losing the other edit;
-  the page returns with the current values.
+  the page returns with the current values. Version comparison and update
+  run under one Neo4j write lock. A record deleted meanwhile is not recreated.
 - **Undoing a deletion decision restores the record at once**, with all
   fields: a snapshot is stored in the decision when the record is deleted.
+- **Undoing an unlink restores the relationship's properties**, including
+  author position and link evidence. The panel snapshots them before unlinking;
+  Neo4j sets fresh service timestamps when the relationship is recreated.
 - **Creating a record with the id of a deleted one clears the deletion mark**,
   otherwise the next publish would remove it again.
 - **The audit log and manual decisions are different things.** The log is
@@ -511,9 +479,9 @@ query is bounded, and nobody needs last week's bad records.
 
 ### Reconcile with Mongo
 
-The graph does not converge to Mongo by itself. Publishing only adds, so a
-record deleted from Mongo, or a relationship a row no longer claims, is removed
-separately: with the "Сверка с источником" button on the "Пайплайн" page, or
+Publishing applies explicit GitHub withdrawals, classified-link changes and manual deletions.
+Other stale records and relationships need a separate reconciliation pass: with the
+"Сверка с источником" button on the "Пайплайн" page, or
 from the terminal:
 
 ```bash
@@ -525,6 +493,8 @@ uv run pauk admin prune --apply    # removes it
 page this is one job with a checkbox: unchecked, it only counts and puts the
 numbers in the result; checked, it removes. Run it unchecked first and read the
 list: manual records created before hand-made records were tracked look extra.
+The preview never forwards writes to Neo4j, including the loader's automatic
+cleanup calls. Manual relationship claims remain protected through graph folds.
 
 It leaves three things alone: records and links made by hand (they are in the
 manual decisions, which is the only reason that record exists), what the next
@@ -548,26 +518,20 @@ trimmed.
 
 ### Mongo compression
 
-The heaviest collection is `raw`, the verbatim answers of external services. On
-a new database `pauk` creates it and `revisions` with zstd compression. An
-existing database cannot switch compressors, since WiredTiger takes it at
-creation time, except for new blocks:
-
-```bash
-docker exec pauk-mongo mongosh pauk --eval '
-  db.runCommand({collMod: "raw",
-    storageEngine: {wiredTiger: {configString: "block_compressor=zstd"}}});
-  db.runCommand({compact: "raw"});'
-```
-
-`collMod` changes the compressor for new blocks; `compact` rewrites the old
-ones and holds a lock meanwhile, so run it when no jobs are running.
+`ensure_indexes` creates new `raw` and `revisions` collections with zstd
+compression. Existing collections keep their creation-time compressor;
+changing it requires an explicit database maintenance operation. Do not run
+`compact` as a routine health check. See
+[storage.md](architecture/storage.md#mongopy).
 
 ### Known limitations
 
-- An unlinked relationship is restored from the decision itself, not from
-  history: the decision stores the relationship, the log only records that it
-  appeared and disappeared.
+- Relationship deletion decisions made before property snapshots existed,
+  or outside the panel without a snapshot, restore only the endpoints. A later
+  publish can supply the properties again if the prepared data still has them.
+- Undoing a successful node deletion restores its fields, not its incident
+  relationships. Their snapshot is currently kept in memory only for rolling
+  back a failed deletion; publishing rebuilds edges still present in prepared data.
 - Source history appears on the record card and nowhere else; there is no
   "all changed rows" list, you start from a concrete record.
 - A run stops at the next seam, not instantly. Inside a stage the request is
@@ -578,8 +542,8 @@ ones and holds a lock meanwhile, so run it when no jobs are running.
   `repositories`, `dedup` and `github_match`. Cancellation is checked where a
   stage reports progress, and these four do not use the shared counter; they
   notice the cancel on exit.
-- Publishing only adds: a row deleted from Mongo does not leave the graph by
-  itself. Reconcile removes it, and it has to be run, not waited for.
+- Publishing synchronizes confirmed code links and reapplies manual deletions.
+  Other rows deleted from Mongo require a separate reconciliation pass.
 
 ## Two databases, one edit
 
@@ -592,24 +556,68 @@ Handled from both sides:
   and the graph stays untouched;
 - **if Mongo fails between the two writes**, the graph write is rolled back.
 
+Each decision is committed in one Mongo command, including the original
+field values, operation and claim marker. There is no separate read after a
+successful write. If Mongo loses the reply, the panel checks the decision's
+write token: a confirmed commit succeeds; a confirmed failure permits graph
+rollback. If the result cannot be checked, the response reports uncertainty
+and leaves the graph in place, since the decision may already be committed.
+Repeated contention exhausts a bounded attempt budget; after a successful
+rollback the panel reports a conflict (409), rather than a Mongo outage.
+
+Field edits carry the version returned by Neo4j into the decision write, in
+both the panel and CLI. Mongo merges fields in graph-version order, even when
+requests arrive out of order: each field keeps its newest value and its
+earliest known original for undo. Independent fields are merged separately;
+the actor and note follow the latest graph edit. UTC normalization preserves
+Neo4j's nanosecond precision.
+
+Creation, deletion and undo advance the decision's `generation`. A field edit
+reads that counter before changing the graph; a delayed write from an older
+state is rejected instead of reactivating a cancelled decision or replacing
+a deletion. A new edit after undo starts with only the newly edited fields.
+
 This covers every edit that leaves a decision behind: field change, node
 deletion, linking and unlinking, creation and restoration.
 
-The rollback for creation is pessimistic: it deletes the node even though
-usually there was no deletion mark and the node would have been fine. Only the
-database that is currently down could say, and a node that vanishes on the next
-publish is worse.
+Before unlinking, the panel reads the relationship's properties. A failed
+decision write restores them from memory; a successful write stores the same
+snapshot in Mongo for the later undo button. Empty properties are a valid
+snapshot, and the target keeps its original addressing key (`id`, `url` or
+`login`).
 
-A rollback is visible in the audit log next to the edit. One case remains where
-even that fails (both databases down at once); then the response says
-explicitly that the edit stayed in the graph without a decision and the next
-publish will remove it.
+Before deleting a node with its relationships, the panel snapshots both
+incoming and outgoing edges, including their properties. If recording the
+deletion fails, it recreates the node first and then those edges. An unknown
+relationship type or a missing addressing key refuses deletion before the
+graph changes, since the allowed mutations could not restore that edge.
+
+Field rollback also checks the version its own write produced. If another
+editor saved since then, compensation refuses to overwrite that newer edit
+and reports an incomplete rollback.
+
+Creation records its claim and replaces any old deletion decision atomically.
+If the claim definitely failed, rollback removes the new node: without the
+claim, reconciliation could remove it later anyway.
+
+A rollback is visible in the audit log next to the edit when the audit store
+is available. If graph restoration also fails, the response explicitly reports
+the incomplete rollback. An unconfirmed Mongo write is reported separately;
+it is never described as a successful rollback.
 
 ## Linking nodes
 
 On a node card, under the relationship table, the form offers only the
 relationships allowed for that label, out of the eleven the graph knows. The
 node whose card you opened is filled in; you enter only the other side.
+
+Each choice carries its direction relative to the open card. For
+`Department -> PART_OF -> Department`, "входит в подразделение" makes the card
+the child, and "включает подразделение" makes it the parent. Unlink forms also
+carry this direction, so removing an incoming edge cannot remove an outgoing
+edge between the same two departments. An older form without a direction is
+accepted only when the labels determine the side unambiguously; otherwise the
+panel asks to reopen the card before writing anything.
 
 What matters is **how the other side is addressed**, written in parentheses by
 each option. Usually it is the id, with two exceptions:
@@ -655,3 +663,10 @@ The audit log cannot fail the edit it describes. It is written after the change;
 a failing sink must not return an error from the middle of an operation when
 Neo4j is already updated. A lost entry goes to the application log in full and
 the operation continues.
+
+## Operations control plane
+
+The optional OPS service uses the same admin accounts on port 8506 at `/ops/`.
+It manages service observations, full database backups, site releases and
+operation logs; it is separate from this graph editor. Only accounts with the
+`admin` role can open OPS. Details: [architecture/ops.md](architecture/ops.md).

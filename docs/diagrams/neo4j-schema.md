@@ -124,7 +124,8 @@ classDiagram
 `AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
 `is_corresponding`. `CONTRIBUTED_TO` carries `role` (`owner` or `contributor`)
 and is built by the `github_match` stage. `MENTIONS_LINK` carries `context`
-(list), `page_number` (list, `0` = abstract), `is_relevant`,
+(list), `page_number` (list, `0` = abstract), parallel `pdf_id`,
+`context_source` and `reference_label` lists, `is_relevant`,
 `classification_status`, `llm_confidence`, `llm_reason`, and, for links with
 line-wrap alternatives, `url_ambiguous`, `candidate_urls` and `availability`.
 `IS_VERSION` carries `bucket`, `mergeable`, `status`, `title_sim`,

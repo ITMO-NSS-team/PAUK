@@ -1,16 +1,7 @@
-"""Deduplication across the whole graph, not one prepared group.
+"""Deduplicate all published groups using the pipeline's merge rules.
 
-The per-group dedup stage only sees one prepared group, but the graph
-accumulates every published group: the same researcher (or work, or
-repository) collected in two periods becomes two nodes that no group-level
-pass will ever compare, since each group's JSONL holds only one of the ids.
-This module applies the same merge rules (pauk/pipeline/stages/dedup.py)
-to all nodes of each kind at once and folds duplicates directly in Neo4j.
-
-The merged ids end up in the canonical node's `merged_ids` property, so a
-later republish of an old group cannot resurrect a folded duplicate: the
-loader re-folds any id found in a graph-side merged_ids map at the end of
-every load (see jsonl_loader.load_prepared_rows).
+Group-scoped dedup cannot compare records collected in separate groups.
+Survivors retain merged_ids so later publishing can reapply graph-only folds.
 """
 
 from __future__ import annotations
@@ -22,13 +13,14 @@ from datetime import date
 
 from pymongo.database import Database
 
-from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
+from pauk.aliases import MergeAliasConflict
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy, _normalize_orcid
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
@@ -47,6 +39,7 @@ from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
+from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import chunked
 from .overrides import apply_overrides
@@ -159,13 +152,10 @@ def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]]
 
 
 def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
-    """Trusted ORCIDs from every group's raw openalex_authors envelopes.
+    """Read trusted ORCIDs from all groups' raw OpenAlex author records.
 
-    Same reasoning as the per-group stage: the orcid property stored on a
-    node may descend from the surname-only Crossref backfill, which can
-    stamp a namesake's ORCID onto the wrong person. The author's own
-    OpenAlex record is authoritative; a later fetch of the same author
-    overrides an earlier one - across every group, not just one.
+    The latest record for each author wins. Graph ORCIDs may originate from an
+    ambiguous Crossref surname match and are not authoritative here.
     """
     orcids: dict[str, str | None] = {}
     cursor = mongo_db.raw.find({"source": "openalex_authors"}).sort("fetched_at", 1)
@@ -173,7 +163,7 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
         payload = envelope.get("payload") or {}
         author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
         if author_id:
-            orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
+            orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
     return orcids
 
 
@@ -252,7 +242,7 @@ def dedup_graph_persons(
     canonical_nodes: list[tuple[str, dict]] = []
     for canonical, duplicates in groups:
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging %s (%s) into %s (%s)",
                 duplicate.id,
                 duplicate.name_raw,
@@ -268,7 +258,6 @@ def dedup_graph_persons(
         # records. Serializing their defaults would erase fields never read.
         # The fold below merges the complete stored properties transactionally.
         canonical_nodes.append((canonical.id, {
-            "is_itmo": canonical.is_itmo,
             "name_variants": canonical.name_variants,
             "merged_ids": canonical.merged_ids,
         }))
@@ -314,7 +303,7 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
         canonical, duplicates = ranked[0], ranked[1:]
         merged_ids = list(canonical.get("merged_ids") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging publication %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("title"),
@@ -394,7 +383,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
         merged_ids = list(canonical.get("merged_ids") or [])
         cited_urls = list(canonical.get("cited_urls") or [])
         for duplicate in duplicates:
-            logger.info(
+            logger.debug(
                 "graph dedup: merging repository %s (%s) into %s (%s)",
                 duplicate["id"],
                 duplicate.get("url"),
@@ -456,7 +445,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
-        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        models = ResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
             if config.person_resolution_enabled
@@ -494,7 +483,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # to ask about and no pair of people to key a question on.
         current_aliases = client.fetch_merged_id_map("Person")
         review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
-        review.record_disputed(mongo_db, person_report)
+        review.record_disputed(mongo_db, person_report, aliases=current_aliases)
         # Re-read, not the map from before the pass: what this pass folded
         # is exactly the difference between the two.
         review.mark_applied_merges(mongo_db, current_aliases)
@@ -514,6 +503,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # decisions go back on top here too.
         with actor_context("etl-pipeline", source="dedup-graph"):
             overrides = apply_overrides(client, mongo_db)
+        retire_alias_conflicts(mongo_db, "dedup-graph")
         return {
             "graph_persons_merged": persons_removed,
             "graph_publications_merged": publications_removed,
@@ -522,5 +512,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "graph_dedup_component_conflicts": component_conflicts,
             **overrides,
         }
+    except MergeAliasConflict as conflict:
+        record_alias_conflict(mongo_db, conflict, "dedup-graph")
+        raise
     finally:
         client.close()

@@ -125,7 +125,7 @@ separate command, not part of `run`. The optional `social_graph` stage is not in
 the diagram: it starts only by name (see
 [`../architecture/pipeline/social-graph.md`](../architecture/pipeline/social-graph.md)).
 
-The `<-->` arrows at the `enrich` stages mean "reads and rewrites its group as a
-whole" (`read_rows` / `write_rows`, see
-[`../architecture/storage.md`](../architecture/storage.md)), not a row-by-row
-stream.
+The `<-->` arrows mean a stage reads and updates prepared data. Reads normally
+use the group filter; stages write complete working sets or upsert changed
+rows. They do not all wait until the end to persist results; see
+[`../architecture/storage.md`](../architecture/storage.md).

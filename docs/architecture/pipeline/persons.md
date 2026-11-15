@@ -34,9 +34,12 @@ For each `Person` that needs attention (`needs_attempt`):
      known directories (ResearchGate, Scopus, Web of Science and similar),
      become `homepage`, from which the `emails` stage later extracts an
      address.
-3. `is_itmo` is recomputed: at least one affiliation with ITMO's ROR anywhere
-   makes the person ITMO, even if no single work claimed it (`ITMO_ROR_ID` is
-   the same as in `normalize.py`).
+3. Membership is evaluated from source-specific evidence. A matching ROR in
+   this author's collected work or ORCID employment supports membership.
+   OpenAlex author-profile affiliations remain available for display and
+   missing-affiliation fill, but do not establish membership on their own.
+   Incomplete legacy evidence leaves the membership status unknown rather
+   than treating a missing record as a negative result.
 4. **Filling a missing authorship affiliation**
    (`_fill_missing_affiliations`): self-deposit venues (Zenodo, SSRN) often do
    not say where a given coauthor worked at the time. The author's own records

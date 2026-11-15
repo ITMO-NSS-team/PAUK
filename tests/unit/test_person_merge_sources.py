@@ -1,5 +1,6 @@
 import tempfile
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,7 +10,7 @@ from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
-from pauk.storage.person_merge_sources import COLLECTION, preserve
+from pauk.storage.person_merge_sources import COLLECTION, preserve, snapshots
 from pauk.storage.prepared import trim_revisions
 from tests.unit.test_unmerge import UnmergeTest, person
 
@@ -35,8 +36,8 @@ class ArchivedPersonMergeTest(UnmergeTest):
 
     def seed_pair(self):
         self.publish(
-            person("A1", "Ivan Smirnov", works=["W1"], orcid="0000-1", other_names=["Original A"]),
-            person("A2", "I. Smirnov", works=["W2"], orcid="0000-1", other_names=["Original B"]),
+            person("A1", "Ivan Smirnov", works=["W1"], orcid="0000-0002-1825-0097", other_names=["Original A"]),
+            person("A2", "I. Smirnov", works=["W2"], orcid="0000-0002-1825-0097", other_names=["Original B"]),
         )
 
     def test_deleted_prepared_person_is_rebuilt_and_republish_keeps_the_split(self):
@@ -100,8 +101,8 @@ class ArchivedPersonMergeTest(UnmergeTest):
         self.assertEqual(list(self.db.persons.find()), prepared_before)
 
     def test_archived_authorship_flags_and_emails_return_to_their_owners(self):
-        first = person("A1", "Ivan Smirnov", works=["W1", "W2"], orcid="0000-1", emails=["a@example.org"])
-        second = person("A2", "I. Smirnov", works=["W1"], orcid="0000-1", emails=["b@example.org"])
+        first = person("A1", "Ivan Smirnov", works=["W1", "W2"], orcid="0000-0002-1825-0097", emails=["a@example.org"])
+        second = person("A2", "I. Smirnov", works=["W1"], orcid="0000-0002-1825-0097", emails=["b@example.org"])
         first.authored[0].is_corresponding = False
         second.authored[0].is_corresponding = True
         self.publish(first, second)
@@ -137,13 +138,13 @@ class ArchivedPersonMergeTest(UnmergeTest):
 
     def split_chain(self, first_to_restore):
         self.publish(
-            person("A2", "Ivan Smirnov", works=["W1"], orcid="0000-1"),
-            person("A3", "I. Smirnov", works=["W2"], orcid="0000-1"),
+            person("A2", "Ivan Smirnov", works=["W1"], orcid="0000-0002-1825-0097"),
+            person("A3", "I. Smirnov", works=["W2"], orcid="0000-0002-1825-0097"),
             publications=("W1", "W2", "W3", "W4", "W5"),
         )
         self.prepared_fold()
         self.prepared.upsert_models("persons", [
-            person("A1", "Ivan Smirnov", works=["W3", "W4", "W5"], orcid="0000-1"),
+            person("A1", "Ivan Smirnov", works=["W3", "W4", "W5"], orcid="0000-0002-1825-0097"),
         ])
         self.prepared_fold()
         self.assertEqual(set(self.graph.nodes[("Person", "A1")]["merged_ids"]), {"A2", "A3"})
@@ -165,3 +166,33 @@ class ArchivedPersonMergeTest(UnmergeTest):
 
     def test_nested_chain_can_be_undone_child_first(self):
         self.split_chain("A3")
+
+    def test_nested_parent_first_undo_with_equal_archive_timestamps(self):
+        with patch("pauk.storage.person_merge_sources.datetime") as clock:
+            clock.now.return_value = datetime(2026, 10, 22, tzinfo=UTC)
+            self.split_chain("A2")
+
+    def test_nested_child_first_undo_with_equal_archive_timestamps(self):
+        with patch("pauk.storage.person_merge_sources.datetime") as clock:
+            clock.now.return_value = datetime(2026, 10, 22, tzinfo=UTC)
+            self.split_chain("A3")
+
+    def test_archive_timestamp_ties_use_prepared_revision_not_insertion_order(self):
+        for person_id, versions in (("old-first", (1, 2)), ("new-first", (2, 1))):
+            for version in versions:
+                self.db[COLLECTION].insert_one({
+                    "person_id": person_id, "saved_at": "2026-10-22T00:00:00+00:00",
+                    "snapshot": {"id": person_id, "_version": version},
+                })
+        found = snapshots(self.db, ["old-first", "new-first"])
+        for person_id in found:
+            self.assertEqual([row["_version"] for row in found[person_id]], [2, 1])
+
+    def test_archive_order_keeps_timestamp_precedence_for_legacy_rows(self):
+        self.db[COLLECTION].insert_many([
+            {"person_id": "a", "saved_at": "2026-10-21T00:00:00+00:00",
+             "snapshot": {"id": "a", "_version": 10}},
+            {"person_id": "a", "saved_at": "2026-10-22T00:00:00+00:00",
+             "snapshot": {"id": "a"}},
+        ])
+        self.assertNotIn("_version", snapshots(self.db, ["a"])["a"][0])

@@ -1,25 +1,12 @@
-"""Audit-logging wrapper around Neo4jClient.
+"""Audit wrapper around Neo4jClient.
 
-AuditedNeo4jClient snapshots the affected entities before and after every
-mutating Neo4jClient call, computes a field-level diff and hands the
-resulting AuditEntry batch to an AuditSink. Read-only methods pass straight
-through.
+Mutations are recorded from before/after snapshots; read methods pass through.
+Actor and source come from actor_context or explicit wrapper arguments. Batches
+at or above diff_threshold produce one summary to avoid expensive per-row diffs.
 
-Example:
-    client = Neo4jClient(uri, user, password)
-    audited = AuditedNeo4jClient(client, JSONLAuditSink(Path("audit.jsonl")))
-
-    with actor_context("etl-pipeline", source="jsonl_loader"):
-        load_prepared_rows(audited, rows_by_file)
-
-`actor` and `source` travel via contextvars, so only the outermost caller
-sets them. Batches at or above `diff_threshold` get one coarse "bulk" entry
-(counts only) instead of one entry per row: diffing every node of a large
-ETL chunk would double the query count for little audit value.
-
-If the wrapped call raises, no entry is written, so the log never claims a
-change that did not happen. The audit write is a separate step after the
-Neo4j commit, so a crash in that window leaves a graph change with no entry.
+Audit writes happen after graph commits and cannot be atomic with them.
+A crash may leave a graph change without an entry; sink failures are logged
+without failing an already committed mutation.
 """
 
 from __future__ import annotations
@@ -136,14 +123,7 @@ class JSONLAuditSink:
 
 
 def _storable(value: Any) -> Any:
-    """A value MongoDB can store, or its string form.
-
-    Property values come back from the driver as whatever type Neo4j used
-    (neo4j.time.DateTime among them), and pymongo refuses what it cannot
-    encode. The audit path must never be the thing that fails a write, so
-    anything unrecognised is kept as text, like `default=str` in the JSONL
-    sink.
-    """
+    """Convert driver-specific values to text when BSON cannot encode them."""
     if isinstance(value, (str, int, float, bool, type(None))):
         return value
     if isinstance(value, (list, tuple)):
@@ -154,13 +134,7 @@ def _storable(value: Any) -> Any:
 
 
 class MongoAuditSink:
-    """Audit entries in a MongoDB collection, for the panel's change feed.
-
-    JSONL stays useful for grepping a run; a feed in the UI needs filters
-    by actor and entity plus pagination, which a flat file cannot serve.
-    Both sinks can run side by side; AuditedNeo4jClient takes one sink, so
-    pair them with `MultiAuditSink` when both are wanted.
-    """
+    """Store entries in MongoDB for the admin feed's filters and pagination."""
 
     COLLECTION = "audit"
 
@@ -189,12 +163,7 @@ class MongoAuditSink:
 
 
 class MultiAuditSink:
-    """Fans one batch of entries out to several sinks, in order.
-
-    A sink that raises stops the rest: losing an audit record silently is
-    worse than a loud failure, and the caller already treats an audit
-    error as a failed write.
-    """
+    """Write to each sink in order; an exception skips the remaining sinks."""
 
     def __init__(self, *sinks: AuditSink) -> None:
         self.sinks = sinks
@@ -205,13 +174,7 @@ class MultiAuditSink:
 
 
 def build_audit_sink(config: Settings, db: Database | None = None) -> AuditSink:
-    """The sink every entry point should use.
-
-    JSONL stays for grepping a run from the shell; the Mongo collection is
-    what the panel's change feed can filter and paginate. Without a
-    database only the file is written, which keeps the CLI usable when
-    Mongo is not at hand.
-    """
+    """Write JSONL audit logs and, when a database is provided, the admin feed."""
     config.audit_dir.mkdir(parents=True, exist_ok=True)
     jsonl = JSONLAuditSink(config.audit_dir / "audit.jsonl")
     return MultiAuditSink(jsonl, MongoAuditSink(db)) if db is not None else jsonl
@@ -296,16 +259,9 @@ class AuditedNeo4jClient:
         return datetime.now(UTC).isoformat()
 
     def _record(self, entries: Sequence[AuditEntry]) -> None:
-        """Write the journal entries, never failing the change they describe.
+        """Log sink failures without failing a committed graph mutation.
 
-        The journal is a record *of* a change, not a condition *for* one.
-        If the sink were allowed to raise, a mutation already committed to
-        Neo4j would surface as an error before the caller could record its
-        decision or put the graph back: the change would stay, unrecorded,
-        while the request looked like it had failed.
-
-        A lost entry is logged whole, so it can be read back out of the log
-        if anyone needs it.
+        The exception log includes the lost entries for recovery.
         """
         try:
             self._sink.write(entries)
@@ -342,10 +298,7 @@ class AuditedNeo4jClient:
         for entity_id in before_by_id.keys() | after_by_id.keys():
             diff, kind = _diff_props(before_by_id.get(entity_id), after_by_id.get(entity_id))
             if not diff and kind == "updated":
-                # A write that changed nothing is not worth a line. Coming
-                # into existence and going out of it are, even with nothing
-                # to show field by field; most relationships carry no
-                # properties at all, so they would otherwise never appear.
+                # Creation/deletion still needs an entry when the entity has no properties.
                 continue
             entries.append(AuditEntry(now, actor, source, operation, entity_type, entity_id, kind, diff))
         self._record(entries)
@@ -354,10 +307,7 @@ class AuditedNeo4jClient:
         if not ids:
             return {}
         label_list = labels if isinstance(labels, list) else [labels]
-        # Match a node carrying ANY of the given labels, not all of them: upsert_nodes_batch can add a label
-        # a node doesn't have yet, and the "before" snapshot must still find the node by whichever label(s)
-        # it already carries, otherwise a real update on a node about to gain a label looks like
-        # "created" and the old field values are lost from the audit log.
+        # Match any existing label so adding another label is audited as an update.
         label_match = " OR ".join(f"n:{label}" for label in label_list)
         query = cast(
             LiteralString,
@@ -399,6 +349,13 @@ class AuditedNeo4jClient:
         self._client.upsert_nodes_batch(labels, nodes)
         after = self._fetch_node_props(label_list, ids)
         self._emit_diffs("upsert_nodes", label_str, before, after)
+
+    def update_node_properties(self, label, node_id, properties, expected_updated_at=None):
+        before, after = self._client.update_node_properties(
+            label, node_id, properties, expected_updated_at)
+        if after is not None:
+            self._emit_diffs("upsert_nodes", label, {node_id: before}, {node_id: after})
+        return before, after
 
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         if not nodes:
@@ -505,10 +462,7 @@ class AuditedNeo4jClient:
         return self._wrap_merge("Repository", "merge_repository_nodes_batch", merges)
 
     def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
-        # Always diffed per node, whatever the batch size: a deletion is the
-        # one change that cannot be reconstructed from the graph afterwards,
-        # so the entry carrying the node's last known fields is the only
-        # record left of what was there.
+        # Always retain per-node snapshots: deleted properties cannot be read back.
         if not ids:
             return 0
         before = self._fetch_node_props(label, ids)
@@ -546,14 +500,9 @@ class AuditedNeo4jClient:
 
 
 class SharedGraph:
-    """One driver for the whole service, one audited wrapper per caller.
+    """Share one driver pool while giving each caller its own audited wrapper.
 
-    A driver owns a connection pool and is meant to outlive a single
-    request; opening one per page means building and tearing down that
-    pool every time. The wrapper around it is cheap and carries the actor,
-    so each caller gets its own without touching the connection.
-
-    Callers close nothing: `close()` belongs to whoever owns the service.
+    The service owns close(); request wrappers must not close the shared driver.
     """
 
     def __init__(self, config: Settings, db: Database | None = None, **driver_options):
@@ -569,11 +518,7 @@ class SharedGraph:
 
 
 class _NonClosing(AuditedNeo4jClient):
-    """A wrapper whose close() leaves the shared driver alone.
-
-    Routes close their client when the request ends, which must not take
-    the connection pool with it.
-    """
+    """Keep request cleanup from closing the shared driver pool."""
 
     def close(self) -> None:
         return None

@@ -3,7 +3,8 @@
 **What this covers:** how a collected GitHub account is linked to an ITMO
 author.
 
-**Files involved:** `pauk/pipeline/stages/github_match.py`.
+**Files involved:** `pauk/pipeline/stages/github_match.py`,
+`pauk/pipeline/github_matches.py`, `pauk/models/person.py`.
 
 Reads the `github_profiles` collection (accounts collected by `repositories`,
 `repo_people` and `social_graph`), `persons` and `repositories`. Writes
@@ -13,13 +14,23 @@ journal `github_matches.jsonl` in `data/audit/<group>/`.
 ## What gets compared
 
 Every account against every author would be millions of pairs, nearly all with
-no signal at all. Only three groups are considered, each an existing
-relationship:
+no signal at all. Candidates come from existing relationships and saved answers:
 
 - **bridge**: the account was found on a repository cited by a publication that
   has ITMO authors;
 - **email**: the account's address equals the author's address;
-- **name**: the full name (not a single word) equals the author's name.
+- **name**: the full name (not a single word) equals the author's name;
+- **answer**: a person confirmed the author or chose them for this account.
+- **source**: an independent source, such as ORCID, already names the author's GitHub login.
+
+An address indexes every author who has it. A shared address therefore brings
+all of them into the comparison; an unresolved tie asks a question instead of
+choosing whichever Mongo returned first. A manual confirmation brings its author
+into the comparison even after the account's name, address or repositories change.
+An independently known login is also treated as a confirmation; a manual refusal
+can override it. Copied match outputs do not count as independent sources.
+Records connected by `merged_ids` are combined before scoring, so a source row
+kept by another group cannot compete with its own survivor.
 
 A single-word name does not enter the index: half the sample shares a surname,
 and such a match means nothing.
@@ -32,6 +43,7 @@ and such a match means nothing.
 |---|---|---|
 | `email_exact` | 1.0 | account and author share an address |
 | `name_exact` | 0.6 | same set of name words |
+| `name_alternative` | 0.6 | the same, but only through an OpenAlex spelling the main name does not back |
 | `name_fuzzy` | 0.4 | similar name, threshold `NAME_FUZZY = 0.86` |
 | `itmo_email` | 0.3 | account address on `@itmo.ru` |
 | `login_surname` | 0.3 | author's surname inside the login |
@@ -62,6 +74,13 @@ name. All known spellings on both sides are compared: how the author published
 (`name_variants`, ORCID `other_names`) against what the account is signed with
 (`name`, `login`, names from commits).
 
+OpenAlex lumps namesakes into one author, so `name_variants` also holds other
+people's names. A variant counts as `name_exact` only when all its words are in
+the main name (`Daniil Razdyakonov` for `Daniil S. Razdyakonov`) or there is no
+main name. Otherwise (`Pavel Gulyaev` for `P. V. Gulyaev`, `Xin Zhang` for
+`Xi Zhang`) it gives `name_alternative`. ORCID names are the author's own and
+always count.
+
 ## Three outcomes
 
 `decide` does not sum weights; it looks at the composition:
@@ -69,6 +88,8 @@ name. All known spellings on both sides are compared: how the author published
 - an address match decides by itself: `matched`, unconditionally;
 - an exact name is `matched` if there is a bridge or at least one corroborating
   signal (`CORROBORATING`), otherwise `review`;
+- `name_alternative` is `matched` on the same terms, otherwise `rejected`: a
+  spelling that may belong to a namesake is not worth a question on its own;
 - a similar name is `matched` only with a bridge together with corroboration,
   and `rejected` without a bridge;
 - everything else is `rejected`. Corroborating signals identify nobody on their
@@ -77,10 +98,60 @@ name. All known spellings on both sides are compared: how the author published
 A `review` pair is not written to `Person`; it stays in the journal with its
 full set of signals, which is what a person looks at.
 
-A match is also downgraded to `review` when two authors claim an account with
-equal weight (`evidence.ambiguous`): picking either would be a guess. This is
-usually one person split by OpenAlex into two nodes that `dedup` has not yet
-folded, which is why `dedup` should run before `github_match`.
+When several authors claim an account with equal weight, a shared address wins,
+then a bridge from the author's own paper. Only a tie on all three downgrades
+the match to `review` (`evidence.ambiguous`, reason "several authors fit this
+account equally well"): picking either would be a guess. This is usually one
+person split by OpenAlex into two nodes that `dedup` has not yet folded, which
+is why `dedup` should run before `github_match`. Authors are compared in id
+order, so a tie names the same author on every run.
+
+## Questions
+
+An account the rules cannot place becomes one question in the review queue. It
+names every author still in the running, best first (`candidates` on the row),
+and is answered by choosing the author the account belongs to, or "none of
+them". An account with a single author is answered "theirs" or "not theirs".
+
+People's answers come before the choice. An author somebody confirmed or chose
+wins it, even where the signals alone would reject the pair, unless another
+author the rules would link fits as well or better. Such a "yes" was given
+without that author in view (a namesake at another university, a record the
+account shares an address with), so the account is asked about again, naming
+all of them (reason "answered before, but the question did not name every
+author that fits"). Choosing one author is a "no" to the others in the question.
+Two separate confirmations naming different authors also require a joint choice,
+even if the current profile has no automatic signals.
+Authors somebody refused, one by one or all at once, are left out of the choice,
+so the next question names only authors nobody has refused. If the rules alone
+would now link a refused author, the answer goes to the disputes instead.
+Answers given when an account was asked about one author at a time keep
+applying; where two answers cover one pair, the later one counts.
+Disputes use the same alias mapping and answer order. If an author was merged,
+the disagreement is attached to the original saved question; its members, answer
+and actor are preserved. An older answer superseded by a later one is not flagged.
+If that older question was already disputed, its obsolete flag is removed.
+"Оставить как есть" acknowledges the current evidence: identical results stay
+closed, while changed signals or evidence reopen the discrepancy. Confirmation
+forms carry an evidence token, so an old form cannot acknowledge a changed case.
+A run also closes a discrepancy when its current evidence no longer contradicts
+the answer, provided it evaluated that account and covered the author. A profile
+missing from this group, or an author outside the selection, keeps the earlier flag.
+
+A run also closes the open questions it has settled itself. Only for an account
+whose decision it wrote: a link a scoped run does not write leaves the account's
+questions alone. And only questions whose authors it covers (a scoped run covers
+its selection only), directly or through the record a person was folded into.
+Such a question is settled when the account was linked, when nobody fits it any
+more, or when the question asked now names other authors, for instance after a
+namesake appeared. A closed question gets `auto_resolved_at` and no verdict, so
+it leaves the queue and comes back if a later run holds it again. Answered
+questions are never touched.
+Scoped runs create or refresh questions only when all named authors from the
+current group are selected. Authors read from answers in other groups can join
+the question as context; at least one selected author must be involved.
+If a larger replacement question falls outside that scope, the earlier question
+stays open until a run can save its replacement.
 
 ## `confidence`
 
@@ -98,3 +169,74 @@ are signed with) and `contributed_to` with the role `owner` or `contributor`,
 which is the `CONTRIBUTED_TO` edge. The edge is created only to a repository
 present in the `repositories` collection; repositories walked by `social_graph`
 are not stored there, so they cannot be referenced.
+
+## Applying and withdrawing matches
+
+`Person.github_match` holds the applied results and the exact values they added
+over independent sources: `github`, `email` and `contributed_to`. Applying and
+retracting these additions lives in `pipeline/github_matches.py`; the stage and
+person merging reuse it. No extra Mongo collection or graph property is involved.
+
+`cleared_fields` records explicit withdrawals of `github` or `email`. Mongo
+unsets cleared properties, so their absence alone cannot distinguish a
+withdrawal from an unknown source value. The markers survive repeat runs and
+person merges; supplying a new value removes the corresponding marker.
+`cleared_contributions` records generated repository links that were removed.
+`withdrawn_logins` keeps earlier owners discoverable until the account is assigned
+back to them. This lets a later handoff publish all preceding withdrawals even
+when intermediate groups were never published.
+
+The matcher compares authors without its own earlier additions. An address copied
+from an account is therefore never independent proof that the account belongs to
+that author. For selected persons, a repeat run retracts the old additions and
+applies the current results. Withdrawing an answer can return the account to review;
+choosing another author removes the old owner's generated fields before applying
+the account to the new owner. A pre-existing value or a later independent change
+survives retraction.
+
+A group can lack profiles or repositories another group collected. An absent
+profile keeps its earlier result until a person explicitly refuses it. A still
+matched account keeps its previously known contributions alongside the ones this
+group sees; fresh repository data replaces an earlier role for that account.
+Repositories already named in the match provenance are looked up by id with
+`PreparedStore.get_models`, across groups, so a group's missing row does not erase
+the evidence for its own earlier match. This does not change group membership.
+Selection controls which account decisions the run applies. Applying a decision
+also withdraws its old matches from other owners, including those outside the
+group or selection. Changed former owners keep their existing group claims and
+join the current group, so publishing it carries both sides of the handoff.
+The same run updates their open questions and discrepancies. Coverage is kept
+separately for each account, so unrelated questions remain open.
+Authors named in saved answers are looked up across groups, including by
+`merged_ids`, before matching. A confirmed owner outside the current group still
+prevents assigning the account to a namesake. Context that needs no change is not
+added to the group. If a confirmed author cannot be found among eligible
+authors, the account is skipped with a warning; its earlier results and questions
+are kept.
+When an account returns to review, its previous generated matches are withdrawn;
+independently sourced fields remain. Matching, publishing and source reconciliation share the
+`github_match` resource lock. Withdrawals are saved before new assignments, and
+person updates retry against the latest Mongo version to preserve concurrent
+enrichment. An interrupted handoff can be completed by repeating the stage.
+
+Person merging first combines independent fields, then reapplies the combined
+account results. This prevents a match on one row from claiming an independent
+value on the other. Repository dedup similarly renames independent contributions
+before reapplying matches. If both sources now name the same contribution, a later
+refusal keeps the independent one. A later ORCID confirmation releases the
+match's claim on the login. An address in the independently collected `emails`
+also survives retraction.
+
+Rows written before this tracking existed have no recoverable provenance here.
+An explicit refusal still clears the named GitHub login. Their existing addresses
+and contributions are retained: removing those requires a separate repair based on
+surviving source data, rather than guessing which stage supplied them.
+Withdrawals already saved without `cleared_fields` also need an earlier revision
+to recover their intent; an empty current value alone is not enough.
+
+Publishing sends marked withdrawals as nulls and removes explicitly withdrawn
+`CONTRIBUTED_TO` edges. Both follow graph aliases after folds. The publisher reads
+related prepared source rows across groups so a survivor's independent values and
+links remain protected. Manual relationship claims are also preserved.
+Ordinary unknown values leave graph properties intact; other stale edges still
+need the reconcile operation (`pauk admin prune`, or "Сверка с источником").

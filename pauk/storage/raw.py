@@ -20,14 +20,16 @@ class RawStore:
         self.db = db
         self.group = group
 
-    def append(self, source: str, payload: dict[str, Any], request: dict[str, Any]) -> None:
+    def append(self, source: str, payload: dict[str, Any], request: dict[str, Any]) -> datetime:
+        fetched_at = datetime.now(UTC)
         self.db.raw.insert_one({
             "source": source,
             "group": self.group,
-            "fetched_at": datetime.now(UTC).isoformat(),
+            "fetched_at": fetched_at.isoformat(),
             "request": request,
             "payload": payload,
         })
+        return fetched_at
 
     def read(self, source: str) -> Iterator[dict[str, Any]]:
         cursor = self.db.raw.find(

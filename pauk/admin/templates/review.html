@@ -94,15 +94,28 @@
           {{ who.name }}{% if row.chosen == who.id %} <span class="kind kind-created">выбрана</span>{% endif %}
           {% endif %}
           {% if row.degrees.get(who.id) %}<span class="muted"> · {{ row.degrees[who.id] }}</span>{% endif %}
+          {% elif row.is_choice and not who.account %}
+          {% if user.can_write and not row.verdict %}
+          <label style="display:inline; font-size:inherit; color:inherit">
+            <input type="radio" form="answer-{{ row.id }}" name="chosen" value="{{ who.id }}">
+            <a href="{{ who.href }}">{{ who.name }}</a></label>
+          {% else %}
+          <a href="{{ who.href }}">{{ who.name }}</a>{% if row.chosen == who.id %} <span class="kind kind-created">выбран</span>{% endif %}
+          {% endif %}
           {% else %}
           <a href="{{ who.href }}"
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
           {% endif %}
-          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span>
+          {% if not who.account %}<br><span class="muted val">{{ who.id }}</span>{% endif %}
           {% if row.is_version and row.venues[loop.index0] %}<br><span class="muted">{{ row.venues[loop.index0] }}</span>{% endif %}
+          {% if who.signals %}<div class="muted">{{ who.signals|join(", ") }}</div>{% endif %}
           {% set facts = who.facts or {} %}
-          {% if facts.orcid or facts.email or facts.department or facts.works %}
+          {% if facts.orcid or facts.email or facts.department or facts.works
+                or facts.name or facts.company or facts.location %}
           <div class="facts">
+            {% if facts.name %}<span title="имя в профиле GitHub">{{ facts.name }}</span>{% endif %}
+            {% if facts.company %}<span title="компания">{{ facts.company }}</span>{% endif %}
+            {% if facts.location %}<span title="город">{{ facts.location }}</span>{% endif %}
             {% if facts.orcid %}<span title="ORCID">{{ facts.orcid }}</span>{% endif %}
             {% if facts.email %}<span title="почта">{{ facts.email }}</span>{% endif %}
             {% if facts.department %}<span title="подразделение">{{ facts.department }}</span>{% endif %}
@@ -114,6 +127,14 @@
         {% endfor %}
       </td>
       <td>
+        {% if row.is_alias %}
+        <p class="note bad">Требуется исправить историю слияний. Это не вопрос о том,
+          один ли это человек. Обычное решение ревью не исправляет конфликт алиасов.</p>
+        {% if row.operation %}<div>Операция: <span class="val">{{ row.operation }}</span></div>{% endif %}
+        {% for edge in row.alias_edges %}
+        <div class="val">{{ edge.alias }} → {{ edge.target }}</div>
+        {% endfor %}
+        {% endif %}
         {% if row.shared_coauthors is not none %}
         <div>соавторов <b>{{ row.shared_coauthors }}</b>,
           подразделений <b>{{ row.shared_departments }}</b></div>
@@ -150,7 +171,7 @@
         {% if row.llm_reason %}<div class="muted">LLM: {{ row.llm_reason }}</div>{% endif %}
         {% endif %}
         {% if row.is_github %}
-        <div>{{ row.signals|join(", ") }}</div>
+        {% if not row.is_choice %}<div>{{ row.signals|join(", ") }}</div>{% endif %}
         {% for repo in row.repos %}
         <div class="muted val"><a href="{{ repo }}" target="_blank" rel="noopener">{{ repo }}</a></div>
         {% endfor %}
@@ -171,7 +192,9 @@
         <div style="margin-bottom:8px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
             {% if row.is_staff %}{% if row.chosen %}запись выбрана{% else %}никто из каталога{% endif %}
-            {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
+            {% elif row.is_github %}
+              {% if row.chosen %}автор выбран{% elif row.verdict == "same" %}его аккаунт
+              {% elif row.is_choice %}никто из них{% else %}не его аккаунт{% endif %}
             {% elif row.is_version %}{% if row.verdict == "same" %}одна работа{% else %}разные работы{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
@@ -188,14 +211,26 @@
         {% elif row.skipped_by %}
         <div class="muted" style="margin-bottom:8px">отложил {{ row.skipped_by }}</div>
         {% endif %}
-        {% if user.can_write %}
+        {% if row.is_alias %}
+        <span class="muted">Ответы и слияния заблокированы до отдельного исправления
+          и проверки алиасов. Эта страница не исправляет данные.</span>
+        {% elif user.can_write %}
         {% if row.verdict and row.disputed_at %}
         <form method="post" action="/review/answer" class="verdicts">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
           <input type="hidden" name="members" value="{{ row.members|join(',') }}">
           <input type="hidden" name="tab" value="{{ tab }}">
+          {% if row.is_github and row.disputed_token %}
+          <input type="hidden" name="dispute_token" value="{{ row.disputed_token }}">
+          {% endif %}
+          {% if row.is_choice and row.verdict == "same" %}
+          <input type="hidden" name="verdict" value="choose">
+          <input type="hidden" name="login" value="{{ row.login }}">
+          <input type="hidden" name="chosen" value="{{ row.chosen }}">
+          {% else %}
           <input type="hidden" name="verdict" value="{{ row.verdict }}">
+          {% endif %}
           <input type="hidden" name="note" value="{{ row.note }}">
           <button type="submit" class="ghost">оставить как есть</button>
         </form>
@@ -238,6 +273,9 @@
             <button type="submit" name="verdict" value="choose">это выбранная запись</button>
             {% elif row.is_group %}
             <button type="submit" name="verdict" value="split">отмеченные это один человек</button>
+            {% elif row.is_choice %}
+            <input type="hidden" name="login" value="{{ row.login }}">
+            <button type="submit" name="verdict" value="choose">это его аккаунт</button>
             {% elif row.is_github %}
             <button type="submit" name="verdict" value="same">это его аккаунт</button>
             {% elif row.is_version %}
@@ -246,7 +284,7 @@
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
             <button type="submit" name="verdict" value="different" class="ghost">
-              {% if row.is_staff %}никто из них
+              {% if row.is_staff or row.is_choice %}никто из них
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
               {% else %}разные{% endif %}</button>

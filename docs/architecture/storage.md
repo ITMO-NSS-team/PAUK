@@ -31,8 +31,10 @@ Do not assume that a row visible in Mongo is visible to a stage. A separate
 pair, `get_rows` and `get_models(entity, ids, model)`, is a point lookup by id
 **without** the group filter, for code that must see an entity's global state
 even if its own group has not touched it yet (consumers:
-`pauk/pipeline/normalize.py::OpenAlexNormalizer._seed` and
-`pauk/graph/unmerge.py`).
+`pauk/pipeline/normalize.py::OpenAlexNormalizer._seed`,
+`pauk/graph/unmerge.py` and `github_match`, which reads authors named in saved
+answers and repositories named by its earlier results). `include_merged=True`
+also finds a surviving row by an id in its `merged_ids`.
 
 What this does not solve: the same real-world entity under **different** ids
 (several OpenAlex author ids for one person, an ORCID-fallback id, and so on)
@@ -44,6 +46,10 @@ Append-only, collection `raw`, document `{source, group, fetched_at, request,
 payload}`. `append(source, payload, request)` is an `insert_one` with no
 upsert, so fetch history is never overwritten. `read(source)` is
 `find({"source": source, "group": self.group})` sorted by `fetched_at`.
+
+`append()` returns the exact timestamp persisted in `fetched_at`. ORCID
+membership uses that timestamp for `observed_at`, so replaying the same
+stored response cannot falsely look older than its prepared facts.
 
 `ensure_indexes()` creates two compound indexes on `raw`: `{source, group,
 fetched_at}` for the normal read, and `{source, fetched_at}` for cross-group
@@ -77,6 +83,11 @@ keyed by `publication_id`.
   Enrichment stages use it after an external request completes. Passing a
   subset to `write_models` would retract the group's claim on everything not
   in the subset, which is why `upsert_models` exists.
+- **`modify_model`**: rereads one existing row, applies a callback and saves it
+  only if its `_version` still matches. A conflict retries from the fresh row;
+  deletion or repeated conflicts raise `PreparedWriteConflict`. It keeps other
+  groups' claims and adds the current one. GitHub handoffs use it for both former
+  and new owners, preserving unrelated concurrent enrichment.
 
 ### Versioning: `_version` and `revisions`
 
@@ -98,7 +109,7 @@ grows by 1:
     "version": 1,                   # the version number being archived
     "snapshot": {...},              # the full document as it was BEFORE replacement
     "replaced_by_group": "period-2024",
-    "replaced_at": "2026-08-12T...",
+    "replaced_at": "<UTC timestamp>",
 }
 ```
 
@@ -123,6 +134,8 @@ separate Mongo requests (`find_one` + `update_one`, not an atomic
 groups can race. In practice runs are started by hand and do not overlap. A
 pipeline run holds its group (`PipelineRunner.run`) and publishing holds the
 graph, but nothing guards a single document across groups.
+`modify_model` uses a conditional version check for its own updates; the ordinary
+batch write methods retain the simplification above.
 
 ### Durable person merge sources
 
@@ -154,8 +167,8 @@ is idempotent and called when each command starts, next to
 `revisions` with zstd compression if they do not exist yet. They are the two
 heaviest collections: verbatim API responses and full row snapshots. An
 existing collection cannot change its compressor this way (WiredTiger takes
-it at creation); the command for a live database is in
-[admin-panel.md](../admin-panel.md). A server or test double that does not
+it at creation); live-database maintenance is described in
+[admin-panel.md](../admin-panel.md#mongo-compression). A server or test double that does not
 accept the option keeps the default compressor.
 
 ## `review.py`: questions a person answers
@@ -171,20 +184,43 @@ again updates the document instead of creating a second one.
 | Field | Meaning |
 |---|---|
 | `_id` | `<kind>:<id>:<id>...` with members sorted, so (a, b) and (b, a) are one question |
-| `kind` | `person_pair`, `person_group`, `github_person` or `staff_record` |
+| `kind` | `person_pair`, `person_group`, `github_person`, `staff_record`, or the read-only diagnostic `person_alias_conflict` |
 | `members` | who the question is about: person records, an account login, catalog records |
 | `evidence` | what the rules gathered: names, shared coauthors, departments, refusal reasons (`held_because`); refreshed on every repeated refusal so there is something to compare against |
 | `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
 | `verdict`, `actor`, `note`, `decided_at` | the answer: `same` or `different`, by whom, why, when |
 | `applied_at` | when a "same" answer actually merged the records; empty while it waits for a run |
-| `chosen` | for a catalog question, which record was picked |
+| `chosen` | the catalog record or GitHub author picked by a positive choice; a binary answer clears a previous choice |
 | `skipped_at`, `skipped_by`, `disputed_at`, `disputed_rule` | the question was postponed; the rules changed their mind after a "different" answer |
+| `disputed_members`, `disputed_token` | the original members involved in a GitHub discrepancy and a fingerprint of its evidence |
+| `acknowledged_dispute_token` | the GitHub evidence a reviewer explicitly accepted with "оставить как есть" |
 
 An answer and its application are different things and live in different
 fields. Applying changes the graph once; the answer keeps all later runs in
 agreement with the person. A "different" answer has nothing to apply: it
 exists so the rules do not merge the pair tomorrow when it gains a shared
 coauthor.
+
+Answer transitions belong to `review.py`. Replacing a choice with "different"
+clears `chosen` in the same Mongo update as the verdict. GitHub decisions also
+check the verdict before applying a choice, so an older document that still
+has `chosen` beside "different" cannot turn a refusal into a confirmation.
+GitHub disagreements resolve aliases through the same answer reader and mark
+the original question behind the effective refusal, including refusals implied
+by choosing another author. A newer answer takes precedence over an older one.
+Person-pair answers use the same source-question lookup after merges; both dedup
+passes supply their alias maps. When aliases collapse several answers to one
+pair, the most recent `decided_at` wins.
+
+GitHub confirmation checks the displayed evidence token in the same Mongo update
+as the answer. It closes identical future discrepancies; changed evidence needs
+another review. A repeated confirmation is a no-op. Ordinary answer forms do not
+acknowledge evidence they never displayed. Superseded discrepancy flags are retired
+without changing the old answer itself.
+The caller supplies the evaluated GitHub accounts and selected authors separately
+from the report: an empty report retracts old rule conflicts only inside that scope.
+Question retirement also uses per-account coverage: changing an author for one
+account cannot close that author's questions about another account.
 
 `applied_at` is set by whoever merged: the panel (`mark_applied`) or a run
 (`mark_applied_merges`, which matches answers against the map of what was
@@ -193,6 +229,12 @@ it is taken apart with `record_undo` after `pauk.graph.unmerge.split_person`.
 
 Indexes include `{verdict, seen_at}` (the queue opens on unanswered, oldest
 first) and `{members}` (all questions about one person).
+
+Alias-conflict diagnostics have their own keys and are never identity decisions.
+They carry competing alias edges and the operation that stopped. Normal answers
+and skips cannot dismiss them or create identity decisions inside the affected
+component. Recording a diagnostic preserves existing ordinary group questions;
+repair and validated closure are separate from this queue.
 
 ## PDFs: on disk, Mongo holds only a pointer (`pdf.py::PdfStore`)
 
@@ -248,7 +290,9 @@ separate document for the corrective semantic retry too; its number is in
   snapshots (`pauk/cache/graph_snapshot.py`), the site data
   (`pauk/gui/graph_builder/builder.py`) and local journals such as the dedup
   candidates (`data/audit/<group>/dedup_candidates.jsonl`, path from
-  `Settings.audit_dir`). Text mode only (`mode="w", encoding="utf-8"`); it
+  `Settings.audit_dir`). Temporary files use mode 600, retained after
+  replacement; publishing generated JSON for another service requires setting
+  readable permissions. Text mode only (`mode="w", encoding="utf-8"`); it
   does not suit binary data.
 - **`atomic_write_bytes(target, data)`**: the same trick for bytes already in
   memory (PDFs from `PdfStore.save`).

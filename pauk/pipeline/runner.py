@@ -37,7 +37,8 @@ class PipelineRunner:
 
     def _run(self, selector: WorkSelector | PeriodSelector | WorksFileSelector,
              on_stage: OnStage | None = None) -> dict[str, int]:
-        client = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key)
+        client = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key,
+                               requests_per_second=self.config.openalex_rps)
         if on_stage is not None:
             on_stage("выгрузка из OpenAlex", 0, 0)
         count = Collector(client, self.raw).collect(selector)

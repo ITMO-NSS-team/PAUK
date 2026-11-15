@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import mongomock
 
-from pauk.models import Authorship, Person, Publication
+from pauk.models import Authorship, GitHubMatchResult, Person, Publication
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.persons import PersonsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -91,14 +92,17 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertEqual(authorship.affiliation, "As printed on the paper")
         self.assertIsNone(authorship.affiliation_source)
 
-    def test_an_itmo_affiliation_no_work_stated_still_marks_the_person(self):
+    def test_profile_only_itmo_affiliation_backfills_without_confirming_membership(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
                         authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Deposit without affiliations", year=2026)],
             openalex_author(affiliations=[(ITMO_INSTITUTION, [2026])]),
         )
-        self.assertTrue(result.is_itmo)
+        self.assertFalse(result.is_itmo)
+        self.assertEqual(result.membership_status, "unknown")
+        self.assertEqual(result.authored[0].affiliation, "ITMO University")
+        self.assertEqual(result.authored[0].affiliation_source, "openalex")
 
     def test_orcid_employment_fills_what_openalex_does_not_know(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False, orcid="0000-0001",
@@ -183,6 +187,18 @@ class OrcidIdentityTest(AffiliationBackfillTest):
         # The login, not the URL: that is what the matcher and the graph
         # compare accounts on.
         self.assertEqual(result.github, "adeptvin1")
+
+    def test_later_orcid_confirmation_survives_removing_the_match(self):
+        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1")
+        apply_matches(person, [GitHubMatchResult(login="coder42", email="account@lab.test")])
+        payload = self.orcid_urls("https://github.com/Coder42")
+        payload["person"]["emails"] = {"email": [{"email": "account@lab.test"}]}
+
+        result = self.run_orcid(payload, person)
+        retract_matches(result)
+
+        self.assertEqual(result.github, "coder42")
+        self.assertEqual(result.email, "account@lab.test")
 
     def test_a_link_pasted_from_the_address_bar_still_names_the_account(self):
         # Authors paste what the browser showed them, tab and all.
