@@ -226,13 +226,18 @@ def test_flaky_affiliation_does_not_split_identity(bench):
 
 def test_duplicate_author_entry_kept_per_position(bench):
     a12 = bench.person("A5000000012")
+    publication_id = bench.publication_id("W7000000018")
     authored = [
         a for a in a12.authored
-        if a.publication_id == bench.publication_id("W7000000018")
+        if a.publication_id == publication_id
     ]
-    # Neo4j has one AUTHORED edge per person/publication. The lossless source
-    # ledger retains both occurrences and their original positions.
-    assert len(authored) == 1
+    assert len(authored) == 2
+    assert {authorship.position for authorship in authored} == {1, 3}
+    graph_edges = [
+        edge for edge in bench.graph.edges
+        if edge == ("Person", "AUTHORED", "Publication", a12.id, publication_id)
+    ]
+    assert len(graph_edges) == 1
     source_authors = [
         author
         for record in bench.publication("W7000000018").source_records
@@ -432,8 +437,11 @@ def test_preprint_and_version_of_record_stay_two_publications(bench):
 
 def test_the_version_rules_relate_preprint_and_version_of_record(bench):
     report = find_version_candidates(bench.graph)
-    pairs = {(row["record_a"], row["record_b"]): row["bucket"] for row in report}
-    pair = tuple(bench.publication_id(work_id) for work_id in PUBLICATION_VERSIONS)
+    pairs = {
+        frozenset((row["record_a"], row["record_b"])): row["bucket"]
+        for row in report
+    }
+    pair = frozenset(bench.publication_id(work_id) for work_id in PUBLICATION_VERSIONS)
     assert pairs[pair] == "MISSED_BY_NORM"
 
 
