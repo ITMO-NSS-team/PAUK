@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -58,10 +58,13 @@ class SourceAuthor(BaseModel):
     """An author as one source record stated it, after identity resolution."""
 
     person_id: str
+    source_author_id: str | None = None
     name: str | None = None
     position: int | None = None
     identifiers: list[ExternalIdentifier] = Field(default_factory=list)
     affiliation: str | None = None
+    institution_rors: list[str] | None = None
+    observed_at: datetime | None = None
     is_corresponding: bool = False
 
 
@@ -76,6 +79,7 @@ class PublicationSourceRecord(BaseModel):
     type: str | None = None
     fields: list[str] = Field(default_factory=list)
     journal: str | None = None
+    venue_type: str | None = None
     doi: str | None = None
     publication_date: date | None = None
     year: int | None = None

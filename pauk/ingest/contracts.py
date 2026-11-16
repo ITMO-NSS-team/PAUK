@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -18,6 +18,7 @@ class RawEnvelope(BaseModel):
     schema_version: int = Field(default=2, ge=1)
     payload: dict[str, Any]
     request: dict[str, Any] = Field(default_factory=dict)
+    fetched_at: datetime | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -42,11 +43,13 @@ class IncomingAuthor(BaseModel):
     """A source author before PAUK assigns an internal person id."""
 
     source_author_id: str | None = None
+    source_owner_id: str | None = None
     name: str | None = None
     orcid: str | None = None
     identifiers: list[ExternalIdentifier] = Field(default_factory=list)
     position: int = Field(ge=1)
     affiliation: str | None = None
+    institution_rors: list[str] | None = None
     is_itmo: bool = False
     is_corresponding: bool = False
     name_variants: list[str] = Field(default_factory=list)
@@ -63,6 +66,7 @@ class IncomingPublication(BaseModel):
     type: str | None = None
     fields: list[str] = Field(default_factory=list)
     journal: str | None = None
+    venue_type: str | None = None
     doi: str | None = None
     publication_date: date | None = None
     year: int | None = None

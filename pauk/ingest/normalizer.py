@@ -12,6 +12,17 @@ from pauk.models import (
     PublicationSourceRecord,
     SourceAuthor,
 )
+from pauk.models.person import MembershipOwnerSources
+from pauk.pipeline.membership import (
+    apply_membership,
+    authorship_snapshot_is_current,
+    coalesce_authorships,
+    extend_owner_sources,
+    iter_work_membership,
+    reconcile_authorship_snapshot,
+    refresh_authorship_membership,
+    source_observed_at,
+)
 from pauk.storage import PreparedStore, RawStore
 from pauk.storage.review import record_held, record_publication_pair
 
@@ -22,6 +33,12 @@ from .registry import AdapterRegistry, built_in_registry
 
 logger = logging.getLogger(__name__)
 PLACEHOLDER_TITLES = {"", "untitled"}
+
+
+def _membership_payload(rors: list[str] | None) -> dict:
+    if rors is None:
+        return {}
+    return {"institutions": [{"ror": ror} for ror in rors]}
 
 
 class PublicationNormalizer:
@@ -176,6 +193,7 @@ class PublicationNormalizer:
                 type=publication.type,
                 fields=publication.fields,
                 journal=publication.journal,
+                venue_type=publication.venue_type,
                 doi=publication.doi,
                 publication_date=publication.publication_date,
                 year=publication.year,
@@ -197,8 +215,30 @@ class PublicationNormalizer:
         persons: OrderedDict[str, Person] = OrderedDict(
             (row.id, row) for row in self.prepared.read_models("persons", Person)
         )
+        membership_source_ids = sorted({
+            incoming.source_id
+            for _, incoming in batches
+            if incoming.source == "openalex"
+        })
+        if membership_source_ids:
+            for row in self.prepared.db.persons.find(
+                {"$or": [
+                    {"authored.institution_source_id": {"$in": membership_source_ids}},
+                    {"membership_work_sources.institution_source_id": {
+                        "$in": membership_source_ids,
+                    }},
+                ]},
+                {"_id": False, "groups": False, "_version": False},
+            ):
+                person = Person.model_validate(row)
+                persons.setdefault(person.id, person)
         self._bootstrap(publications, persons)
         affected: set[str] = set()
+        source_people: dict[str, set[str]] = {}
+        for person in persons.values():
+            for authorship in iter_work_membership(person):
+                if authorship.institution_source_id:
+                    source_people.setdefault(authorship.institution_source_id, set()).add(person.id)
 
         for envelope, incoming in batches:
             publication_id = self.identities.publication_id(
@@ -216,6 +256,44 @@ class PublicationNormalizer:
                 (record for record in existing.source_records if record.key == incoming.record_key),
                 None,
             ) if existing else None
+            observed_at = source_observed_at(envelope.fetched_at)
+            previous_observed_at = source_observed_at(
+                previous_record.metadata.get("observed_at")
+            ) if previous_record else None
+            if previous_observed_at is not None and (
+                observed_at is None or observed_at <= previous_observed_at
+            ):
+                continue
+
+            person_aliases = {
+                merged_id: person.id
+                for person in persons.values()
+                for merged_id in person.merged_ids
+            }
+            slots = {
+                (str(row["source_owner_id"]), int(row["position"])): row.get("institution_rors")
+                for row in incoming.metadata.get("authorship_snapshot") or []
+                if row.get("source_owner_id") and row.get("position") is not None
+            }
+            current_owners = {
+                owner
+                for owner, _ in slots
+                if (
+                    existing_person := persons.get(person_aliases.get(owner, owner))
+                ) is None
+                or authorship_snapshot_is_current(
+                    existing_person, owner, incoming.source_id, observed_at,
+                )
+            }
+            if incoming.source == "openalex":
+                for person_id in source_people.get(incoming.source_id, ()):
+                    reconcile_authorship_snapshot(
+                        persons[person_id],
+                        incoming.source_id,
+                        slots,
+                        observed_at,
+                        complete=bool(incoming.metadata.get("authorship_snapshot_complete")),
+                    )
 
             source_authors: list[SourceAuthor] = []
             for author in incoming.authors:
@@ -237,17 +315,29 @@ class PublicationNormalizer:
                     (row.id for row in persons.values() if person_id in row.merged_ids),
                     person_id,
                 )
-                person = persons.get(person_id) or self.identities.person(person_id) or Person(
-                    id=person_id,
-                    schema_version=2,
-                    openalex_id=(
-                        author.source_author_id
-                        if incoming.source == "openalex" and source_identifiers is None
-                        else None
-                    ),
-                    is_itmo=author.is_itmo,
-                    name_raw=author.name,
-                )
+                source_owner_id = author.source_owner_id or author.source_author_id
+                person = persons.get(person_id) or self.identities.person(person_id)
+                if person is None:
+                    owner_sources = []
+                    if incoming.source == "openalex" and source_owner_id:
+                        owner_sources.append(MembershipOwnerSources(
+                            source_person_id=source_owner_id,
+                            work_ids=[],
+                            orcid_ids=[],
+                            observed_at=observed_at,
+                        ))
+                    person = Person(
+                        id=person_id,
+                        schema_version=2,
+                        openalex_id=(
+                            author.source_author_id
+                            if incoming.source == "openalex" and source_identifiers is None
+                            else None
+                        ),
+                        is_itmo=False,
+                        name_raw=author.name,
+                        membership_owner_sources=owner_sources,
+                    )
                 previous_author = next(
                     (
                         item for item in previous_record.authors
@@ -256,10 +346,10 @@ class PublicationNormalizer:
                     None,
                 ) if previous_record else None
                 person.schema_version = max(person.schema_version, 2)
-                person.is_itmo = person.is_itmo or author.is_itmo
                 source_author_changed = previous_author is not None and any((
                     previous_author.name != author.name,
                     previous_author.affiliation != author.affiliation,
+                    previous_author.institution_rors != author.institution_rors,
                     previous_author.is_corresponding != author.is_corresponding,
                     previous_author.identifiers != author.identifiers,
                 ))
@@ -274,12 +364,57 @@ class PublicationNormalizer:
                     for item in [*person.identifiers, *author.identifiers]
                 }.values())
                 persons[person_id] = person
+                if incoming.source == "openalex" and source_owner_id:
+                    source_people.setdefault(incoming.source_id, set()).add(person_id)
+                    if source_owner_id in current_owners:
+                        extend_owner_sources(
+                            person,
+                            source_owner_id,
+                            work_id=incoming.source_id,
+                            orcid_id=author.orcid,
+                            observed_at=observed_at,
+                        )
+                        membership_row = next(
+                            (
+                                row for row in person.authored
+                                if row.publication_id == publication_id
+                                and row.position == author.position
+                            ),
+                            Authorship(
+                                publication_id=publication_id,
+                                position=author.position,
+                                affiliation=author.affiliation,
+                                is_corresponding=author.is_corresponding,
+                                institution_source_person_id=source_owner_id,
+                                institution_source_id=incoming.source_id,
+                            ),
+                        )
+                        if membership_row not in person.authored:
+                            person.authored.append(membership_row)
+                        refresh_authorship_membership(
+                            person,
+                            membership_row,
+                            _membership_payload(author.institution_rors),
+                            source_owner_id,
+                            incoming.source_id,
+                            observed_at,
+                            snapshot_accepted=True,
+                        )
+                        membership_row.is_corresponding = (
+                            membership_row.is_corresponding or author.is_corresponding
+                        )
+                        if author.affiliation:
+                            membership_row.affiliation = author.affiliation
+                            membership_row.affiliation_source = None
                 source_authors.append(SourceAuthor(
                     person_id=person_id,
+                    source_author_id=source_owner_id,
                     name=author.name,
                     position=author.position,
                     identifiers=source_identifiers or author.identifiers,
                     affiliation=author.affiliation,
+                    institution_rors=author.institution_rors,
+                    observed_at=observed_at,
                     is_corresponding=author.is_corresponding,
                 ))
             record = PublicationSourceRecord(
@@ -291,6 +426,7 @@ class PublicationNormalizer:
                 type=incoming.type,
                 fields=incoming.fields,
                 journal=incoming.journal,
+                venue_type=incoming.venue_type,
                 doi=incoming.doi,
                 publication_date=incoming.publication_date,
                 year=incoming.year,
@@ -299,6 +435,7 @@ class PublicationNormalizer:
                 authors=source_authors,
                 metadata={
                     **incoming.metadata,
+                    "observed_at": observed_at.isoformat() if observed_at else None,
                     "funding": [item.model_dump(mode="json") for item in incoming.funding],
                 },
             )
@@ -329,7 +466,7 @@ class PublicationNormalizer:
                     continue
                 persons.setdefault(person.id, person)
             previous_authorships = {
-                (person.id, authorship.publication_id): deepcopy(authorship)
+                (person.id, authorship.publication_id, authorship.position): deepcopy(authorship)
                 for person in persons.values()
                 for authorship in person.authored
                 if authorship.publication_id in affected
@@ -344,7 +481,9 @@ class PublicationNormalizer:
                         if person is None:
                             continue
                         persons[person.id] = person
-                        previous = previous_authorships.get((person.id, publication_id))
+                        previous = previous_authorships.get((
+                            person.id, publication_id, author.position or 0,
+                        ))
                         authorship = Authorship(
                             publication_id=publication_id,
                             position=author.position or 0,
@@ -355,13 +494,23 @@ class PublicationNormalizer:
                                 None if author.affiliation
                                 else previous.affiliation_source if previous else None
                             ),
+                            institution_rors=author.institution_rors,
+                            institution_source_person_id=(
+                                author.source_author_id if record.source == "openalex" else None
+                            ),
+                            institution_source_id=(
+                                record.source_id if record.source == "openalex" else None
+                            ),
+                            institution_observed_at=(
+                                author.observed_at if record.source == "openalex" else None
+                            ),
                             is_corresponding=author.is_corresponding,
                         )
-                        if not any(
-                            item.publication_id == publication_id
-                            for item in person.authored
-                        ):
-                            person.authored.append(authorship)
+                        person.authored.append(authorship)
+
+        for person in persons.values():
+            coalesce_authorships(person)
+            apply_membership(person)
 
         self._record_title_reviews(publications, affected)
         self.prepared.write_models("publications", publications.values())

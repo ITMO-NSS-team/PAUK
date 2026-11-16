@@ -206,7 +206,14 @@ class SourceNeutralIngestTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "openalex-sample")
         raw.append(
             "openalex_works",
-            {"id": "https://openalex.org/W99", "title": "Paper", "authorships": []},
+            {
+                "id": "https://openalex.org/W99",
+                "title": "Paper",
+                "authorships": [],
+                "primary_location": {
+                    "source": {"display_name": "Proceedings", "type": "conference"},
+                },
+            },
             {},
             provider="openalex",
             record_key="openalex:W99",
@@ -218,6 +225,8 @@ class SourceNeutralIngestTest(unittest.TestCase):
         self.assertIn("openalex:W99", {
             identifier.normalized_key for identifier in publication.identifiers
         })
+        self.assertEqual(publication.venue_type, "conference")
+        self.assertEqual(publication.source_records[0].venue_type, "conference")
 
     def test_rerunning_v2_openalex_keeps_one_pauk_person(self):
         raw = RawStore(self.db, "openalex-sample")

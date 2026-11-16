@@ -15,7 +15,7 @@ def _record_rank(record: PublicationSourceRecord) -> tuple:
     newest = -(effective_date or date.min).toordinal()
     completeness = -sum(bool(value) for value in (
         record.title, record.doi, record.journal, record.publication_date,
-        record.abstract, record.pdf_urls, record.fields, record.authors,
+        record.venue_type, record.abstract, record.pdf_urls, record.fields, record.authors,
     ))
     return type_rank, newest, completeness, record.key
 
@@ -44,6 +44,7 @@ def build_publication(entity_id: str, records: list[PublicationSourceRecord],
         type=first("type"),
         fields=fields,
         journal=first("journal"),
+        venue_type=first("venue_type"),
         doi=first("doi"),
         publication_date=first("publication_date"),
         year=first("year"),

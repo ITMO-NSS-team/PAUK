@@ -118,8 +118,9 @@ class ArchivedPersonMergeTest(UnmergeTest):
             self.assertEqual(edge["is_corresponding"], corresponding)
 
     def test_split_restores_identity_keys_and_source_record_authors(self):
-        first = person("A1", "Ivan Smirnov", works=["W1"], orcid="0000-1")
-        second = person("A2", "I. Smirnov", works=["W2"], orcid="0000-1")
+        orcid = "0000-0002-1825-0097"
+        first = person("A1", "Ivan Smirnov", works=["W1"], orcid=orcid)
+        second = person("A2", "I. Smirnov", works=["W2"], orcid=orcid)
         self.publish(first, second)
         self.prepared.write_models("publications", [
             Publication(

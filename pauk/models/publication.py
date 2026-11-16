@@ -115,6 +115,7 @@ class Publication(BaseModel):
                     "type": values.get("type"),
                     "fields": values.get("fields") or [],
                     "journal": version.get("journal"),
+                    "venue_type": values.get("venue_type"),
                     "doi": version.get("doi"),
                     "publication_date": version.get("publication_date"),
                     "year": version.get("year"),

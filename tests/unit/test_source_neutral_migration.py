@@ -155,6 +155,9 @@ class SourceNeutralMigrationTest(unittest.TestCase):
                 "position": 1,
                 "identifiers": [],
                 "affiliation": None,
+                "source_author_id": None,
+                "institution_rors": None,
+                "observed_at": None,
                 "is_corresponding": False,
             }],
         )
