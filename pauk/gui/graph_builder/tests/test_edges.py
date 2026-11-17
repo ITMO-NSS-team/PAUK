@@ -79,5 +79,49 @@ class WeightThresholdTest(unittest.TestCase):
         self.assertEqual(edges["repo_edges"], [{"s": "r1", "t": "r2", "w": 0.33, "via": ["owner"]}])
 
 
+class VersionEdgesTest(unittest.TestCase):
+    @staticmethod
+    def _edges(rows=None, pub_ids=None):
+        pub_ids = {"P1", "P2", "P3"} if pub_ids is None else pub_ids
+        db = {"repositories": [], "repo_persons": [], "repo_pubs": [], "authorship": []}
+        if rows is not None:
+            db["pub_versions"] = rows
+        authorship = Authorship(
+            pub_authors={pid: [] for pid in pub_ids}, author_pubs={}, pubs_rows=[], pub_ids=pub_ids
+        )
+        table = DepartmentTable(departments=[], g=lambda _d: 0, no_dept_gid=0)
+        return EdgeBuilder(db, authorship, _assignment(), table, _layout()).build()["version_edges"]
+
+    def test_only_explicit_human_confirmation_is_accepted(self):
+        for status in ("held", "different", "SAME", "", None, True):
+            with self.subTest(status=status):
+                self.assertEqual(self._edges([
+                    {"version_pid": "P1", "pid": "P2", "status": status,
+                     "mergeable": True, "llm_verdict": True, "bucket": "MEDIUM_FUZZY_LLM_SAME"}
+                ]), [])
+        self.assertEqual(self._edges([{"version_pid": "P1", "pid": "P2", "llm_verdict": True}]), [])
+        self.assertEqual(self._edges([{"version_pid": "P2", "pid": "P1", "status": "same"}]),
+                         [{"s": "P2", "t": "P1"}])
+
+    def test_missing_table_is_compatible_with_old_snapshots(self):
+        self.assertEqual(self._edges(), [])
+
+    def test_both_publications_must_be_on_the_map_and_self_loops_are_dropped(self):
+        rows = [
+            {"version_pid": source, "pid": target, "status": "same"}
+            for source, target in (("P1", "P2"), ("P1", "P3"), ("P3", "P2"), ("P1", "P1"), (None, "P2"))
+        ]
+        self.assertEqual(self._edges(rows, {"P1", "P2"}), [{"s": "P1", "t": "P2"}])
+
+    def test_pairs_are_sorted_deduplicated_and_keep_their_direction(self):
+        rows = [
+            {"version_pid": source, "pid": target, "status": "same", "reviewer": "private", "llm_reason": "private"}
+            for source, target in (("P2", "P3"), ("P2", "P1"), ("P1", "P2"), ("P2", "P3"))
+        ]
+        expected = [{"s": "P1", "t": "P2"}, {"s": "P2", "t": "P1"}, {"s": "P2", "t": "P3"}]
+        self.assertEqual(self._edges(rows), expected)
+        self.assertEqual(self._edges(list(reversed(rows))), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

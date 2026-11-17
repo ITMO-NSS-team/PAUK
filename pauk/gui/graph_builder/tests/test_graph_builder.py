@@ -141,6 +141,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
     def test_repo_pub_and_author_edges_are_present(self):
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
+        self.assertEqual(summary["version_edges"], [])
         self.assertEqual(summary["repo_pub_edges"], [{"s": "R1", "t": "P1"}])
         self.assertEqual(summary["repo_author_edges"], [{"s": "R1", "t": "A1", "role": "maintainer"}])
 
@@ -155,6 +156,29 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
 
 class WriteSiteDataTest(unittest.TestCase):
+    def test_confirmed_versions_reach_both_variants_without_changing_authorship(self):
+        db = BuildGraphDataIntegrationTest._sample_db()
+        for pid in ("P2", "P3"):
+            db["publications"].append({**db["publications"][0], "id": pid})
+            db["authorship"].append({"pid": pid, "per": "A1", "position": 1, "is_corresponding": False})
+        baseline, _ = GraphDataBuilder(db, seed=1).build()
+        db["pub_versions"] = [
+            {"version_pid": "P2", "pid": "P1", "status": "same"},
+            {"version_pid": "P3", "pid": "P1", "status": "held", "llm_verdict": True},
+        ]
+        summary, _ = GraphDataBuilder(db, seed=1).build()
+        self.assertEqual(summary["version_edges"], [{"s": "P2", "t": "P1"}])
+        for key in ("pub_edges", "all_edges", "pubs", "authors"):
+            self.assertEqual(summary[key], baseline[key], key)
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            write_snapshot(snapshot, db)
+            stats = write_site_data(snapshot, Path(tmp) / "gui", seed=1)
+            self.assertEqual(stats["map_edges"], len(baseline["all_edges"]))
+            for variant in ("private", "public"):
+                graph = json.loads((Path(tmp) / "gui" / variant / "graph-data.json").read_text(encoding="utf-8"))
+                self.assertEqual(graph["version_edges"], [{"s": "P2", "t": "P1"}])
+
     def test_both_variants_get_all_four_files_and_only_private_keeps_the_real_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             snapshot = Path(tmp) / "snapshot.json"

@@ -475,6 +475,67 @@ describe("populateGraph on fixture data", () => {
   });
 });
 
+describe("accepted publication versions", () => {
+  it("draws version-only edges on the publications tab regardless of shared-author threshold", () => {
+    const data = { ...dataWithNoDept(), version_edges: [{ s: "P2", t: "P1" }] };
+    for (const tab of [1, 2, 3] as const) {
+      const graph = new Graph();
+      populateGraph(graph, data, "ru", tab, { ...NO_FILTER, minSharedAuthors: 99 }, NO_PUB_DETAILS);
+      expect(realEdgeKeys(graph)).toHaveLength(tab === 3 ? 1 : 0);
+      if (tab === 3) expect(graph.edges().map((edge) => graph.getEdgeAttribute(edge, "weight"))).toEqual([0]);
+    }
+  });
+
+  it("draws one line for overlapping relations in either direction and preserves shared weight", () => {
+    for (const version of [{ s: "P1", t: "P2" }, { s: "P2", t: "P1" }]) {
+      const data = {
+        ...dataWithNoDept(),
+        pub_edges: [{ s: "P2", t: "P1", w: 3 }],
+        version_edges: [version, version],
+      };
+      const graph = new Graph();
+      populateGraph(graph, data, "ru", 3, { ...NO_FILTER, minSharedAuthors: 99 }, NO_PUB_DETAILS);
+      expect(realEdgeKeys(graph)).toHaveLength(1);
+      expect(graph.edges().map((edge) => graph.getEdgeAttribute(edge, "weight"))).toEqual([3]);
+      populateGraph(graph, { ...data, version_edges: [] }, "ru", 3,
+        { ...NO_FILTER, minSharedAuthors: 99 }, NO_PUB_DETAILS);
+      expect(realEdgeKeys(graph)).toHaveLength(0);
+    }
+  });
+
+  it("does not restore nodes hidden by year or department filters", () => {
+    const data = { ...dataWithNoDept(), version_edges: [{ s: "P2", t: "P1" }] };
+    for (const filters of [{ ...NO_FILTER, showNoDeptPubs: false }, { ...NO_FILTER, yearMax: 2023 }]) {
+      const graph = new Graph();
+      populateGraph(graph, data, "ru", 3, filters, NO_PUB_DETAILS);
+      expect(realEdgeKeys(graph)).toHaveLength(0);
+    }
+  });
+
+  it("reuses selection, highlight, zoom and clears a selection whose endpoints disappear", () => {
+    const data = { ...dataWithNoDept(), version_edges: [{ s: "P2", t: "P1" }] };
+    const graph = new Graph();
+    const state = initialState({ tab: 3, selection: { kind: "edge", s: "P2", t: "P1", w: 0 } });
+    populateGraph(graph, data, "ru", 3, state.filters, NO_PUB_DETAILS);
+    const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
+    const store = new Store<AppState>(state);
+    const unmount = mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    store.set({ lang: "en" });
+    expect(store.get().selection).toEqual(state.selection);
+    const [edge] = realEdgeKeys(graph);
+    if (!edge) throw new Error("the version edge must be drawn");
+    expect(getReducer("edgeReducer")(edge, EDGE_BASE)).toMatchObject({
+      color: darkTheme.map.edgeSelected, size: MAP_CONFIG.edge.widthSelected,
+    });
+    expect(getReducer("nodeReducer")("P1", NODE_BASE)).toMatchObject({ forceLabel: true });
+    fireCameraUpdated(NO_FILTER.edgeZoomThreshold + 1);
+    expect(getReducer("edgeReducer")(edge, EDGE_BASE)).toMatchObject({ hidden: true });
+    store.set({ filters: { ...store.get().filters, yearMax: 2023 } });
+    expect(store.get().selection).toBeNull();
+    unmount();
+  });
+});
+
 describe("deptNodeKey / parseDeptNodeKey", () => {
   it("parsing returns the same number that was encoded", () => {
     for (const id of [0, 1, 42]) {

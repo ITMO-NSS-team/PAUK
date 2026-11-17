@@ -57,6 +57,7 @@ export type LocaleKey =
   | "field.edgeFrom"
   | "field.edgeTo"
   | "field.edgeWeight"
+  | "field.publicationVersion"
   | "field.sharedPubs"
   | "field.sharedAuthors"
   | "field.topCoauthors"
@@ -177,6 +178,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.edgeFrom": "От",
     "field.edgeTo": "К",
     "field.edgeWeight": "Вес",
+    "field.publicationVersion": "Версия публикации (IS_VERSION)",
     "field.sharedPubs": "Общие публикации",
     "field.sharedAuthors": "Общие авторы",
     "field.topCoauthors": "Топ соавторов",
@@ -300,6 +302,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.edgeFrom": "From",
     "field.edgeTo": "To",
     "field.edgeWeight": "Weight",
+    "field.publicationVersion": "Publication version (IS_VERSION)",
     "field.sharedPubs": "Shared publications",
     "field.sharedAuthors": "Shared authors",
     "field.topCoauthors": "Top co-authors",

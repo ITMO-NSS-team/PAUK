@@ -1244,6 +1244,61 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Общие публикации");
   });
 
+  it("shows IS_VERSION in its true direction, without fake weight, in both languages", async () => {
+    const data = {
+      ...(await loadSampleGraphData()), pub_edges: [], version_edges: [{ s: "P2", t: "P1" }],
+    };
+    const store = new Store<AppState>({
+      ...initialState(), tab: 3, selection: { kind: "edge", s: "P1", t: "P2", w: 0 },
+    });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const row = (label: string) => [...panel.querySelectorAll("dt")].find((dt) => dt.textContent === label)?.nextElementSibling;
+    expect(row("От")?.textContent).toBe("P2");
+    expect(row("К")?.textContent).toBe("P1");
+    expect(row("Версия публикации (IS_VERSION)")?.textContent).toContain("→");
+    expect(row("Вес")).toBeUndefined();
+    store.set({ lang: "en" });
+    expect(row("From")?.textContent).toBe("P2");
+    expect(row("To")?.textContent).toBe("P1");
+    expect(row("Publication version (IS_VERSION)")).toBeDefined();
+    expect(row("Weight")).toBeUndefined();
+    const source = row("From")?.querySelector("button") as HTMLButtonElement | null;
+    if (!source) throw new Error("version endpoints must be clickable");
+    source.click();
+    expect(store.get().selection).toEqual({ kind: "node", key: "P2" });
+    expect(store.get().tab).toBe(3);
+  });
+
+  it("shows version direction alongside shared-author weight and shared authors", async () => {
+    const data = {
+      ...(await loadSampleGraphData()),
+      pub_edges: [{ s: "P1", t: "P2", w: 3 }], version_edges: [{ s: "P2", t: "P1" }],
+    };
+    const store = new Store<AppState>({
+      ...initialState(), tab: 3, selection: { kind: "edge", s: "P1", t: "P2", w: 3 },
+    });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const weight = [...panel.querySelectorAll("dt")].find((dt) => dt.textContent === "Вес");
+    expect(weight?.nextElementSibling?.textContent).toBe("3");
+    expect(panel.textContent).toContain("Версия публикации (IS_VERSION)");
+    expect(panel.textContent).toContain("Общие авторы");
+    expect(panel.textContent).toContain("Иванов И.И.");
+  });
+
+  it("preserves both directed version records in a single visual pair's card", async () => {
+    const data = {
+      ...(await loadSampleGraphData()), pub_edges: [],
+      version_edges: [{ s: "P1", t: "P2" }, { s: "P2", t: "P1" }],
+    };
+    const store = new Store<AppState>({
+      ...initialState(), tab: 3, selection: { kind: "edge", s: "P1", t: "P2", w: 0 },
+    });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const rows = [...panel.querySelectorAll("dt")].filter((dt) => dt.textContent === "Версия публикации (IS_VERSION)");
+    expect(rows.map((dt) => [...(dt.nextElementSibling?.querySelectorAll("button") ?? [])].map((ref) => ref.textContent)))
+      .toEqual([["P1", "P2"], ["P2", "P1"]]);
+  });
+
   it("shows a department card with summary numbers", async () => {
     const data = await loadSampleGraphData();
     const dept = data.departments[0];

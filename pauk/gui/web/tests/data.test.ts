@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { RepoDetail } from "../src/contracts/graph";
 import {
   assertGraphData,
+  buildPublicationEdgeIndex,
+  edgePairKey,
   grantIndex,
   toCsv,
   groupIdOf,
@@ -26,6 +28,45 @@ describe("loadSampleGraphData", () => {
     expect(data.authors.length).toBeGreaterThan(0);
     expect(data.departments.length).toBeGreaterThan(0);
     expect(typeof data.authors[0]?.label_en).toBe("string");
+  });
+});
+
+describe("publication edge index", () => {
+  it("keeps old JSON compatible and validates version_edges only when present", async () => {
+    const data = await loadSampleGraphData();
+    expect(() => assertGraphData(data)).not.toThrow();
+    expect(() => assertGraphData({ ...data, version_edges: [] })).not.toThrow();
+    for (const version_edges of [null, {}, true]) {
+      expect(() => assertGraphData({ ...data, version_edges })).toThrow("version_edges");
+    }
+    const index = buildPublicationEdgeIndex(data);
+    expect(index.size).toBe(data.pub_edges.length);
+    expect([...index.values()].every((edge) => edge.hasSharedAuthors && edge.versionEdges.length === 0)).toBe(true);
+  });
+
+  it("combines reversed pairs without losing weight, direction, or mutating input", async () => {
+    const data = {
+      ...(await loadSampleGraphData()),
+      pub_edges: [{ s: "P2", t: "P1", w: 3 }],
+      version_edges: [
+        { s: "P1", t: "P2" },
+        { s: "P2", t: "P1" },
+        { s: "P1", t: "P2" },
+        { s: "P4", t: "P1" },
+      ],
+    };
+    const before = JSON.stringify(data);
+    const index = buildPublicationEdgeIndex(data);
+    expect(edgePairKey("P1", "P2")).toBe(edgePairKey("P2", "P1"));
+    expect(index.size).toBe(2);
+    expect(index.get(edgePairKey("P1", "P2"))).toEqual({
+      s: "P2", t: "P1", w: 3, hasSharedAuthors: true,
+      versionEdges: [{ s: "P1", t: "P2" }, { s: "P2", t: "P1" }],
+    });
+    expect(index.get(edgePairKey("P4", "P1"))).toEqual({
+      s: "P1", t: "P4", w: 0, hasSharedAuthors: false, versionEdges: [{ s: "P4", t: "P1" }],
+    });
+    expect(JSON.stringify(data)).toBe(before);
   });
 });
 
