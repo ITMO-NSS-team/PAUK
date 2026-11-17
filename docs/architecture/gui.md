@@ -30,7 +30,9 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 
 **Publication versions.** `EdgeBuilder` reads `pub_versions` from the snapshot
 and emits `version_edges` containing only `{s: version_pid, t: pid}` for
-`status == "same"`, with both publications present on the map. Pending, missing
+`status == "same"`, with both publications present on the map. Acceptance may
+come from the version rules or manual review; the map does not require a
+human answer for a rule-confirmed pair. Pending, missing
 and unknown statuses are excluded even if an LLM approved the candidate. Old
 snapshots without this table yield an empty array. Review/LLM metadata never
 reaches this collection; `pub_edges` still means shared authors and `all_edges`

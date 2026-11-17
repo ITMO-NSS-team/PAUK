@@ -52,7 +52,7 @@ MEDIUM_FUZZY_LLM_SAME = "MEDIUM_FUZZY_LLM_SAME"
 MEDIUM_FUZZY_CONF_JOURNAL = "MEDIUM_FUZZY_CONF_JOURNAL"
 MEDIUM_FUZZY_RELATED = "MEDIUM_FUZZY_RELATED"
 
-# Buckets corroborated enough to be worth a human's time; the rest
+# Version candidates eligible for confirmation, by policy or a human; the rest
 # (ERRATUM, SERIES_NOT_VERSION, SUPPLEMENT_OR_REVIEW, COVER and the sibling
 # papers MEDIUM_FUZZY_RELATED) are look-alike pairs kept so they are
 # explained rather than silently dropped, but are never one work.
@@ -63,6 +63,11 @@ MERGE_BUCKETS = frozenset({
     "RU_EN_TRANSLATION", "STRONG_FUZZY", MEDIUM_FUZZY,
     MEDIUM_FUZZY_STRONG, MEDIUM_FUZZY_LLM_SAME, MEDIUM_FUZZY_CONF_JOURNAL,
 })
+
+AUTO_CONFIRM_BUCKETS = frozenset({
+    "MISSED_BY_NORM", "DOI_SIBLING", "PREPRINT_PUBLISHED", "RU_EN_TRANSLATION", "STRONG_FUZZY",
+})
+AUTO_CONFIRM_POLICY = "rules-v1"
 
 # Repository/preprint hosts, matched against either the DOI or the venue
 # name. Order does not matter - a work never carries two of these.
@@ -407,6 +412,38 @@ def _date_gap_days(a: dict, b: dict) -> int | None:
     return None
 
 
+def _author_overlap(a: dict, b: dict) -> tuple[set[str], float]:
+    authors_a = {author["person_id"] for author in a.get("authors") or [] if author and author.get("person_id")}
+    authors_b = {author["person_id"] for author in b.get("authors") or [] if author and author.get("person_id")}
+    return authors_a & authors_b, _jaccard(authors_a, authors_b)
+
+
+def can_auto_confirm_version(a: dict, b: dict, bucket: str) -> bool:
+    """Apply conservative acceptance guards to an already classified version pair.
+
+    Every MEDIUM_FUZZY subtype still needs a human, even with an LLM verdict.
+    Missing dates are not evidence of a short publication gap.
+    """
+    if bucket not in AUTO_CONFIRM_BUCKETS:
+        return False
+    shared_authors, author_jaccard = _author_overlap(a, b)
+    if bucket == "DOI_SIBLING":
+        return bool(shared_authors)
+    gap = _date_gap_days(a, b)
+    if bucket == "PREPRINT_PUBLISHED":
+        return bool(shared_authors) and gap is not None and gap <= 365 * 3
+    if author_jaccard < 0.5 or gap is None or gap > 1100:
+        return False
+    if bucket == "RU_EN_TRANSLATION":
+        title_a, title_b = a.get("title") or "", b.get("title") or ""
+        similarity = _title_similarity(
+            _fold_title(title_a), _fold_title(title_b),
+            _jaccard(_title_tokens(title_a), _title_tokens(title_b)), floor=0.9,
+        )
+        return similarity >= 0.9
+    return True
+
+
 def _signals(a: dict, b: dict, **extra) -> dict:
     return {
         "record_a": a["id"], "title_a": a.get("title"),
@@ -428,7 +465,7 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
 
     Returns:
         (bucket, signals) or None. `bucket` is one of MERGE_BUCKETS (a
-        version link worth a human's confirmation) or one of ERRATUM /
+        version link eligible for confirmation) or one of ERRATUM /
         SERIES_NOT_VERSION / SUPPLEMENT_OR_REVIEW / COVER (a look-alike
         explained, not a version). MEDIUM_FUZZY is returned whole;
         `route_medium_fuzzy` splits it. `signals` carries every number the decision used,
@@ -494,10 +531,7 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     if title_sim < 0.75:
         return None
 
-    authors_a = {author["person_id"] for author in a.get("authors") or [] if author and author.get("person_id")}
-    authors_b = {author["person_id"] for author in b.get("authors") or [] if author and author.get("person_id")}
-    shared_authors = authors_a & authors_b
-    author_jaccard = _jaccard(authors_a, authors_b)
+    shared_authors, author_jaccard = _author_overlap(a, b)
     gap = _date_gap_days(a, b)
     abstract_a, abstract_b = a.get("abstract"), b.get("abstract")
     abstract_sim = _jaccard(_shingles(abstract_a), _shingles(abstract_b)) if (abstract_a and abstract_b) else None

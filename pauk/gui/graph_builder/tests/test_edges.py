@@ -92,7 +92,7 @@ class VersionEdgesTest(unittest.TestCase):
         table = DepartmentTable(departments=[], g=lambda _d: 0, no_dept_gid=0)
         return EdgeBuilder(db, authorship, _assignment(), table, _layout()).build()["version_edges"]
 
-    def test_only_explicit_human_confirmation_is_accepted(self):
+    def test_only_confirmed_status_is_accepted(self):
         for status in ("held", "different", "SAME", "", None, True):
             with self.subTest(status=status):
                 self.assertEqual(self._edges([
@@ -100,8 +100,11 @@ class VersionEdgesTest(unittest.TestCase):
                      "mergeable": True, "llm_verdict": True, "bucket": "MEDIUM_FUZZY_LLM_SAME"}
                 ]), [])
         self.assertEqual(self._edges([{"version_pid": "P1", "pid": "P2", "llm_verdict": True}]), [])
-        self.assertEqual(self._edges([{"version_pid": "P2", "pid": "P1", "status": "same"}]),
-                         [{"s": "P2", "t": "P1"}])
+        for source in ("auto", "review", None):
+            with self.subTest(confirmation_source=source):
+                self.assertEqual(self._edges([{
+                    "version_pid": "P2", "pid": "P1", "status": "same", "confirmation_source": source,
+                }]), [{"s": "P2", "t": "P1"}])
 
     def test_missing_table_is_compatible_with_old_snapshots(self):
         self.assertEqual(self._edges(), [])

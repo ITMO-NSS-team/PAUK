@@ -42,10 +42,12 @@ perfect title similarity and share their authors, yet they are two different
 papers. And a version is not a duplicate even when it is right: a preprint, a
 translation and a journal extension each have their own DOI, venue, text and
 sometimes authors. So nothing here writes `merged_ids`: every version keeps
-its node, and the pair becomes an `IS_VERSION` edge with the bucket on it. A
-mergeable pair also becomes a `publication_version` question in the review
-queue (`status: "held"` on the edge); a person confirms it (`"same"`) or
-removes the edge for good (`"different"`).
+its node, and the pair becomes an `IS_VERSION` edge with the bucket on it.
+Confident pairs are accepted automatically under the policy below (`status:
+"same"`). Other mergeable pairs become `publication_version` questions in the
+review queue (`status: "held"`); a person confirms them (`"same"`) or removes
+the edge for good (`"different"`). The historical name `MERGE_BUCKETS` means
+eligible version candidates, not permission to collapse Publication nodes.
 
 ## Signals and buckets
 
@@ -117,6 +119,46 @@ The types `software`/`dataset`/`peer-review`/`grant`/`other`/`paratext` reach ne
 deposits have their own versioning (repository dedup handles it), and a
 paper-title heuristic says nothing about them.
 
+## Automatic acceptance (`rules-v1`)
+
+`AUTO_CONFIRM_BUCKETS` and `can_auto_confirm_version()` define a separate
+acceptance policy after classification. Exact titles alone are insufficient:
+`MISSED_BY_NORM` and `DOI_SIBLING` are classified before author/date checks.
+
+| Bucket | Additional acceptance guards |
+|---|---|
+| `MISSED_BY_NORM` | author Jaccard ≥0.50, known date gap ≤1100 days |
+| `DOI_SIBLING` | at least one shared author; existing DOI/title/type guards remain |
+| `PREPRINT_PUBLISHED` | known date gap ≤1095 days; existing title/shared-author guards remain |
+| `RU_EN_TRANSLATION` | unrounded title similarity ≥0.90, author Jaccard ≥0.50, known date gap ≤1100 days |
+| `STRONG_FUZZY` | author Jaccard ≥0.50, known date gap ≤1100 days; existing title similarity ≥0.90 remains |
+
+Author overlap uses person IDs, not names. Missing dates do not count as zero;
+known years can supply the existing date-gap fallback. These are conservative
+policy guards, not a measured precision guarantee. A mergeable candidate
+failing them stays in manual review. Acceptance is pairwise, never propagated
+transitively through an entire component.
+
+Every MEDIUM_FUZZY subtype below still needs a human, including `STRONG`,
+`LLM_SAME` and `CONF_JOURNAL`; an LLM verdict does not by itself confirm the
+edge. `MEDIUM_FUZZY_RELATED` and the four look-alike buckets are neither
+auto-accepted nor queued for confirmation.
+
+Accepted edges carry `confirmation_source: "auto"` or `"review"`; automatic
+ones also carry `confirmation_policy: "rules-v1"`. Human decisions and manual
+DELETE overrides outrank this policy. An automatically accepted edge returns
+to held/unconfirmed or disappears when its evidence changes; its provenance
+is cleared, unlike a human `same`, which survives rule changes. Automation
+does not fabricate human answers in MongoDB.
+
+The next ordinary `versions link` applies the policy to existing candidates
+and retires old open questions that now need no human answer. Answered and
+skipped questions remain for history. The result separates effective
+`version_auto_confirmed`, `version_review_confirmed` and
+`version_manual_pending` counts from changed-edge counts, including on an
+idempotent run. Their real distribution is only known after a run on the
+selected graph; a backlog size alone does not establish it.
+
 ## Splitting MEDIUM_FUZZY
 
 172 hand-labelled MEDIUM_FUZZY pairs from a copy of the graph: 16 (9%) were
@@ -170,9 +212,10 @@ every publish waiting on Busy. Then:
 - the edge points from the version to the work's face: the notice or the cover
   to its article, otherwise the record dedup's ranking would not keep
   (a preprint to the article, the older to the newer);
-- edge properties: `bucket`, `mergeable`, `status` (`held` for a mergeable
-  pair, `same` once confirmed, absent for a look-alike), `title_sim`,
-  `llm_verdict`, `llm_reason`;
+- edge properties: `bucket`, `mergeable`, `status` (`held` when human review
+  is needed, `same` after policy/manual acceptance, absent for a look-alike),
+  `title_sim`, `llm_verdict`, `llm_reason`, `confirmation_source` and
+  `confirmation_policy` (above);
 - a pair answered `"different"` gets no edge; an edge the rules no longer
   produce is removed, unless somebody added it by hand (`graph_overrides`,
   `op: "link"`) or confirmed it (`"same"`); an edge deleted by hand
@@ -182,10 +225,12 @@ every publish waiting on Busy. Then:
 - one edge per pair: when the rules turn a confirmed pair around (the dates
   changed), the old direction is removed and the new one carries the
   confirmation; a direction added by hand wins over the rules';
-- mergeable pairs become `publication_version` questions (the "Версии
-  публикаций" tab of `/review`); an answer there changes the edge at once,
-  and withdrawing it puts a confirmed edge back to `held`. A removed edge
-  returns if the rules still find a candidate for that pair.
+- mergeable pairs not accepted automatically become `publication_version`
+  questions (the "Версии публикаций" tab of `/review`). An answer changes
+  the edge at once. Withdrawing an answer returns the pair to the current
+  policy: confident candidates become auto-`same`, MEDIUM candidates remain
+  `held`. A withdrawn `different` can therefore restore a confident edge
+  immediately. Keep an explicit `different` to prohibit automatic linking.
   An open question the rules no longer ask is dropped; an answered or
   skipped one stays, and an answered pair is not asked again under the ids
   of a fold since;

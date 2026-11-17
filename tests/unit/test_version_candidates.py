@@ -1,10 +1,14 @@
 import unittest
+from datetime import date, timedelta
+from unittest.mock import patch
 
 from pauk.graph.version_candidates import (
+    AUTO_CONFIRM_BUCKETS,
     MERGE_BUCKETS,
     _candidate_pairs,
     _is_preprint,
     _venue_kind,
+    can_auto_confirm_version,
     classify_pair,
     find_version_candidates,
     route_medium_fuzzy,
@@ -351,6 +355,68 @@ class ClassifyPairTest(unittest.TestCase):
             pub("W2", "Contributors", doi="10.1/b"),
         )
         self.assertIsNone(result)
+
+
+class AutoConfirmationPolicyTest(unittest.TestCase):
+    def setUp(self):
+        self.a = pub("W1", "Robust neural network classification method",
+                     doi="10.1/a", pdate="2024-01-01", authors=["A1", "A2"])
+        self.b = pub("W2", self.a["title"], doi="10.1/b", pdate="2024-06-01", authors=["A1", "A2"])
+
+    def test_whitelist_is_explicit_and_requires_version_candidates(self):
+        self.assertEqual(AUTO_CONFIRM_BUCKETS, {
+            "MISSED_BY_NORM", "DOI_SIBLING", "PREPRINT_PUBLISHED", "RU_EN_TRANSLATION", "STRONG_FUZZY",
+        })
+        self.assertLessEqual(AUTO_CONFIRM_BUCKETS, MERGE_BUCKETS)
+        for bucket in AUTO_CONFIRM_BUCKETS:
+            with self.subTest(bucket=bucket):
+                self.assertTrue(can_auto_confirm_version(self.a, self.b, bucket))
+
+    def test_medium_family_and_look_alikes_are_never_auto_confirmed(self):
+        for bucket in ("MEDIUM_FUZZY", "MEDIUM_FUZZY_STRONG", "MEDIUM_FUZZY_LLM_SAME",
+                       "MEDIUM_FUZZY_CONF_JOURNAL", "MEDIUM_FUZZY_RELATED", "ERRATUM",
+                       "COVER", "SUPPLEMENT_OR_REVIEW", "SERIES_NOT_VERSION", "NEW_BUCKET"):
+            with self.subTest(bucket=bucket):
+                self.assertFalse(can_auto_confirm_version(self.a, self.b, bucket))
+
+    def test_known_dates_are_required_except_for_doi_siblings(self):
+        for bucket in AUTO_CONFIRM_BUCKETS:
+            with self.subTest(bucket=bucket):
+                self.assertEqual(can_auto_confirm_version({**self.a, "publication_date": None}, self.b, bucket),
+                                 bucket == "DOI_SIBLING")
+        self.assertTrue(can_auto_confirm_version(
+            {**self.a, "publication_date": None, "year": 2024},
+            {**self.b, "publication_date": "invalid", "year": 2025}, "MISSED_BY_NORM"))
+
+    def test_author_ids_not_names_must_corroborate_the_pair(self):
+        for authors in ([], [{"name": "A1"}], [{"person_id": "someone_else", "name": "A1"}]):
+            for bucket in AUTO_CONFIRM_BUCKETS:
+                with self.subTest(authors=authors, bucket=bucket):
+                    self.assertFalse(can_auto_confirm_version(self.a, {**self.b, "authors": authors}, bucket))
+
+    def test_half_author_overlap_is_the_boundary_for_fuzzy_and_normalized_titles(self):
+        half = [{"person_id": "A1"}]
+        weak = [{"person_id": pid} for pid in ("A1", "A3", "A4")]
+        for bucket in ("MISSED_BY_NORM", "RU_EN_TRANSLATION", "STRONG_FUZZY"):
+            with self.subTest(bucket=bucket):
+                self.assertTrue(can_auto_confirm_version(self.a, {**self.b, "authors": half}, bucket))
+                self.assertFalse(can_auto_confirm_version(self.a, {**self.b, "authors": weak}, bucket))
+        self.assertTrue(can_auto_confirm_version(self.a, {**self.b, "authors": weak}, "DOI_SIBLING"))
+
+    def test_date_gap_boundaries(self):
+        for bucket in AUTO_CONFIRM_BUCKETS - {"DOI_SIBLING"}:
+            limit = 1095 if bucket == "PREPRINT_PUBLISHED" else 1100
+            for days in (limit, limit + 1):
+                with self.subTest(bucket=bucket, days=days):
+                    later = {**self.b, "publication_date": str(date(2024, 1, 1) + timedelta(days=days))}
+                    self.assertEqual(can_auto_confirm_version(self.a, later, bucket), days == limit)
+
+    def test_translation_requires_unrounded_strong_title_similarity(self):
+        for similarity in (0.8996, 0.9):
+            with self.subTest(similarity=similarity), patch(
+                "pauk.graph.version_candidates._title_similarity", return_value=similarity,
+            ):
+                self.assertEqual(can_auto_confirm_version(self.a, self.b, "RU_EN_TRANSLATION"), similarity >= 0.9)
 
 
 class CandidatePairsTest(unittest.TestCase):

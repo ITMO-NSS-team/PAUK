@@ -129,8 +129,9 @@ and is built by the `github_match` stage. `MENTIONS_LINK` carries `context`
 `classification_status`, `llm_confidence`, `llm_reason`, and, for links with
 line-wrap alternatives, `url_ambiguous`, `candidate_urls` and `availability`.
 `IS_VERSION` carries `bucket`, `mergeable`, `status`, `title_sim`,
-`llm_verdict` and `llm_reason`, and is written by `pauk versions link`, not
-by a publish.
+`llm_verdict`, `llm_reason`, `confirmation_source` (`auto`/`review`) and
+`confirmation_policy` (automatic acceptance only), and is written by
+`pauk versions link`, not by a publish.
 Details and unique keys: [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
 
 The department hierarchy is recursive: a unit is `PART_OF` its parent, either

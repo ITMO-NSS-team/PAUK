@@ -9,11 +9,13 @@ why they are. Nothing is folded: a version keeps its own node, DOI and
 authors.
 
 The command reconciles these graph-owned edges with the latest rules and
-review decisions. A review action can reconcile one pair directly. An edge the rules no longer produce
-is removed, unless somebody added it by hand; one somebody deleted by hand
-is not written again. A person's answer in the review queue outranks the
-rules: "different" removes the edge for good, "same" marks it confirmed and
-keeps it after the rules stop finding the pair.
+review decisions. Confident non-medium candidates are accepted automatically
+under the versioned acceptance policy; other mergeable pairs need review.
+A review action can reconcile one pair directly. An edge the rules no longer
+produce is removed, unless somebody added or confirmed it by hand. A person's
+answer outranks the rules: "different" removes the edge for good, "same"
+keeps it after the rules stop finding the pair. Automatic acceptance does not
+outlive its evidence and never creates a human review answer.
 """
 
 from __future__ import annotations
@@ -36,9 +38,11 @@ from .client import chunked, resolve_folded_id
 from .dedup import _ordinal
 from .overrides import DELETE, LINK, apply_overrides, relationship_override_id
 from .version_candidates import (
+    AUTO_CONFIRM_POLICY,
     CANDIDATES_FILENAME,
     MEDIUM_FUZZY,
     MERGE_BUCKETS,
+    can_auto_confirm_version,
     classify_pair,
     find_version_candidates,
     route_medium_fuzzy,
@@ -184,12 +188,19 @@ def _desired_pair(rows, existing, candidate, answer, claim, deleted, *,
     confirmed = answer is not None and answer["verdict"] == review.SAME
     if len(rows) != 2:
         return {}
+    automatic = bool(not confirmed and candidate and candidate["mergeable"]
+                     and can_auto_confirm_version(*rows, candidate["bucket"]))
+    confirmation = {
+        "confirmation_source": "review" if confirmed else "auto" if automatic else None,
+        "confirmation_policy": AUTO_CONFIRM_POLICY if automatic else None,
+    }
     if candidate:
         direction = claim or edge_direction(*rows, candidate)
         status = HELD if candidate["mergeable"] or (reopen and existing) else None
         return {direction: {
             "bucket": candidate["bucket"], "mergeable": candidate["mergeable"],
-            "status": CONFIRMED if confirmed else status,
+            "status": CONFIRMED if confirmed or automatic else status,
+            **confirmation,
             **{field: candidate.get(field) for field in _EDGE_FIELDS},
         }}
     if confirmed:
@@ -198,26 +209,27 @@ def _desired_pair(rows, existing, candidate, answer, claim, deleted, *,
         if prior:
             direction = claim or (preferred if preferred in prior else min(prior))
             if direction in existing:
-                return {direction: {"status": CONFIRMED}}
+                return {direction: {"status": CONFIRMED, **confirmation}}
             props = prior.get(direction) or next(iter(prior.values()))
             return {direction: {
                 **{key: props[key] for key in ("bucket", "mergeable", *_EDGE_FIELDS) if key in props},
-                "status": CONFIRMED,
+                "status": CONFIRMED, **confirmation,
             }}
         evidence = answer.get("evidence") or {}
         if evidence.get("bucket") in MERGE_BUCKETS:
             return {claim or preferred: {
                 "bucket": evidence["bucket"], "mergeable": True, "status": CONFIRMED,
+                **confirmation,
                 **{field: evidence.get(field) for field in _EDGE_FIELDS},
             }}
     if reopen and existing:
         preferred = edge_direction(*rows, {})
         direction = claim if claim in existing else preferred if preferred in existing else min(existing)
-        return {direction: {"status": HELD}}
+        return {direction: {"status": HELD, **confirmation}}
     if claim in existing:
-        return {claim: {"status": None}}
+        return {claim: {"status": None, **confirmation}}
     if restore_claim and previous and claim in previous:
-        return {claim: {**previous[claim], "status": None}}
+        return {claim: {**previous[claim], "status": None, **confirmation}}
     return {}
 
 
@@ -227,6 +239,17 @@ def _diff(existing, desired):
                if (src, tgt) not in existing
                or any(existing[(src, tgt)].get(key) != value for key, value in props.items())]
     return stale, updates
+
+
+def _confirmation_counts(edges):
+    """Count effective states, not just this run's changed relationships."""
+    return {
+        "version_auto_confirmed": sum(props.get("status") == CONFIRMED
+                                      and props.get("confirmation_source") == "auto" for props in edges.values()),
+        "version_review_confirmed": sum(props.get("status") == CONFIRMED
+                                        and props.get("confirmation_source") == "review" for props in edges.values()),
+        "version_manual_pending": sum(props.get("status") == HELD for props in edges.values()),
+    }
 
 
 def _write_diff(client, stale, updates):
@@ -262,9 +285,12 @@ def reconcile_version_pair(client, db, members, *, reopen=False, record_question
     desired = _desired_pair(rows, existing, candidate, answer, claims.get(pair), pair in deleted,
                             reopen=reopen, previous=previous, restore_claim=record_question)
     written, removed = _write_diff(client, *_diff(existing, desired))
-    if record_question:
-        held_rows = [candidate] if candidate and candidate["mergeable"] and answer is None else []
-        review.record_held(db, held_rows, source=review.GRAPH)
+    automatic = any(props.get("confirmation_source") == "auto" for props in desired.values())
+    if record_question or automatic:
+        held_rows = [candidate] if (candidate and candidate["mergeable"] and answer is None
+                                    and any(props.get("status") == HELD for props in desired.values())) else []
+        if record_question:
+            review.record_held(db, held_rows, source=review.GRAPH)
         review.retire_versions(db, held_rows, scope=scope)
     if pair in deleted:
         done = "no_edge_deleted"
@@ -272,6 +298,8 @@ def reconcile_version_pair(client, db, members, *, reopen=False, record_question
         done = "unlinked" if removed else "already_unlinked"
     elif answer:
         done = "linked" if desired else "no_edge"
+    elif automatic:
+        done = "auto_linked"
     else:
         done = "reopened" if desired else "relink"
     return done, written, removed
@@ -331,8 +359,11 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 written += added
                 removed += dropped
 
+        final_edges = client.fetch_version_edges()
+        held_pairs = {frozenset(direction) for direction, props in final_edges.items()
+                      if props.get("status") == HELD}
         held_rows = [row for pair, row in candidates.items()
-                     if pair not in deleted and pair not in fresh and row["mergeable"]]
+                     if pair not in deleted and pair not in fresh and row["mergeable"] and pair in held_pairs]
         asked = review.record_held(mongo_db, held_rows, source=review.GRAPH)
         retired = review.retire_versions(mongo_db, held_rows)
         config.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -345,6 +376,7 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "version_questions": asked,
             "version_questions_retired": retired,
             "version_late_answers": len(late),
+            **_confirmation_counts(final_edges),
             **overrides,
         }
     finally:

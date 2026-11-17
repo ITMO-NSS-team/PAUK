@@ -856,12 +856,11 @@ def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> di
 
 def retire_versions(db: Database, asked: list[dict], *,
                     scope: tuple[set[str], set[str]] | None = None) -> int:
-    """Drop open version questions the rules no longer ask.
+    """Drop open version questions that no longer require a human.
 
-    Unlike a person pair, a version question is about an edge: once the
-    rules stop linking the pair (the evidence moved, or the LLM routed it out
-    of the mergeable buckets) there is nothing left for an answer to
-    confirm. Answered and skipped questions stay, so a decision is never lost.
+    A version question is about an edge: the rules may stop linking the pair
+    or accept it automatically under the current policy. Neither needs an
+    open question. Answered and skipped questions stay, so a decision is never lost.
 
     Args:
         asked: The rows this run held, as given to `record_held`.
