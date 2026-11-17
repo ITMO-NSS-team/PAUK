@@ -1,10 +1,13 @@
 import unittest
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.exceptions import ServiceUnavailable
+from pymongo.errors import AutoReconnect
 
-from pauk.admin import decisions, deps, feed
+from pauk.admin import decision_routes, decisions, deps, feed
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.jsonl_loader import load_prepared_rows
@@ -13,10 +16,12 @@ from pauk.graph.overrides import (
     apply_overrides,
     record_override,
     record_relationship_override,
+    relationship_override_id,
     tombstoned_ids,
     tombstoned_relationships,
 )
 from pauk.settings import Settings
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 
 
@@ -98,6 +103,27 @@ class ConflictTest(unittest.TestCase):
                      actor="user:roman", source="admin-ui")
         self.assertEqual(decisions.conflicts(self.db), [])
 
+    def test_cli_edits_do_not_dispute_their_own_manual_decision(self):
+        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Пётр",
+                     actor="user:roman", source="admin-cli")
+        self.assertEqual(decisions.conflicts(self.db), [])
+
+    def test_a_real_source_change_after_a_cli_edit_is_still_disputed(self):
+        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "Пётр",
+                     actor="user:roman", source="admin-cli")
+        source_wrote(self.db, "Person", "A1", "name_ru", "Пётр", "Иван Петров", after_hours=2)
+        (conflict,) = decisions.conflicts(self.db)
+        self.assertEqual(conflict["now"], "Иван Петров")
+        self.assertEqual(conflict["ours"], "Пётр")
+
+    def test_json_formatting_changes_are_not_a_new_source_opinion(self):
+        automatic = '[\n  {"grant_id":"42", "funder":"Фонд"}\n]'
+        record_override(self.db, "Publication", "W9", "set", {"funding": [{"grant_id": "99"}]},
+                        auto_value={"funding": automatic})
+        source_wrote(self.db, "Publication", "W9", "funding", automatic,
+                     '[{"funder":"Фонд","grant_id":"42"}]')
+        self.assertFalse([row for row in decisions.conflicts(self.db) if row["target_id"] == "W9"])
+
     def test_writes_from_before_the_decision_are_ignored(self):
         # Deliberately a value that differs from auto_value: otherwise the
         # row would be dropped for repeating itself and the test would pass
@@ -164,19 +190,20 @@ class DecisionsPageTest(unittest.TestCase):
         self.assertIn("Расхождения 1", " ".join(self.client.get("/overrides").text.split()))
 
     def test_undoing_stops_applying_the_decision(self):
-        csrf = self.sign_in()
-        response = self.client.post("/overrides/undo", data={
-            "csrf": csrf, "kind": "node", "label": "Person", "target_id": "A1"})
+        self.sign_in()
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", target_id="A1")
+        response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 303)
         self.assertEqual(active_overrides(self.db), [])
 
-    def test_undoing_a_link_decision_restores_it_on_the_next_publish(self):
+    def test_undoing_a_link_decision_restores_it_at_once(self):
         record_relationship_override(self.db, "Person", "AUTHORED", "Publication", "A1", "W1",
                                      actor="user:roman")
-        csrf = self.sign_in()
-        self.client.post("/overrides/undo", data={
-            "csrf": csrf, "kind": "rel", "src_label": "Person", "rel_type": "AUTHORED",
-            "tgt_label": "Publication", "src_id": "A1", "target_id": "W1"})
+        self.graph.add("Publication", "W1")
+        self.sign_in()
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", kind="rel")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
         self.assertNotIn("rel", {row.get("kind") for row in active_overrides(self.db)})
 
     def test_a_viewer_sees_the_list_but_no_undo(self):
@@ -244,44 +271,81 @@ class UndoRestoresTest(unittest.TestCase):
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
         self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
+    def undo(self, target_id):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", target_id=target_id)
+        return self.client.post(form["action"], data=form["fields"])
+
+    def test_failed_node_withdrawal_removes_the_restored_node(self):
+        with patch.object(decision_routes, "deactivate_override", side_effect=AutoReconnect("before commit")):
+            response = self.undo("D1")
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn(("Department", "D1"), self.graph.nodes)
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "D1"})["active"])
+
+    def test_failed_relationship_withdrawal_removes_the_restored_edge(self):
+        with patch.object(decision_routes, "deactivate_relationship_override", side_effect=AutoReconnect("before commit")):
+            response = self.undo("W1")
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(self.graph.relationships)
+        self.assertTrue(self.db["graph_overrides"].find_one({"kind": "rel"})["active"])
+
+    def test_missing_endpoint_preserves_the_relationship_decision(self):
+        del self.graph.nodes["Publication", "W1"]
+        self.assertEqual(self.undo("W1").status_code, 400)
+        self.assertTrue(self.db["graph_overrides"].find_one({"kind": "rel"})["active"])
+
+    def test_a_stale_relationship_form_keeps_the_new_decision(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", kind="rel")
+        record_relationship_override(self.db, "Person", "AUTHORED", "Publication", "A1", "W1",
+                                     snapshot={"is_corresponding": True})
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(self.graph.relationships)
+        self.assertTrue(self.db["graph_overrides"].find_one({"kind": "rel"})["active"])
+
+    def test_a_recreated_node_is_not_replaced_by_the_old_snapshot(self):
+        self.graph.add("Department", "D1", name_ru="Newer data")
+        self.assertEqual(self.undo("D1").status_code, 303)
+        self.assertEqual(self.graph.nodes["Department", "D1"]["name_ru"], "Newer data")
+
+    def test_a_recreated_edge_is_not_replaced_by_the_old_snapshot(self):
+        edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        self.graph.relationships[edge] = {"is_corresponding": True}
+        self.assertEqual(self.undo("W1").status_code, 303)
+        self.assertEqual(self.graph.relationships[edge], {"is_corresponding": True})
+
+    def test_a_legacy_relationship_decision_without_a_write_token_can_be_undone(self):
+        key = relationship_override_id("Person", "AUTHORED", "Publication", "A1", "W1")
+        self.db["graph_overrides"].update_one({"_id": key}, {"$unset": {"write_id": ""}})
+        self.assertEqual(self.undo("W1").status_code, 303)
+
     def test_undoing_a_deleted_node_brings_it_back_with_its_fields(self):
         # Lifting the ban alone leaves the graph unchanged: the record would
         # reappear only at the next publish, and the button would look broken.
-        response = self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "node", "op": "delete",
-            "label": "Department", "target_id": "D1"})
+        response = self.undo("D1")
         self.assertEqual(response.status_code, 303)
         self.assertEqual(self.graph.nodes[("Department", "D1")]["name_ru"], "Кафедра")
 
     def test_undoing_an_unlinked_relationship_links_it_again(self):
-        response = self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "rel", "op": "delete", "src_label": "Person",
-            "rel_type": "AUTHORED", "tgt_label": "Publication",
-            "src_id": "A1", "target_id": "W1"})
+        response = self.undo("W1")
         self.assertEqual(response.status_code, 303)
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
                       self.graph.relationships)
 
     def test_the_page_says_what_came_back(self):
-        response = self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "node", "op": "delete",
-            "label": "Department", "target_id": "D1"})
+        response = self.undo("D1")
         self.assertIn("undone=node", response.headers["location"])
 
     def test_undoing_a_field_edit_puts_the_source_value_back(self):
         record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
                         actor="user:roman", auto_value={"name_ru": "Иван"})
-        response = self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "node", "op": "set",
-            "label": "Person", "target_id": "A1"})
+        response = self.undo("A1")
         self.assertIn("undone=field", response.headers["location"])
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван")
 
     def test_a_deletion_the_feed_cannot_describe_says_so_instead(self):
         record_override(self.db, "Person", "A9", "delete", actor="user:roman")
-        response = self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "node", "op": "delete",
-            "label": "Person", "target_id": "A9"})
+        response = self.undo("A9")
         self.assertIn("undone=1", response.headers["location"])
         self.assertNotIn(("Person", "A9"), self.graph.nodes)
 
@@ -435,9 +499,128 @@ class UndoRestoresFieldTest(unittest.TestCase):
         self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def undo(self):
-        return self.client.post("/overrides/undo", data={
-            "csrf": self.csrf, "kind": "node", "op": "set",
-            "label": "Person", "target_id": "A1"})
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        return self.client.post(form["action"], data=form["fields"])
+
+    def test_a_graph_failure_keeps_the_manual_decision_active(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        with patch.object(self.graph, "update_node_properties", side_effect=ServiceUnavailable("offline")):
+            response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 503)
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр Иванов")
+
+    def test_a_stale_form_cannot_undo_a_newer_edit(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        self.graph.nodes["Person", "A1"]["name_ru"] = "New editor"
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "New editor"}, actor="other")
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "New editor")
+
+    def test_failed_withdrawal_restores_the_graph_value(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        with patch.object(decision_routes, "deactivate_override", side_effect=AutoReconnect("before commit")):
+            response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр Иванов")
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+
+    def test_an_old_form_without_a_version_requests_a_reload(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        del form["fields"]["seen_write"]
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+
+    def test_an_orphaned_field_decision_can_be_withdrawn_without_recreating_the_node(self):
+        del self.graph.nodes["Person", "A1"]
+        self.assertEqual(self.undo().status_code, 303)
+        self.assertNotIn(("Person", "A1"), self.graph.nodes)
+        self.assertFalse(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+
+    def test_withdrawing_one_decision_does_not_reapply_unrelated_decisions(self):
+        self.graph.add("Person", "A2", name_ru="Source")
+        record_override(self.db, "Person", "A2", "set", {"name_ru": "Other manual"})
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", target_id="A1")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        self.assertEqual(self.graph.nodes["Person", "A2"]["name_ru"], "Source")
+
+    def test_compensation_cannot_overwrite_a_concurrent_edit(self):
+        original = decision_routes.deactivate_override
+
+        def edit_before_withdrawal(*args, **kwargs):
+            self.graph.add("Person", "A1", name_ru="Concurrent edit")
+            record_override(self.db, "Person", "A1", "set", {"name_ru": "Concurrent edit"}, actor="other")
+            return original(*args, **kwargs)
+
+        with patch.object(decision_routes, "deactivate_override", edit_before_withdrawal):
+            response = self.undo()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Concurrent edit")
+        row = self.db["graph_overrides"].find_one({"target_id": "A1"})
+        self.assertTrue(row["active"])
+        self.assertEqual(row["fields"]["name_ru"], "Concurrent edit")
+
+    def test_a_lost_withdrawal_reply_can_confirm_the_commit(self):
+        collection = self.db["graph_overrides"]
+        original = collection.find_one_and_update
+
+        def commit_without_reply(*args, **kwargs):
+            original(*args, **kwargs)
+            raise AutoReconnect("reply lost")
+
+        with patch.object(collection, "find_one_and_update", commit_without_reply):
+            self.assertEqual(self.undo().status_code, 303)
+        self.assertFalse(collection.find_one({"target_id": "A1"})["active"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иван Петров")
+
+    def test_an_unconfirmed_withdrawal_does_not_roll_back_the_graph(self):
+        collection = self.db["graph_overrides"]
+        original_write, original_read = collection.find_one_and_update, collection.find_one
+        written = False
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+
+        def lose_reply(*args, **kwargs):
+            nonlocal written
+            original_write(*args, **kwargs)
+            written = True
+            raise AutoReconnect("reply lost")
+
+        def readback(*args, **kwargs):
+            if written:
+                raise AutoReconnect("cannot verify")
+            return original_read(*args, **kwargs)
+
+        with (patch.object(collection, "find_one_and_update", lose_reply),
+              patch.object(collection, "find_one", readback)):
+            response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не подтвердила", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иван Петров")
+
+    def test_a_driver_failure_during_compensation_is_reported_as_incomplete(self):
+        original = self.graph.update_node_properties
+        writes = 0
+
+        def update(*args, **kwargs):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise ServiceUnavailable("graph went offline")
+            return original(*args, **kwargs)
+
+        with (patch.object(self.graph, "update_node_properties", update),
+              patch.object(decision_routes, "deactivate_override", side_effect=AutoReconnect("before commit"))):
+            response = self.undo()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не откатилась", response.json()["detail"])
+        self.assertTrue(self.db["graph_overrides"].find_one({"target_id": "A1"})["active"])
+
+    def test_a_legacy_node_decision_without_a_write_token_can_be_undone(self):
+        self.db["graph_overrides"].update_one({"target_id": "A1"}, {"$unset": {"write_id": ""}})
+        self.assertEqual(self.undo().status_code, 303)
 
     def test_the_field_goes_back_at_once(self):
         # Waiting for a publish is not enough: apply_overrides applies what
@@ -530,10 +713,10 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
 
     def take_it_back(self, how):
         if how == "undo":
-            return self.client.post("/overrides/undo", data={
-                "csrf": self.csrf, "kind": "node", "op": "delete",
-                "label": "Person", "target_id": "A1"})
-        return self.client.post("/nodes/Person/restore/A1", data={"csrf": self.csrf})
+            form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+            return self.client.post(form["action"], data=form["fields"])
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Восстановить")
+        return self.client.post(form["action"], data=form["fields"])
 
     def publish(self):
         load_prepared_rows(
