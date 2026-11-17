@@ -75,6 +75,25 @@ class HostRateLimiterTest(unittest.TestCase):
             with self.limiter.slot("pdf.test", RateLimit(max_concurrent=2)):
                 self.assertEqual(self.clock(), before)
 
+    def test_host_profiles_combine_with_callers_and_leave_other_hosts_unchanged(self):
+        limiter = HostRateLimiter(clock=self.clock, host_limits={"pdf.test": RateLimit(1, 3)})
+        with limiter.slot("pdf.test", RateLimit(10, 2)):
+            first = self.clock()
+        state = limiter._hosts["pdf.test"]
+        self.assertEqual(state.limit, RateLimit(1, 2))
+        with (mock.patch.object(state.condition, "wait", side_effect=self.clock.wait),
+              limiter.slot("pdf.test", RateLimit(10, 5))):
+            self.assertAlmostEqual(self.clock() - first, 1)
+        with limiter.slot("other.test", RateLimit(20, 5)):
+            self.assertEqual(limiter._hosts["other.test"].limit, RateLimit(20, 5))
+
+    def test_host_profiles_are_copied_and_apply_without_a_caller_profile(self):
+        profiles = {"pdf.test": RateLimit(1)}
+        limiter = HostRateLimiter(clock=self.clock, host_limits=profiles)
+        profiles.clear()
+        with limiter.slot("pdf.test", None):
+            self.assertEqual(limiter._hosts["pdf.test"].limit, RateLimit(1))
+
     def test_host_wait_can_be_cancelled_or_limited_by_a_deadline(self):
         stop = threading.Event()
         self.clock.before_wait = stop.set

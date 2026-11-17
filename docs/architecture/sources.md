@@ -42,10 +42,12 @@ closes the session. PDF timeouts and cancellation limits are documented in
 all HTTP clients in the process. It spaces requests without catch-up bursts
 and caps concurrency per host. Retries and redirects from a limited API
 request each pass through the limiter. Separate processes are not coordinated.
-`PdfDownloader` adds a per-host concurrency cap; API rate profiles still apply.
+PDF limits are shared across `PdfDownloader` instances separately from API
+quotas. Server limits and pauses use the common limiter, including on redirects.
 
-Clients sharing a host use the stricter profile. Server headers can only
-lower its limits; raising them requires a process restart.
+Clients sharing a host use the stricter profile within each limiter.
+Server headers only tighten common limits; raising a limit requires a process
+restart.
 
 Default profiles (`pauk/settings.py`):
 
@@ -100,6 +102,6 @@ Settings:
 
 Fallback PDF download by DOI through the external
 [PDF-Crawler-Service](https://github.com/gurinboru/PDF-Crawler-Service) lives
-in `pipeline/stages/code_links.py` (`_crawler_available` and `_pdf_pages`),
+in `pipeline/stages/code_links.py`,
 not here. `pdf.py::PdfDownloader` manages thread-local HTTP clients and shutdown.
 See [pipeline/code-links.md](pipeline/code-links.md) and [deploy.md](deploy.md).

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import logging
-import queue
 import re
-import threading
 import unicodedata
 from bisect import bisect_right
 from collections import Counter, defaultdict, deque
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPoolExecutor, wait
 from contextlib import closing, suppress
 from dataclasses import dataclass
@@ -598,6 +596,37 @@ class _PdfResult:
     failed_ids: set[str]
 
 
+@dataclass(frozen=True)
+class _PdfRequest:
+    publication: Publication
+    url: str
+    options: dict[str, int]
+
+    @property
+    def host(self) -> str:
+        return _pdf_host(self.url)
+
+
+@dataclass(frozen=True)
+class _PdfSave:
+    publication: Publication
+    data: bytes
+
+    @property
+    def host(self) -> str:
+        return ""
+
+
+_PdfTask = _PdfRequest | _PdfSave
+_PdfWorkflow = Generator[_PdfTask, bytes | None, _PdfResult]
+
+
+def _pdf_host(url: str) -> str:
+    with suppress(ValueError):
+        return urlparse(url).hostname or ""
+    return ""
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
     progress_label = "Publications: finding code links in abstracts and PDFs"
@@ -608,7 +637,6 @@ class CodeLinksStage(EnrichmentStage):
             row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
         self.http = PdfDownloader(self.config, client_factory=HttpClient)
-        self._parse_queue = queue.SimpleQueue()
         self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
         candidates = [
             publication
@@ -619,37 +647,35 @@ class CodeLinksStage(EnrichmentStage):
         with closing(self._fetch_all(candidates)) as results:
             return self._apply_results(results, links_by_publication)
 
-    def _extract(self, data: bytes):
-        if threading.current_thread() is threading.main_thread():
-            return _extract_pdf(data)
-        future = Future()
-        self._parse_queue.put((data, future))
-        while not self.http.cancelled:
-            try:
-                return future.result(timeout=PDF_POLL_SECONDS)
-            except TimeoutError:
-                if future.done():
-                    raise
-        future.cancel()
-        raise CancelledError
+    def _perform_pdf_io(self, task: _PdfTask) -> bytes | None:
+        if isinstance(task, _PdfSave):
+            self.pdf_store.save(task.publication.id, task.data)
+            return None
+        return self.http.get_bytes(task.url, **task.options)
 
-    def _parse_ready(self, heartbeat) -> None:
-        while not self._parse_queue.empty():
-            data, future = self._parse_queue.get()
-            heartbeat()
-            if future.set_running_or_notify_cancel():
-                try:
-                    future.set_result(_extract_pdf(data))
-                except Exception as error:
-                    future.set_exception(error)
-                except BaseException:
-                    future.set_exception(CancelledError())
-                    raise
+    def _candidate_order(self, candidates: list[Publication]) -> Iterator[Publication]:
+        """Interleave hosts so one publisher cannot fill the initial worker pool."""
+        groups: dict[str, deque[Publication]] = {}
+        for publication in candidates:
+            source = ""
+            if not self.pdf_store.exists(publication.id):
+                source = next(iter(publication.pdf_urls), self.config.pdf_crawler_url if publication.doi else "")
+            groups.setdefault(_pdf_host(source), deque()).append(publication)
+        while groups:
+            for host in list(groups):
+                yield groups[host].popleft()
+                if not groups[host]:
+                    del groups[host]
 
     def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
+        """Queue individual source URLs and parse completed PDFs on the caller thread."""
         pool = ThreadPoolExecutor(max_workers=self.config.code_links_concurrency, thread_name_prefix="pauk-pdf")
-        pending = {}
-        remaining: dict[str, deque[Publication]] = {}
+        pending: dict[Future[bytes | None], tuple[_PdfWorkflow, _PdfTask]] = {}
+        remaining: dict[str, deque[tuple[_PdfWorkflow, _PdfTask]]] = {}
+        workflows: set[_PdfWorkflow] = set()
+        completed: deque[tuple[Publication, _PdfResult]] = deque()
+        publications = self._candidate_order(candidates)
+        exhausted = False
         reserved = Counter()
         done_count = 0
         reported = 0.0
@@ -660,22 +686,52 @@ class CodeLinksStage(EnrichmentStage):
                 reported = monotonic()
                 self.on_progress(self.progress_label, done_count, len(candidates))
 
+        def advance(publication: Publication, workflow: _PdfWorkflow, *, data: bytes | None = None,
+                    error: Exception | None = None) -> None:
+            try:
+                if error is not None:
+                    task = workflow.throw(error)
+                elif data is not None:
+                    task = workflow.send(data)
+                else:
+                    task = next(workflow)
+            except StopIteration as finished:
+                workflows.remove(workflow)
+                completed.append((publication, finished.value))
+            else:
+                remaining.setdefault(task.host, deque()).append((workflow, task))
+
         def fill_window():
+            nonlocal exhausted
             while len(pending) < self.config.code_links_concurrency:
                 submitted = False
-                for host in list(remaining):
+                # Slow downloads must not strand already parsed PDFs waiting for a cache write.
+                for host in sorted(remaining, key=bool):
                     if host and reserved[host] >= self.config.pdf_host_concurrency:
                         continue
-                    publication = remaining[host].popleft()
+                    workflow, task = remaining[host].popleft()
                     if not remaining[host]:
                         del remaining[host]
-                    pending[pool.submit(self._pdf_pages, publication)] = (publication, host)
+                    pending[pool.submit(self._perform_pdf_io, task)] = (workflow, task)
                     reserved[host] += 1
                     submitted = True
                     if len(pending) >= self.config.code_links_concurrency:
                         break
-                if not submitted:
-                    break
+                if len(pending) >= self.config.code_links_concurrency or completed:
+                    return
+                if submitted:
+                    continue
+                if exhausted:
+                    return
+                try:
+                    publication = next(publications)
+                except StopIteration:
+                    exhausted = True
+                    return
+                heartbeat()
+                workflow = self._pdf_workflow(publication)
+                workflows.add(workflow)
+                advance(publication, workflow)
 
         try:
             if not candidates:
@@ -685,36 +741,35 @@ class CodeLinksStage(EnrichmentStage):
                 heartbeat()
                 wait((probe,), timeout=PDF_POLL_SECONDS)
             self.crawler_available = probe.result()
-            for publication in candidates:
-                heartbeat()
-                host = ""
-                if not self.pdf_store.exists(publication.id):
-                    source = next(iter(publication.pdf_urls), self.config.pdf_crawler_url if publication.doi else "")
-                    with suppress(ValueError):
-                        host = urlparse(source).hostname or ""
-                remaining.setdefault(host, deque()).append(publication)
-            fill_window()
             with self.progress_bar(total=len(candidates)) as bar:
-                while pending or remaining:
+                while pending or remaining or completed or not exhausted:
                     heartbeat()
-                    self._parse_ready(heartbeat)
-                    ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
-                    for future in ready:
-                        publication, host = pending.pop(future)
-                        reserved[host] -= 1
-                        yield publication, future.result()
+                    fill_window()
+                    while completed:
+                        yield completed.popleft()
                         done_count += 1
                         bar.update()
                         fill_window()
+                    if not pending:
+                        continue
+                    ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                    for future in ready:
+                        workflow, task = pending.pop(future)
+                        reserved[task.host] -= 1
+                        try:
+                            data = future.result()
+                        except Exception as error:
+                            advance(task.publication, workflow, error=error)
+                        else:
+                            advance(task.publication, workflow, data=data)
                 heartbeat()
         finally:
             self.http.cancel()
             for future in pending:
                 future.cancel()
             pool.shutdown(wait=True, cancel_futures=True)
-            while not self._parse_queue.empty():
-                _data, future = self._parse_queue.get()
-                future.cancel()
+            for workflow in workflows:
+                workflow.close()
             self.http.close()
 
     def _apply_results(self, results, links_by_publication: dict[str, RepoLink]) -> dict[str, int]:
@@ -808,17 +863,15 @@ class CodeLinksStage(EnrichmentStage):
             )
             return False
 
-    def _pdf_pages(
-        self,
-        pub: Publication,
-    ) -> _PdfResult:
+    def _pdf_workflow(self, pub: Publication) -> _PdfWorkflow:
+        """Collect primary and cached-version PDF evidence across queued I/O tasks."""
         version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
         cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
         # An already cached version makes a new download of a missing survivor unnecessary.
         if cached_versions and not self.pdf_store.exists(pub.id):
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = self._primary_pdf_pages(pub)
+            pages, occurrences, error = yield from self._primary_pdf_workflow(pub)
         parsed_pdf_ids = {pub.id} if pages else set()
         failed_pdf_ids = {pub.id} if error else set()
         for page_found in occurrences:
@@ -829,7 +882,7 @@ class CodeLinksStage(EnrichmentStage):
         errors = [error] if error else []
         for pdf_id in cached_versions:
             try:
-                version_pages, version_occurrences = self._extract(self.pdf_store.read(pdf_id))
+                version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
             except CancelledError:
                 raise
             except Exception as exc:
@@ -845,7 +898,7 @@ class CodeLinksStage(EnrichmentStage):
             occurrences.extend(version_occurrences)
         if cached_versions and not pages and not self.pdf_store.exists(pub.id):
             # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub)
+            primary_pages, primary_occurrences, primary_error = yield from self._primary_pdf_workflow(pub)
             if primary_error:
                 failed_pdf_ids.add(pub.id)
                 errors.append(primary_error)
@@ -859,24 +912,14 @@ class CodeLinksStage(EnrichmentStage):
                 occurrences.extend(primary_occurrences)
         return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_pdf_ids, failed_pdf_ids)
 
-    def _primary_pdf_pages(
-        self,
-        pub: Publication,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
-        """Download (if not already cached) and extract per-page text + link occurrences.
-
-        Tries every direct PDF candidate before falling back to the
-        PDF-Crawler-Service (resolves a PDF from the DOI) when configured and
-        reachable.
-
-        Returns:
-            (pages, page_occurrences, error). On failure both lists are empty
-            and error carries the reason (e.g. a 403 for a non-open-access PDF).
-        """
+    def _primary_pdf_workflow(
+        self, pub: Publication,
+    ) -> Generator[_PdfTask, bytes | None, tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]]:
+        """Try the cache, direct sources and crawler; queue downloads and cache writes."""
         errors = []
         if self.pdf_store.exists(pub.id):
             try:
-                pages, occurrences = self._extract(self.pdf_store.read(pub.id))
+                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
                 return pages, occurrences, None
             except CancelledError:
                 raise
@@ -891,10 +934,10 @@ class CodeLinksStage(EnrichmentStage):
             ))
         for source_url, kwargs in sources:
             try:
-                pdf_bytes = self.http.get_bytes(source_url, **kwargs)
-                pages, occurrences = self._extract(pdf_bytes)
+                pdf_bytes = cast(bytes, (yield _PdfRequest(pub, source_url, kwargs)))
+                pages, occurrences = _extract_pdf(pdf_bytes)
                 # Error pages must never poison the cache for subsequent attempts.
-                self.pdf_store.save(pub.id, pdf_bytes)
+                yield _PdfSave(pub, pdf_bytes)
                 return pages, occurrences, None
             except CancelledError:
                 raise

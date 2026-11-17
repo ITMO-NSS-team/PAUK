@@ -73,6 +73,7 @@ class HttpClient:
         rate_limits: dict[str, RateLimit] | None = None,
         rate_limiter: HostRateLimiter | None = None,
         default_rate_limit: RateLimit | None = None,
+        default_rate_limiter: HostRateLimiter | None = None,
     ) -> None:
         self.timeout = timeout
         self.session = requests.Session()
@@ -80,6 +81,7 @@ class HttpClient:
         self.rate_limits = PUBLIC_LIMITS | (rate_limits or {})
         self.rate_limiter = rate_limiter if rate_limiter is not None else RATE_LIMITER
         self.default_rate_limit = default_rate_limit
+        self.default_rate_limiter = default_rate_limiter if default_rate_limiter is not None else self.rate_limiter
         self._cancelled = threading.Event()
         self._responses: set[requests.Response] = set()
         self._response_lock = threading.Lock()
@@ -252,8 +254,13 @@ class HttpClient:
             except ValueError:
                 host = ""
             limit = self.rate_limits.get(host)
+            scoped_limit = None
             if self.default_rate_limit is not None:
-                limit = limit.stricter(self.default_rate_limit) if limit else self.default_rate_limit
+                if self.default_rate_limiter is self.rate_limiter:
+                    limit = limit.stricter(self.default_rate_limit) if limit else self.default_rate_limit
+                else:
+                    scoped_limit = self.default_rate_limit
+                    limit = limit or RateLimit()
             if prepared is not None and limit is not None:
                 previous = urlsplit(history[-1].url)
                 current = urlsplit(current_url)
@@ -264,7 +271,10 @@ class HttpClient:
                 return self.session.request(method, url, **kwargs)
             admission = ({"cancel": self._cancelled, "deadline": end, "max_wait": max_wait}
                          if consume is not None else {})
-            with self.rate_limiter.slot(host, limit, **admission), ExitStack() as cleanup:
+            with ExitStack() as cleanup:
+                if scoped_limit is not None:
+                    cleanup.enter_context(self.default_rate_limiter.slot(host, scoped_limit, **admission))
+                cleanup.enter_context(self.rate_limiter.slot(host, limit, **admission))
                 request_kwargs = dict(kwargs)
                 if consume is not None:
                     if self._cancelled.is_set():

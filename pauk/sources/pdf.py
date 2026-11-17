@@ -6,10 +6,12 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import CancelledError
 
-from pauk.settings import Settings
+from pauk.settings import PDF_HOST_RPS, Settings
 
 from .base import HttpClient
-from .rate_limit import RateLimit
+from .rate_limit import HostRateLimiter, RateLimit
+
+PDF_RATE_LIMITER = HostRateLimiter(host_limits={host: RateLimit(rate) for host, rate in PDF_HOST_RPS.items()})
 
 
 class PdfDownloader:
@@ -30,7 +32,8 @@ class PdfDownloader:
             raise CancelledError
         if not hasattr(self._local, "client"):
             client = self._factory(self.config.request_timeout,
-                                   default_rate_limit=RateLimit(max_concurrent=self.config.pdf_host_concurrency))
+                                   default_rate_limit=RateLimit(max_concurrent=self.config.pdf_host_concurrency),
+                                   default_rate_limiter=PDF_RATE_LIMITER)
             with self._lock:
                 if self.cancelled:
                     client.close()

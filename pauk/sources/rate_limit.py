@@ -64,8 +64,10 @@ class _HostState:
 class HostRateLimiter:
     """Share the strictest host limits and server pauses within one process."""
 
-    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic,
+                 host_limits: dict[str, RateLimit] | None = None) -> None:
         self._clock = clock
+        self._host_limits = dict(host_limits or {})
         self._hosts: dict[str, _HostState] = {}
         self._lock = threading.Lock()
 
@@ -93,6 +95,9 @@ class HostRateLimiter:
     def slot(self, host: str, limit: RateLimit | None, *, cancel=None,
              deadline: float | None = None, max_wait: float | None = None) -> Iterator[None]:
         """Hold a host's concurrency slot until the request has finished."""
+        configured = self._host_limits.get(host)
+        if configured is not None:
+            limit = limit.stricter(configured) if limit is not None else configured
         if limit is None:
             yield
             return

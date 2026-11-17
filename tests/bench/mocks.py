@@ -230,7 +230,7 @@ class MockPdfHttpClient:
 
     The stage's PDF-fetch fallback, used when a publication carries a
     pdf_url but the universe models no PDF bytes for it (e.g. W020), always
-    fails here like a real 404, and code_links._pdf_pages falls back to the
+    fails here like a real 404, and the code-links stage falls back to the
     abstract. This keeps that outcome local instead of reaching example.org.
     """
 

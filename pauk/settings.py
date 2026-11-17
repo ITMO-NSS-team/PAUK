@@ -21,11 +21,21 @@ CROSSREF_PUBLIC_RPS = 5
 CROSSREF_PUBLIC_CONCURRENCY = 1
 PDF_CONCURRENCY = 8
 PDF_HOST_CONCURRENCY = 2
-PDF_CONNECT_TIMEOUT = 10.0
+PDF_CONNECT_TIMEOUT = 5.0
 PDF_READ_TIMEOUT = 15.0
-PDF_DOWNLOAD_DEADLINE = 300.0
+PDF_DOWNLOAD_DEADLINE = 120.0
 PDF_RETRIES = 2
 PDF_MAX_RETRY_WAIT = 120.0
+PDF_HOST_RPS = {
+    "etl.fa.ru": 1.0,
+    "nanojournal.ifmo.ru": 1.0,
+    "newtechology.mkgtu.ru": 1.0,
+    "ntv.elpub.ru": 1.0,
+    "vestnik.dgtu.ru": 1.0,
+    "www.fsjour.com": 1.0,
+    "www.pharmjournal.ru": 1.0,
+    "www.vestnik-vsuet.ru": 1.0,
+}
 
 
 def _path_setting(name: str, default: Path) -> Path:

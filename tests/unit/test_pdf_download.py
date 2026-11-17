@@ -26,7 +26,7 @@ from pauk.settings import Settings
 from pauk.sources.base import HttpClient, HttpRequestError
 from pauk.sources.pdf import PdfDownloader
 from pauk.sources.rate_limit import HostRateLimiter, RateLimit
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PdfStore, PreparedStore, RawStore
 
 _SEND = requests.Session.send
 
@@ -84,6 +84,8 @@ class _Handler(BaseHTTPRequestHandler):
             time.sleep(float(query.get("delay", [0.4])[0]))
         if path == "/redirect-slow":
             time.sleep(float(query.get("delay", [0.1])[0]))
+        if path == "/after-cache":
+            self.server.held.wait(2)
         body = self.server.pdf
         status = 200
         headers = {}
@@ -96,6 +98,8 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/pause":
             status = 429
             headers["Retry-After"] = "3600"
+        elif path == "/limited":
+            headers.update({"X-Concurrency-Limit": "1", "X-Rate-Limit-Limit": "2", "X-Rate-Limit-Interval": "1s"})
         elif path in {"/redirect", "/redirect-drip", "/redirect-slow"}:
             status = 302
             body = b"redirect"
@@ -118,7 +122,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.close_connection = True
         self.end_headers()
         self.wfile.flush()
-        if path == "/held":
+        if path == "/held" or (path == "/api/download" and query.get("url") == ["https://doi.org/10.1/held"]):
             self.server.held.set()
             self.server.release.wait(2)
         if path == "/stall":
@@ -190,6 +194,7 @@ class LocalPdfTest(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.dict(os.environ, {"NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}))
         self.enterContext(patch("pauk.sources.base.RATE_LIMITER", HostRateLimiter()))
+        self.enterContext(patch("pauk.sources.pdf.PDF_RATE_LIMITER", HostRateLimiter()))
         with self.server.lock:
             self.server.counts.clear()
             self.server.peak.clear()
@@ -207,6 +212,74 @@ class LocalPdfTest(unittest.TestCase):
 
 
 class PdfTransportTest(LocalPdfTest):
+    def test_pdf_concurrency_does_not_lower_an_api_profile_on_the_same_host(self):
+        host = urlsplit(self.url).hostname
+        pdf_limiter = HostRateLimiter(host_limits={host: RateLimit(10)})
+        self.enterContext(patch("pauk.sources.pdf.PDF_RATE_LIMITER", pdf_limiter))
+        profile = {host: RateLimit(100, 5)}
+        api = _client(1, rate_limits=profile)
+        self.addCleanup(api.close)
+        api.get_bytes(self.url + "/pdf", retries=0)
+
+        def factory(*args, **kwargs):
+            return _client(*args, rate_limits=profile, **kwargs)
+
+        downloader = PdfDownloader(Settings(pdf_host_concurrency=2, pdf_retries=0), client_factory=factory)
+        try:
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                held = [pool.submit(downloader.get_bytes, self.url + "/held") for _ in range(2)]
+                try:
+                    until = time.monotonic() + 1
+                    while self.server.counts["/held"] < 2 and time.monotonic() < until:
+                        time.sleep(0.005)
+                    self.assertEqual(self.server.counts["/held"], 2)
+                    ordinary = pool.submit(api.get_bytes, self.url + "/pdf", retries=0)
+                    self.assertEqual(ordinary.result(timeout=0.4), self.server.pdf)
+                finally:
+                    self.server.release.set()
+                self.assertTrue(all(future.result(timeout=1) == self.server.pdf for future in held))
+        finally:
+            downloader.close()
+        self.assertEqual(api.rate_limiter._hosts[host].limit, RateLimit(100, 5))
+        self.assertEqual(pdf_limiter._hosts[host].limit, RateLimit(10, 2))
+
+    def test_pdf_server_headers_apply_to_a_later_api_client(self):
+        downloader = PdfDownloader(Settings(pdf_retries=0), client_factory=_client)
+        self.addCleanup(downloader.close)
+        self.assertEqual(downloader.get_bytes(self.url + "/limited"), self.server.pdf)
+        host = urlsplit(self.url).hostname
+        api = _client(1, rate_limits={host: RateLimit(100, 5)})
+        self.addCleanup(api.close)
+        api.get_bytes(self.url + "/pdf", retries=0)
+        self.assertEqual(api.rate_limiter._hosts[host].limit, RateLimit(2, 1))
+
+    def test_separate_downloaders_share_the_pdf_host_cap(self):
+        config = Settings(pdf_host_concurrency=1, pdf_retries=0)
+        downloaders = [PdfDownloader(config, client_factory=_client) for _ in range(2)]
+        for downloader in downloaders:
+            self.addCleanup(downloader.close)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda downloader: downloader.get_bytes(self.url + "/headers?delay=0.05"),
+                                    downloaders))
+        self.assertTrue(all(data == self.server.pdf for data in results))
+        self.assertEqual(self.server.peak["127.0.0.1"], 1)
+
+    def test_pdf_responses_keep_server_pauses_shared_with_api_clients(self):
+        host = urlsplit(self.url).hostname
+        profile = {host: RateLimit(100, 5)}
+        api = _client(1, rate_limits=profile)
+        self.addCleanup(api.close)
+        api.get_bytes(self.url + "/pdf", retries=0)
+
+        def factory(*args, **kwargs):
+            return _client(*args, rate_limits=profile, **kwargs)
+
+        downloader = PdfDownloader(Settings(pdf_retries=0, pdf_max_retry_wait=0), client_factory=factory)
+        self.addCleanup(downloader.close)
+        with self.assertRaises(HttpRequestError):
+            downloader.get_bytes(self.url + "/pause")
+        self.assertGreater(api.rate_limiter._hosts[host].paused_until, time.monotonic() + 3590)
+
     def test_retry_count_is_applied_per_pdf_without_changing_generic_api_defaults(self):
         for retries in (0, 1, 2, 3):
             with self.subTest(retries=retries), patch("pauk.sources.base.HttpClient._backoff_delay", return_value=0):
@@ -292,6 +365,8 @@ class PdfTransportTest(LocalPdfTest):
         self.assertFalse(self.client._responses)
 
     def test_redirect_target_concurrency_is_shared_between_clients(self):
+        pdf_limiter = HostRateLimiter(host_limits={"localhost": RateLimit(20)})
+        self.enterContext(patch("pauk.sources.pdf.PDF_RATE_LIMITER", pdf_limiter))
         config = Settings(pdf_host_concurrency=1, pdf_retries=0, pdf_read_timeout=1)
         downloader = PdfDownloader(config, client_factory=_client)
         self.addCleanup(downloader.close)
@@ -301,6 +376,7 @@ class PdfTransportTest(LocalPdfTest):
             result = list(pool.map(downloader.get_bytes, urls))
         self.assertTrue(all(data == self.server.pdf for data in result))
         self.assertEqual(self.server.peak["localhost"], 1)
+        self.assertEqual(pdf_limiter._hosts["localhost"].limit, RateLimit(20, 1))
         self.assertGreaterEqual(len(downloader._clients), 2)
         self.assertEqual(len({id(client.session) for client in downloader._clients}), len(downloader._clients))
 
@@ -316,6 +392,95 @@ class PdfStageTest(LocalPdfTest):
         self.config = Settings(data_dir=Path(folder.name), pdf_read_timeout=0.5,
                                pdf_connect_timeout=0.2, pdf_download_deadline=1, pdf_retries=0)
         self.enterContext(patch("pauk.pipeline.stages.code_links.HttpClient", side_effect=_client))
+
+    def _check_fallback_releases_the_previous_host(self, *, crawler):
+        other = self.url.replace("127.0.0.1", "localhost")
+        urls = [self.url + "/refused"] if crawler else [self.url + "/refused", other + "/held"]
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="fallback", pdf_urls=urls,
+                        doi="https://doi.org/10.1/held" if crawler else None),
+            Publication(id="W2", title="same initial host", pdf_urls=[self.url + "/pdf"]),
+        ])
+        observed = []
+
+        def progress(_label, done, _total):
+            if done and not observed:
+                rows = {row.id: row for row in self.prepared.read_models("publications", Publication)}
+                self.assertIn("code_links", rows["W2"].processing)
+                self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+                self.assertNotIn("code_links", rows["W1"].processing)
+                observed.append(done)
+                self.server.release.set()
+
+        config = Settings(**(self.config.__dict__ | {
+            "code_links_concurrency": 2, "pdf_host_concurrency": 1,
+            "pdf_crawler_url": other + "/api" if crawler else "",
+        }))
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 2)
+        self.assertTrue(observed)
+        self.assertEqual(self.server.counts["/refused"], 1)
+        self.assertTrue(all(row.processing["code_links"].status == ProcessingStatus.COMPLETED
+                            for row in self.prepared.read_models("publications", Publication)))
+
+    def test_an_alternative_pdf_source_releases_the_first_host(self):
+        self._check_fallback_releases_the_previous_host(crawler=False)
+
+    def test_the_crawler_fallback_releases_the_first_host(self):
+        self._check_fallback_releases_the_previous_host(crawler=True)
+
+    def test_converging_fallbacks_do_not_occupy_workers_waiting_for_the_same_host(self):
+        other = self.url.replace("127.0.0.1", "localhost")
+        self.prepared.write_models("publications", [
+            Publication(id=identifier, title="fallback", pdf_urls=[self.url + "/refused", other + "/held"])
+            for identifier in ("W1", "W2")
+        ] + [Publication(id="W3", title="available host", pdf_urls=[self.url + "/pdf"])])
+        observed = []
+
+        def progress(_label, done, _total):
+            if done and not observed:
+                rows = {row.id: row for row in self.prepared.read_models("publications", Publication)}
+                self.assertEqual(rows["W3"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+                self.assertNotIn("code_links", rows["W1"].processing)
+                self.assertNotIn("code_links", rows["W2"].processing)
+                observed.append(done)
+                self.server.release.set()
+
+        config = Settings(**(self.config.__dict__ | {"code_links_concurrency": 2, "pdf_host_concurrency": 1}))
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 3)
+        self.assertTrue(observed)
+
+    def test_a_fallback_waiting_for_a_busy_host_leaves_a_worker_for_an_available_host(self):
+        other = self.url.replace("127.0.0.1", "localhost")
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="fallback", pdf_urls=[self.url + "/refused", other + "/held"]),
+            Publication(id="W2", title="busy fallback host", pdf_urls=[other + "/held"]),
+            Publication(id="W3", title="first fast", pdf_urls=[self.url + "/pdf"]),
+            Publication(id="W4", title="next fast", pdf_urls=[self.url + "/pdf"]),
+        ])
+        observed = []
+
+        def progress(_label, done, _total):
+            if done and not observed:
+                rows = {row.id: row for row in self.prepared.read_models("publications", Publication)}
+                if "code_links" in rows["W2"].processing:
+                    self.assertIn("code_links", rows["W4"].processing)
+                if "code_links" in rows["W4"].processing:
+                    self.assertEqual(rows["W4"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+                    self.assertNotIn("code_links", rows["W2"].processing)
+                    observed.append(done)
+                    self.server.release.set()
+
+        config = Settings(**(self.config.__dict__ | {"code_links_concurrency": 2, "pdf_host_concurrency": 1}))
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 4)
+        self.assertTrue(observed)
+        self.assertTrue(all(row.processing["code_links"].status == ProcessingStatus.COMPLETED
+                            for row in self.prepared.read_models("publications", Publication)))
 
     def test_fast_results_are_saved_and_replaced_before_a_slow_first_pdf_finishes(self):
         self.prepared.write_models("publications", [
@@ -349,6 +514,39 @@ class PdfStageTest(LocalPdfTest):
         self.assertTrue(all(row.processing["code_links"].status == ProcessingStatus.COMPLETED
                             for row in self.prepared.read_models("publications", Publication)))
 
+    def test_a_slow_cache_write_does_not_block_another_publication(self):
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="slow cache", pdf_urls=[self.url + "/pdf"]),
+            Publication(id="W2", title="fast cache", pdf_urls=[self.url + "/after-cache"]),
+        ])
+        config = Settings(**(self.config.__dict__ | {
+            "code_links_concurrency": 2, "pdf_read_timeout": 3, "pdf_download_deadline": 5,
+        }))
+        store = PdfStore(self.db, config.pdf_dir)
+        original_save = store.save
+        observed = []
+
+        def save(identifier, data):
+            if identifier == "W1":
+                self.server.held.set()
+                if not self.server.release.wait(2):
+                    raise RuntimeError("cache write blocked the coordinator")
+            return original_save(identifier, data)
+
+        def progress(_label, done, _total):
+            if done and not observed:
+                rows = {row.id: row for row in self.prepared.read_models("publications", Publication)}
+                self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+                self.assertNotIn("code_links", rows["W1"].processing)
+                observed.append(done)
+                self.server.release.set()
+
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        with patch("pauk.pipeline.stages.code_links.PdfStore", return_value=store), patch.object(store, "save", side_effect=save):
+            self.assertEqual(stage.run()["publications"], 2)
+        self.assertTrue(observed)
+
     def test_one_host_does_not_fill_the_pool_while_other_hosts_are_ready(self):
         other = self.url.replace("127.0.0.1", "localhost")
         self.prepared.write_models("publications", [
@@ -366,6 +564,64 @@ class PdfStageTest(LocalPdfTest):
         stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
         stage.REPORT_SECONDS = 0
         self.assertEqual(stage.run()["publications"], 3)
+
+    def test_cache_write_errors_follow_the_source_fallback_and_failure_rules(self):
+        for recover in (True, False):
+            with self.subTest(recover=recover):
+                identifier = "W-recover" if recover else "W-fail"
+                self.prepared.write_models("publications", [Publication(
+                    id=identifier, title="paper", abstract="Code: https://github.com/org/abstract",
+                    pdf_urls=[self.url + "/pdf", self.url + "/chunked-gzip"],
+                )])
+                store = PdfStore(self.db, self.config.pdf_dir)
+                original_save = store.save
+                attempts = []
+
+                def save(publication_id, data, *, attempts=attempts, recover=recover, original_save=original_save):
+                    attempts.append(publication_id)
+                    if not recover or len(attempts) == 1:
+                        raise OSError("cache unavailable")
+                    return original_save(publication_id, data)
+
+                with patch("pauk.pipeline.stages.code_links.PdfStore", return_value=store), patch.object(
+                    store, "save", side_effect=save,
+                ):
+                    CodeLinksStage(self.prepared, self.raw, config=self.config).run()
+                self.assertEqual(attempts, [identifier, identifier])
+                publication = next(self.prepared.read_models("publications", Publication))
+                expected = ProcessingStatus.COMPLETED if recover else ProcessingStatus.FAILED
+                self.assertEqual(publication.processing["code_links"].status, expected)
+                links = next(self.prepared.read_models("repo_links", RepoLink))
+                self.assertIn("https://github.com/org/abstract", [link.url for link in links.links])
+                if recover:
+                    self.assertEqual(store.read(identifier), self.server.pdf)
+                else:
+                    self.assertIn("cache unavailable", publication.processing["code_links"].error)
+                    self.assertFalse(store.exists(identifier))
+
+    def test_initial_sources_are_interleaved_when_the_host_cap_can_fill_the_pool(self):
+        other = self.url.replace("127.0.0.1", "localhost")
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="slow", pdf_urls=[self.url + "/held"]),
+            Publication(id="W2", title="same slow host", pdf_urls=[self.url + "/held"]),
+            Publication(id="W3", title="other host", pdf_urls=[other + "/pdf"]),
+        ])
+        observed = []
+
+        def progress(_label, done, _total):
+            if done and not observed:
+                rows = {row.id: row for row in self.prepared.read_models("publications", Publication)}
+                self.assertIn("code_links", rows["W3"].processing)
+                self.assertNotIn("code_links", rows["W1"].processing)
+                self.assertNotIn("code_links", rows["W2"].processing)
+                observed.append(done)
+                self.server.release.set()
+
+        config = Settings(**(self.config.__dict__ | {"code_links_concurrency": 2, "pdf_host_concurrency": 2}))
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 3)
+        self.assertTrue(observed)
 
     def test_cancellation_retains_completed_rows_and_does_not_mark_pending_rows_failed(self):
         self.prepared.write_models("publications", [

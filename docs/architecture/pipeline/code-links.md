@@ -176,21 +176,25 @@ configuration: [../deploy.md](../deploy.md).
 
 ## Download and cache
 
-Downloads use a sliding window: each finished publication frees a slot for
-the next one. Sources are queued by host so one publisher cannot occupy every
-worker. The shared HTTP limiter also caps redirects and crawler requests.
-Each download thread has its own session; PDF extraction runs serially on
-the coordinating thread.
+Downloads use a sliding window: each finished task frees a slot for
+the next one. Initial publications are interleaved by their primary host.
+Each source URL is queued under its own host; a failed source
+releases that host before an alternative URL or the crawler is queued.
+Sources waiting in the host queue do not occupy network workers.
+Redirects pass through the HTTP limiter. Each download thread has its own
+session. Downloads and cache writes share a worker pool; PDF extraction
+runs on the coordinating thread.
+`PDF_HOST_RPS` in `pauk/settings.py` sets request rates for specific publishers.
 
 Settings in `pauk/settings.py`:
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
-| `PAUK_CODE_LINKS_CONCURRENCY` | `8` | Maximum publications in flight |
+| `PAUK_CODE_LINKS_CONCURRENCY` | `8` | Parallel download and cache-write tasks |
 | `PAUK_PDF_HOST_CONCURRENCY` | `2` | Concurrent requests per host |
-| `PAUK_PDF_CONNECT_TIMEOUT` | `10` | Connection timeout, seconds |
+| `PAUK_PDF_CONNECT_TIMEOUT` | `5` | Connection timeout, seconds |
 | `PAUK_PDF_READ_TIMEOUT` | `15` | Socket read timeout, seconds |
-| `PAUK_PDF_DOWNLOAD_DEADLINE` | `300` | Seconds per attempt, including host admission, headers, redirects and body |
+| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds per attempt, including host admission, headers, redirects and body |
 | `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
 | `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
 
