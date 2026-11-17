@@ -36,12 +36,7 @@ PUB_TITLE_MAX_LEN = 200
 
 
 def _parse_json_list(text: str | None) -> list:
-    """Parses a JSON-text snapshot field into a list.
-
-    Covers `funding`/`versions`/`affiliations`/`code_url`, see `JSON_TEXT_FIELDS`
-    in `pauk/graph/extract.py`. Missing or broken data gives an empty list: it's
-    not worth failing the whole generation over.
-    """
+    """Read JSON-text lists, wrapping single values from legacy snapshots."""
     if not text:
         return []
     try:

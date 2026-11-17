@@ -10,6 +10,7 @@ from __future__ import annotations
 import getpass
 import json
 import logging
+from contextlib import suppress
 
 from pymongo.database import Database
 
@@ -21,12 +22,15 @@ from pauk.graph.mutations import (
     NODE_FIELDS,
     RELATIONSHIPS,
     MutationError,
+    NotFound,
     create_node,
     create_relationship,
     delete_node,
     delete_relationship,
     merge_nodes,
     read_node,
+    read_relationship,
+    snapshot_relationships,
     update_node,
 )
 from pauk.graph.overrides import (
@@ -38,6 +42,7 @@ from pauk.graph.overrides import (
     deactivate_override,
     deactivate_relationship_override,
     override_generation,
+    persist_decision,
     record_override,
     record_relationship_override,
 )
@@ -393,8 +398,10 @@ def _run_node(args, client, db, actor: str) -> None:
         node = create_node(client, args.label, args.id, fields)
         # Claimed, not reapplied: a prune would take it for a leftover.
         if db is not None and not args.once:
-            record_override(db, args.label, args.id, CREATE, fields, actor=actor,
-                            note=args.note or "")
+            persist_decision(
+                undo=lambda: delete_node(client, args.label, args.id),
+                write=lambda: record_override(db, args.label, args.id, CREATE, fields, actor=actor,
+                                              note=args.note or ""))
         logger.info("created %s %s%s", args.label, args.id,
                     "" if db is not None and not args.once else " (not recorded as a decision)")
         print(json.dumps(node, ensure_ascii=False, indent=2, default=str))
@@ -420,10 +427,12 @@ def _set_fields(args, client, db, actor: str) -> dict:
     node = update_node(client, args.label, args.id, fields,
                        expected_updated_at=args.expect_updated_at)
     if db is not None and not args.once:
-        record_override(db, args.label, args.id, "set", fields, actor=actor,
-                        note=args.note or "",
-                        auto_value={name: before.get(name) for name in fields},
-                        graph_updated_at=node["updated_at"], expected_generation=generation)
+        persist_decision(
+            undo=lambda: update_node(client, args.label, args.id, {name: before.get(name) for name in fields},
+                                     expected_updated_at=node["updated_at"], from_snapshot=True),
+            write=lambda: record_override(db, args.label, args.id, "set", fields, actor=actor,
+                                          note=args.note or "", auto_value={name: before.get(name) for name in fields},
+                                          graph_updated_at=node["updated_at"], expected_generation=generation))
     logger.info("updated %s %s%s", args.label, args.id,
                 "" if db is not None and not args.once else " (not recorded as an override)")
     return node
@@ -433,11 +442,20 @@ def _delete(args, client, db, actor: str) -> None:
     """Remove a node, and tombstone it so publishing does not bring it back."""
     # Snapshot first: afterwards there is nothing left to read.
     snapshot = read_node(client, args.label, args.id)
+    kept = {name: value for name, value in snapshot.items()
+            if name in NODE_FIELDS[args.label] and value is not None}
+    relationships = (snapshot_relationships(client, args.label, args.id, snapshot)
+                     if args.cascade and db is not None and not args.once else [])
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
-        record_override(db, args.label, args.id, "delete", actor=actor, note=args.note or "",
-                        snapshot={name: value for name, value in snapshot.items()
-                                  if name in NODE_FIELDS[args.label] and value is not None})
+        def undo():
+            create_node(client, args.label, args.id, kept, from_snapshot=True)
+            for relationship in relationships:
+                create_relationship(client, **relationship)
+
+        persist_decision(undo=undo,
+                         write=lambda: record_override(db, args.label, args.id, "delete", actor=actor,
+                                                       note=args.note or "", snapshot=kept))
     logger.info("deleted %d node(s)", removed)
 
 
@@ -477,14 +495,36 @@ def _run_overrides(args, client, db) -> None:
 
 
 def _run_relationship(args, client, db, actor: str) -> None:
+    fields = _parse_assignments(args.assignments) if args.rel_command == "add" else {}
+    before = None
+    if db is not None and not args.once:
+        with suppress(NotFound):
+            before = read_relationship(client, args.src_label, args.rel_type, args.tgt_label, args.src_id, args.tgt_id)
+
+    def undo():
+        if before is not None and args.rel_command == "add":
+            properties = {name: before.get(name) for name in before.keys() | fields.keys()
+                          if name not in ("created_at", "updated_at")}
+            match_prop = RELATIONSHIPS[(args.src_label, args.rel_type, args.tgt_label)]
+            # Reusing upsert would preserve merged flags and leave newly added properties.
+            restored = client.set_relationship_properties_batch(
+                args.src_label, args.tgt_label, args.rel_type, [(args.src_id, args.tgt_id, properties)], match_prop)
+            if not restored:
+                raise NotFound("the relationship disappeared before rollback")
+        elif before is not None:
+            create_relationship(client, args.src_label, args.rel_type, args.tgt_label, args.src_id, args.tgt_id, before)
+        else:
+            delete_relationship(client, args.src_label, args.rel_type, args.tgt_label, args.src_id, args.tgt_id)
+
     if args.rel_command == "add":
         # Claimed, not reapplied: a prune would take it for a leftover.
         create_relationship(client, args.src_label, args.rel_type, args.tgt_label,
-                            args.src_id, args.tgt_id, _parse_assignments(args.assignments))
+                            args.src_id, args.tgt_id, fields)
         if db is not None and not args.once:
-            record_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
-                                         args.src_id, args.tgt_id, op=LINK, actor=actor,
-                                         note=args.note or "")
+            persist_decision(undo=undo,
+                             write=lambda: record_relationship_override(
+                                 db, args.src_label, args.rel_type, args.tgt_label,
+                                 args.src_id, args.tgt_id, op=LINK, actor=actor, note=args.note or ""))
         logger.info("linked (%s %s)-[:%s]->(%s %s)%s", args.src_label, args.src_id,
                     args.rel_type, args.tgt_label, args.tgt_id,
                     "" if db is not None and not args.once else " (not recorded as a decision)")
@@ -494,8 +534,10 @@ def _run_relationship(args, client, db, actor: str) -> None:
     removed = delete_relationship(client, args.src_label, args.rel_type, args.tgt_label,
                                   args.src_id, args.tgt_id)
     if db is not None and not args.once:
-        record_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
-                                     args.src_id, args.tgt_id, actor=actor, note=args.note or "")
+        persist_decision(undo=undo,
+                         write=lambda: record_relationship_override(
+                             db, args.src_label, args.rel_type, args.tgt_label, args.src_id, args.tgt_id,
+                             actor=actor, note=args.note or "", snapshot=before))
     logger.info("removed %d relationship(s)%s", removed,
                 "" if db is not None and not args.once else " (not recorded as an override)")
 

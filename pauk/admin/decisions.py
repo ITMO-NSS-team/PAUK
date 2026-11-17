@@ -1,30 +1,81 @@
-"""Manual decisions in force, and where they disagree with the source.
+"""Manual decisions, their writes and disagreements with later pipeline data.
 
-Every hand edit is kept as a decision in `graph_overrides` and reapplied after
-each publish and dedup. A conflict is not "the graph differs from the override"
-(it never does) but a later pipeline write that differs from `auto_value`, the
-value the field held before a person changed it.
+Disagreements compare pipeline values with `auto_value`, the value before
+the manual edit. Graph values alone do not establish a source disagreement.
 """
 
 from __future__ import annotations
 
+import logging
+
+from fastapi import HTTPException, status
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from pauk.admin import feed
+from pauk.graph.mutations import field_values_equal
 from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
     DELETE,
     LINK,
     SET,
+    DecisionRollbackFailed,
+    DecisionWriteConflict,
+    DecisionWriteUncertain,
     active_overrides,
+    override_id,
+    persist_decision,
     relationship_override_id,
 )
 
 PAGE = 50
 
-# Writes the panel makes itself; anything else is the pipeline's own opinion.
-PANEL = "admin-ui"
+MANUAL_SOURCES = ("admin-ui", "admin-cli")
+logger = logging.getLogger("pauk.admin")
+
+
+def record_change(undo, write) -> None:
+    """Write the decision that protects a change already made to the graph.
+
+    Neo4j and Mongo share no transaction, so the decision can fail after the
+    graph has moved, and the next publish would silently revert the change.
+    The graph is put back instead when failure is confirmed. An uncertain
+    commit leaves it in place until the outcome can be checked.
+
+    Args:
+        undo: Puts the graph back the way it was.
+        write: Records the decision.
+
+    Raises:
+        HTTPException: 409 for conflicting decisions, 503 for failed or
+            uncertain writes. The message reports whether the graph was restored.
+    """
+    try:
+        persist_decision(undo, write)
+    except DecisionWriteUncertain:
+        logger.exception("decision write outcome could not be verified")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Mongo не подтвердила результат записи решения. Граф не откатывали: "
+            "решение могло сохраниться. Проверьте карточку и ручные решения "
+            "после восстановления соединения") from None
+    except DecisionRollbackFailed as failure:
+        logger.exception("the graph could not be put back")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "правка записана в граф, но не сохранилась как решение "
+            f"и не откатилась ({failure}). Следующая публикация её снимет") from None
+    except PyMongoError as error:
+        logger.error("could not record the decision: %s", error)
+        if isinstance(error, DecisionWriteConflict):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "правка отменена: решение параллельно изменялось. "
+                "Обновите карточку и попробуйте снова") from None
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
 
 
 def _moment(value) -> str:
@@ -80,7 +131,7 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
 def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dict]:
     """Fields where the source now says something other than it used to.
 
-    For every hand-edited field, looks for a later non-panel write in the feed
+    For every hand-edited field, looks for a later non-manual write in the feed
     whose value differs from `auto_value`.
 
     Args:
@@ -111,7 +162,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
                 if latest is None or (since is not None and latest[2] <= _moment(since)):
                     continue
                 value, actor, when = latest
-            if value == auto.get(name):
+            if field_values_equal(name, value, auto.get(name)):
                 continue
             found.append({
                 "label": row["label"], "target_id": row["target_id"], "title": _title(row),
@@ -126,7 +177,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
 
 
 def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str], tuple]:
-    """The latest non-panel write to each hand-edited field, in one query.
+    """The latest non-manual write to each hand-edited field, in one query.
 
     Returns:
         (label, node_id, field) -> (value now, who wrote it, when).
@@ -139,7 +190,7 @@ def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str]
     rows = db[feed.COLLECTION].find(
         {"entity_type": {"$in": sorted({label for label, _ in wanted})},
          "entity_id": {"$in": sorted({node_id for _, node_id in wanted})},
-         "source": {"$ne": PANEL}},
+         "source": {"$nin": MANUAL_SOURCES}},
         {"entity_type": True, "entity_id": True, "timestamp": True,
          "actor": True, "diff": True})
 
@@ -171,6 +222,12 @@ def count_conflicts(db: Database) -> int:
 
 def count_in_force(db: Database) -> int:
     return db[COLLECTION].count_documents({"active": True})
+
+
+def decision_version(db: Database, label: str, node_id: str) -> str:
+    """Version used by restore forms; legacy decisions have no write token."""
+    row = db[COLLECTION].find_one({"_id": override_id(label, node_id)}, {"write_id": True})
+    return (row or {}).get("write_id") or ""
 
 
 def deleted_fields(db: Database, label: str, node_id: str) -> dict:

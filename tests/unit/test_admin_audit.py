@@ -9,6 +9,7 @@ from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.overrides import CREATE, active_overrides
 from pauk.settings import Settings
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 
 
@@ -227,8 +228,9 @@ class RestoreTest(unittest.TestCase):
         return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_node_comes_back_with_the_fields_it_had(self):
-        csrf = self.sign_in()
-        response = self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/LinkCandidate/L1").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 303)
         node = self.graph.nodes[("LinkCandidate", "L1")]
         self.assertEqual(node["url"], "https://x.test")
@@ -238,8 +240,9 @@ class RestoreTest(unittest.TestCase):
         # Without this the next publish would delete the node a second
         # time, and the restore would look like it silently failed.
         from pauk.graph.overrides import active_overrides
-        csrf = self.sign_in()
-        self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/LinkCandidate/L1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
         self.assertEqual(active_overrides(self.db), [])
 
     def test_creating_the_same_id_by_hand_also_withdraws_it(self):
@@ -312,9 +315,8 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
     def test_the_record_comes_back_whole(self):
         # Through the page, not straight at the route: the button itself
         # has to be reachable.
-        page = self.client.get("/nodes/Person/A1").text
-        action = re.search(r'action="([^"]*restore[^"]*)"', page).group(1)
-        self.client.post(action, data={"csrf": self.csrf})
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
 
     def test_an_empty_feed_is_not_shown_as_an_empty_table(self):
