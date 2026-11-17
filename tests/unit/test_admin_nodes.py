@@ -18,6 +18,7 @@ from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
     LINK,
+    SET,
     DecisionWriteConflict,
     active_overrides,
     apply_overrides,
@@ -1366,7 +1367,14 @@ class FieldNormalizationTest(unittest.TestCase):
                 with self.subTest(label=label, field=name):
                     node_id = f"list-{label}-{name}"
                     value = ["https://example.org/repo"] if name == "code_url" else ["value"] if item_type is str else [{}]
-                    response = self.submit(f"/nodes/{label}/new", "Создать", id=node_id, **{name: json.dumps(value)})
+                    if label == "Publication":
+                        self.graph.add(label, node_id, title="Existing publication")
+                        response = self.submit(f"/nodes/{label}/{node_id}", **{name: json.dumps(value)})
+                    else:
+                        response = self.submit(
+                            f"/nodes/{label}/new", "Создать", id=node_id,
+                            **{name: json.dumps(value)},
+                        )
                     self.assertEqual(response.status_code, 303)
                     node = self.graph.nodes[label, node_id]
                     actual = json.loads(node[name]) if isinstance(node[name], str) else node[name]
@@ -1377,23 +1385,30 @@ class FieldNormalizationTest(unittest.TestCase):
                     self.assertEqual(response.status_code, 400)
                     self.assertEqual(self.graph.nodes[label, node_id], before)
 
-    def test_a_plain_url_survives_creation_editing_and_republishing(self):
+    def test_a_publication_cannot_be_created_manually(self):
+        response = self.submit(
+            "/nodes/Publication/new", "Создать", id="W9", title="New paper",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(("Publication", "W9"), self.graph.nodes)
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_a_plain_url_survives_editing_and_republishing(self):
         url = "https://github.com/be2rlab/QUORUM"
-        response = self.submit("/nodes/Publication/new", "Создать", id="W9", title="New paper",
-                               has_code="true", code_url=url)
+        response = self.submit(code_url=url)
         self.assertEqual(response.status_code, 303)
-        node = self.graph.nodes["Publication", "W9"]
+        node = self.graph.nodes["Publication", "W1"]
         self.assertIsInstance(node["code_url"], str)
         self.assertEqual(json.loads(node["code_url"]), [url])
 
-        response = self.submit("/nodes/Publication/W9", title="Renamed paper")
+        response = self.submit(title="Renamed paper")
         self.assertEqual(response.status_code, 303)
-        decision = self.db[COLLECTION].find_one({"target_id": "W9"})
-        self.assertEqual(decision["op"], CREATE)
+        decision = self.db[COLLECTION].find_one({"target_id": "W1"})
+        self.assertEqual(decision["op"], SET)
         self.assertEqual(decision["fields"]["code_url"], node["code_url"])
-        self.graph.nodes["Publication", "W9"]["code_url"] = None
+        self.graph.nodes["Publication", "W1"]["code_url"] = None
         apply_overrides(self.graph, self.db)
-        self.assertEqual(json.loads(self.graph.nodes["Publication", "W9"]["code_url"]), [url])
+        self.assertEqual(json.loads(self.graph.nodes["Publication", "W1"]["code_url"]), [url])
 
     def test_editing_accepts_one_url_or_a_json_list(self):
         for value, expected in (

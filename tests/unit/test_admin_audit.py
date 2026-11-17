@@ -255,12 +255,9 @@ class RestoreTest(unittest.TestCase):
             actor="user:roman",
             snapshot={"title": "Paper"},
         )
-        csrf = self.sign_in()
-
-        response = self.client.post(
-            "/nodes/Publication/restore/W9",
-            data={"csrf": csrf},
-        )
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/Publication/W9").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(self.graph.nodes[("Publication", "W9")]["title"], "Paper")
@@ -294,10 +291,8 @@ class RestoreTest(unittest.TestCase):
         })
         self.assertEqual(decision["snapshot"], expected)
 
-        response = self.client.post(
-            f"/nodes/Publication/restore/{publication_id}",
-            data={"csrf": csrf},
-        )
+        form = RenderedForms(self.client.get(f"/nodes/Publication/{publication_id}").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
 
         self.assertEqual(response.status_code, 303)
         restored = self.graph.nodes[("Publication", publication_id)]
