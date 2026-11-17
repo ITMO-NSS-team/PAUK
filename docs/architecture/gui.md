@@ -28,6 +28,26 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 - `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
   fields that the site loads lazily after the map.
 
+**Publication versions.** `EdgeBuilder` reads `pub_versions` from the snapshot
+and emits `version_edges` containing only `{s: version_pid, t: pid}` for
+`status == "same"`, with both publications present on the map. Acceptance may
+come from the version rules or manual review; the map does not require a
+human answer for a rule-confirmed pair. Pending, missing
+and unknown statuses are excluded even if an LLM approved the candidate. Old
+snapshots without this table yield an empty array. Review/LLM metadata never
+reaches this collection; `pub_edges` still means shared authors and `all_edges`
+still means authorship. The snapshot must be refreshed and GUI data rebuilt to
+pick up new review decisions.
+
+On the Publications tab, accepted version links bypass `minSharedAuthors` but
+respect node filters and the usual edge zoom threshold. `core/data.ts` combines
+publication edges by unordered pair: a version and a shared-author link draw
+one line without overwriting the real shared-author weight. The card shows
+IS_VERSION with its original direction and clickable endpoints, alongside
+shared authors when applicable; a version-only link has no numeric weight.
+The same pair index supports selection URLs, including reversed endpoints.
+Older site JSON without `version_edges` continues to work.
+
 Both folders contain all four files. `private/` keeps full names and personal
 fields. `public.py::to_public` rewrites the public variant: masked labels,
 sequential author keys, consistent remapped edges, whitelisted fields and

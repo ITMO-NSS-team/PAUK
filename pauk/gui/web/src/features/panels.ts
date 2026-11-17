@@ -15,8 +15,10 @@ import {
   buildAuthorRepoIndex,
   buildCoauthIndex,
   buildDeptEdgeIndex,
+  buildPublicationEdgeIndex,
   buildRepoAuthorIndex,
   buildRepoPubIndex,
+  edgePairKey,
   githubProfileUrl,
   githubShortPath,
   grantIndex,
@@ -318,6 +320,7 @@ export function mountPanel(
   );
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
   const coauthIndex = buildCoauthIndex(data);
+  const publicationEdgeIndex = buildPublicationEdgeIndex(data);
   const authorRepoIndex = buildAuthorRepoIndex(data);
   const deptEdgeIndex = buildDeptEdgeIndex(data);
   const repoAuthorIndex = buildRepoAuthorIndex(data);
@@ -833,15 +836,25 @@ export function mountPanel(
     }
 
     if (selection.kind === "edge") {
-      const from = index.get(selection.s);
-      const to = index.get(selection.t);
+      const publicationEdge = publicationEdgeIndex.get(edgePairKey(selection.s, selection.t));
+      const versions = publicationEdge?.versionEdges ?? [];
+      const direction = versions.length === 1 ? (versions[0] ?? selection) : selection;
+      const from = index.get(direction.s);
+      const to = index.get(direction.t);
       if (!from || !to) return hide();
 
       const rows: PanelRow[] = [
         [t("field.edgeFrom", lang), entityRefsOf([from.key], lang)],
         [t("field.edgeTo", lang), entityRefsOf([to.key], lang)],
-        [t("field.edgeWeight", lang), String(selection.w)],
       ];
+      if (!publicationEdge || publicationEdge.hasSharedAuthors)
+        rows.push([t("field.edgeWeight", lang), String(selection.w)]);
+      for (const version of versions) {
+        rows.push([
+          t("field.publicationVersion", lang),
+          [...entityRefsOf([version.s], lang), { kind: "text", text: "→" }, ...entityRefsOf([version.t], lang)],
+        ]);
+      }
 
       const via = repoEdgeVia.get(`${from.key}\u0000${to.key}`) ?? [];
       if (via.length > 0)

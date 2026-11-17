@@ -50,10 +50,11 @@ attempts with a growing pause. Two thin wrappers sit on top of it:
 `persons`, `publications`, `repositories`, `departments`, `organizations`,
 `authorship`, `person_depts`, `pub_depts`, `repo_pubs`, `mentions_repos`,
 `mentions_candidates`, `repo_persons`, `repo_depts`, `pub_versions`. The
-first ten are what `pauk/gui/graph_builder/builder.py::GraphDataBuilder`
-consumes; `organizations`, `mentions_repos`, `mentions_candidates` and
-`pub_versions` (IS_VERSION: `version_pid` is a version of `pid`, with its
-`bucket`, `mergeable` and review `status`) have no consumer yet. Author departments and repository owners are relationships
+entity and relationship tables feed `pauk/gui/graph_builder/builder.py::GraphDataBuilder`.
+`pub_versions` contains IS_VERSION: `version_pid` is a version of `pid`, with
+its `bucket`, `mergeable` and review `status`. The snapshot keeps all statuses;
+the GUI builder publishes only confirmed (`status == "same"`) version edges.
+`organizations`, `mentions_repos` and `mentions_candidates` have no consumer yet. Author departments and repository owners are relationships
 (`BELONGS_TO`, `OWNED_BY`) in the graph model, not columns, so each gets its
 own query with `OPTIONAL MATCH`.
 

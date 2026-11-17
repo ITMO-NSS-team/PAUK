@@ -6,7 +6,7 @@ import type Sigma from "sigma";
 import type { EdgeDisplayData, NodeDisplayData } from "sigma/types";
 import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "../contracts/graph";
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
-import { grantIndex, groupIdOf, groupsById, nodeLabel } from "../core/data";
+import { buildPublicationEdgeIndex, grantIndex, groupIdOf, groupsById, nodeLabel } from "../core/data";
 import { localize, type Lang } from "../core/i18n";
 import { themeById } from "../core/themes";
 import { isRegionMode, type AppState, type Selection, type Store, type TabId } from "../core/state";
@@ -122,7 +122,9 @@ function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
     case 2:
       return data.repo_edges;
     case 3:
-      return data.pub_edges.filter((edge) => edge.w >= filters.minSharedAuthors);
+      return [...buildPublicationEdgeIndex(data).values()].filter(
+        (edge) => edge.versionEdges.length > 0 || (edge.hasSharedAuthors && edge.w >= filters.minSharedAuthors),
+      );
   }
 }
 

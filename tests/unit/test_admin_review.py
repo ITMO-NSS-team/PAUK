@@ -2,6 +2,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.graph.overrides import DELETE, record_relationship_override
+from pauk.graph.version_link import run_version_pair
 from pauk.jobs import locks, store
 from pauk.jobs.models import GRAPH, JobKind, JobState
 from pauk.models import GitHubProfile, Person, Publication
@@ -1476,6 +1478,48 @@ class VersionQuestionTest(unittest.TestCase):
         csrf = self.body("answered").split('name="csrf" value="')[1].split('"')[0]
         return self.client.post("/review/withdraw", data={
             "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2"})
+
+    def _make_auto_pair(self):
+        for work_id in ("W1", "W2"):
+            self.graph.nodes["Publication", work_id].update({
+                "title": "Deep learning methods for spider web classification",
+                "doi": "10.1/" + work_id, "publication_date": "2026-01-01", "type": "article",
+                "authors": [{"person_id": "A1", "name": "Test Author"}],
+            })
+
+    def test_withdrawing_same_from_a_confident_pair_restores_automatic_acceptance(self):
+        self._make_auto_pair()
+        self.answer("same")
+        response = self.withdraw()
+        self.assertIn("done=auto_linked", response.headers["location"])
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual((edge["status"], edge["confirmation_source"]), ("same", "auto"))
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        self.assertEqual(review.version_decisions(self.db), {})
+        self.assertIn("принята автоматически", self.client.get(response.headers["location"]).text)
+        self.assertIn(("Publication", "W1"), self.graph.nodes)
+        self.assertIn(("Publication", "W2"), self.graph.nodes)
+
+    def test_withdrawing_different_from_a_confident_pair_links_it_immediately(self):
+        self._make_auto_pair()
+        self.answer("different")
+        self.assertEqual(self.graph.relationships, {})
+        self.assertIn("done=auto_linked", self.withdraw().headers["location"])
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual((edge["status"], edge["confirmation_source"]), ("same", "auto"))
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_deferred_withdrawal_uses_the_same_automatic_policy(self):
+        self._make_auto_pair()
+        self.answer("same")
+        with locks.held(self.db, GRAPH):
+            self.assertIn("done=version_busy", self.withdraw().headers["location"])
+        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        with patch("pauk.graph.version_link.audited_client", return_value=self.graph):
+            run_version_pair(Settings(), self.db, tuple(job.payload["members"]))
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual((edge["status"], edge["confirmation_source"]), ("same", "auto"))
+        self.assertEqual(review.count(self.db, answered=False), 0)
 
     def test_withdrawing_same_puts_the_edge_back_on_hold(self):
         self.answer("same")

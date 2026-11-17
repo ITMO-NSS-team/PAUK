@@ -93,7 +93,7 @@ class GraphDataBuilder:
         pubs_summary, pubs_detail = PubNodeBuilder(authorship, assignment, table, layout.pos_pubs).build()
         edges = EdgeBuilder(db, authorship, assignment, table, layout).build()
 
-        # **edges puts the seven edge keys at the top level of summary, which is
+        # **edges puts the edge collections at the top level of summary, which is
         # how pauk/gui/web reads them (no nested "edges" object).
         summary = {
             "departments": table.departments,

@@ -360,7 +360,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "IS_VERSION",
                 "Publication",
                 "publication_id",
-                ("bucket", "mergeable", "status", "title_sim", "llm_verdict", "llm_reason"),
+                ("bucket", "mergeable", "status", "title_sim", "llm_verdict", "llm_reason",
+                 "confirmation_source", "confirmation_policy"),
             ),
             RelSpec(
                 "mentions_links",

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -6,10 +7,13 @@ from unittest.mock import patch
 
 import mongomock
 
+from pauk.cache.graph_snapshot import write_snapshot
 from pauk.graph import version_link
 from pauk.graph.overrides import DELETE, LINK, record_relationship_override
 from pauk.graph.version_judge import VERDICTS_COLLECTION, VersionJudge, build_prompt, parse_verdict, stored_verdicts
 from pauk.graph.version_link import edge_direction, plan_version_edges, run_version_link, run_version_pair
+from pauk.gui.graph_builder.builder import write_site_data
+from pauk.gui.graph_builder.tests.test_graph_builder import BuildGraphDataIntegrationTest
 from pauk.settings import Settings
 from pauk.storage import review
 from tests.bench.mocks import RecordingNeo4jClient
@@ -59,11 +63,13 @@ class VersionLinkTest(unittest.TestCase):
         edges = versions(self.graph)
         self.assertEqual(set(edges), {("W1", "W2")})
         self.assertEqual(edges[("W1", "W2")]["bucket"], "PREPRINT_PUBLISHED")
-        self.assertEqual(edges[("W1", "W2")]["status"], "held")
+        self.assertEqual(edges[("W1", "W2")]["status"], "same")
+        self.assertEqual(edges[("W1", "W2")]["confirmation_source"], "auto")
+        self.assertEqual(edges[("W1", "W2")]["confirmation_policy"], "rules-v1")
         self.assertEqual(result["version_edges"], 1)
-        (asked,) = list(self.db[review.COLLECTION].find())
-        self.assertEqual(asked["kind"], review.PUB_VERSION)
-        self.assertEqual(asked["members"], ["W1", "W2"])
+        self.assertEqual(result["version_auto_confirmed"], 1)
+        self.assertEqual(result["version_manual_pending"], 0)
+        self.assertEqual(self.db[review.COLLECTION].count_documents({}), 0)
 
     def test_a_look_alike_is_linked_but_not_asked_about(self):
         pub(self.graph, "W1", "Hydrogel actuators by autocatalytic reaction networks",
@@ -146,7 +152,8 @@ class VersionLinkTest(unittest.TestCase):
             "bucket": "STRONG_FUZZY", "status": "held"}
         self.answered_mid_run(lambda: review.record_verdict(
             self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME))
-        self.assertEqual(versions(self.graph), {("W1", "W2"): {"bucket": "STRONG_FUZZY", "status": "same"}})
+        self.assertEqual(versions(self.graph), {("W1", "W2"): {
+            "bucket": "STRONG_FUZZY", "status": "same", "confirmation_source": "review"}})
 
     def test_the_newest_answer_wins_when_original_pairs_fold_onto_one(self):
         pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
@@ -284,7 +291,9 @@ class VersionLinkTest(unittest.TestCase):
         review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
         self.answered_mid_run(lambda: review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"]))
         (row,) = versions(self.graph).values()
-        self.assertEqual((row["bucket"], row["status"]), ("MISSED_BY_NORM", "held"))
+        self.assertEqual((row["bucket"], row["status"]), ("MISSED_BY_NORM", "same"))
+        self.assertEqual(row["confirmation_source"], "auto")
+        self.assertEqual(review.count(self.db, answered=False), 0)
 
     def test_an_answered_pair_is_not_asked_again_after_a_fold(self):
         pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
@@ -341,7 +350,171 @@ class VersionLinkTest(unittest.TestCase):
         (row,) = [props for props in versions(self.graph).values()]
         self.assertEqual(row["bucket"], "MEDIUM_FUZZY_LLM_SAME")
         self.assertEqual(row["llm_reason"], "same MPC scheme")
+        self.assertEqual(row["status"], "held")
+        self.assertNotIn("confirmation_source", row)
+        self.assertEqual(result["version_auto_confirmed"], 0)
+        self.assertEqual(result["version_manual_pending"], 1)
         self.assertEqual(result["version_llm_calls"], 0)
+
+
+    def _confident_pair(self):
+        title = "One work about spider webs and neural nets"
+        pub(self.graph, "W1", title, doi="10.1/a", authors=("A1",))
+        pub(self.graph, "W2", title, doi="10.1/b", authors=("A1",))
+
+    def test_auto_confirmation_retires_old_questions_without_faking_a_human_answer(self):
+        self._confident_pair()
+        nodes_before = {label: {key: props.copy() for key, props in nodes.items()}
+                        for label, nodes in self.graph.nodes.items()}
+        review.record_held(self.db, version_link.find_version_candidates(self.graph), source=review.GRAPH)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W2", "W1"] = {
+            "bucket": "MISSED_BY_NORM", "status": "held"}
+        result = self.run_link()
+        self.assertEqual(result["version_questions_retired"], 1)
+        self.assertEqual(result["version_auto_confirmed"], 1)
+        self.assertEqual(result["version_review_confirmed"], 0)
+        self.assertEqual(result["version_manual_pending"], 0)
+        self.assertEqual(self.db[review.COLLECTION].count_documents({}), 0)
+        self.assertEqual(self.graph.nodes, nodes_before)
+        again = self.run_link()
+        self.assertEqual(again["version_edges"], 0)
+        self.assertEqual(again["version_auto_confirmed"], 1)
+
+    def test_old_answered_and_skipped_questions_are_not_erased(self):
+        self._confident_pair()
+        rows = [{"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+                 "record_a": a, "record_b": b}
+                for a, b in (("W1", "W2"), ("W3", "W4"), ("W5", "W6"))]
+        review.record_held(self.db, rows)
+        self.db[review.COLLECTION].update_one({"members": ["W3", "W4"]}, {
+            "$set": {"skipped_at": datetime.now(UTC)}})
+        review.record_verdict(self.db, review.PUB_VERSION, ["W5", "W6"], review.SAME)
+        self.run_link()
+        remaining = list(self.db[review.COLLECTION].find())
+        self.assertEqual({tuple(row["members"]) for row in remaining}, {("W3", "W4"), ("W5", "W6")})
+        self.assertTrue(any(row.get("verdict") == review.SAME for row in remaining))
+
+    def test_auto_confirmation_does_not_stick_when_evidence_degrades(self):
+        self._confident_pair()
+        self.run_link()
+        self.graph.nodes["Publication"]["W1"]["title"] = "Robust output feedback MPC: an interval observer approach"
+        self.graph.nodes["Publication"]["W2"]["title"] = "Robust output feedback MPC for LPV systems using interval observers"
+        result = self.run_link()
+        (props,) = versions(self.graph).values()
+        self.assertEqual((props["bucket"], props["status"]), ("MEDIUM_FUZZY", "held"))
+        self.assertNotIn("confirmation_source", props)
+        self.assertNotIn("confirmation_policy", props)
+        self.assertEqual(result["version_auto_confirmed"], 0)
+        self.assertEqual(result["version_manual_pending"], 1)
+        self.graph.nodes["Publication"]["W2"]["title"] = (
+            "Front Cover: " + self.graph.nodes["Publication"]["W1"]["title"])
+        self.run_link()
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["bucket"], "COVER")
+        self.assertFalse({"status", "confirmation_source", "confirmation_policy"} & props.keys())
+        self.graph.nodes["Publication"]["W2"]["title"] = "Unrelated study of distant galaxies and dark matter spectra"
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+
+    def test_manual_same_replaces_auto_provenance_and_survives_rule_changes(self):
+        self._confident_pair()
+        self.run_link()
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        for title in (self.graph.nodes["Publication"]["W2"]["title"], "Unrelated galaxies and dark matter"):
+            self.graph.nodes["Publication"]["W2"]["title"] = title
+            result = self.run_link()
+            (props,) = versions(self.graph).values()
+            self.assertEqual((props["status"], props["confirmation_source"]), ("same", "review"))
+            self.assertNotIn("confirmation_policy", props)
+            self.assertEqual(result["version_auto_confirmed"], 0)
+            self.assertEqual(result["version_review_confirmed"], 1)
+
+    def test_missing_dates_keep_an_exact_title_pair_in_manual_review(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"]["publication_date"] = None
+        result = self.run_link()
+        self.assertEqual(result["version_auto_confirmed"], 0)
+        self.assertEqual(result["version_manual_pending"], 1)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_scoped_job_retires_an_auto_question_without_global_search(self):
+        self._confident_pair()
+        review.record_held(self.db, version_link.find_version_candidates(self.graph))
+        with patch.object(version_link, "find_version_candidates") as search:
+            run_version_pair(self.config, self.db, ("W1", "W2"))
+            search.assert_not_called()
+        (props,) = versions(self.graph).values()
+        self.assertEqual((props["status"], props["confirmation_source"]), ("same", "auto"))
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_withdrawn_medium_answer_returns_to_manual_review(self):
+        pub(self.graph, "W1", "Robust output feedback MPC: an interval observer approach", doi="10.1/a")
+        pub(self.graph, "W2", "Robust output feedback MPC for LPV systems using interval observers", doi="10.1/b")
+        self.run_link()
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertNotIn("confirmation_policy", props)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_a_manual_claim_does_not_keep_obsolete_auto_acceptance(self):
+        self._confident_pair()
+        self.run_link()
+        (direction,) = versions(self.graph)
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", *direction, LINK)
+        self.graph.nodes["Publication"]["W2"]["title"] = "Unrelated galaxies and dark matter"
+        self.run_link()
+        (props,) = versions(self.graph).values()
+        self.assertFalse({"status", "confirmation_source", "confirmation_policy"} & props.keys())
+
+    def test_automatic_and_manual_acceptance_reach_both_gui_variants(self):
+        self._confident_pair()
+        pub(self.graph, "W3", "Robust output feedback MPC: an interval observer approach",
+            doi="10.1/c", authors=("A1",))
+        pub(self.graph, "W4", "Robust output feedback MPC for LPV systems using interval observers",
+            doi="10.1/d", authors=("A1",))
+        result = self.run_link()
+        self.assertEqual((result["version_auto_confirmed"], result["version_manual_pending"]), (1, 1))
+        db = BuildGraphDataIntegrationTest._sample_db()
+        template = db["publications"][0]
+        db["publications"] = [{**template, "id": pid, **props}
+                              for pid, props in self.graph.nodes["Publication"].items()]
+        db["authorship"] = [{"pid": pid, "per": "A1", "position": 1, "is_corresponding": False}
+                            for pid in self.graph.nodes["Publication"]]
+        db["pub_depts"] = [{"pid": pid, "did": "d1"} for pid in self.graph.nodes["Publication"]]
+        snapshot, output = self.config.data_dir / "snapshot.json", self.config.data_dir / "gui"
+        for accepted in (1, 2):
+            db["pub_versions"] = [{"version_pid": source, "pid": target, **props}
+                                  for (source, target), props in versions(self.graph).items()]
+            write_snapshot(snapshot, db)
+            write_site_data(snapshot, output, seed=1)
+            for variant in ("private", "public"):
+                graph = json.loads((output / variant / "graph-data.json").read_text(encoding="utf-8"))
+                self.assertEqual(len(graph["version_edges"]), accepted)
+                self.assertTrue(all(set(edge) == {"s", "t"} for edge in graph["version_edges"]))
+                self.assertNotIn("confirmation_source", json.dumps(graph))
+                self.assertNotIn("confirmation_policy", json.dumps(graph))
+            if accepted == 1:
+                review.record_verdict(self.db, review.PUB_VERSION, ["W3", "W4"], review.SAME)
+                run_version_pair(self.config, self.db, ("W3", "W4"))
+
+    def test_even_routed_medium_candidates_require_a_human(self):
+        self._confident_pair()
+        rows = self.graph.fetch_publications_for_dedup()
+        for bucket in ("MEDIUM_FUZZY", "MEDIUM_FUZZY_STRONG", "MEDIUM_FUZZY_LLM_SAME", "MEDIUM_FUZZY_CONF_JOURNAL"):
+            with self.subTest(bucket=bucket):
+                desired = plan_version_edges(rows, [{
+                    "record_a": "W1", "record_b": "W2", "bucket": bucket, "mergeable": True, "llm_verdict": True,
+                }], {})
+                (props,) = desired.values()
+                self.assertEqual(props["status"], "held")
+                self.assertIsNone(props["confirmation_source"])
+                self.assertIsNone(props["confirmation_policy"])
 
 
 class EdgeDirectionTest(unittest.TestCase):

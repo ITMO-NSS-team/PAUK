@@ -156,5 +156,7 @@ export interface GraphData {
   repo_pub_edges: UnweightedEdge[];
   pubs: PubNode[];
   pub_edges: Edge[];
+  /** Confirmed IS_VERSION, directed from the version to its publication. */
+  version_edges?: UnweightedEdge[];
   all_edges: UnweightedEdge[];
 }

@@ -1,4 +1,4 @@
-"""Builds all seven edge types for `graph-data.json`."""
+"""Builds the edge collections for `graph-data.json`."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeBuilder:
-    """Builds all seven edge types at once, holding the shared context as state."""
+    """Builds the edge collections at once, holding the shared context as state."""
 
     def __init__(
         self,
@@ -32,11 +32,11 @@ class EdgeBuilder:
         self.layout = layout
 
     def build(self) -> dict[str, list[dict]]:
-        """Builds all seven edge types for `graph-data.json`.
+        """Builds the edge collections for `graph-data.json`.
 
         Returns:
             A dict with keys `coauth_edges`/`pub_edges`/`repo_edges`/
-            `dept_edges`/`repo_author_edges`/`repo_pub_edges`/`all_edges`.
+            `dept_edges`/`repo_author_edges`/`repo_pub_edges`/`version_edges`/`all_edges`.
         """
         db, authorship, assignment, table, layout = self.db, self.authorship, self.assignment, self.table, self.layout
 
@@ -77,13 +77,23 @@ class EdgeBuilder:
         repo_pub_edges = [
             {"s": row["rid"], "t": row["pid"]} for row in db["repo_pubs"] if row["pid"] in authorship.pub_ids
         ]
+        version_pairs = {
+            (row.get("version_pid"), row.get("pid"))
+            for row in db.get("pub_versions", [])
+            if row.get("status") == "same"
+            and row.get("version_pid") in authorship.pub_ids
+            and row.get("pid") in authorship.pub_ids
+            and row.get("version_pid") != row.get("pid")
+        }
+        version_edges = [{"s": source, "t": target} for source, target in sorted(version_pairs)]
+
         # Author-publication (AUTHORED), ITMO and external alike; db["authorship"]
         # is already cut down to pub_ids in builder.py.
         all_edges = [{"s": row["per"], "t": row["pid"]} for row in db["authorship"]]
 
         logger.info(
-            "Edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
-            len(coauth_edges), len(pub_edges), len(repo_edges), len(dept_edges), len(repo_author_edges), len(repo_pub_edges), len(all_edges),
+            "Edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, version %d, authorship %d",
+            len(coauth_edges), len(pub_edges), len(repo_edges), len(dept_edges), len(repo_author_edges), len(repo_pub_edges), len(version_edges), len(all_edges),
         )
         return {
             "coauth_edges": coauth_edges,
@@ -92,5 +102,6 @@ class EdgeBuilder:
             "dept_edges": dept_edges,
             "repo_author_edges": repo_author_edges,
             "repo_pub_edges": repo_pub_edges,
+            "version_edges": version_edges,
             "all_edges": all_edges,
         }

@@ -120,8 +120,13 @@ a series entry). Neither merges anything.
 
 `link` takes the graph lock and writes every pair as an
 `(:Publication)-[:IS_VERSION {bucket, ...}]->(:Publication)` edge, removes
-edges the rules no longer produce, and puts mergeable pairs into the review
-queue (`/review`, "Версии публикаций"). `--llm` asks the LLM
+edges the rules no longer produce, and automatically accepts confident pairs
+under the versioned rules. All MEDIUM_FUZZY sub-buckets and other mergeable
+pairs that fail the acceptance guards stay in `/review` ("Версии публикаций").
+Old open questions accepted automatically are retired; human answers and
+skipped questions are kept. The result reports `version_auto_confirmed`,
+`version_review_confirmed` and `version_manual_pending`, independently of
+how many edge writes this run needed. `--llm` asks the LLM
 (the standard `PAUK_LLM_MODEL`) about MEDIUM_FUZZY pairs no earlier run asked
 about; `--force` asks again. The admin panel runs it as the `versions` job.
 

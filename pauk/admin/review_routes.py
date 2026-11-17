@@ -520,8 +520,9 @@ async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                    _: CsrfChecked, __: StoresReady):
     """Take an answer back, leaving the question in the queue.
 
-    The question stays because a real run asked it. A version answer has
-    already reached its edge, so the edge is taken back with it.
+    A version answer has already reached its edge, so withdrawing it also
+    reconciles the pair. Confident pairs return to automatic acceptance;
+    candidates still requiring a human remain in the queue.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))

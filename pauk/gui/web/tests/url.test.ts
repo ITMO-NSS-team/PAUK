@@ -97,6 +97,28 @@ describe("parseUrlState", () => {
     });
   });
 
+  it("restores version-only pairs in either order without changing the URL format", async () => {
+    const data = {
+      ...(await loadSampleGraphData()), pub_edges: [], version_edges: [{ s: "P2", t: "P1" }],
+    };
+    for (const [s, t] of [["P1", "P2"], ["P2", "P1"]]) {
+      const parsed = parseUrlState(`?tab=pubs&sel=edge&s=${s}&t=${t}`, data);
+      expect(parsed).toEqual({ screen: "app", tab: 3, selection: { kind: "edge", s: "P1", t: "P2", w: 0 } });
+      expect(parseUrlState(`?${serializeUrlState(parsed)}`, data)).toEqual(parsed);
+    }
+    expect(parseUrlState("?tab=pubs&sel=edge&s=P1&t=P2", { ...data, version_edges: [] }).selection).toBeNull();
+  });
+
+  it("restores overlapping publication links with the original shared-author weight", async () => {
+    const data = {
+      ...(await loadSampleGraphData()),
+      pub_edges: [{ s: "P1", t: "P2", w: 3 }], version_edges: [{ s: "P2", t: "P1" }],
+    };
+    expect(parseUrlState("?tab=pubs&sel=edge&s=P2&t=P1", data).selection).toEqual({
+      kind: "edge", s: "P1", t: "P2", w: 3,
+    });
+  });
+
   it("a non-existent s/t pair for an edge falls back to null", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=persons&sel=edge&s=A1&t=A99", data)).toEqual({

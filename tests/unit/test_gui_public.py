@@ -121,6 +121,23 @@ class PublicBuildTest(unittest.TestCase):
         self.assertEqual(set(next(iter(details.values()))), {"key", "pub_roles"})
         self.assertIn({"P1": {"position": 1, "corresponding": True}}, [d["pub_roles"] for d in details.values()])
 
+    def test_version_edges_keep_publication_ids_but_no_review_or_llm_metadata(self):
+        db = _sample_db()
+        db["publications"].append({**db["publications"][0], "id": "P2"})
+        db["authorship"].append({"pid": "P2", "per": "A1", "position": 1, "is_corresponding": False})
+        db["pub_versions"] = [{
+            "version_pid": "P2", "pid": "P1", "status": "same", "mergeable": True,
+            "reviewer": "petrov@itmo.ru", "evidence": {"note": "private evidence"}, "llm_reason": "private reasoning",
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            write_snapshot(snapshot, db)
+            write_site_data(snapshot, Path(tmp) / "gui", seed=1)
+            text = (Path(tmp) / "gui" / "public" / "graph-data.json").read_text(encoding="utf-8")
+            self.assertEqual(json.loads(text)["version_edges"], [{"s": "P2", "t": "P1"}])
+            for secret in ("reviewer", "evidence", "llm_reason", "petrov@itmo.ru", "private reasoning"):
+                self.assertNotIn(secret, text)
+
     def test_publication_and_repository_cards_keep_what_the_site_shows(self):
         pub = self.files["pubs-detail.json"][0]
         self.assertEqual(pub["abstract"], "Абстракт")

@@ -76,8 +76,11 @@ one write batch are still combined by OR; graph folds also retain any true value
 
 `IS_VERSION` points from a version (a preprint, a translation, a conference
 paper, a cover, an erratum) to the work it relates to, and carries `bucket`,
-`mergeable`, `status` (`held`, `same` once a person confirmed it, absent for
-a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`. No publish
+`mergeable`, `status` (`held`, `same` once accepted by policy or a person,
+absent for a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`.
+Confirmed edges also carry `confirmation_source` (`auto` or `review`);
+automatic ones carry `confirmation_policy` (`rules-v1`). Returning to held
+or an unconfirmed state removes both properties. No publish
 writes it: `pauk versions link` (`version_link.py`) reconciles it with
 current graph data and review decisions, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
 prune` from reading its absence in the prepared rows as staleness; see

@@ -1,12 +1,14 @@
 import type {
   AuthorNode,
   Department,
+  Edge,
   GraphData,
   PubDetail,
   PubNode,
   RepoAuthorEdge,
   RepoGroup,
   RepoNode,
+  UnweightedEdge,
 } from "../contracts/graph";
 import { localize, type Lang } from "./i18n";
 
@@ -82,6 +84,10 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
     }
   }
 
+  if (graph.version_edges !== undefined && !Array.isArray(graph.version_edges)) {
+    throw new Error('assertGraphData: field "version_edges" is not an array');
+  }
+
   const firstAuthor = (graph.authors as unknown[])[0] as Record<string, unknown> | undefined;
   if (firstAuthor && (typeof firstAuthor.label_en !== "string" || typeof firstAuthor.key !== "string")) {
     throw new Error(
@@ -94,6 +100,39 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
   const index = new Map<string, GraphNode>();
   for (const node of [...data.authors, ...data.repos, ...data.pubs]) {
     index.set(node.key, node);
+  }
+  return index;
+}
+
+/** Visual pairs are undirected; version records retain their own direction. */
+export function edgePairKey(s: string, t: string): string {
+  return s < t ? `${s}\u0000${t}` : `${t}\u0000${s}`;
+}
+
+export interface PublicationEdge extends Edge {
+  hasSharedAuthors: boolean;
+  versionEdges: UnweightedEdge[];
+}
+
+/** One visual edge per pair, without conflating versions with coauthor weight. */
+export function buildPublicationEdgeIndex(data: GraphData): Map<string, PublicationEdge> {
+  const index = new Map<string, PublicationEdge>();
+  for (const edge of data.pub_edges) {
+    index.set(edgePairKey(edge.s, edge.t), { ...edge, hasSharedAuthors: true, versionEdges: [] });
+  }
+  for (const version of data.version_edges ?? []) {
+    const key = edgePairKey(version.s, version.t);
+    const edge: PublicationEdge = index.get(key) ?? {
+      s: version.s < version.t ? version.s : version.t,
+      t: version.s < version.t ? version.t : version.s,
+      w: 0,
+      hasSharedAuthors: false,
+      versionEdges: [],
+    };
+    if (!edge.versionEdges.some(({ s, t }) => s === version.s && t === version.t)) {
+      edge.versionEdges.push(version);
+    }
+    index.set(key, edge);
   }
   return index;
 }

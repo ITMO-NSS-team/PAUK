@@ -2,7 +2,7 @@
 // filters are personal view settings and stay out of shared links.
 
 import type { Edge, GraphData } from "../contracts/graph";
-import { groupsById, indexByKey } from "./data";
+import { buildPublicationEdgeIndex, groupsById, indexByKey } from "./data";
 import { TAB_KIND, type Screen, type Selection, type TabId } from "./state";
 
 const TAB_SLUGS: Record<TabId, string> = {
@@ -24,7 +24,7 @@ function tabEdges(data: GraphData, tab: TabId): Edge[] {
     case 2:
       return data.repo_edges;
     case 3:
-      return data.pub_edges;
+      return [...buildPublicationEdgeIndex(data).values()];
   }
 }
 

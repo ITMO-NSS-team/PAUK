@@ -108,10 +108,10 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         tables: Only these tables (names as in the result); `None` - all of them.
 
     Returns:
-        A flat dict of fourteen tables. The first ten are what
-        `pauk/gui/graph_builder/builder.py::GraphDataBuilder` expects;
-        `organizations`, `mentions_repos`, `mentions_candidates` and
-        `pub_versions` have no consumer yet.
+        A flat dict of fourteen tables. GraphDataBuilder consumes the entity
+        and relationship tables, including confirmed rows of `pub_versions`.
+        The snapshot retains every version status; `organizations`,
+        `mentions_repos` and `mentions_candidates` have no consumer yet.
     """
     # Deferred so `tables` can pick a subset without running the rest.
     queries: dict[str, Callable[[], list[dict]]] = {}
