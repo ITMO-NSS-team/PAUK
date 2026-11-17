@@ -382,6 +382,32 @@ class SourceNeutralMigrationTest(unittest.TestCase):
             ["kept@example.org"],
         )
 
+    def test_historical_graph_survivor_wins_over_opposite_mongo_merge(self):
+        self.db.persons.insert_many([
+            {
+                "_id": "A1", "id": "A1", "is_itmo": False,
+                "merged_ids": ["A2"], "groups": ["mongo"],
+            },
+            {
+                "_id": "A2", "id": "A2", "is_itmo": True,
+                "groups": ["graph"],
+            },
+        ])
+        migration = SourceNeutralMigration(
+            self.db,
+            person_aliases={"A1": "A2"},
+        )
+
+        self.assertEqual(migration.plan()["person_identity_components"], [{
+            "members": ["A1", "A2"], "canonical": "A2",
+        }])
+        migration.apply()
+
+        person = self.db.persons.find_one({})
+        self.assertEqual(person["id"], "A2")
+        self.assertEqual(person["merged_ids"], ["A1"])
+        self.assertEqual(set(person["groups"]), {"mongo", "graph"})
+
     def test_active_override_on_removed_person_duplicate_blocks_apply(self):
         self.db.persons.insert_many([
             {
@@ -439,6 +465,36 @@ class SourceNeutralMigrationTest(unittest.TestCase):
             "A0",
         )
 
+    def test_graph_alias_into_exact_identity_component_is_preserved(self):
+        self.db.persons.insert_many([
+            {
+                "_id": "A0", "id": "A0", "is_itmo": True,
+                "orcid": "0000-0001-0000-0001", "groups": ["exact"],
+            },
+            {
+                "_id": "A1", "id": "A1", "is_itmo": False,
+                "orcid": "0000-0001-0000-0001", "groups": ["exact"],
+            },
+            {
+                "_id": "A2", "id": "A2", "is_itmo": False,
+                "groups": ["graph"],
+            },
+        ])
+        migration = SourceNeutralMigration(
+            self.db,
+            person_aliases={"A2": "A0"},
+        )
+
+        self.assertEqual(migration.plan()["person_identity_components"], [{
+            "members": ["A0", "A1", "A2"], "canonical": "A0",
+        }])
+        migration.apply()
+
+        person = self.db.persons.find_one({})
+        self.assertEqual(person["id"], "A0")
+        self.assertEqual(set(person["merged_ids"]), {"A1", "A2"})
+        self.assertEqual(set(person["groups"]), {"exact", "graph"})
+
     def test_competing_historical_graph_canonicals_fold_deterministically(self):
         self.db.persons.insert_many([
             {"_id": "R1", "id": "R1", "is_itmo": False},
@@ -489,6 +545,53 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         self.assertEqual(result["repoint_graph_person_aliases"], 1)
         publication = self.db.publications.find_one({})
         self.assertEqual(publication["source_records"][0]["authors"][0]["person_id"], "A0")
+
+    def test_graph_alias_follows_merged_person_to_final_survivor(self):
+        self.db.persons.insert_one({
+            "_id": "A0", "id": "A0", "is_itmo": True,
+            "merged_ids": ["A1"], "groups": ["g"],
+        })
+        self.db.publications.insert_one({
+            "_id": "W1", "id": "W1", "title": "Paper", "groups": ["g"],
+            "source_records": [{
+                "key": "openalex:W1", "source": "openalex", "source_id": "W1",
+                "authors": [{"person_id": "A-old", "name": "Ada", "position": 1}],
+            }],
+            "versions": [{
+                "openalex_id": "W1",
+                "authors": [{"person_id": "A-old", "name": "Ada", "position": 1}],
+            }],
+        })
+        migration = SourceNeutralMigration(
+            self.db,
+            person_aliases={"A-old": "A1"},
+        )
+
+        result = migration.apply()
+
+        self.assertEqual(result["repoint_graph_person_aliases"], 1)
+        publication = self.db.publications.find_one({})
+        for field in ("source_records", "versions"):
+            self.assertEqual(publication[field][0]["authors"][0]["person_id"], "A0")
+        self.assertEqual(
+            self.db.identity_keys.find_one({"_id": "person:openalex:A1"})["entity_id"],
+            "A0",
+        )
+
+    def test_ambiguous_merged_person_alias_blocks_repoint(self):
+        self.db.persons.insert_many([
+            {
+                "_id": "person-1", "id": "person-1", "is_itmo": False,
+                "merged_ids": ["name_shared"],
+            },
+            {
+                "_id": "person-2", "id": "person-2", "is_itmo": False,
+                "merged_ids": ["name_shared"],
+            },
+        ])
+
+        with self.assertRaisesRegex(MigrationBlocked, "multiple surviving owners"):
+            SourceNeutralMigration(self.db)._repoint_graph_person_aliases()
 
     def test_unresolved_source_author_blocks_apply(self):
         self.db.publications.insert_one({

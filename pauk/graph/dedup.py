@@ -469,7 +469,12 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
     return removed, report
 
 
-def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
+def run_graph_dedup(
+    config: Settings,
+    mongo_db: Database,
+    *,
+    resolution_cache_only: bool = False,
+) -> dict[str, int]:
     """Deduplicate persons, publications and repositories across every published group.
 
     Entry point for `pauk dedup graph`. Writes one combined review journal
@@ -483,10 +488,19 @@ def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
         Busy: Something else is already writing the graph.
     """
     with held(mongo_db, GRAPH):
-        return _dedup_locked(config, mongo_db)
+        return _dedup_locked(
+            config,
+            mongo_db,
+            resolution_cache_only=resolution_cache_only,
+        )
 
 
-def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
+def _dedup_locked(
+    config: Settings,
+    mongo_db: Database,
+    *,
+    resolution_cache_only: bool = False,
+) -> dict[str, int]:
     client = audited_client(config, mongo_db)
     try:
         config.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -497,7 +511,16 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
-        models = ResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        models = (
+            ResolutionModels(
+                config,
+                mongo_db,
+                "__graph__",
+                cache_only=resolution_cache_only,
+            )
+            if config.person_resolution_enabled
+            else None
+        )
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
             if config.person_resolution_enabled

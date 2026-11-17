@@ -113,10 +113,18 @@ def _batch_request(request: _Request) -> _Request:
 class ResolutionModels:
     """Runs full-context person-resolution requests with bounded concurrency and a Mongo cache."""
 
-    def __init__(self, config: Settings, db: Database, group: str) -> None:
+    def __init__(
+        self,
+        config: Settings,
+        db: Database,
+        group: str,
+        *,
+        cache_only: bool = False,
+    ) -> None:
         self.config = config
         self.db = db
         self.group = group
+        self.cache_only = cache_only
         self.logreg_model = load_logistic_model(
             config.person_resolution_logreg_model_path, expected_features=MODEL_FEATURES
         )
@@ -366,6 +374,11 @@ class ResolutionModels:
     def _run(self, requests: list[_Request], batch_size: int = 1) -> dict[int, Verdict | None]:
         if not requests:
             return {}
+        if self.cache_only:
+            return {
+                request.pair_id: cached.verdict if (cached := self._hit(request, batch_size)) else None
+                for request in requests
+            }
         results: list[_Result] = []
         if self._unavailable:
             results = [self._hit(request, batch_size) or self._invoke(request) for request in requests]

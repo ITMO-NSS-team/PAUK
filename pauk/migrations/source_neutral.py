@@ -171,7 +171,16 @@ class SourceNeutralMigration:
         if not inferred_openalex and person.id.startswith("A"):
             inferred_openalex = person.id
         known = {identifier.normalized_key for identifier in person.identifiers}
-        for scheme, value in (("openalex", inferred_openalex), ("orcid", person.orcid)):
+        external_ids = [
+            ("openalex", inferred_openalex),
+            ("orcid", person.orcid),
+            *(
+                ("openalex", merged_id)
+                for merged_id in person.merged_ids
+                if merged_id.startswith("A")
+            ),
+        ]
+        for scheme, value in external_ids:
             if not value:
                 continue
             identifier = ExternalIdentifier(scheme=scheme, value=value)
@@ -180,6 +189,52 @@ class SourceNeutralMigration:
                 known.add(identifier.normalized_key)
         person.schema_version = 2
         return person
+
+    def _resolved_person_aliases(
+        self,
+        rows: list[dict],
+        owner_by_id: dict[str, str] | None = None,
+    ) -> tuple[dict[str, str], dict[str, list[str]], set[str]]:
+        """Resolve stored and graph aliases to the people that will survive."""
+        row_ids = {str(row.get("id") or row.get("_id")) for row in rows}
+        owners = owner_by_id or {row_id: row_id for row_id in row_ids}
+        surviving_ids = {owners.get(row_id, row_id) for row_id in row_ids}
+        claims: dict[str, set[str]] = defaultdict(set)
+        for row in rows:
+            row_id = str(row.get("id") or row.get("_id"))
+            owner = owners.get(row_id, row_id)
+            claims[row_id].add(owner)
+            for alias in row.get("merged_ids") or []:
+                claims[str(alias)].add(owner)
+        conflicts = {
+            alias: sorted(alias_owners)
+            for alias, alias_owners in claims.items()
+            if len(alias_owners) > 1
+        }
+        claimed_aliases = {
+            alias: next(iter(alias_owners))
+            for alias, alias_owners in claims.items()
+            if len(alias_owners) == 1
+        }
+
+        def resolve(person_id: str) -> str | None:
+            current = person_id
+            seen = set()
+            while current not in seen:
+                if current in surviving_ids:
+                    return current
+                seen.add(current)
+                current = claimed_aliases.get(current) or self.person_aliases.get(current)
+                if current is None:
+                    return None
+            return None
+
+        aliases = {}
+        for alias in {*claimed_aliases, *self.person_aliases}:
+            canonical = resolve(alias)
+            if canonical is not None and alias != canonical:
+                aliases[alias] = canonical
+        return aliases, conflicts, surviving_ids
 
     def _person_identity_groups(self, rows: list[dict]) -> list[list[dict]]:
         """Connected people sharing any exact source id or ORCID."""
@@ -215,7 +270,11 @@ class SourceNeutralMigration:
             row_id for row_id in by_id if initial_sizes[find(row_id)] > 1
         }
         for alias, canonical in self.person_aliases.items():
-            if alias in identity_component_ids and canonical in by_id:
+            if (
+                alias in by_id
+                and canonical in by_id
+                and {alias, canonical}.intersection(identity_component_ids)
+            ):
                 union(alias, canonical)
         components: dict[str, list[dict]] = defaultdict(list)
         for row_id, row in by_id.items():
@@ -231,12 +290,6 @@ class SourceNeutralMigration:
                 row.get("merged_ids") or []
             )
         ]
-        # A prior attempt may already have persisted the survivor and then
-        # stopped before repointing every identity key. Its merged_ids is the
-        # durable commit marker; honour it instead of treating the temporary
-        # old/new key ownership as a fresh conflict.
-        if len(declared_owners) == 1:
-            return declared_owners[0], []
         identifiers_by_member = [self._person_model(row).identifiers for row in members]
         identifier_counts: dict[str, int] = defaultdict(int)
         for identifiers in identifiers_by_member:
@@ -256,6 +309,9 @@ class SourceNeutralMigration:
             for row_id in ids
             if self.person_aliases.get(row_id) in ids
         }
+        assigned_owners = identity_owners | graph_owners
+        if identity_owners and len(assigned_owners) > 1:
+            return None, sorted(assigned_owners)
         if identity_owners:
             return next(iter(identity_owners)), []
         if graph_owners:
@@ -275,6 +331,11 @@ class SourceNeutralMigration:
                 ),
             )
             return canonical.get("id") or canonical.get("_id"), []
+        # A prior attempt may already have persisted the survivor and then
+        # stopped before repointing every identity key. With no durable
+        # external owner, merged_ids is the commit marker for that attempt.
+        if len(declared_owners) == 1:
+            return declared_owners[0], []
         claimed = sorted(
             members,
             key=lambda row: (
@@ -416,6 +477,7 @@ class SourceNeutralMigration:
         person_components = self._person_identity_groups(person_rows)
         person_component_plan = []
         person_identity_conflicts = []
+        person_component_owner: dict[str, str] = {}
         removed_person_ids: set[str] = set()
         for members in person_components:
             canonical, conflicts = self._person_canonical(members)
@@ -427,7 +489,11 @@ class SourceNeutralMigration:
                     "assigned_owners": conflicts,
                 })
             elif canonical:
+                person_component_owner.update({member_id: canonical for member_id in member_ids})
                 removed_person_ids.update(set(member_ids) - {canonical})
+        resolved_person_aliases, person_alias_conflicts, surviving_person_ids = (
+            self._resolved_person_aliases(person_rows, person_component_owner)
+        )
         removed_ids = duplicate_ids - canonical_ids
         override_conflicts = list(self.db.graph_overrides.find(
             {"active": True, "label": "Publication", "target_id": {"$in": list(removed_ids)}},
@@ -473,8 +539,11 @@ class SourceNeutralMigration:
                     })
             for author in row.get("authors") or []:
                 person_id = author.get("person_id")
-                canonical = self.person_aliases.get(person_id, person_id)
-                if canonical not in person_ids | graph_person_ids:
+                canonical = resolved_person_aliases.get(
+                    person_id,
+                    self.person_aliases.get(person_id, person_id),
+                )
+                if canonical not in surviving_person_ids | graph_person_ids:
                     graph_legacy_unresolved_authors.append({
                         "publication": publication.id,
                         "person": person_id,
@@ -485,10 +554,15 @@ class SourceNeutralMigration:
             for record in publication.get("source_records") or publication.get("versions") or []:
                 for author in record.get("authors") or []:
                     person_id = author.get("person_id")
-                    if not person_id or person_id in person_ids:
+                    if not person_id:
                         continue
-                    canonical = self.person_aliases.get(person_id)
-                    if canonical in person_ids:
+                    canonical = resolved_person_aliases.get(
+                        person_id,
+                        self.person_aliases.get(person_id, person_id),
+                    )
+                    if canonical in surviving_person_ids | graph_person_ids:
+                        if canonical == person_id:
+                            continue
                         resolvable_source_authors += 1
                     else:
                         dangling_source_authors += 1
@@ -514,6 +588,7 @@ class SourceNeutralMigration:
             "identity_key_conflicts": identity_key_conflicts,
             "person_identity_components": person_component_plan,
             "person_identity_conflicts": person_identity_conflicts,
+            "person_alias_conflicts": person_alias_conflicts,
             "doi_components": {
                 doi: {
                     "members": sorted(row.get("id") or row.get("_id") for row in members),
@@ -545,6 +620,8 @@ class SourceNeutralMigration:
             raise MigrationBlocked("identity keys disagree with planned canonical owners")
         if plan["person_identity_conflicts"]:
             raise MigrationBlocked("person identity keys have multiple assigned owners")
+        if plan["person_alias_conflicts"]:
+            raise MigrationBlocked("person aliases have multiple surviving owners")
         if plan["graph_legacy_identity_conflicts"]:
             raise MigrationBlocked("graph-only entities conflict with assigned identity keys")
         if plan["graph_legacy_unresolved_authors"]:
@@ -782,11 +859,15 @@ class SourceNeutralMigration:
                     continue
                 duplicate = self._person_model(duplicate_row)
                 _merge_person(canonical, duplicate)
-                canonical.merged_ids = list(dict.fromkeys([
-                    *canonical.merged_ids,
-                    *duplicate.merged_ids,
-                    duplicate_id,
-                ]))
+                canonical.merged_ids = [
+                    person_id
+                    for person_id in dict.fromkeys([
+                        *canonical.merged_ids,
+                        *duplicate.merged_ids,
+                        duplicate_id,
+                    ])
+                    if person_id != canonical_id
+                ]
                 groups = list(dict.fromkeys([*groups, *(duplicate_row.get("groups") or [])]))
                 canonical.identifiers = list({
                     identifier.normalized_key: identifier
@@ -810,15 +891,12 @@ class SourceNeutralMigration:
 
     def _repoint_graph_person_aliases(self) -> int:
         """Canonicalize legacy source-author ids folded only in Neo4j."""
-        person_ids = {
-            row.get("id") or row.get("_id")
-            for row in self.db.persons.find({}, {"id": 1})
-        }
-        aliases = {
-            alias: canonical
-            for alias, canonical in self.person_aliases.items()
-            if alias != canonical and canonical in person_ids
-        }
+        rows = list(self.db.persons.find({}, {"id": 1, "merged_ids": 1}))
+        aliases, conflicts, _ = self._resolved_person_aliases(rows)
+        if conflicts:
+            raise MigrationBlocked(
+                f"person aliases have multiple surviving owners: {sorted(conflicts)}"
+            )
         if not aliases:
             return 0
         changed = 0

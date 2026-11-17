@@ -1606,6 +1606,35 @@ class GraphPassReviewTest(unittest.TestCase):
         self.assertEqual(question["members"], ["A1", "A2"])
         self.assertEqual(question["source"], review.GRAPH)
 
+    def test_the_migration_can_limit_resolution_to_cached_model_verdicts(self):
+        self.publish(self.namesakes())
+        config = Settings(data_dir=self.config.data_dir, person_resolution_enabled=True)
+        models = object()
+        logistic = object()
+        with (
+            patch.object(graph_dedup, "audited_client", return_value=self.client),
+            patch.object(graph_dedup, "ResolutionModels", return_value=models) as factory,
+            patch.object(graph_dedup, "load_logistic_model", return_value=logistic),
+            patch.object(graph_dedup, "dedup_graph_persons", return_value=(0, [])) as persons,
+            patch.object(graph_dedup, "dedup_graph_publications", return_value=(0, [])),
+            patch.object(graph_dedup, "dedup_graph_repositories", return_value=(0, [])),
+            patch.object(graph_dedup, "apply_overrides", return_value={}),
+        ):
+            graph_dedup.run_graph_dedup(
+                config,
+                self.db,
+                resolution_cache_only=True,
+            )
+
+        factory.assert_called_once_with(
+            config,
+            self.db,
+            "__graph__",
+            cache_only=True,
+        )
+        self.assertIs(persons.call_args.kwargs["models"], models)
+        self.assertIs(persons.call_args.kwargs["logreg_model"], logistic)
+
     def test_the_whole_pass_reads_the_answers_back(self):
         self.publish(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,

@@ -72,7 +72,11 @@ def main() -> None:
             for group in PreparedStore.known_groups(client[settings.mongo_db]):
                 published[group] = load_jsonl_group(settings, client[settings.mongo_db], group)
             result["neo4j_publish"] = published
-            result["neo4j_dedup"] = run_graph_dedup(settings, client[settings.mongo_db])
+            result["neo4j_dedup"] = run_graph_dedup(
+                settings,
+                client[settings.mongo_db],
+                resolution_cache_only=True,
+            )
             snapshot = GraphSnapshotExporter(settings).export()
             write_site_data(snapshot, settings.gui_dir, seed=42)
             result["snapshot"] = str(snapshot)
