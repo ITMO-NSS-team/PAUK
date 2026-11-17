@@ -14,11 +14,12 @@ from pauk.cache.graph_snapshot import (
     read_snapshot,
     write_snapshot,
 )
+from pauk.cache.tests.fixtures import complete_snapshot
 
 
 class WriteReadSnapshotTest(unittest.TestCase):
     def test_round_trip_preserves_graph_unchanged(self):
-        graph = {"persons": [{"id": "p1", "is_itmo": True}], "publications": []}
+        graph = complete_snapshot({"persons": [{"id": "p1", "is_itmo": True}], "publications": []})
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "snapshot.json"
             write_snapshot(path, graph)

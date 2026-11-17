@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { mountGlobalSearch } from "../src/features/globalSearch";
 import { Store, type AppState } from "../src/core/state";
-import { loadSampleGraphData } from "./fixtures";
+import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
@@ -44,6 +44,30 @@ function mountMarkup(): void {
 describe("mountGlobalSearch", () => {
   beforeEach(() => {
     mountMarkup();
+  });
+
+  it("updates an open search after details arrive and preserves query and focus", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const details = new Map<string, PubDetail>();
+    const unmount = mountGlobalSearch(store, data, details, NO_REPO_DETAILS);
+    document.getElementById("global-search-trigger")?.click();
+    const input = document.getElementById("global-search-input") as HTMLInputElement;
+    input.value = "unique delayed title";
+    input.dispatchEvent(new Event("input"));
+    expect(document.getElementById("global-search-results")?.textContent).toContain(
+      "Ничего не найдено",
+    );
+    const detail = (await loadSamplePubDetails())[0];
+    if (!detail) throw new Error("missing publication fixture");
+    details.set(detail.key, { ...detail, label: "unique delayed title" });
+    store.notify();
+    expect(document.getElementById("global-search-results")?.textContent).toContain(
+      "unique delayed title",
+    );
+    expect(input.value).toBe("unique delayed title");
+    expect(document.activeElement).toBe(input);
+    unmount();
   });
 
   it("clicking the trigger button opens the dialog and moves focus to the input", async () => {
@@ -106,7 +130,7 @@ describe("mountGlobalSearch", () => {
     expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
   });
 
-  it("an external author is searchable only when the external authors filter is on", async () => {
+  it("an external author remains searchable when the map hides external authors", async () => {
     const sample = await loadSampleGraphData();
     const data = {
       ...sample,
@@ -125,7 +149,7 @@ describe("mountGlobalSearch", () => {
       );
     };
 
-    expect(search("Иванов").some((text) => text.includes("Иванов"))).toBe(false);
+    expect(search("Иванов").some((text) => text.includes("Иванов"))).toBe(true);
 
     store.set({ filters: { ...store.get().filters, showExternalAuthors: true } });
     expect(search("Иванов").some((text) => text.includes("Иванов"))).toBe(true);
@@ -280,9 +304,7 @@ describe("mountGlobalSearch", () => {
     const dept1 = data.departments.find((d) => d.id === 2);
     if (!dept0 || !dept1) throw new Error("the fixture must contain departments 0 and 2");
     if (dept0.n <= dept1.n)
-      throw new Error(
-        "the fixture must give a spread of department sizes to check the sorting",
-      );
+      throw new Error("the fixture must give a spread of department sizes to check the sorting");
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 

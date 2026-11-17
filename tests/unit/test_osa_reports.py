@@ -15,7 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from pauk.cache.graph_snapshot import write_snapshot
+from pauk.cache.tests.fixtures import write_complete_snapshot as write_snapshot
 from pauk.cli import _build_parser, _cmd_reports
 from pauk.reports import builder, osa
 from pauk.reports import settings as reports_settings_module

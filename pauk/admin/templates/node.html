@@ -107,7 +107,7 @@
     {% endfor %}
   </table>
   <p class="muted" style="margin:12px 0 0">
-    <a href="/audit?entity_type={{ label }}&entity_id={{ node_id }}">вся история этой записи -></a>
+    <a href="/audit?entity_type={{ label }}&entity_id={{ node_id | urlencode }}">вся история этой записи -></a>
   </p>
   {% else %}<p class="muted">Изменений не было.</p>{% endif %}
 </div>

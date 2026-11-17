@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import mongomock
 
-from pauk.cache.graph_snapshot import write_snapshot
+from pauk.cache.tests.fixtures import write_complete_snapshot as write_snapshot
 from pauk.gui import rebuild
 from pauk.gui.graph_builder.builder import write_site_data
 from pauk.jobs import locks

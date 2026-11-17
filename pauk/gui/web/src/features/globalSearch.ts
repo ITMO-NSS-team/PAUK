@@ -5,7 +5,6 @@ import { requireElement } from "../core/dom";
 import { t } from "../core/i18n";
 import { renderList, renderListItem } from "../core/render";
 import { TAB_FOR_KIND, type AppState, type Store } from "../core/state";
-import { visibleAuthors } from "../map/build";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "./search";
 
 /**
@@ -27,14 +26,13 @@ export function mountGlobalSearch(
   const input = requireElement("global-search-input") as HTMLInputElement;
   const resultsEl = requireElement("global-search-results");
 
-  // Rebuilt on every open, so it follows the language and the external
-  // authors filter.
+  // Search covers all data; selecting a hidden result reveals it on the map.
   function buildIndex(): SearchHit[] {
-    const { lang, filters } = store.get();
-    const shown = { ...data, authors: visibleAuthors(data, filters) };
-    return buildSearchIndex(shown, lang, pubDetails, repoDetails, authorDetails);
+    return buildSearchIndex(data, store.get().lang, pubDetails, repoDetails, authorDetails);
   }
   let index = buildIndex();
+  let indexedLang = store.get().lang;
+  let detailVersion = `${pubDetails.size}/${repoDetails.size}/${authorDetails.size}`;
 
   function renderTrigger(lang: AppState["lang"]): void {
     const hint = document.createElement("span");
@@ -43,7 +41,16 @@ export function mountGlobalSearch(
     trigger.replaceChildren(t("search.trigger", lang), hint);
   }
   renderTrigger(store.get().lang);
-  const unsubscribeTrigger = store.subscribe((state) => renderTrigger(state.lang));
+  const unsubscribeTrigger = store.subscribe((state) => {
+    renderTrigger(state.lang);
+    const nextVersion = `${pubDetails.size}/${repoDetails.size}/${authorDetails.size}`;
+    if (state.lang !== indexedLang || nextVersion !== detailVersion) {
+      indexedLang = state.lang;
+      detailVersion = nextVersion;
+      index = buildIndex();
+      if (!overlay.hidden) render();
+    }
+  });
 
   /** @param container - A separate element when a heading must stay above the list. */
   function renderHits(container: HTMLElement, hits: SearchHit[]): void {

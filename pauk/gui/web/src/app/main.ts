@@ -4,13 +4,16 @@ import type { Settings } from "sigma/settings";
 import type { NodeDisplayData, PartialButFor } from "sigma/types";
 import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../contracts/graph";
 import { DATA_CONFIG, FILTER_CONFIG, MAP_CONFIG } from "../core/config";
-import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
+import { loadGraphData } from "../core/data";
+import { DetailLoader } from "../core/details";
 import { requireElement, showLoadError } from "../core/dom";
 import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
 import { isRegionMode, Store, type AppState } from "../core/state";
 import { themeById } from "../core/themes";
 import { mountFilters, mountHiddenAuthorReveal } from "../features/filters";
+import { mountDetailErrors } from "../features/detailErrors";
+import { mountMobilePanels } from "../features/mobilePanels";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
@@ -18,7 +21,7 @@ import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
 import { mountThemePicker } from "../features/themePicker";
 import { mountUrlSync } from "../features/urlSync";
-import { mountReactiveGraph, mountZoomDebug, populateGraph } from "../map/build";
+import { mountReactiveGraph, populateGraph } from "../map/build";
 import { mountRegions } from "../map/regions";
 
 // Node label in its department color with a halo. Also used for hover and
@@ -74,22 +77,6 @@ store.subscribe((state) => {
   themeById(state.theme).apply(document.documentElement);
 });
 
-function loadDetailsInto<T extends { key: string }>(
-  name: string,
-  url: string,
-  target: Map<string, T>,
-): void {
-  loggedStep(name, () => loadDetails<T>(url))
-    .then((details) => {
-      mergeDetailsInto(target, details);
-      store.notify();
-    })
-    .catch(() => {
-      // Already logged by loggedStep. No banner: a missing detail file (e.g.
-      // no authors-detail.json in public/) leaves those fields loading.
-    });
-}
-
 // Mounted before the first fetch, so the boot screen shows from the first frame.
 const start = mountStart(store);
 mountThemePicker(store);
@@ -125,6 +112,13 @@ function renderApp(data: GraphData): void {
   const pubDetailsByKey = new Map<string, PubDetail>();
   const authorDetailsByKey = new Map<string, AuthorDetail>();
   const repoDetailsByKey = new Map<string, RepoDetail>();
+  const resources = {
+    author: new DetailLoader(DATA_CONFIG.authorDetailsUrl, authorDetailsByKey, () =>
+      store.notify(),
+    ),
+    pub: new DetailLoader(DATA_CONFIG.pubDetailsUrl, pubDetailsByKey, () => store.notify()),
+    repo: new DetailLoader(DATA_CONFIG.repoDetailsUrl, repoDetailsByKey, () => store.notify()),
+  };
 
   // A page load always opens the menu and ignores the URL; parseUrlState
   // is used only for back/forward in urlSync.
@@ -166,13 +160,13 @@ function renderApp(data: GraphData): void {
     container.style.background = themeById(state.theme).map.background;
     renderer.refresh();
   });
-  // TODO: remove once zoom thresholds are tuned.
-  mountZoomDebug(renderer);
 
   // Features talk only through the Store and live for the whole page.
   const regions = mountRegions(renderer, store, data);
   mountSelection(renderer, store, regions.deptAtViewport);
-  mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
+  mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey, resources);
+  mountDetailErrors(store, resources);
+  mountMobilePanels(store);
   mountTabs(
     requireElement("tab-buttons"),
     requireElement("tab-content"),
@@ -195,13 +189,7 @@ function renderApp(data: GraphData): void {
 
   // Each detail file merges as soon as it arrives. The panel shows a loading
   // indicator until then.
-  loadDetailsInto<PubDetail>("pubs-detail.json", DATA_CONFIG.pubDetailsUrl, pubDetailsByKey);
-  loadDetailsInto<AuthorDetail>(
-    "authors-detail.json",
-    DATA_CONFIG.authorDetailsUrl,
-    authorDetailsByKey,
-  );
-  loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
+  for (const resource of Object.values(resources)) void resource.load();
 
   start.finishBoot();
 }

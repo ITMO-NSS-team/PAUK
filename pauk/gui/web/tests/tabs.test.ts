@@ -292,7 +292,7 @@ describe("pubsTab", () => {
 });
 
 describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
-  it("shows the section label (\"Быстрый поиск\"/\"Quick Search\") for the current language", async () => {
+  it('shows the section label ("Быстрый поиск"/"Quick Search") for the current language', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ lang: "ru" }));
     const container = document.createElement("div");
@@ -365,5 +365,25 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     expect(container.querySelector(".tab-pagination")?.children).toHaveLength(0);
+  });
+});
+
+describe("publication visibility", () => {
+  it("uses the map's year limit in the sidebar", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 3 }));
+    const container = document.createElement("div");
+    const unmount = pubsTab.mount(
+      container,
+      store,
+      fakeRenderer(),
+      data,
+      NO_PUB_DETAILS,
+      NO_REPO_DETAILS,
+    );
+    store.set({ filters: { ...store.get().filters, yearMax: 2000 } });
+    const expected = data.pubs.filter((pub) => pub.year === null || pub.year <= 2000);
+    expect(listItems(container)).toHaveLength(expected.length);
+    unmount();
   });
 });

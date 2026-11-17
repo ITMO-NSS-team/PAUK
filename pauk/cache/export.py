@@ -14,6 +14,7 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from pauk.settings import Settings
 
 from .graph_snapshot import dated_snapshot_path, latest_snapshot, read_snapshot, write_snapshot
+from .snapshot_schema import SNAPSHOT_COLUMNS, validate_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -344,7 +345,9 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
     unknown = set(tables or ()) - queries.keys()
     if unknown:
         raise ValueError(f"unknown snapshot tables: {sorted(unknown)}")
-    return {name: query() for name, query in queries.items() if tables is None or name in tables}
+    graph = {name: query() for name, query in queries.items() if tables is None or name in tables}
+    validate_snapshot(graph, tables=graph.keys())
+    return graph
 
 
 class GraphSnapshotExporter:
@@ -388,7 +391,7 @@ class GraphSnapshotExporter:
                 raise ValueError(f"unknown snapshot groups: {sorted(unknown)}, known: {sorted(SNAPSHOT_GROUPS)}")
             tables = {table for group in only for table in SNAPSHOT_GROUPS[group]}
             base_path = latest_snapshot(self.config.cache_dir)
-            base = read_snapshot(base_path)
+            base = read_snapshot(base_path, tables=SNAPSHOT_COLUMNS.keys() - tables)
             all_tables = {table for group in SNAPSHOT_GROUPS.values() for table in group}
             missing = all_tables - tables - base.keys()
             if missing:

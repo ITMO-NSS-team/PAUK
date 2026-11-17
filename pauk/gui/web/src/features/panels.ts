@@ -3,6 +3,7 @@ import type {
   AuthorDetail,
   AuthorNode,
   GraphData,
+  NodeKind,
   PubDetail,
   PubNode,
   RepoDetail,
@@ -26,6 +27,7 @@ import {
   toCsv,
   type GrantInfo,
 } from "../core/data";
+import type { DetailResource } from "../core/details";
 import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import { TAB_FOR_KIND, type AppState, type Selection, type Store } from "../core/state";
@@ -119,9 +121,7 @@ function safeHref(url: string, context: string): string {
     if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
     console.warn(`${context}: disallowed URL scheme, replaced with "about:blank": ${url}`);
   } catch {
-    console.warn(
-      `${context}: not a valid URL, replaced with "about:blank": ${url}`,
-    );
+    console.warn(`${context}: not a valid URL, replaced with "about:blank": ${url}`);
   }
   return "about:blank";
 }
@@ -201,6 +201,7 @@ export function mountPanel(
   pubDetails: Map<string, PubDetail>,
   authorDetails: Map<string, AuthorDetail>,
   repoDetails: Map<string, RepoDetail>,
+  resources?: Partial<Record<NodeKind, DetailResource>>,
 ): () => void {
   const container = requireElement("panel");
 
@@ -302,7 +303,13 @@ export function mountPanel(
   /** No fallback to another language: a report the reader can't read is no report. */
   function reportLinksOf(key: string, lang: AppState["lang"]): PanelLink[] {
     return reportKeys.get(lang)?.has(key)
-      ? [{ kind: "link", href: `${DATA_CONFIG.reportsUrl}/${lang}/${encodeURIComponent(key)}.pdf`, text: "PDF" }]
+      ? [
+          {
+            kind: "link",
+            href: `${DATA_CONFIG.reportsUrl}/${lang}/${encodeURIComponent(key)}.pdf`,
+            text: "PDF",
+          },
+        ]
       : [];
   }
 
@@ -426,6 +433,32 @@ export function mountPanel(
         onBack: () => store.set({ selection: null }),
         subtitle,
         extra,
+        loading: () => {
+          const state = store.get();
+          const selection = state.selection;
+          const kind =
+            selection?.kind === "node"
+              ? index.get(selection.key)?.kind
+              : selection?.kind === "grant"
+                ? "pub"
+                : state.tab === 1
+                  ? "author"
+                  : state.tab === 2
+                    ? "repo"
+                    : "pub";
+          const resource = kind ? resources?.[kind] : undefined;
+          if (resource?.status !== "failed") return createLoadingIndicator();
+          const message = document.createElement("span");
+          message.append(`${t("details.failed", state.lang)} `);
+          const retry = document.createElement("button");
+          retry.type = "button";
+          retry.textContent = t("details.retry", state.lang);
+          retry.addEventListener("click", () => {
+            void resource.load();
+          });
+          message.append(retry);
+          return message;
+        },
       }),
     );
   }
@@ -785,6 +818,7 @@ export function mountPanel(
         ]);
 
         const detail = pubDetails.get(node.key);
+        if (!detail) rows.push([t("field.loadingDetails", lang), LOADING]);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
         if (detail?.openalex_url)
           rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
@@ -792,7 +826,10 @@ export function mountPanel(
         if (detail && detail.fields.length > 0)
           rows.push([t("field.pubFields", lang), detail.fields.join(", ")]);
         if (detail && detail.funding.length > 0)
-          rows.push([t("field.grants", lang), { kind: "list", items: detail.funding.map(fundingItem) }]);
+          rows.push([
+            t("field.grants", lang),
+            { kind: "list", items: detail.funding.map(fundingItem) },
+          ]);
         if (detail?.abstract)
           rows.push([t("field.abstract", lang), { kind: "longText", text: detail.abstract }]);
 
@@ -817,7 +854,10 @@ export function mountPanel(
 
         const pubAuthorKeys = pubAuthors.get(node.key) ?? [];
         if (pubAuthorKeys.length > 0)
-          rows.push([t("tab.authors", lang), { kind: "list", items: entityRefsOf(pubAuthorKeys, lang) }]);
+          rows.push([
+            t("tab.authors", lang),
+            { kind: "list", items: entityRefsOf(pubAuthorKeys, lang) },
+          ]);
       }
 
       return show(
@@ -851,16 +891,24 @@ export function mountPanel(
         ]);
       if (from.kind === "author" && to.kind === "author") {
         const shared = pubKeysByYear(
-          (authorPubs.get(from.key) ?? []).filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub)),
+          (authorPubs.get(from.key) ?? []).filter((pub) =>
+            (authorPubs.get(to.key) ?? []).includes(pub),
+          ),
         );
         if (shared.length > 0)
-          rows.push([t("field.sharedPubs", lang), { kind: "list", items: entityRefsOf(shared, lang) }]);
+          rows.push([
+            t("field.sharedPubs", lang),
+            { kind: "list", items: entityRefsOf(shared, lang) },
+          ]);
       } else if (from.kind === "pub" && to.kind === "pub") {
         const shared = (pubAuthors.get(from.key) ?? []).filter((author) =>
           (pubAuthors.get(to.key) ?? []).includes(author),
         );
         if (shared.length > 0)
-          rows.push([t("field.sharedAuthors", lang), { kind: "list", items: entityRefsOf(shared, lang) }]);
+          rows.push([
+            t("field.sharedAuthors", lang),
+            { kind: "list", items: entityRefsOf(shared, lang) },
+          ]);
       }
 
       return show(t("kind.edge", lang), t("kind.edge", lang), untitled(rows), true);
@@ -952,6 +1000,7 @@ export function mountPanel(
 }
 
 interface PanelCardOptions {
+  loading: () => HTMLElement;
   title: string;
   kind: string;
   /** Empty sections are not drawn. */
@@ -1138,7 +1187,7 @@ function buildCard(options: PanelCardOptions): HTMLElement {
       if (typeof value === "string") {
         dd.textContent = value;
       } else if (value === LOADING) {
-        dd.appendChild(createLoadingIndicator());
+        dd.appendChild(options.loading());
       } else if (!Array.isArray(value) && value.kind === "longText") {
         dt.classList.add("panel-row--block");
         dd.classList.add("panel-row--block");

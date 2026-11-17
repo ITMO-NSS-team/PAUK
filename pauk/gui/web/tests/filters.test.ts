@@ -61,7 +61,21 @@ describe("mountFilters", () => {
     }
   }
 
-  it("labels the sidebar section (\"Фильтры\"/\"Filters\") for the current language", () => {
+  it("synchronizes programmatic filters without replacing focused controls", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      const unmount = mountFilters(store);
+      const checkbox = checkboxByLabel("Показывать внешних авторов");
+      checkbox?.focus();
+      store.set({ filters: { ...store.get().filters, showExternalAuthors: true } });
+      expect(checkbox?.checked).toBe(true);
+      expect(document.activeElement).toBe(checkbox);
+      expect(checkboxByLabel("Показывать внешних авторов")).toBe(checkbox);
+      unmount();
+    });
+  });
+
+  it('labels the sidebar section ("Фильтры"/"Filters") for the current language', () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ lang: "ru" }));
       mountFilters(store);
@@ -80,8 +94,12 @@ describe("mountFilters", () => {
       expect(container.hidden).toBe(false);
       const inputs = container.querySelectorAll("input[type='range']");
       expect(inputs).toHaveLength(4);
-      expect((inputs[0] as HTMLInputElement).value).toBe("0.2"); // edge zoom comes first
-      expect((inputs[1] as HTMLInputElement).value).toBe("1");
+      expect(
+        container.querySelector<HTMLInputElement>('input[data-filter="edgeZoomThreshold"]')?.value,
+      ).toBe("0.2");
+      expect(
+        container.querySelector<HTMLInputElement>('input[data-filter="minCoauth"]')?.value,
+      ).toBe("1");
     });
   });
 
@@ -111,12 +129,14 @@ describe("mountFilters", () => {
       mountFilters(store);
 
       // [0] is the shared edge zoom slider.
-      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
+      const input = container.querySelector('input[data-filter="minCoauth"]') as HTMLInputElement;
       input.value = "7";
       input.dispatchEvent(new Event("input"));
 
       // The value label updates at once, without waiting for the debounce.
-      expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("7");
+      expect(input.closest(".filter-row")?.querySelector(".filter-row__value")?.textContent).toBe(
+        "7",
+      );
       expect(store.get().filters.minCoauth).toBe(1); // not applied yet
 
       vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
@@ -132,7 +152,7 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
+      const input = container.querySelector('input[data-filter="minCoauth"]') as HTMLInputElement;
       const move = (value: number): void => {
         input.value = String(value);
         input.dispatchEvent(new Event("input"));
@@ -153,7 +173,7 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
+      const input = container.querySelector('input[data-filter="minCoauth"]') as HTMLInputElement;
       // Each input restarts the timer; only the value the user stopped on is applied.
       for (const value of [2, 3, 4, 5, 6, 7]) {
         input.value = String(value);
@@ -194,7 +214,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("tabs 1 and 3 have the \"Показывать без департамента\" checkbox, tab 2 does not", () => {
+  it('tabs 1 and 3 have the "Показывать без департамента" checkbox, tab 2 does not', () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -208,20 +228,21 @@ describe("mountFilters", () => {
     });
   });
 
-  it("unchecking the \"Показывать без департамента\" checkbox writes false to the matching filters field", () => {
+  it('unchecking the "Показывать без департамента" checkbox writes false to the matching filters field', () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       const checkbox = checkboxByLabel("Показывать без департамента");
-      if (!checkbox) throw new Error("the \"Показывать без департамента\" checkbox must be on the authors tab");
+      if (!checkbox)
+        throw new Error('the "Показывать без департамента" checkbox must be on the authors tab');
       checkbox.checked = false;
       checkbox.dispatchEvent(new Event("change"));
 
       expect(store.get().filters.showNoDeptAuthors).toBe(false);
     });
   });
-  it("the \"Показывать внешних авторов\" checkbox on the authors tab is off by default and enables the filter", () => {
+  it('the "Показывать внешних авторов" checkbox on the authors tab is off by default and enables the filter', () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -236,7 +257,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("the \"Регионы департаментов\" checkbox is on every tab and toggles only the current one", () => {
+  it('the "Регионы департаментов" checkbox is on every tab and toggles only the current one', () => {
     withContainer(() => {
       const store = new Store<AppState>(
         initialState({
@@ -264,7 +285,7 @@ describe("mountFilters", () => {
       mountFilters(store);
 
       const ranges = [...container.querySelectorAll<HTMLInputElement>("input[type='range']")];
-      const [edgeZoom] = ranges;
+      const edgeZoom = ranges.find((input) => input.dataset.filter === "edgeZoomThreshold");
       const [regionZoom, minNodes] = ranges.slice(-2); // region rows come last
       expect(Number(edgeZoom?.max)).toBeLessThanOrEqual(Number(regionZoom?.min));
 
@@ -284,6 +305,8 @@ describe("mountFilters", () => {
 describe("mountHiddenAuthorReveal", () => {
   // A1, A2: ITMO co-authors of P1; A3: alone on P2, no repos (isolated); E1: external.
   const data = {
+    pubs: [],
+    departments: [],
     authors: [
       { key: "A1", is_itmo: true, pubs_count: 1 },
       { key: "A2", is_itmo: true, pubs_count: 1 },
@@ -306,6 +329,21 @@ describe("mountHiddenAuthorReveal", () => {
         showIsolatedAuthors: false,
       },
     });
+
+  it("reveals a publication hidden by year and department filters", () => {
+    const store = new Store<AppState>(hiddenByDefault());
+    store.set({ filters: { ...store.get().filters, yearMax: 2020, showNoDeptPubs: false } });
+    const sample = {
+      ...data,
+      departments: [{ id: 0, color: "#8a8f98" }],
+      pubs: [{ key: "P1", kind: "pub", year: 2026, dept: 0 }],
+    } as unknown as GraphData;
+    const unmount = mountHiddenAuthorReveal(store, sample);
+    store.set({ tab: 3, selection: { kind: "node", key: "P1" } });
+    expect(store.get().filters.yearMax).toBe(2026);
+    expect(store.get().filters.showNoDeptPubs).toBe(true);
+    unmount();
+  });
 
   it("selecting a hidden external author enables the external filter, otherwise the selection would go nowhere", () => {
     const store = new Store<AppState>(hiddenByDefault());
@@ -330,6 +368,8 @@ describe("mountHiddenAuthorReveal", () => {
 
   it("selecting an external coauthor of an author without links enables only the external filter, which gives the author a link", () => {
     const soloWithExternal = {
+      pubs: [],
+      departments: [],
       authors: [
         { key: "A1", is_itmo: true, pubs_count: 1 },
         { key: "E1", is_itmo: false, pubs_count: 1 },

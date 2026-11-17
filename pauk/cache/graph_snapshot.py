@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from pauk.storage import AtomicWriter
+
+from .snapshot_schema import validate_snapshot
 
 
 def write_snapshot(path: Path, graph: dict[str, list]) -> None:
@@ -18,31 +21,29 @@ def write_snapshot(path: Path, graph: dict[str, list]) -> None:
         graph: Flat dict of graph tables - exactly what `export.py::load_db()` returns.
 
     Example:
-        >>> write_snapshot(Path("/tmp/snapshot.json"), {"persons": []})
+        >>> from pauk.cache.snapshot_schema import SNAPSHOT_COLUMNS
+        >>> write_snapshot(Path("/tmp/snapshot.json"), {name: [] for name in SNAPSHOT_COLUMNS})
     """
+    validate_snapshot(graph)
     with AtomicWriter(path) as fh:
         json.dump(graph, fh, ensure_ascii=False, separators=(",", ":"))
 
 
-def read_snapshot(path: Path) -> dict[str, list]:
+def read_snapshot(path: Path, *, tables: Collection[str] | None = None) -> dict[str, list]:
     """Reads a snapshot written by `write_snapshot`.
 
     Args:
         path: Path to the snapshot file.
+        tables: Validate only these tables when replacing the others in a partial export.
 
     Returns:
         The graph dict - the same tables passed to `write_snapshot`.
 
     Raises:
-        ValueError: the file's top-level JSON isn't an object.
-
-    Example:
-        >>> read_snapshot(Path("/tmp/snapshot.json"))
-        {'persons': []}
+        ValueError: missing tables/columns or malformed table/row structure.
     """
     graph: Any = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(graph, dict):
-        raise ValueError("graph snapshot is not a JSON object")
+    validate_snapshot(graph, tables=tables)
     return graph
 
 

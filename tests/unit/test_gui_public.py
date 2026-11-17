@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pauk.cache.graph_snapshot import write_snapshot
+from pauk.cache.tests.fixtures import write_complete_snapshot as write_snapshot
 from pauk.gui.graph_builder.builder import write_site_data
 from pauk.gui.graph_builder.public import mask_free_text_name, public_abstract, public_author_labels
 from pauk.gui.graph_builder.tests.test_graph_builder import BuildGraphDataIntegrationTest

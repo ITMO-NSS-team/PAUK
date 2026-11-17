@@ -11,15 +11,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pauk.cache.graph_snapshot import write_snapshot
+from pauk.cache.tests.fixtures import complete_snapshot
 from pauk.gui.graph_builder.builder import GraphDataBuilder, write_site_data
 
 
 class BuildGraphDataIntegrationTest(unittest.TestCase):
     @staticmethod
     def _sample_db():
-        return {
+        return complete_snapshot({
             "persons": [
                 {"id": "A1", "first_name_ru": "Иван", "second_name_ru": None, "surname_ru": "Иванов",
                  "first_name_en": "Ivan", "second_name_en": None, "surname_en": "Ivanov",
@@ -35,8 +37,6 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "openalex_url": "https://openalex.org/W1", "abstract": "Абстракт"},
             ],
             "repositories": [
-                # "owner" is deliberately absent: pauk/cache/export.py does not
-                # return it, and the fixture should match the real snapshot shape.
                 {"id": "R1", "name": "repo", "url": "https://x", "description": "Описание", "stars_num": 5,
                  "has_readme": True, "license": "MIT", "contributors": ["ivanov"], "owner_type": "user"},
             ],
@@ -47,7 +47,17 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
             "repo_pubs": [{"rid": "R1", "pid": "P1"}],
             "repo_persons": [{"rid": "R1", "per": "A1", "role": "maintainer"}],
             "repo_depts": [{"rid": "R1", "did": "d1"}],
-        }
+        })
+
+    def test_invalid_snapshot_fails_before_layout_or_assignment(self):
+        db = self._sample_db()
+        del db["repositories"][0]["forks_num"]
+        with patch("pauk.gui.graph_builder.builder.GraphLayoutBuilder") as layout:
+            with patch("pauk.gui.graph_builder.builder.DepartmentAssigner") as assigner:
+                with self.assertRaisesRegex(ValueError, "repositories.*forks_num"):
+                    GraphDataBuilder(db, seed=1).build()
+                assigner.assert_not_called()
+            layout.assert_not_called()
 
     def test_summary_has_no_personal_or_detail_fields(self):
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()

@@ -48,7 +48,24 @@ describe("mountPanel", () => {
     return () => panel.remove();
   });
 
-  it("the \"Обзор\" of the authors tab shows author/department counts, average publications, field completeness, and LOADING while detail is empty", async () => {
+  it("replaces the loading spinner with an error and retry for failed author details", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
+    const load = vi.fn().mockResolvedValue(undefined);
+    const unmount = mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS, {
+      author: { status: "failed", load },
+    });
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
+    expect(panel.textContent).toContain("Не удалось загрузить подробности.");
+    const retry = [...panel.querySelectorAll("button")].find(
+      (button) => button.textContent === "Повторить",
+    );
+    retry?.click();
+    expect(load).toHaveBeenCalledOnce();
+    unmount();
+  });
+
+  it('the "Обзор" of the authors tab shows author/department counts, average publications, field completeness, and LOADING while detail is empty', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -63,7 +80,7 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("the \"Обзор\" of the authors tab counts all authors, split into ITMO/external, even when externals are hidden by the filter", async () => {
+  it('the "Обзор" of the authors tab counts all authors, split into ITMO/external, even when externals are hidden by the filter', async () => {
     const sample = await loadSampleGraphData();
     const data = {
       ...sample,
@@ -81,7 +98,7 @@ describe("mountPanel", () => {
     expect(rows).toContainEqual(["Внешних", "1"]);
   });
 
-  it("the \"Обзор\" of the repositories tab shows the repository count and the share with README/license", async () => {
+  it('the "Обзор" of the repositories tab shows the repository count and the share with README/license', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -90,7 +107,7 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("the \"Обзор\" of the publications tab shows the publication count and the share with a known year/DOI/abstract", async () => {
+  it('the "Обзор" of the publications tab shows the publication count and the share with a known year/DOI/abstract', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -102,13 +119,13 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0); // DOI/abstract wait for pubDetails
   });
 
-  it("the \"Обзор\" of the authors tab has an \"Авторы по департаментам\" chart, not a top of individual authors", async () => {
+  it('the "Обзор" of the authors tab has an "Авторы по департаментам" chart, not a top of individual authors', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
+    if (!chart) throw new Error('the "Обзор" card must contain a chart');
     expect(chart.querySelector("h4")?.textContent).toBe("Авторы по департаментам");
     // Fixture: A1/A2/A6 dept 0, A3/A4/A8 dept 1, A5/A7 dept 2.
     const rows = [...chart.querySelectorAll(".chart-bar-row")];
@@ -124,13 +141,13 @@ describe("mountPanel", () => {
     expect(byLabel.get("Центр робототехники")).toBe("2");
   });
 
-  it("the \"Обзор\" of the publications tab has a \"Публикации по годам\" chart in chronological order, without publications of unknown year", async () => {
+  it('the "Обзор" of the publications tab has a "Публикации по годам" chart in chronological order, without publications of unknown year', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
+    if (!chart) throw new Error('the "Обзор" card must contain a chart');
     expect(chart.querySelector("h4")?.textContent).toBe("Публикации по годам");
     // Fixture: 2021x1, 2022x1, 2023x1, 2024x2 (P1, P6); P2 has no year and is left out.
     const labels = [...chart.querySelectorAll(".chart-bar-row__label")].map((el) => el.textContent);
@@ -139,13 +156,13 @@ describe("mountPanel", () => {
     expect(values).toEqual(["1", "1", "1", "2"]);
   });
 
-  it("the \"Обзор\" of the repositories tab has a \"Репозитории по звёздам\" chart in buckets, not a top of individual repositories", async () => {
+  it('the "Обзор" of the repositories tab has a "Репозитории по звёздам" chart in buckets, not a top of individual repositories', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
+    if (!chart) throw new Error('the "Обзор" card must contain a chart');
     expect(chart.querySelector("h4")?.textContent).toBe("Репозитории по звёздам");
     // Fixture: R4=3, R2=7 -> "1–9" (2); R3=15, R5=21, R1=42 -> "10–99" (3); other buckets empty.
     const byLabel = new Map(
@@ -179,7 +196,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(author.pubs_count));
   });
 
-  it("the author card shows the \"Автор\" badge and the \"← Обзор\" button", async () => {
+  it('the author card shows the "Автор" badge and the "← Обзор" button', async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("the fixture must contain at least one author");
@@ -228,7 +245,7 @@ describe("mountPanel", () => {
     expect(titles?.children[1]?.className).toBe("panel-card__subtitle");
   });
 
-  it("the author card is split into \"Общее\", \"Приватное\" and \"Служебное\"", async () => {
+  it('the author card is split into "Общее", "Приватное" and "Служебное"', async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({
@@ -266,7 +283,7 @@ describe("mountPanel", () => {
     expect(service?.textContent).not.toContain("T10:23");
   });
 
-  it("until authors-detail arrives, the loading indicator sits in \"Приватное\", while the service key/type are visible at once", async () => {
+  it('until authors-detail arrives, the loading indicator sits in "Приватное", while the service key/type are visible at once', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
       ...initialState(),
@@ -305,7 +322,7 @@ describe("mountPanel", () => {
     expect(items[1]?.querySelector(".panel-list__meta")?.textContent).toBe("OpenAlex");
   });
 
-  it("an author's publications go one per line, with the author position and an \"автор для переписки\" mark", async () => {
+  it('an author\'s publications go one per line, with the author position and an "автор для переписки" mark', async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: P1 position 1, corresponding; P2 position 3; P5 has no role.
@@ -356,7 +373,10 @@ describe("mountPanel", () => {
     const data = await loadSampleGraphData();
     const a1 = data.authors.find((author) => author.key === "A1");
     if (!a1) throw new Error("the fixture must contain author A1");
-    const publicA1: AuthorDetail = { key: "A1", pub_roles: { P1: { position: 1, corresponding: true } } };
+    const publicA1: AuthorDetail = {
+      key: "A1",
+      pub_roles: { P1: { position: 1, corresponding: true } },
+    };
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "A1" },
@@ -373,7 +393,10 @@ describe("mountPanel", () => {
 
   it("the authors overview drops the ORCID/GitHub/email shares when detail has no such fields (public build)", async () => {
     const data = await loadSampleGraphData();
-    const publicDetails = data.authors.map((author): AuthorDetail => ({ key: author.key, pub_roles: {} }));
+    const publicDetails = data.authors.map((author): AuthorDetail => ({
+      key: author.key,
+      pub_roles: {},
+    }));
     const store = new Store<AppState>(initialState({ tab: 1 }));
 
     mountPanel(store, data, NO_PUB_DETAILS, indexDetailsByKey(publicDetails), NO_REPO_DETAILS);
@@ -383,7 +406,7 @@ describe("mountPanel", () => {
     expect(labels).not.toContain("Email");
   });
 
-  it("long list: first 3, \"+ ещё\" adds 20 at a time, \"свернуть\" at any step returns to 3", async () => {
+  it('long list: first 3, "+ ещё" adds 20 at a time, "свернуть" at any step returns to 3', async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
     if (!a1) throw new Error("the fixture must contain author A1");
@@ -402,7 +425,9 @@ describe("mountPanel", () => {
       (el) => el.textContent === "Варианты написания (OpenAlex)",
     );
     const list = dt?.nextElementSibling?.querySelector(".panel-list");
-    const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>(".panel-list__more") ?? [])];
+    const buttons = () => [
+      ...(list?.querySelectorAll<HTMLButtonElement>(".panel-list__more") ?? []),
+    ];
     const labels = () => buttons().map((b) => b.textContent);
     const count = () => list?.querySelectorAll("li:not(.panel-list__toggle)").length;
 
@@ -444,7 +469,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-card__subtitle")).toBeNull();
   });
 
-  it("clicking \"← Обзор\" clears selection and returns the \"Обзор\" card", async () => {
+  it('clicking "← Обзор" clears selection and returns the "Обзор" card', async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("the fixture must contain at least one author");
@@ -455,7 +480,7 @@ describe("mountPanel", () => {
 
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
     const back = panel.querySelector<HTMLButtonElement>(".panel-back");
-    if (!back) throw new Error("the author card must have a \"← Обзор\" button");
+    if (!back) throw new Error('the author card must have a "← Обзор" button');
 
     back.click();
 
@@ -463,7 +488,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
   });
 
-  it("the \"Обзор\" shows the current tab badge but NOT the \"← Обзор\" button, there is nowhere to go back to", async () => {
+  it('the "Обзор" shows the current tab badge but NOT the "← Обзор" button, there is nowhere to go back to', async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState()); // selection: null, tab: 1
 
@@ -808,15 +833,26 @@ describe("mountPanel", () => {
     });
   });
 
-  it("a long abstract shows the first N words and \"читать полностью\"; a click expands it fully, another click collapses it again", async () => {
+  it('a long abstract shows the first N words and "читать полностью"; a click expands it fully, another click collapses it again', async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
     if (!detail) throw new Error("the fixture has no publication details");
     const words = Array.from({ length: 80 }, (_, i) => `w${i + 1}`);
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
-    mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: words.join(" ") }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: detail.key },
+    });
+    mountPanel(
+      store,
+      data,
+      indexDetailsByKey([{ ...detail, abstract: words.join(" ") }]),
+      NO_AUTHOR_DETAILS,
+      NO_REPO_DETAILS,
+    );
 
-    const dd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аннотация")?.nextElementSibling;
+    const dd = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Аннотация",
+    )?.nextElementSibling;
     const toggle = () => dd?.querySelector<HTMLButtonElement>(".panel-list__more");
     expect(dd?.textContent).toContain("w50…");
     expect(dd?.textContent).not.toContain("w51");
@@ -834,10 +870,21 @@ describe("mountPanel", () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
     if (!detail) throw new Error("the fixture has no publication details");
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
-    mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: "Short abstract." }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: detail.key },
+    });
+    mountPanel(
+      store,
+      data,
+      indexDetailsByKey([{ ...detail, abstract: "Short abstract." }]),
+      NO_AUTHOR_DETAILS,
+      NO_REPO_DETAILS,
+    );
 
-    const dd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аннотация")?.nextElementSibling;
+    const dd = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Аннотация",
+    )?.nextElementSibling;
     expect(dd?.textContent).toBe("Short abstract.");
     expect(dd?.querySelector(".panel-list__more")).toBeNull();
   });
@@ -846,27 +893,49 @@ describe("mountPanel", () => {
     const data = await loadSampleGraphData();
     const [dept] = data.departments;
     if (!dept) throw new Error("the fixture has no departments");
-    const org = { ...dept, id: 99, kind: "org" as const, name: "example-org", name_en: "example-org" };
+    const org = {
+      ...dept,
+      id: 99,
+      kind: "org" as const,
+      name: "example-org",
+      name_en: "example-org",
+    };
     const field = { ...dept, id: 98, kind: "field" as const, name: "Physics", name_en: "Physics" };
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
-    mountPanel(store, { ...data, repo_groups: [org, field] }, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R1" },
+    });
+    mountPanel(
+      store,
+      { ...data, repo_groups: [org, field] },
+      NO_PUB_DETAILS,
+      NO_AUTHOR_DETAILS,
+      repoDetails,
+    );
 
-    const repoLink = panel.querySelector<HTMLAnchorElement>("a[href='https://github.com/example-org/graph-toolkit']");
+    const repoLink = panel.querySelector<HTMLAnchorElement>(
+      "a[href='https://github.com/example-org/graph-toolkit']",
+    );
     expect(repoLink?.textContent).toBe("example-org/graph-toolkit");
 
     store.set({ selection: { kind: "dept", id: 99 } });
-    expect(panel.querySelector("a[href='https://github.com/example-org']")?.textContent).toBe("example-org");
+    expect(panel.querySelector("a[href='https://github.com/example-org']")?.textContent).toBe(
+      "example-org",
+    );
 
     // A field group has no GitHub page.
     store.set({ selection: { kind: "dept", id: 98 } });
     expect(panel.querySelector("a[href^='https://github.com']")).toBeNull();
   });
 
-  it("publication and repository cards: \"Общее\"/\"Служебное\" sections, authors as a list, OpenAlex right after DOI", async () => {
+  it('publication and repository cards: "Общее"/"Служебное" sections, authors as a list, OpenAlex right after DOI', async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
     mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const sectionTitles = () =>
@@ -874,8 +943,9 @@ describe("mountPanel", () => {
     const labels = () => [...panel.querySelectorAll("dt")].map((el) => el.textContent);
     expect(sectionTitles()).toEqual(["Общее", "Служебное"]);
     expect(labels().indexOf("OpenAlex")).toBe(labels().indexOf("DOI") + 1);
-    const authorsDd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Авторы")
-      ?.nextElementSibling;
+    const authorsDd = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Авторы",
+    )?.nextElementSibling;
     expect(authorsDd?.querySelector(".panel-list")).not.toBeNull();
 
     store.set({ selection: { kind: "node", key: "R1" } });
@@ -892,7 +962,10 @@ describe("mountPanel", () => {
     const pubDetails = indexDetailsByKey(
       (await loadSamplePubDetails()).map((d) => (d.key === "P1" ? { ...d, funding } : d)),
     );
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
     mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const list = () =>
@@ -910,7 +983,11 @@ describe("mountPanel", () => {
   it("grant: the number in the publication card leads to the grant card with the article list and CSV", async () => {
     const data = await loadSampleGraphData();
     const details = await loadSamplePubDetails();
-    const grant = { funder: "Russian Science Foundation", grant_id: "Grant 18-19-00627", grant_key: "18-19-00627" };
+    const grant = {
+      funder: "Russian Science Foundation",
+      grant_id: "Grant 18-19-00627",
+      grant_key: "18-19-00627",
+    };
     const pubDetails = indexDetailsByKey(
       details.map((d) =>
         d.key === "P1" || d.key === "P3"
@@ -925,10 +1002,15 @@ describe("mountPanel", () => {
           : d,
       ),
     );
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
     mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
-    const grantsDd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Гранты")?.nextElementSibling;
+    const grantsDd = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Гранты",
+    )?.nextElementSibling;
     expect(grantsDd?.textContent).toContain("Russian Science Foundation");
     expect(grantsDd?.textContent).toContain("18-19-"); // cut-short number shown, not clickable
     expect(grantsDd?.querySelectorAll(".panel-entity-ref")).toHaveLength(1);
@@ -940,19 +1022,29 @@ describe("mountPanel", () => {
     expect(store.get().selection).toEqual({ kind: "grant", key: "18-19-00627" });
     expect(store.get().tab).toBe(3);
 
-    expect(panel.querySelector("h3")?.textContent).toBe("Russian Science Foundation Grant 18-19-00627");
+    expect(panel.querySelector("h3")?.textContent).toBe(
+      "Russian Science Foundation Grant 18-19-00627",
+    );
     expect(panel.textContent).toContain("Russian Science Foundation");
     const csvLink = panel.querySelector<HTMLAnchorElement>("a[download]");
     expect(csvLink?.download).toBe("grant_18-19-00627.csv");
     const csv = decodeURIComponent(csvLink?.href.split(",").slice(1).join(",") ?? "");
     const lines = csv.replace("\uFEFF", "").split("\r\n");
     expect(lines[0]).toBe("OpenAlex ID,Title,Year,DOI,Journal,Type,Authors,Funder,Grant");
-    expect(lines.slice(1).map((line) => line.split(",")[0]).sort()).toEqual(["P1", "P3"]);
+    expect(
+      lines
+        .slice(1)
+        .map((line) => line.split(",")[0])
+        .sort(),
+    ).toEqual(["P1", "P3"]);
   });
 
   it("a grant from the URL before pubs-detail.json arrives shows a loading indicator, not an empty panel", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "grant", key: "18-19-00627" } });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "grant", key: "18-19-00627" },
+    });
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector(".loading-indicator")).not.toBeNull();
@@ -1211,7 +1303,9 @@ describe("mountPanel", () => {
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Общие публикации");
-    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Общие публикации");
+    const dt = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Общие публикации",
+    );
     expect(dt?.classList.contains("panel-row--block")).toBe(true); // one per line, like the pubs list
     const items = [...(dt?.nextElementSibling?.querySelectorAll("button.panel-entity-ref") ?? [])];
     expect(items.map((el) => el.textContent).sort()).toEqual(["P1", "P5"]);
@@ -1302,7 +1396,7 @@ describe("mountPanel", () => {
     expect(store.get().selection).toEqual({ kind: "dept", id: 1 });
   });
 
-  it("returns to the \"Обзор\" card when selection is reset to null", async () => {
+  it('returns to the "Обзор" card when selection is reset to null', async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("the fixture must contain at least one author");

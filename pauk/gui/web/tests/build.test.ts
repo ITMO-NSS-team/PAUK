@@ -334,7 +334,7 @@ describe("populateGraph on fixture data", () => {
     }
   });
 
-  it("filters.showNoDeptAuthors=false hides authors of the synthetic \"Без департамента\" department", () => {
+  it('filters.showNoDeptAuthors=false hides authors of the synthetic "Без департамента" department', () => {
     const data = dataWithNoDept();
 
     const shown = new Graph();
@@ -424,7 +424,7 @@ describe("populateGraph on fixture data", () => {
     }
   });
 
-  it("an author whose coauthors are all external appears together with the externals, even when \"без связей\" authors are hidden", () => {
+  it('an author whose coauthors are all external appears together with the externals, even when "без связей" authors are hidden', () => {
     const base = dataWithNoDept();
     const [author] = base.authors;
     if (!author) throw new Error("the fixture must contain an author");
@@ -462,7 +462,7 @@ describe("populateGraph on fixture data", () => {
     expect(realNodeKeys(graph)).toEqual(["A1", "A2"]);
   });
 
-  it("filters.showNoDeptPubs=false hides publications of the synthetic \"Без департамента\" department", () => {
+  it('filters.showNoDeptPubs=false hides publications of the synthetic "Без департамента" department', () => {
     const data = dataWithNoDept();
 
     const shown = new Graph();
@@ -571,14 +571,20 @@ describe("applyGraphStyling (via mountReactiveGraph) grant selection", () => {
     const [detail] = await loadSamplePubDetails();
     if (!detail) throw new Error("the fixture has no publication details");
     const pubDetails = indexDetailsByKey([
-      { ...detail, key: "P1", funding: [{ funder: "RSF", grant_id: "18-19-00627", grant_key: "18-19-00627" }] },
+      {
+        ...detail,
+        key: "P1",
+        funding: [{ funder: "RSF", grant_id: "18-19-00627", grant_key: "18-19-00627" }],
+      },
       { ...detail, key: "P2", funding: [] },
     ]);
     const graph = new Graph();
     graph.addNode("P1", { x: 0, y: 0 });
     graph.addNode("P2", { x: 1, y: 1 });
     graph.addEdge("P1", "P2");
-    const store = new Store<AppState>(initialState({ selection: { kind: "grant", key: "18-19-00627" } }));
+    const store = new Store<AppState>(
+      initialState({ selection: { kind: "grant", key: "18-19-00627" } }),
+    );
     const { renderer, getReducer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, pubDetails);
@@ -588,7 +594,9 @@ describe("applyGraphStyling (via mountReactiveGraph) grant selection", () => {
       color: NODE_BASE.color,
       forceLabel: true,
     });
-    expect(getReducer("nodeReducer")("P2", NODE_BASE)).toMatchObject({ color: darkTheme.map.dimNode });
+    expect(getReducer("nodeReducer")("P2", NODE_BASE)).toMatchObject({
+      color: darkTheme.map.dimNode,
+    });
     expect(getReducer("edgeReducer")(graph.edges()[0], EDGE_BASE)).toMatchObject({ hidden: true });
   });
 });
@@ -1074,5 +1082,24 @@ describe("mountReactiveGraph", () => {
     store.set({ lang: "en" }); // harmless rebuild that still runs selectionExistsIn()
 
     expect(store.get().selection).not.toBeNull();
+  });
+});
+
+describe("background publication details", () => {
+  it("updates graph labels without a tab or language change", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 3 }));
+    const details = new Map<string, PubDetail>();
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 3, NO_FILTER, details);
+    const { renderer } = fakeRenderer(graph);
+    const unmount = mountReactiveGraph(renderer, store, data, details);
+    const detail = (await loadSamplePubDetails())[0];
+    if (!detail) throw new Error("missing publication fixture");
+    expect(graph.getNodeAttribute(detail.key, "label")).toBe(detail.key);
+    details.set(detail.key, { ...detail, label: "Loaded title" });
+    store.notify();
+    expect(graph.getNodeAttribute(detail.key, "label")).toBe("Loaded title");
+    unmount();
   });
 });

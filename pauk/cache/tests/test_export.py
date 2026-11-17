@@ -7,6 +7,7 @@ is valid against the real graph model.
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,8 @@ from unittest import mock
 from neo4j.exceptions import ServiceUnavailable
 
 from pauk.cache.export import SNAPSHOT_GROUPS, GraphSnapshotExporter, cypher_dict, load_db
+from pauk.cache.snapshot_schema import SNAPSHOT_COLUMNS
+from pauk.cache.tests.fixtures import complete_snapshot
 from pauk.settings import Settings
 
 
@@ -110,10 +113,20 @@ class LoadDbTest(unittest.TestCase):
     def test_maps_each_query_response_to_its_own_table(self):
         # Tagged with table names: a stub driver can't verify Cypher field names,
         # only that response N lands under the right key.
-        responses = [[{"table": name}] for name in TABLE_ORDER]
+        responses = [[{**dict.fromkeys(SNAPSHOT_COLUMNS[name]), "table": name}] for name in TABLE_ORDER]
         db = load_db(SequentialFakeDriver(responses))
         for name in TABLE_ORDER:
-            self.assertEqual(db[name], [{"table": name}])
+            self.assertEqual(db[name], responses[TABLE_ORDER.index(name)])
+
+    def test_query_columns_match_contract_even_for_empty_tables(self):
+        driver = SequentialFakeDriver([[] for _ in TABLE_ORDER])
+        load_db(driver)
+        for name, query in zip(TABLE_ORDER, driver.queries, strict=True):
+            self.assertEqual(set(re.findall(r" AS (\w+)", query)), set(SNAPSHOT_COLUMNS[name]), name)
+
+    def test_rejects_missing_column_in_exported_rows(self):
+        with self.assertRaisesRegex(ValueError, "persons.*row 1.*missing columns"):
+            load_db(SequentialFakeDriver([[{"id": "A1"}]] + [[] for _ in TABLE_ORDER[1:]]))
 
     def test_person_queries_filter_by_property_not_legacy_label(self):
         # The pipeline no longer writes the :Itmo label, so a query matching it
@@ -138,9 +151,10 @@ class LoadDbTest(unittest.TestCase):
 
 class LoadDbSubsetTest(unittest.TestCase):
     def test_runs_only_the_requested_queries(self):
-        driver = SequentialFakeDriver([[{"table": "repositories"}], [{"table": "repo_pubs"}]])
+        responses = [[dict.fromkeys(SNAPSHOT_COLUMNS[name])] for name in ("repositories", "repo_pubs")]
+        driver = SequentialFakeDriver(responses)
         db = load_db(driver, {"repo_pubs", "repositories"})
-        self.assertEqual(db, {"repositories": [{"table": "repositories"}], "repo_pubs": [{"table": "repo_pubs"}]})
+        self.assertEqual(db, dict(zip(("repositories", "repo_pubs"), responses, strict=True)))
         self.assertEqual(len(driver.queries), 2)
 
     def test_unknown_table_is_an_error_not_an_empty_result(self):
@@ -178,6 +192,7 @@ class PartialExportTest(unittest.TestCase):
         self.cache_dir.mkdir()
         self.base = {name: [{"from": "base", "table": name}] for name in TABLE_ORDER}
         self.base["repositories"] = [{"id": "R1"}, {"id": "R2"}]
+        self.base = complete_snapshot(self.base)
         self.base_path = self.cache_dir / "graph_snapshot_01-09-2026.json"
         self.base_path.write_text(json.dumps(self.base))
 
@@ -193,6 +208,7 @@ class PartialExportTest(unittest.TestCase):
     def test_repos_replaces_repo_tables_and_keeps_the_rest_from_the_newest_snapshot(self):
         # One repository was deleted along with its edges.
         fresh = {"repositories": [{"id": "R1"}], "repo_pubs": [], "mentions_repos": [], "repo_persons": [], "repo_depts": []}
+        fresh = {name: complete_snapshot(fresh)[name] for name in fresh}
         order = [name for name in TABLE_ORDER if name in fresh]
         output = self.cache_dir / "graph_snapshot_02-09-2026.json"
 
@@ -221,6 +237,20 @@ class PartialExportTest(unittest.TestCase):
         self.base_path.write_text(json.dumps(self.base))
         with self.assertRaises(ValueError):
             self.export([], ["repos"], self.cache_dir / "out.json")
+
+    def test_can_replace_incompatible_tables_in_base(self):
+        self.base["repositories"] = [{"id": "old"}]
+        self.base_path.write_text(json.dumps(self.base))
+        tables = set(SNAPSHOT_GROUPS["repos"])
+        self.export([[] for name in TABLE_ORDER if name in tables], ["repos"], self.cache_dir / "out.json")
+
+    def test_rejects_incompatible_retained_rows_before_connecting(self):
+        del self.base["persons"][0]["surname_en"]
+        self.base_path.write_text(json.dumps(self.base))
+        with mock.patch("pauk.cache.export.GraphDatabase.driver") as driver:
+            with self.assertRaisesRegex(ValueError, "persons.*surname_en"):
+                GraphSnapshotExporter(self.config).export(self.cache_dir / "out.json", only=["repos"])
+            driver.assert_not_called()
 
     def test_unknown_group_is_an_error(self):
         with self.assertRaises(ValueError):

@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from pauk.cache import read_snapshot
+from pauk.cache.snapshot_schema import validate_snapshot
 from pauk.storage import AtomicWriter
 
 from .authorship import build_authorship_index
@@ -59,6 +60,7 @@ class GraphDataBuilder:
             - `detail` - a dict `{"authors": [...], "repos": [...], "pubs": [...]}`,
               each list written to its own `*-detail.json`.
         """
+        validate_snapshot(self.db)
         db = self.db
         # dept_name falls back to the English name only so a department "exists"
         # (a filter in DepartmentAssigner.assign(), not for display);

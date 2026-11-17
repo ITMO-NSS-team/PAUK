@@ -97,21 +97,28 @@ export function visibleAuthors(data: GraphData, filters: Filters): AuthorNode[] 
   return data.authors.filter((author) => isAuthorShown(data, author, filters));
 }
 
-/** Pubs with an unknown year are never hidden by `yearMax`. */
-export function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
+/** The same node filters drive the map and its sidebar list. */
+export function isNodeShown(data: GraphData, node: GraphNode, filters: Filters): boolean {
   const excludedDept = noDeptId(data);
-  switch (tab) {
-    case 1: {
-      const authors = visibleAuthors(data, filters);
-      return filters.showNoDeptAuthors ? authors : authors.filter((a) => a.dept !== excludedDept);
-    }
-    case 2:
-      return data.repos;
-    case 3: {
-      const pubs = data.pubs.filter((pub) => pub.year === null || pub.year <= filters.yearMax);
-      return filters.showNoDeptPubs ? pubs : pubs.filter((pub) => pub.dept !== excludedDept);
-    }
+  if (node.kind === "author") {
+    return (
+      isAuthorShown(data, node, filters) &&
+      (filters.showNoDeptAuthors || node.dept !== excludedDept)
+    );
   }
+  if (node.kind === "pub") {
+    return (
+      (node.year === null || node.year <= filters.yearMax) &&
+      (filters.showNoDeptPubs || node.dept !== excludedDept)
+    );
+  }
+  return true;
+}
+
+/** Pubs with an unknown year are never hidden by yearMax. */
+export function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
+  const nodes = tab === 1 ? data.authors : tab === 2 ? data.repos : data.pubs;
+  return nodes.filter((node) => isNodeShown(data, node, filters));
 }
 
 /** Repos have no weight threshold. */
@@ -450,6 +457,7 @@ export function mountReactiveGraph(
   camera.on("updated", onCameraUpdated);
   setCameraRatio(camera.getState().ratio);
 
+  let detailCount = pubDetails.size;
   let prev = store.get();
   const unsubscribe = store.subscribe((state) => {
     // Tab and selection can change in one patch (global search), so both
@@ -465,6 +473,20 @@ export function mountReactiveGraph(
         store.set({ selection: null });
         return; // the nested notify() already handled it
       }
+    }
+
+    if (pubDetails.size !== detailCount) {
+      detailCount = pubDetails.size;
+      graph.forEachNode((key) => {
+        const detail = pubDetails.get(key);
+        if (detail)
+          graph.setNodeAttribute(
+            key,
+            "label",
+            truncateLabel(detail.label, MAP_CONFIG.node.labelMaxLength),
+          );
+      });
+      renderer.refresh();
     }
 
     if (state.selection !== prevSelection) {

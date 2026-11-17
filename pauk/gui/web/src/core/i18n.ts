@@ -11,6 +11,13 @@ export function localize(ru: string, en: string | undefined, lang: Lang): string
 }
 
 export type LocaleKey =
+  | "filter.displayOptions"
+  | "filter.revealed"
+  | "mobile.list"
+  | "mobile.details"
+  | "mobile.close"
+  | "details.failed"
+  | "details.retry"
   | "tab.authors"
   | "tab.repos"
   | "tab.pubs"
@@ -121,6 +128,13 @@ export type LocaleKey =
 
 const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   ru: {
+    "filter.displayOptions": "Настройки отображения",
+    "filter.revealed": "Фильтры изменены, чтобы показать выбранную запись.",
+    "mobile.list": "Список и фильтры",
+    "mobile.details": "Карточка",
+    "mobile.close": "Закрыть панель",
+    "details.failed": "Не удалось загрузить подробности.",
+    "details.retry": "Повторить",
     "tab.authors": "Авторы",
     "tab.repos": "Репозитории",
     "tab.pubs": "Публикации",
@@ -245,6 +259,13 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
       "Данные графа загрузились, но при отрисовке произошла ошибка. Подробности — в консоли браузера (F12).",
   },
   en: {
+    "filter.displayOptions": "Display settings",
+    "filter.revealed": "Filters changed to show the selected record.",
+    "mobile.list": "List and filters",
+    "mobile.details": "Details",
+    "mobile.close": "Close panel",
+    "details.failed": "Could not load details.",
+    "details.retry": "Retry",
     "tab.authors": "Authors",
     "tab.repos": "Repositories",
     "tab.pubs": "Publications",

@@ -4,7 +4,7 @@
 which `pauk/gui/` then reads.
 
 **Files:** `pauk/cache/export.py`, `graph_snapshot.py`, `inspect.py`,
-`__init__.py`.
+`snapshot_schema.py`, `__init__.py`.
 
 This is the only step in the `pauk/gui` chain that talks to Neo4j.
 Everything else (`pauk/gui/graph_builder/builder.py`) reads the snapshot
@@ -33,18 +33,20 @@ counts for each re-read table.
 
 Use it only when the change is confined to the named groups. Deleting
 repositories also changes publication properties (`has_code`, `code_url`),
-which `--only repos` does not pick up. If the base snapshot lacks a table
-that is not being re-read, the export fails and asks for a full run.
+which `--only repos` does not pick up. If retained tables in the base snapshot
+are missing or structurally incompatible,
+the export fails before connecting to Neo4j and asks for a full run. Tables being
+re-read may be missing or incompatible; the merged result is validated before writing.
 
 `_execute_retrying()` is the shared retry loop for `ServiceUnavailable`,
 `SessionExpired`, `TransientError` and `OSError`: up to `CYPHER_RETRIES = 5`
-attempts with a growing pause. Two thin wrappers sit on top of it:
+attempts with a growing pause.
 
-- `cypher()` returns rows as positional tuples, for tables whose shape is
-  stable (`publications`, `repositories`, ...);
-- `cypher_dict()` returns rows as dicts keyed by Cypher column names. It is
-  used only for `persons`, the one table that keeps gaining fields, so a new
-  column does not require changing positional unpacking in callers.
+`cypher_dict()` returns rows as dicts keyed by Cypher column names for every
+table. `load_db()` validates the returned rows against `SNAPSHOT_COLUMNS` in
+`snapshot_schema.py`, including partial exports. A query change that drops a
+required column fails during export. A unit test also compares the actual query
+aliases with the contract, including queries returning no rows.
 
 `load_db(driver, tables=None)` returns a flat dict of fourteen tables:
 `persons`, `publications`, `repositories`, `departments`, `organizations`,
@@ -61,7 +63,21 @@ own query with `OPTIONAL MATCH`.
 
 `write_snapshot` (atomic) and `read_snapshot` write and read the flat
 `load_db()` dict as JSON; `read_snapshot` raises `ValueError` if the top level
-of the file is not an object. Snapshots are named
+of the file is not an object. Both functions validate all fourteen tables using
+`SNAPSHOT_COLUMNS`: tables must be lists, every row must be an object containing
+all exported columns. Empty tables, null property values, extra columns and extra
+tables are allowed. Missing columns are not filled with defaults: a missing
+`forks_num`, for example, indicates an incompatible export, not a zero fork count.
+Errors identify the table, the row (one-based), missing columns and the rebuild
+command `pauk cache export`. The flat JSON format has no version wrapper or
+stored manifest; compatibility is checked against the actual rows. Empty tables
+contain no rows to validate. Updating the export columns requires updating the
+shared contract and its tests.
+
+`GraphDataBuilder.build()` repeats validation before assignment or layout, so
+callers passing a dict directly receive the same early error. Validation checks
+structure and column presence, not property value types or graph referential
+integrity. An invalid write leaves the existing snapshot untouched. Snapshots are named
 `graph_snapshot_<dd-mm-yyyy>.json` (`dated_snapshot_path`), and
 `latest_snapshot` picks the newest by the date in the name. That is the
 default for `pauk cache inspect` and `pauk gui build`; `gui build` logs the

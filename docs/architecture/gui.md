@@ -38,6 +38,20 @@ files. `scripts/publish_pages.sh` validates and uploads the public data for
 GitHub Pages. The layout stages are `authorship.py`, `departments.py`,
 `layout.py`, `nodes.py` and `edges.py`.
 
+**Loading and filters.** Detail files load independently through `core/details.ts`.
+A failed request leaves summary data available and shows an error with Retry,
+both globally and in the affected card. Successful loads update publication
+labels and an already-open search without resetting its query. Sidebar lists
+use the same node visibility predicate as the map. Global search covers all
+entities; selecting a hidden node enables only the filters needed to reveal it
+and announces the changed filters. Explicitly hiding a selected node still clears
+the selection.
+
+**Narrow screens.** At widths up to 900 CSS pixels, the list/filter panel and
+information card overlay a full-width map. The bottom buttons toggle each panel;
+a selected result opens its card. The backdrop, close button and Escape dismiss
+the panel. The map retains positive dimensions even while a panel is open.
+
 **External authors.** The export takes every `Person` (with `is_itmo`) and
 every `AUTHORED`. A publication reaches the map if it has at least one ITMO
 author, along with all its authors. External coauthors follow the same
@@ -53,7 +67,8 @@ authors only. An external author with no ITMO publication is left out of the
 graph. For a collaboration paper with more than `hyperauthor_pub_size`
 authors (`config.py`), coauthor edges are built only from ITMO authors
 rather than every pair, which would otherwise produce millions of pairs. A
-snapshot without `is_itmo` is read as "everyone is ITMO".
+snapshot row without `is_itmo` is rejected as incompatible before layout;
+rebuild older snapshots with `pauk cache export`.
 
 **Department assignment (`departments.py`):**
 - a publication gets the majority vote of its authors (only ITMO authors
