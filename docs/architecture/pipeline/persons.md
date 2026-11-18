@@ -3,17 +3,27 @@
 **What this covers:** how a person is enriched from the author's own records,
 and the separate Crossref pass over publications in the same stage.
 
-**Files involved:** `pauk/pipeline/stages/persons.py`.
+**Files involved:** `pauk/pipeline/stages/persons.py`, `pauk/sources/openalex.py`,
+`pauk/sources/orcid.py`.
 
 Enriches `Person` from the author's own records: the OpenAlex author API and
 ORCID. The same stage also contains a separate Crossref pass, unrelated in
 code: a backfill of coauthors' ORCIDs by the publication's DOI.
 
-## Main pass: one author at a time
+## Author requests
+
+After Crossref, OpenAlex runs before ORCID so it can supply missing ORCID IDs.
+Requests use a sliding window of `PAUK_PERSONS_CONCURRENCY` workers (default
+`8`), each with its own session and a shared host limiter. The main thread
+applies and saves responses.
+
+OpenAlex batches up to 100 IDs and resolves merged IDs. Missing or ambiguous
+records and batches rejected with HTTP 400 get individual lookups. Duplicate
+IDs share one response and one raw entry per source.
 
 For each `Person` that needs attention (`needs_attempt`):
 
-1. With an `openalex_id`, `GET /authors/{id}`: updates `name_raw`, collects name
+1. With an `openalex_id`, the author response updates `name_raw`, collects name
    variants (`name_variants`), the ORCID (if not yet known) and the author's
    affiliations from their own record (`affiliations` plus
    `last_known_institutions`; the latter has no years and is a fallback for a
@@ -63,6 +73,10 @@ saved to Mongo immediately, so an interruption does not force finished
 responses to be fetched again. The state has a `request_key` (OpenAlex id, ORCID
 or DOI): a completed request for an old identifier does not block a request
 once the identifier has been refined.
+
+Cancellation interrupts queued requests and retry waits. In-flight requests
+can take until their socket timeout. Cancelled requests stay eligible for the
+next run. ORCID authorization is checked before starting record requests.
 
 ## Crossref pass: per publication, not per author
 

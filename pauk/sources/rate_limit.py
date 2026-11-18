@@ -7,12 +7,14 @@ import math
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 LONG_WAIT_SECONDS = 10.0
+POLL_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,7 @@ class HostRateLimiter:
         return state
 
     @contextmanager
-    def slot(self, host: str, limit: RateLimit | None) -> Iterator[None]:
+    def slot(self, host: str, limit: RateLimit | None, *, cancel: threading.Event | None = None) -> Iterator[None]:
         """Hold a host's concurrency slot until the request has finished."""
         if limit is None:
             yield
@@ -85,6 +87,8 @@ class HostRateLimiter:
         state = self._state(host, limit)
         with state.condition:
             while True:
+                if cancel is not None and cancel.is_set():
+                    raise CancelledError
                 now = self._clock()
                 ready_at = max(state.next_at, state.paused_until)
                 capacity = state.limit.max_concurrent
@@ -94,7 +98,10 @@ class HostRateLimiter:
                     state.next_at = now + 1 / state.limit.requests_per_second
                     break
                 delay = ready_at - now
-                state.condition.wait(timeout=min(delay, threading.TIMEOUT_MAX) if delay > 0 else None)
+                timeout = min(delay, threading.TIMEOUT_MAX) if delay > 0 else None
+                if cancel is not None:
+                    timeout = min(timeout, POLL_SECONDS) if timeout is not None else POLL_SECONDS
+                state.condition.wait(timeout=timeout)
         try:
             yield
         finally:
