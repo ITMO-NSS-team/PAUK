@@ -30,6 +30,8 @@ from pauk.graph.mutations import (
     merge_nodes,
     read_node,
     read_relationship,
+    restore_node,
+    snapshot_fields,
     snapshot_relationships,
     update_node,
 )
@@ -442,14 +444,13 @@ def _delete(args, client, db, actor: str) -> None:
     """Remove a node, and tombstone it so publishing does not bring it back."""
     # Snapshot first: afterwards there is nothing left to read.
     snapshot = read_node(client, args.label, args.id)
-    kept = {name: value for name, value in snapshot.items()
-            if name in NODE_FIELDS[args.label] and value is not None}
+    kept = snapshot_fields(args.label, snapshot)
     relationships = (snapshot_relationships(client, args.label, args.id, snapshot)
                      if args.cascade and db is not None and not args.once else [])
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
         def undo():
-            create_node(client, args.label, args.id, kept, from_snapshot=True)
+            restore_node(client, args.label, args.id, kept)
             for relationship in relationships:
                 create_relationship(client, **relationship)
 

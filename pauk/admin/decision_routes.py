@@ -17,17 +17,17 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import (
-    NODE_FIELDS,
     MutationError,
     NotFound,
     VersionConflict,
-    create_node,
     create_relationship,
     delete_node,
     delete_relationship,
     normalize_fields,
     read_node,
     read_relationship,
+    restore_node,
+    snapshot_fields,
     update_node,
     validate_label,
     validate_relationship,
@@ -144,9 +144,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                 try:
                     read_node(graph, label, node_id)
                 except NotFound:
-                    create_node(graph, label, node_id,
-                                {name: value for name, value in snapshot.items() if name in NODE_FIELDS[label]},
-                                from_snapshot=True)
+                    restore_node(graph, label, node_id, snapshot_fields(label, snapshot))
                     def compensate():
                         delete_node(graph, label, node_id)
                     restored = "node"

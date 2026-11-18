@@ -437,7 +437,9 @@ class PublicationMembershipFoldTest(unittest.TestCase):
             payload.update(doi="https://doi.org/10.1234/one-publication", title="One publication")
             self.normalize(payload)
         mapping = DedupStage(self.prepared, self.raw, self.config)._dedup_publications()
-        self.assertEqual(mapping, {"W2": "W1"})
+        # Source-neutral identity resolution joins the second source record
+        # by DOI before the later dedup stage has anything left to fold.
+        self.assertEqual(mapping, {})
         return next(self.prepared.read_models("persons", Person))
 
     def test_publication_fold_has_one_authorship_but_keeps_both_original_sources(self):
@@ -469,7 +471,7 @@ class PublicationMembershipFoldTest(unittest.TestCase):
             payload.update(doi="https://doi.org/10.1234/one-publication", title="One publication")
             self.normalize(payload)
             works.append(payload)
-        self.assertEqual(DedupStage(self.prepared, self.raw, self.config)._dedup_publications(), {"W2": "W1"})
+        self.assertEqual(DedupStage(self.prepared, self.raw, self.config)._dedup_publications(), {})
         person = next(p for p in self.prepared.read_models("persons", Person) if p.id == "A1")
         self.assertEqual({(e.source_id, e.position) for e in person.membership_evidence},
                          {("W1", 1), ("W2", 2)})

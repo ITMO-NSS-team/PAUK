@@ -176,7 +176,19 @@ def _fold_sources(prepared, raw, config, publications, people, aliases):
                 person_id=person.id, name=person.name_raw, position=authored.position,
             ))
     for alias, survivor in aliases.items():
-        main, extra = publications[survivor], publications[alias]
+        main = publications[survivor]
+        extra = publications.get(alias)
+        if extra is None:
+            # Source-neutral normalization can already have attached a
+            # same-DOI OpenAlex record to the survivor. The repair still
+            # carries the historical alias so old references remain valid.
+            if not any(
+                record.source == "openalex" and record.source_id == alias
+                for record in main.source_records
+            ):
+                raise CannotRebuild(f"missing normalized source for {alias}")
+            main.merged_ids = list(dict.fromkeys([*main.merged_ids, alias]))
+            continue
         if not main.versions:
             main.versions = [_version_of(main, authors[survivor])]
         _merge_publication(main, extra, authors[alias])
@@ -389,14 +401,24 @@ def repair_pdf_writes(db, scratch, config, staging_dir, work_ids):
     staged = PdfStore(scratch, replace(config, data_dir=staging_dir).pdf_dir)
     live = PdfStore(db, config.pdf_dir)
     cached_ids = set(scratch.pdfs.distinct("_id"))
+    staged_by_work = {
+        work_id: next(
+            (key for key in (f"openalex:{work_id}", work_id) if key in cached_ids),
+            None,
+        )
+        for work_id in work_ids
+    }
     for work_id in work_ids:
-        if work_id in cached_ids and not staged.exists(work_id):
+        staged_key = staged_by_work[work_id]
+        if staged_key is not None and not staged.exists(staged_key):
             raise CannotRebuild(f"{work_id}: staged PDF is missing from {staging_dir}")
-        if work_id not in cached_ids and live.exists(work_id):
+        if staged_key is None and live.exists(work_id):
             raise CannotRebuild(f"{work_id}: a PDF entered the live cache after staging")
     writes = {}
-    for work_id in sorted(cached_ids):
-        data = staged.read(work_id)
+    for work_id, staged_key in sorted(staged_by_work.items()):
+        if staged_key is None:
+            continue
+        data = staged.read(staged_key)
         if not live.exists(work_id) or live.read(work_id) != data or not db.pdfs.find_one(work_id):
             writes[work_id] = data
     return writes

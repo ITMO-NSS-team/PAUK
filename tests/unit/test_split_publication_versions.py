@@ -179,7 +179,9 @@ class ApplyTest(unittest.TestCase):
                 self.assertEqual(self.report["progress"]["W2"]["status"], "prepared")
                 self.report = json.loads(self.report_path.read_text())
             self.assertEqual(split._repair(self.mongo, self.db, self.graph, self.report, self.report_path), 0)
-            self.assertEqual(http.return_value.get_bytes.call_count, 3)
+            # W2 and W9 are same-DOI source records of one aggregate, so the
+            # source-neutral code-link stage does not redownload W9's PDF.
+            self.assertEqual(http.return_value.get_bytes.call_count, 2)
         self.assertEqual(self.report["progress"]["W2"]["status"], "done")
         self.assertEqual(cache.read("W2"), pdfs["https://example.org/W2.pdf"])
 
@@ -201,7 +203,7 @@ class ApplyTest(unittest.TestCase):
         self.assertIn(("Publication", "IS_VERSION", "Publication", "W1", "W3"), self.graph.edges)
         self.assertNotIn(("Publication", "IS_VERSION", "Publication", "W2", "W3"), self.graph.edges)
         article_mention = self.graph.edges["Publication", "MENTIONS_LINK", "Repository", "W2", self.article]
-        self.assertEqual(article_mention["pdf_id"], ["W2"])
+        self.assertEqual(article_mention["pdf_id"], ["openalex:W2"])
         self.assertEqual(self.graph.fetch_canonical_id("Publication", "W9"), "W2")
         self.assertIsNone(self.graph.fetch_canonical_id("Publication", "W1"))
 

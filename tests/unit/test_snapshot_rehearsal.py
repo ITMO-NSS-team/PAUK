@@ -1,4 +1,4 @@
-"""The snapshot and the stand that loads it must name the same collections.
+"""The snapshot and the stand agree through a manifest or legacy fallback.
 
 Two lists in two languages can diverge unnoticed. A rehearsal that comes
 up a collection short creates every author it meets fresh instead of
@@ -18,6 +18,15 @@ sys.modules[_spec.name] = snapshot_mongo
 _spec.loader.exec_module(snapshot_mongo)
 
 REHEARSAL_UP = (SCRIPTS / "rehearsal_up.sh").read_text(encoding="utf-8")
+LEGACY_COLLECTIONS = {
+    "publications",
+    "persons",
+    "departments",
+    "organizations",
+    "repositories",
+    "repo_links",
+    "github_profiles",
+}
 
 
 def fallback_collections() -> list[str]:
@@ -28,8 +37,8 @@ def fallback_collections() -> list[str]:
 
 
 class CollectionListsAgreeTest(unittest.TestCase):
-    def test_the_stand_fallback_names_what_the_snapshot_writes(self):
-        self.assertEqual(sorted(fallback_collections()), sorted(snapshot_mongo.DEFAULT))
+    def test_the_stand_fallback_matches_manifestless_legacy_snapshots(self):
+        self.assertEqual(set(fallback_collections()), LEGACY_COLLECTIONS)
 
     def test_the_snapshot_covers_the_collections_the_pipeline_merges_into(self):
         # Publications, departments and organizations are read-only to the
