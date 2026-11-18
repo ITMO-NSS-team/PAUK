@@ -72,6 +72,12 @@ class MockOpenAlexClient:
             raise _http_404(f"https://api.openalex.org/authors/{normalized}")
         return payload
 
+    def get_authors(self, author_ids) -> dict:
+        return {identifier: self.get_author(identifier) for identifier in author_ids if self.authors_api.get(identifier)}
+
+    def close(self) -> None:
+        pass
+
 
 class MockGitHubClient:
     def __init__(self, universe: dict) -> None:
@@ -124,6 +130,12 @@ class MockOrcidClient:
         if orcid not in self.records:
             raise _http_404(f"https://pub.orcid.org/v3.0/{orcid}/record")
         return self.records[orcid]
+
+    def authorize(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 class MockOpenRouterClient:
