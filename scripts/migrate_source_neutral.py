@@ -20,7 +20,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=500)
     parser.add_argument(
         "--mongo-only", action="store_true",
-        help="apply only Mongo backfill; skip Neo4j republish/dedup and derived artifacts",
+        help="apply only Mongo backfill; skip Neo4j republish and derived artifacts",
     )
     args = parser.parse_args()
     client = get_mongo_client(settings)
@@ -63,7 +63,6 @@ def main() -> None:
         result = migration.apply() if args.apply else migration.plan()
         if args.apply and not args.mongo_only:
             from pauk.cache import GraphSnapshotExporter
-            from pauk.graph.dedup import run_graph_dedup
             from pauk.graph.load import load_jsonl_group
             from pauk.gui.graph_builder.builder import write_site_data
             from pauk.storage import PreparedStore
@@ -72,11 +71,6 @@ def main() -> None:
             for group in PreparedStore.known_groups(client[settings.mongo_db]):
                 published[group] = load_jsonl_group(settings, client[settings.mongo_db], group)
             result["neo4j_publish"] = published
-            result["neo4j_dedup"] = run_graph_dedup(
-                settings,
-                client[settings.mongo_db],
-                resolution_cache_only=True,
-            )
             snapshot = GraphSnapshotExporter(settings).export()
             write_site_data(snapshot, settings.gui_dir, seed=42)
             result["snapshot"] = str(snapshot)

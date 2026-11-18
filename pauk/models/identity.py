@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Any
 
@@ -12,6 +13,25 @@ DOI_PREFIXES = (
     "http://dx.doi.org/",
     "doi:",
 )
+
+ORCID_ID_PATTERN = r"[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9X]"
+
+
+def verified_orcid(value: str | None) -> str | None:
+    """Normalize a bare/orcid.org ORCID, rejecting lookalike foreign URLs."""
+    normalized = normalize_orcid_reference(value)
+    return normalized if re.fullmatch(ORCID_ID_PATTERN, normalized) else None
+
+
+def normalize_orcid_reference(value: str | None) -> str:
+    """Normalize a real ORCID reference while preserving untrusted evidence."""
+    cleaned = (value or "").strip()
+    match = re.fullmatch(
+        rf"(?:https?://orcid\.org/)?({ORCID_ID_PATTERN})/?",
+        cleaned,
+        re.IGNORECASE,
+    )
+    return match[1].upper() if match else cleaned
 
 
 def normalize_external_value(scheme: str, value: str) -> str:

@@ -9,10 +9,12 @@ from pauk.graph.extract import JSON_TEXT_FIELDS
 from pauk.ingest.aggregate import build_publication
 from pauk.ingest.identity import IdentityStore
 from pauk.models import ExternalIdentifier, Person, Publication, PublicationSourceRecord
+from pauk.models.identity import verified_orcid
 from pauk.models.relations import Authorship
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages.dedup import _merge_publication, merge_rank
 from pauk.storage.identity_refs import repoint_person_references
+from pauk.storage.person_identity import trusted_openalex_orcids
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 
 
@@ -46,6 +48,7 @@ class SourceNeutralMigration:
         self.pdf_dir = pdf_dir
         self.batch_size = batch_size
         self.identities = IdentityStore(db)
+        self.trusted_person_orcids = trusted_openalex_orcids(db)
         self.person_aliases = dict(person_aliases or {})
         self.person_alias_counts = Counter(self.person_aliases.values())
         self.graph_publications = list(graph_publications or [])
@@ -171,9 +174,12 @@ class SourceNeutralMigration:
         if not inferred_openalex and person.id.startswith("A"):
             inferred_openalex = person.id
         known = {identifier.normalized_key for identifier in person.identifiers}
+        trusted_orcid = self.trusted_person_orcids.get(inferred_openalex or "")
+        if person.id.startswith("orcid_"):
+            trusted_orcid = verified_orcid(person.id.removeprefix("orcid_"))
         external_ids = [
             ("openalex", inferred_openalex),
-            ("orcid", person.orcid),
+            ("orcid", trusted_orcid),
             *(
                 ("openalex", merged_id)
                 for merged_id in person.merged_ids
@@ -189,6 +195,16 @@ class SourceNeutralMigration:
                 known.add(identifier.normalized_key)
         person.schema_version = 2
         return person
+
+    def _person_identifier_conflicts(self, members: list[dict]) -> dict[str, list[str]]:
+        """Return stable identity schemes carrying incompatible values."""
+        orcids = {
+            identifier.value
+            for row in members
+            for identifier in self._person_model(row).identifiers
+            if identifier.scheme == "orcid"
+        }
+        return {"orcid": sorted(orcids)} if len(orcids) > 1 else {}
 
     def _resolved_person_aliases(
         self,
@@ -480,8 +496,16 @@ class SourceNeutralMigration:
         person_component_owner: dict[str, str] = {}
         removed_person_ids: set[str] = set()
         for members in person_components:
-            canonical, conflicts = self._person_canonical(members)
             member_ids = sorted(row.get("id") or row.get("_id") for row in members)
+            identifier_conflicts = self._person_identifier_conflicts(members)
+            if identifier_conflicts:
+                person_component_plan.append({"members": member_ids, "canonical": None})
+                person_identity_conflicts.append({
+                    "members": member_ids,
+                    "conflicting_identifiers": identifier_conflicts,
+                })
+                continue
+            canonical, conflicts = self._person_canonical(members)
             person_component_plan.append({"members": member_ids, "canonical": canonical})
             if conflicts:
                 person_identity_conflicts.append({
@@ -539,10 +563,7 @@ class SourceNeutralMigration:
                     })
             for author in row.get("authors") or []:
                 person_id = author.get("person_id")
-                canonical = resolved_person_aliases.get(
-                    person_id,
-                    self.person_aliases.get(person_id, person_id),
-                )
+                canonical = resolved_person_aliases.get(person_id, person_id)
                 if canonical not in surviving_person_ids | graph_person_ids:
                     graph_legacy_unresolved_authors.append({
                         "publication": publication.id,
@@ -556,10 +577,7 @@ class SourceNeutralMigration:
                     person_id = author.get("person_id")
                     if not person_id:
                         continue
-                    canonical = resolved_person_aliases.get(
-                        person_id,
-                        self.person_aliases.get(person_id, person_id),
-                    )
+                    canonical = resolved_person_aliases.get(person_id, person_id)
                     if canonical in surviving_person_ids | graph_person_ids:
                         if canonical == person_id:
                             continue
@@ -839,6 +857,11 @@ class SourceNeutralMigration:
     def _merge_person_identity_duplicates(self) -> int:
         merged = 0
         for members in self._person_identity_groups(self._person_rows()):
+            identifier_conflicts = self._person_identifier_conflicts(members)
+            if identifier_conflicts:
+                raise MigrationBlocked(
+                    f"person identity component has conflicting identifiers: {identifier_conflicts}"
+                )
             canonical_id, conflicts = self._person_canonical(members)
             if conflicts or canonical_id is None:
                 raise MigrationBlocked("person identity component has multiple assigned owners")

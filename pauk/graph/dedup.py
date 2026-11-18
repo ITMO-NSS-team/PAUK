@@ -14,7 +14,7 @@ from datetime import date
 from pymongo.database import Database
 
 from pauk.aliases import MergeAliasConflict
-from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy, _normalize_orcid
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
@@ -38,6 +38,7 @@ from pauk.pipeline.stages.dedup import (
 from pauk.settings import Settings
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.person_identity import openalex_orcid_references
 from pauk.urls import normalize_repo_url
 
 from .alias_review import record_alias_conflict, retire_alias_conflicts
@@ -158,14 +159,7 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
     The latest record for each author wins. Graph ORCIDs may originate from an
     ambiguous Crossref surname match and are not authoritative here.
     """
-    orcids: dict[str, str | None] = {}
-    cursor = mongo_db.raw.find({"source": "openalex_authors"}).sort("fetched_at", 1)
-    for envelope in cursor:
-        payload = envelope.get("payload") or {}
-        author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
-        if author_id:
-            orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
-    return orcids
+    return openalex_orcid_references(mongo_db)
 
 
 def dedup_graph_persons(

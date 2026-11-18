@@ -6,13 +6,19 @@ stored in MongoDB. `data/static/` stays file-based: it is a versioned
 reference catalog, not intermediate pipeline data.
 
 **Files:** `pauk/storage/raw.py`, `prepared.py`, `mongo.py`, `review.py`,
-`atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`,
+`atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`, `person_identity.py`,
 `person_merge_sources.py`, `identity_refs.py`.
 
 `identity_keys` is global rather than group-scoped. Its `_id` is
 `<entity>:<scheme>:<normalized-value>` and `entity_id` is the immutable
 canonical owner. Exact source ids, DOI and ORCID resolve through it before a
 prepared row is built.
+
+Legacy `Person.orcid` is not automatically an identity key: the persons stage
+may have inferred it from a Crossref surname match. Migration and legacy
+compatibility lookup trust an ORCID only when the latest raw OpenAlex author
+record confirms it (or when a source-neutral `identifiers` entry already owns
+its provenance).
 
 PDF bytes live on disk (`Settings.pdf_dir`); Mongo holds only a pointer (the
 `pdfs` collection). `pauk/pipeline/stages/code_links.py` reads and writes

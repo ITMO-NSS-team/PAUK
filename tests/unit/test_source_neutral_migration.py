@@ -6,11 +6,24 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.migrations.source_neutral import MigrationBlocked, SourceNeutralMigration
+from pauk.storage import RawStore
 
 
 class SourceNeutralMigrationTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient().db
+
+    def trust_orcid(self, *person_ids, value="0000-0001-0000-0001"):
+        raw = RawStore(self.db, "migration-test")
+        for person_id in person_ids:
+            raw.append(
+                "openalex_authors",
+                {
+                    "id": f"https://openalex.org/{person_id}",
+                    "orcid": f"https://orcid.org/{value}",
+                },
+                {},
+            )
 
     def test_apply_backfills_and_is_idempotent(self):
         self.db.publications.insert_one({
@@ -300,6 +313,7 @@ class SourceNeutralMigrationTest(unittest.TestCase):
             SourceNeutralMigration(self.db).apply()
 
     def test_duplicate_person_identity_is_merged_and_references_are_repointed(self):
+        self.trust_orcid("A1", "A2")
         self.db.publications.insert_one({
             "_id": "W1", "id": "W1", "title": "Paper", "groups": ["g"],
             "source_records": [{
@@ -409,6 +423,7 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         self.assertEqual(set(person["groups"]), {"mongo", "graph"})
 
     def test_active_override_on_removed_person_duplicate_blocks_apply(self):
+        self.trust_orcid("A1", "A2")
         self.db.persons.insert_many([
             {
                 "_id": "A1", "id": "A1", "is_itmo": False,
@@ -430,6 +445,7 @@ class SourceNeutralMigrationTest(unittest.TestCase):
             SourceNeutralMigration(self.db).apply()
 
     def test_historical_graph_canonical_expands_exact_identity_component(self):
+        self.trust_orcid("A1", "A2")
         self.db.persons.insert_many([
             {
                 "_id": "A0", "id": "A0", "is_itmo": True,
@@ -466,6 +482,7 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         )
 
     def test_graph_alias_into_exact_identity_component_is_preserved(self):
+        self.trust_orcid("A0", "A1")
         self.db.persons.insert_many([
             {
                 "_id": "A0", "id": "A0", "is_itmo": True,
@@ -496,6 +513,7 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         self.assertEqual(set(person["groups"]), {"exact", "graph"})
 
     def test_competing_historical_graph_canonicals_fold_deterministically(self):
+        self.trust_orcid("A1", "A2")
         self.db.persons.insert_many([
             {"_id": "R1", "id": "R1", "is_itmo": False},
             {"_id": "R2", "id": "R2", "is_itmo": False},
@@ -521,6 +539,64 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         self.assertEqual(person["id"], "R1")
         self.assertEqual(set(person["merged_ids"]), {"A1", "A2", "R2"})
 
+    def test_enriched_orcid_without_source_evidence_is_not_an_identity_key(self):
+        self.db.persons.insert_many([
+            {
+                "_id": person_id,
+                "id": person_id,
+                "is_itmo": False,
+                "orcid": "0000-0001-0000-0001",
+                "groups": ["g"],
+            }
+            for person_id in ("A1", "A2")
+        ])
+
+        migration = SourceNeutralMigration(self.db)
+
+        self.assertEqual(migration.plan()["person_identity_components"], [])
+        migration.apply()
+        self.assertEqual(self.db.persons.count_documents({}), 2)
+        self.assertIsNone(
+            self.db.identity_keys.find_one(
+                {"_id": "person:orcid:0000-0001-0000-0001"}
+            )
+        )
+
+    def test_conflicting_trusted_orcids_in_graph_alias_chain_block_apply(self):
+        self.trust_orcid("A1", "A2", value="0000-0001-0000-0001")
+        self.trust_orcid("A0", value="0000-0002-0000-0002")
+        self.db.persons.insert_many([
+            {
+                "_id": "A0", "id": "A0", "is_itmo": False,
+                "orcid": "0000-0002-0000-0002", "groups": ["old"],
+            },
+            {
+                "_id": "A1", "id": "A1", "is_itmo": False,
+                "orcid": "0000-0001-0000-0001", "groups": ["new"],
+            },
+            {
+                "_id": "A2", "id": "A2", "is_itmo": False,
+                "orcid": "0000-0001-0000-0001", "groups": ["new"],
+            },
+        ])
+        migration = SourceNeutralMigration(
+            self.db,
+            person_aliases={"A2": "A0"},
+        )
+
+        plan = migration.plan()
+
+        self.assertEqual(plan["person_identity_components"], [{
+            "members": ["A0", "A1", "A2"], "canonical": None,
+        }])
+        self.assertEqual(
+            plan["person_identity_conflicts"][0]["conflicting_identifiers"],
+            {"orcid": ["0000-0001-0000-0001", "0000-0002-0000-0002"]},
+        )
+        with self.assertRaisesRegex(MigrationBlocked, "person identity"):
+            migration.apply()
+        self.assertEqual(self.db.persons.count_documents({}), 3)
+
     def test_historical_graph_alias_repoints_source_author_without_person_row(self):
         self.db.persons.insert_one({
             "_id": "A0", "id": "A0", "is_itmo": True, "groups": ["g"],
@@ -545,6 +621,32 @@ class SourceNeutralMigrationTest(unittest.TestCase):
         self.assertEqual(result["repoint_graph_person_aliases"], 1)
         publication = self.db.publications.find_one({})
         self.assertEqual(publication["source_records"][0]["authors"][0]["person_id"], "A0")
+
+    def test_graph_alias_does_not_merge_two_surviving_people(self):
+        self.db.persons.insert_many([
+            {"_id": "A0", "id": "A0", "is_itmo": True, "groups": ["g"]},
+            {"_id": "A1", "id": "A1", "is_itmo": True, "groups": ["g"]},
+        ])
+        self.db.publications.insert_one({
+            "_id": "W1", "id": "W1", "title": "Paper", "groups": ["g"],
+            "source_records": [{
+                "key": "openalex:W1", "source": "openalex", "source_id": "W1",
+                "authors": [{"person_id": "A1", "name": "Ada", "position": 1}],
+            }],
+        })
+        migration = SourceNeutralMigration(
+            self.db,
+            person_aliases={"A1": "A0"},
+        )
+
+        plan = migration.plan()
+        result = migration.apply()
+
+        self.assertEqual(plan["resolvable_source_author_aliases"], 0)
+        self.assertEqual(result["repoint_graph_person_aliases"], 0)
+        self.assertEqual(self.db.persons.count_documents({}), 2)
+        publication = self.db.publications.find_one({})
+        self.assertEqual(publication["source_records"][0]["authors"][0]["person_id"], "A1")
 
     def test_graph_alias_follows_merged_person_to_final_survivor(self):
         self.db.persons.insert_one({

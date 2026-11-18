@@ -497,6 +497,58 @@ class SourceNeutralIngestTest(unittest.TestCase):
         self.normalize()
         self.assertEqual(self.db.persons.count_documents({}), 1)
 
+    def test_schema_v2_display_orcid_without_identifier_is_not_reused(self):
+        self.prepared.write_models("persons", [Person(
+            id="per_weak",
+            schema_version=2,
+            is_itmo=False,
+            name_raw="Weak legacy match",
+            orcid="0000-0001-2345-6789",
+        )])
+        resolver = IdentityResolver(self.db)
+
+        owner = resolver.person_id(
+            IncomingAuthor(
+                name="Source author",
+                orcid="0000-0001-2345-6789",
+                position=1,
+            ),
+            "catalog",
+            "catalog:P1",
+        )
+
+        self.assertNotEqual(owner, "per_weak")
+
+    def test_raw_openalex_orcid_reuses_unmigrated_legacy_person(self):
+        self.prepared.write_models("persons", [Person(
+            id="A1",
+            openalex_id="A1",
+            is_itmo=False,
+            name_raw="Trusted legacy author",
+            orcid="0000-0001-2345-6789",
+        )])
+        RawStore(self.db, "legacy").append(
+            "openalex_authors",
+            {
+                "id": "https://openalex.org/A1",
+                "orcid": "https://orcid.org/0000-0001-2345-6789",
+            },
+            {},
+        )
+        resolver = IdentityResolver(self.db)
+
+        owner = resolver.person_id(
+            IncomingAuthor(
+                name="Source author",
+                orcid="0000-0001-2345-6789",
+                position=1,
+            ),
+            "catalog",
+            "catalog:P1",
+        )
+
+        self.assertEqual(owner, "A1")
+
     def test_equal_source_author_id_reuses_person_and_is_persisted(self):
         author = {"name": "Same Name", "source_author_id": "author-42"}
         self.append("catalog", "P1", title="One", authors=[author])

@@ -7,6 +7,7 @@ from pymongo.errors import DuplicateKeyError
 
 from pauk.models import ExternalIdentifier, Person, Publication
 from pauk.models.identity import normalize_external_value
+from pauk.storage.person_identity import trusted_openalex_orcids
 
 from .contracts import IncomingAuthor, IncomingPublication
 
@@ -77,6 +78,7 @@ class IdentityResolver:
         self.db = db
         self.keys = IdentityStore(db)
         self._legacy_publications_by_doi: dict[str, list[dict]] | None = None
+        self._trusted_legacy_orcids: dict[str, str | None] | None = None
 
     @staticmethod
     def _new_id(prefix: str) -> str:
@@ -201,13 +203,52 @@ class IdentityResolver:
         return entity_id
 
     def _person_by_identifier(self, identifier: ExternalIdentifier) -> str | None:
-        query = {"identifiers.normalized_key": identifier.normalized_key}
+        row = self.db.persons.find_one(
+            {"identifiers.normalized_key": identifier.normalized_key},
+            {"id": 1},
+        )
+        if row:
+            return row.get("id")
         if identifier.scheme == "openalex":
-            query = {"$or": [query, {"openalex_id": identifier.value}, {"id": identifier.value}]}
-        elif identifier.scheme == "orcid":
-            query = {"$or": [query, {"orcid": identifier.value}]}
-        row = self.db.persons.find_one(query, {"id": 1})
-        return row.get("id") if row else None
+            row = self.db.persons.find_one(
+                {"$or": [{"openalex_id": identifier.value}, {"id": identifier.value}]},
+                {"id": 1},
+            )
+            return row.get("id") if row else None
+        if identifier.scheme != "orcid":
+            return None
+        fallback = self.db.persons.find_one(
+            {"id": f"orcid_{identifier.value}"},
+            {"id": 1},
+        )
+        if fallback:
+            return fallback.get("id")
+        if self._trusted_legacy_orcids is None:
+            self._trusted_legacy_orcids = trusted_openalex_orcids(self.db)
+        author_ids = sorted(
+            author_id
+            for author_id, orcid in self._trusted_legacy_orcids.items()
+            if orcid == identifier.value
+        )
+        if not author_ids:
+            return None
+        legacy = self.db.persons.find_one(
+            {
+                "$and": [
+                    {"$or": [
+                        {"schema_version": {"$exists": False}},
+                        {"schema_version": {"$lt": 2}},
+                    ]},
+                    {"$or": [
+                        {"id": {"$in": author_ids}},
+                        {"openalex_id": {"$in": author_ids}},
+                    ]},
+                ]
+            },
+            {"id": 1},
+            sort=[("id", 1)],
+        )
+        return legacy.get("id") if legacy else None
 
     def person_id(self, incoming: IncomingAuthor, source: str, record_key: str, *,
                   legacy: bool = False) -> str:
