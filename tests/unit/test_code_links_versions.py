@@ -15,7 +15,7 @@ from pauk.models import (
 from pauk.pipeline.stages.code_links import CodeLinksStage
 from pauk.pipeline.stages.dedup import _merge_code_link
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PdfStore, PreparedStore, RawStore
 from tests.unit.test_code_links_pdf import _make_pdf_bytes
 
 
@@ -72,7 +72,8 @@ class CodeLinksVersionsTest(unittest.TestCase):
         with patch("pauk.pipeline.stages.code_links.HttpClient") as http:
             http.return_value.get_bytes.return_value = _make_pdf_bytes("https://github.com/org/recovered")
             CodeLinksStage(self.prepared, RawStore(self.db, "sample"), self.config).run()
-            http.return_value.get_bytes.assert_called_once_with("https://example.org/main.pdf")
+            http.return_value.get_bytes.assert_called_once()
+            self.assertEqual(http.return_value.get_bytes.call_args.args, ("https://example.org/main.pdf",))
         [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
         self.assertEqual(link.url, "https://github.com/org/recovered")
         self.assertEqual(link.occurrences[0].pdf_id, "W1")
@@ -110,11 +111,13 @@ class CodeLinksVersionsTest(unittest.TestCase):
             CodeLinksStage(
                 self.prepared, RawStore(self.db, "sample"), self.config,
             ).run()
-            http.return_value.get_bytes.assert_called_once_with(
-                "https://example.org/preprint.pdf"
-            )
+            http.return_value.get_bytes.assert_called_once()
+            self.assertEqual(http.return_value.get_bytes.call_args.args, ("https://example.org/preprint.pdf",))
         [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
         self.assertEqual(link.occurrences[0].pdf_id, "archive:preprint")
+        store = PdfStore(self.db, self.config.pdf_dir)
+        self.assertTrue(store.exists("archive:preprint"))
+        self.assertFalse(store.exists("pub_1"))
 
     def test_partial_failure_preserves_failed_version_not_replaced_main_evidence(self):
         for missing in (False, True):

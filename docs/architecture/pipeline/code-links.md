@@ -4,7 +4,7 @@
 links: text sources, the regex and its defenses against PDF text-extraction
 artifacts, the cache, and the fallback through an external service.
 
-**Files involved:** `pauk/pipeline/stages/code_links.py`.
+**Files involved:** `pauk/pipeline/stages/code_links.py`, `pauk/sources/pdf.py`.
 
 Looks for mentions of GitHub repositories in the abstract (always), in the full
 PDF text (if a PDF could be obtained), and, for archived Zenodo deposits, in
@@ -48,6 +48,8 @@ GITHUB_URL = re.compile(
 - **The scheme is optional**: it catches a bare `github.com/org/repo` in prose,
   not only `https://...`. The lookbehind `(?<![\w.])` stops a match inside a
   longer host (`mygithub.com` and `sub.github.com` do not match).
+- **A repeated group requires a line break**: making it optional causes
+  exponential backtracking on a long `github.com/owner` without `/repo`.
 - **A hyphenated line break is recognized, but only inside an already started
   match**: `_LINE_WRAP` is built into the pattern's segments rather than applied as
   preprocessing of the whole text. A break is handled only while the regex
@@ -175,6 +177,42 @@ it calls `GET {url}/download?url=<urlencoded doi>`. Service details and
 configuration: [../deploy.md](../deploy.md).
 
 ## Download and cache
+
+Downloads use a sliding window: each finished task frees a slot for
+the next one. Initial publications are interleaved by their primary host.
+Each source URL is queued under its own host; a failed source
+releases that host before an alternative URL or the crawler is queued.
+Sources waiting in the host queue do not occupy network workers.
+Retries and redirects waiting for host admission also release the worker.
+Each download thread has its own session. Downloads and cache writes share
+a worker pool; PDF extraction runs on the coordinating thread.
+`PDF_HOST_RPS` in `pauk/settings.py` sets request rates for specific publishers.
+
+Settings in `pauk/settings.py`:
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `PAUK_CODE_LINKS_CONCURRENCY` | `8` | Parallel download and cache-write tasks |
+| `PAUK_PDF_HOST_CONCURRENCY` | `2` | Concurrent requests per host |
+| `PAUK_PDF_CONNECT_TIMEOUT` | `5` | Connection timeout, seconds |
+| `PAUK_PDF_READ_TIMEOUT` | `15` | Socket read timeout, seconds |
+| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds per attempt, including host admission, headers, redirects and body |
+| `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
+| `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
+
+Read timeout limits silence on the socket, not total download time.
+If a retry or host pause exceeds `PAUK_PDF_MAX_RETRY_WAIT`, that URL fails
+without waiting; the shared host pause remains in force. `0` rejects any
+positive pause. If no source succeeds, the publication stays `FAILED` for a
+later `enrich` run. The crawler has no retries and uses a 180-second read
+timeout and deadline.
+
+Results are saved as they finish. Before replacing links, the stage clears
+completed statuses so a partial write can be retried without `--force`.
+Stopping saves results whose cache writes have started before exiting.
+Cancellation interrupts body reads and retry/host waits. Before headers
+arrive, stopping may take up to the socket timeout; OS DNS lookup has no hard
+deadline. Sessions close after workers finish.
 
 `data/pdf/<sha256(source-record-key)>.pdf` (`PdfStore`, with a
 `{record_key, filename, fetched_at}` pointer in the `pdfs` collection). Legacy

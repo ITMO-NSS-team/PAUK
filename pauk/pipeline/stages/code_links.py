@@ -4,17 +4,26 @@ import logging
 import re
 import unicodedata
 from bisect import bisect_right
-from collections import defaultdict
+from collections import Counter, defaultdict, deque
+from collections.abc import Generator, Iterator
+from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPoolExecutor, wait
+from contextlib import closing, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from heapq import heappop, heappush
+from itertools import count
+from time import monotonic, sleep
 from typing import cast
 from urllib.parse import urlencode, urlparse
 
 import pymupdf as fitz
 
-from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, PublicationSourceRecord, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
-from pauk.sources.base import HttpClient
+from pauk.sources.base import DownloadState, HttpClient
+from pauk.sources.pdf import PdfDownloader
+from pauk.sources.rate_limit import RequestDeferred
 from pauk.storage import PdfStore
 from pauk.urls import normalize_repo_url
 
@@ -68,6 +77,7 @@ _BODY_HEADING = re.compile(r"(?im)^[ \t]*(?:abstract|аннотация)(?=[\s:.
 
 CONTEXT_WINDOW = 500
 CRAWLER_DOWNLOAD_TIMEOUT = 180
+PDF_POLL_SECONDS = 0.05
 
 
 def _normalize_ligatures(text: str) -> str:
@@ -591,6 +601,53 @@ def _archived_repository_url(publication: Publication) -> str | None:
     return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
+@dataclass
+class _PdfResult:
+    pages: list[str]
+    occurrences: list[dict[str, list[LinkOccurrence]]]
+    error: str | None
+    parsed_ids: set[str]
+    failed_ids: set[str]
+
+
+@dataclass(frozen=True)
+class _PdfRequest:
+    publication: Publication
+    url: str
+    options: dict[str, int]
+    state: DownloadState = field(default_factory=DownloadState)
+
+    @property
+    def host(self) -> str:
+        prepared = self.state.prepared
+        return _pdf_host(prepared.url if prepared is not None else self.url)
+
+
+@dataclass(frozen=True)
+class _PdfSave:
+    publication: Publication
+    record_key: str
+    data: bytes
+
+    @property
+    def host(self) -> str:
+        return ""
+
+
+_PdfTask = _PdfRequest | _PdfSave
+_PdfWorkflow = Generator[_PdfTask, bytes | None, _PdfResult]
+
+
+def _pdf_host(url: str) -> str:
+    with suppress(ValueError):
+        return urlparse(url).hostname or ""
+    return ""
+
+
+def _primary_pdf_record(publication: Publication) -> PublicationSourceRecord | None:
+    return next((record for record in publication.source_records if record.pdf_urls or record.doi), None)
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
     progress_label = "Publications: finding code links in abstracts and PDFs"
@@ -600,26 +657,190 @@ class CodeLinksStage(EnrichmentStage):
         links_by_publication = {
             row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
-        self.http = HttpClient(self.config.request_timeout)
+        self.http = PdfDownloader(self.config, client_factory=HttpClient)
         self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
-        self.crawler_available = self._crawler_available()
         candidates = [
             publication
             for publication in publications
             if self.selected("publications", publication.id)
             and self.needs_attempt(publication.processing.get(self.name))
         ]
+        with closing(self._fetch_all(candidates)) as results:
+            return self._apply_results(results, links_by_publication)
+
+    def _perform_pdf_io(self, task: _PdfTask) -> bytes | None:
+        if isinstance(task, _PdfSave):
+            self.pdf_store.save(task.record_key, task.data)
+            return None
+        return self.http.get_bytes(task.url, state=task.state, **task.options)
+
+    def _candidate_order(self, candidates: list[Publication]) -> Iterator[Publication]:
+        """Interleave hosts so one publisher cannot fill the initial worker pool."""
+        groups: dict[str, deque[Publication]] = {}
+        for publication in candidates:
+            record = _primary_pdf_record(publication)
+            record_key = record.key if record else publication.id
+            source = ""
+            if not self.pdf_store.exists(record_key):
+                urls = record.pdf_urls if record else publication.pdf_urls
+                doi = record.doi if record else publication.doi
+                source = next(iter(urls), self.config.pdf_crawler_url if doi else "")
+            groups.setdefault(_pdf_host(source), deque()).append(publication)
+        while groups:
+            for host in list(groups):
+                yield groups[host].popleft()
+                if not groups[host]:
+                    del groups[host]
+
+    def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
+        """Queue individual source URLs and parse completed PDFs on the caller thread."""
+        pool = ThreadPoolExecutor(max_workers=self.config.code_links_concurrency, thread_name_prefix="pauk-pdf")
+        pending: dict[Future[bytes | None], tuple[_PdfWorkflow, _PdfTask, str]] = {}
+        remaining: dict[str, deque[tuple[_PdfWorkflow, _PdfTask]]] = {}
+        deferred: list[tuple[float, int, _PdfWorkflow, _PdfTask]] = []
+        sequence = count()
+        workflows: set[_PdfWorkflow] = set()
+        completed: deque[tuple[Publication, _PdfResult]] = deque()
+        publications = self._candidate_order(candidates)
+        exhausted = False
+        reserved = Counter()
+        done_count = 0
+        reported = 0.0
+        stopped: Exception | KeyboardInterrupt | None = None
+
+        def heartbeat() -> bool:
+            nonlocal reported, stopped
+            if stopped is None and self.on_progress is not None and monotonic() - reported >= self.REPORT_SECONDS:
+                reported = monotonic()
+                try:
+                    self.on_progress(self.progress_label, done_count, len(candidates))
+                except (Exception, KeyboardInterrupt) as error:
+                    stopped = error
+            return stopped is None
+
+        def advance(publication: Publication, workflow: _PdfWorkflow, *, data: bytes | None = None,
+                    error: Exception | None = None) -> None:
+            try:
+                if error is not None:
+                    task = workflow.throw(error)
+                elif data is not None:
+                    task = workflow.send(data)
+                else:
+                    task = next(workflow)
+            except StopIteration as finished:
+                workflows.remove(workflow)
+                completed.append((publication, finished.value))
+            else:
+                remaining.setdefault(task.host, deque()).append((workflow, task))
+
+        def fill_window():
+            nonlocal exhausted
+            while len(pending) < self.config.code_links_concurrency and heartbeat():
+                while deferred and deferred[0][0] <= monotonic():
+                    _, _, workflow, task = heappop(deferred)
+                    remaining.setdefault(task.host, deque()).append((workflow, task))
+                submitted = False
+                # Slow downloads must not strand already parsed PDFs waiting for a cache write.
+                for host in sorted(remaining, key=bool):
+                    if host and reserved[host] >= self.config.pdf_host_concurrency:
+                        continue
+                    workflow, task = remaining[host].popleft()
+                    if not remaining[host]:
+                        del remaining[host]
+                    pending[pool.submit(self._perform_pdf_io, task)] = (workflow, task, host)
+                    reserved[host] += 1
+                    submitted = True
+                    if len(pending) >= self.config.code_links_concurrency:
+                        break
+                if len(pending) >= self.config.code_links_concurrency or completed:
+                    return
+                if submitted:
+                    continue
+                if exhausted:
+                    return
+                try:
+                    publication = next(publications)
+                except StopIteration:
+                    exhausted = True
+                    return
+                workflow = self._pdf_workflow(publication)
+                workflows.add(workflow)
+                advance(publication, workflow)
+
+        try:
+            if not candidates:
+                return
+            with self.progress_bar(total=len(candidates)) as bar:
+                try:
+                    probe = pool.submit(self._crawler_available)
+                    while not probe.done() and heartbeat():
+                        wait((probe,), timeout=PDF_POLL_SECONDS)
+                    if stopped is None:
+                        self.crawler_available = probe.result()
+                    while (pending or remaining or deferred or completed or not exhausted) and heartbeat():
+                        fill_window()
+                        while completed and stopped is None:
+                            yield completed.popleft()
+                            done_count += 1
+                            bar.update()
+                            fill_window()
+                        if stopped is not None:
+                            break
+                        if not pending:
+                            if deferred:
+                                sleep(min(PDF_POLL_SECONDS, max(0., deferred[0][0] - monotonic())))
+                            continue
+                        ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                        for future in ready:
+                            workflow, task, host = pending.pop(future)
+                            reserved[host] -= 1
+                            try:
+                                data = future.result()
+                            except RequestDeferred as retry:
+                                heappush(deferred, (retry.ready_at, next(sequence), workflow, task))
+                            except Exception as error:
+                                advance(task.publication, workflow, error=error)
+                            else:
+                                advance(task.publication, workflow, data=data)
+                    heartbeat()
+                except KeyboardInterrupt as error:
+                    stopped = error
+                if stopped is not None:
+                    self.http.cancel()
+                    for future, (workflow, task, _host) in pending.items():
+                        if isinstance(task, _PdfSave):
+                            # The workflow already parsed these bytes. Finish its cache write before saving evidence.
+                            try:
+                                future.result()
+                            except Exception:
+                                continue
+                            advance(task.publication, workflow)
+                        else:
+                            future.cancel()
+                    while completed:
+                        yield completed.popleft()
+                    raise stopped
+        finally:
+            self.http.cancel()
+            for future in pending:
+                future.cancel()
+            pool.shutdown(wait=True, cancel_futures=True)
+            for workflow in workflows:
+                workflow.close()
+            self.http.close()
+
+    def _apply_results(self, results, links_by_publication: dict[str, RepoLink]) -> dict[str, int]:
         changed = 0
-        for pub in self.progress(candidates, total=len(candidates)):
+        for pub, fetched in results:
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
+            pdf_pages, pdf_page_occurrences, pdf_error = fetched.pages, fetched.occurrences, fetched.error
             previous = links_by_publication.get(pub.id)
             missing_pdf_ids = {
                 occ.pdf_id for link in previous.links for occ in link.occurrences
-                if occ.pdf_id and occ.pdf_id not in self.parsed_pdf_ids
+                if occ.pdf_id and occ.pdf_id not in fetched.parsed_ids
             } if previous else set()
-            self.failed_pdf_ids.update(missing_pdf_ids)
+            fetched.failed_ids.update(missing_pdf_ids)
             if missing_pdf_ids:
                 pdf_error = "; ".join(filter(None, (pdf_error, f"PDF evidence unavailable: {', '.join(sorted(missing_pdf_ids))}")))
             if pdf_pages and (not pdf_error or not pub.full_text):
@@ -631,7 +852,7 @@ class CodeLinksStage(EnrichmentStage):
             )
             if pdf_error:
                 occurrences_by_url = _preserve_pdf_occurrences(
-                    occurrences_by_url, previous, self.failed_pdf_ids,
+                    occurrences_by_url, previous, fetched.failed_ids,
                 )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority as code_url.
@@ -642,10 +863,13 @@ class CodeLinksStage(EnrichmentStage):
             occurrences_by_url = _merge_url_spellings(occurrences_by_url)
             archived_identity = normalize_repo_url(archived) if archived else None
             urls = list(occurrences_by_url)
-            # Replacing the evidence invalidates any verdict made from the
-            # previous contexts; the next link_relevance pass must judge the
-            # new set even when that stage had already completed.
-            pub.processing.pop("link_relevance", None)
+            # Make a failed write recoverable before replacing the old evidence.
+            reset_links = pub.processing.pop("link_relevance", None) is not None
+            if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+                pub.processing[self.name] = ProcessingState(attempts=state.attempts)
+                reset_links = True
+            if reset_links:
+                self.prepared.upsert_models("publications", [pub])
             pub.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED
                 if pdf_error
@@ -676,9 +900,10 @@ class CodeLinksStage(EnrichmentStage):
                     for url, occurrences in occurrences_by_url.items()
                 ],
             )
+            # Evidence must be durable before the publication is marked completed.
+            self.prepared.upsert_models("repo_links", [links_by_publication[pub.id]])
+            self.prepared.upsert_models("publications", [pub])
             changed += 1
-        self.prepared.write_models("publications", publications)
-        self.prepared.write_models("repo_links", links_by_publication.values())
         return {"publications": changed, "repo_links": len(links_by_publication)}
 
     def _crawler_available(self) -> bool:
@@ -688,6 +913,8 @@ class CodeLinksStage(EnrichmentStage):
         try:
             self.http.get_bytes(f"{self.config.pdf_crawler_url}/health", retries=0)
             return True
+        except CancelledError:
+            raise
         except Exception as exc:
             logger.warning(
                 "code_links: PDF-Crawler-Service unavailable at %s: %s",
@@ -696,25 +923,18 @@ class CodeLinksStage(EnrichmentStage):
             )
             return False
 
-    def _pdf_pages(
-        self,
-        pub: Publication,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
-        primary_id = next(
-            (record.key for record in pub.source_records if record.pdf_urls or record.doi),
-            pub.id,
-        )
+    def _pdf_workflow(self, pub: Publication) -> _PdfWorkflow:
+        """Collect source-record and cached-version evidence across queued I/O."""
+        primary = _primary_pdf_record(pub)
+        primary_id = primary.key if primary else pub.id
+        primary_cached = self.pdf_store.exists(primary_id)
         version_ids = dict.fromkeys([
             *(pub.source_keys if pub.schema_version >= 2 else []),
             *pub.merged_ids,
             *(version.openalex_id for version in pub.versions),
         ])
         cached_versions = []
-        seen_files = (
-            {self.pdf_store.cache_identity(primary_id)}
-            if self.pdf_store.exists(primary_id)
-            else set()
-        )
+        seen_files = {self.pdf_store.cache_identity(primary_id)} if primary_cached else set()
         for pdf_id in version_ids:
             if pdf_id == primary_id or not self.pdf_store.exists(pdf_id):
                 continue
@@ -723,107 +943,89 @@ class CodeLinksStage(EnrichmentStage):
                 continue
             seen_files.add(cache_identity)
             cached_versions.append(pdf_id)
-        # An already cached version makes a new download of a missing survivor unnecessary.
-        if cached_versions and not self.pdf_store.exists(primary_id):
+
+        if cached_versions and not primary_cached:
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = self._primary_pdf_pages(pub, primary_id)
-        self.parsed_pdf_ids = {primary_id} if pages else set()
-        self.failed_pdf_ids = {primary_id} if error else set()
+            pages, occurrences, error = yield from self._primary_pdf_workflow(pub, primary)
+        parsed_ids = {primary_id} if pages else set()
+        failed_ids = {primary_id} if error else set()
         _tag_pdf_occurrences(occurrences, primary_id)
-        # Merged records can retain a more complete cached PDF than the survivor.
         errors = [error] if error else []
+
         for pdf_id in cached_versions:
             try:
                 version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
+            except CancelledError:
+                raise
             except Exception as exc:
-                self.failed_pdf_ids.add(pdf_id)
+                failed_ids.add(pdf_id)
                 errors.append(f"{pdf_id}: {redact_text(exc)}")
                 continue
-            self.parsed_pdf_ids.add(pdf_id)
+            parsed_ids.add(pdf_id)
             _tag_pdf_occurrences(version_occurrences, pdf_id)
             pages.extend(version_pages)
             occurrences.extend(version_occurrences)
-        # A canonical journal record can have only a DOI (and the crawler
-        # can be unavailable) while a lower-ranked preprint record owns the
-        # usable direct PDF. Provenance requires downloading that PDF under
-        # the preprint's source-record key, not under the aggregate id.
+
         if not pages:
-            fallback_ids = [
-                record.key for record in pub.source_records
-                if record.key != primary_id
-                and record.key not in cached_versions
-                and (record.pdf_urls or record.doi)
-            ]
-            for record_key in fallback_ids:
-                fallback_pages, fallback_occurrences, fallback_error = self._primary_pdf_pages(
-                    pub, record_key,
-                )
+            for record in pub.source_records:
+                if record.key == primary_id or record.key in cached_versions or not (record.pdf_urls or record.doi):
+                    continue
+                fallback_pages, fallback_occurrences, fallback_error = yield from self._primary_pdf_workflow(pub, record)
                 if fallback_pages:
+                    parsed_ids.add(record.key)
+                    _tag_pdf_occurrences(fallback_occurrences, record.key)
                     pages.extend(fallback_pages)
                     occurrences.extend(fallback_occurrences)
-                    self.parsed_pdf_ids.add(record_key)
-                    _tag_pdf_occurrences(fallback_occurrences, record_key)
-                    # Failed higher-ranked records are equivalent to failed
-                    # URL candidates inside one record once a usable source
-                    # record succeeds.
                     errors = []
                     break
                 if fallback_error:
-                    self.failed_pdf_ids.add(record_key)
+                    failed_ids.add(record.key)
                     errors.append(fallback_error)
-        if cached_versions and not pages and not self.pdf_store.exists(primary_id):
-            # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub, primary_id)
+
+        if cached_versions and not pages and not primary_cached:
+            primary_pages, primary_occurrences, primary_error = yield from self._primary_pdf_workflow(pub, primary)
             if primary_error:
-                self.failed_pdf_ids.add(primary_id)
+                failed_ids.add(primary_id)
                 errors.append(primary_error)
             if primary_pages:
-                self.parsed_pdf_ids.add(primary_id)
+                parsed_ids.add(primary_id)
                 _tag_pdf_occurrences(primary_occurrences, primary_id)
                 pages.extend(primary_pages)
                 occurrences.extend(primary_occurrences)
-        return pages, occurrences, "; ".join(errors) or None
+        return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_ids, failed_ids)
 
-    def _primary_pdf_pages(
-        self,
-        pub: Publication,
-        record_key: str,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
-        """Download (if not already cached) and extract per-page text + link occurrences.
-
-        Tries every direct PDF candidate before falling back to the
-        PDF-Crawler-Service (resolves a PDF from the DOI) when configured and
-        reachable.
-
-        Returns:
-            (pages, page_occurrences, error). On failure both lists are empty
-            and error carries the reason (e.g. a 403 for a non-open-access PDF).
-        """
+    def _primary_pdf_workflow(
+        self, pub: Publication, record: PublicationSourceRecord | None,
+    ) -> Generator[_PdfTask, bytes | None, tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]]:
+        """Try the cache, direct sources and crawler for one source record."""
+        record_key = record.key if record else pub.id
         errors = []
         if self.pdf_store.exists(record_key):
             try:
                 pages, occurrences = _extract_pdf(self.pdf_store.read(record_key))
                 return pages, occurrences, None
+            except CancelledError:
+                raise
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        source_record = next((record for record in pub.source_records if record.key == record_key), None)
-        pdf_urls = source_record.pdf_urls if source_record else pub.pdf_urls
-        doi = source_record.doi if source_record else pub.doi
-        sources = [(url, {}) for url in pdf_urls]
+        pdf_urls = record.pdf_urls if record else pub.pdf_urls
+        doi = record.doi if record else pub.doi
+        sources = [(url, {}) for url in dict.fromkeys(pdf_urls)]
         if self.crawler_available and doi:
             sources.append((
                 f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": doi}),
-                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
+                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0, "deadline": CRAWLER_DOWNLOAD_TIMEOUT},
             ))
         for source_url, kwargs in sources:
             try:
-                pdf_bytes = self.http.get_bytes(source_url, **kwargs)
+                pdf_bytes = cast(bytes, (yield _PdfRequest(pub, source_url, kwargs)))
                 pages, occurrences = _extract_pdf(pdf_bytes)
-                # Error pages must never poison the cache for subsequent attempts.
-                self.pdf_store.save(record_key, pdf_bytes)
+                yield _PdfSave(pub, record_key, pdf_bytes)
                 return pages, occurrences, None
+            except CancelledError:
+                raise
             except Exception as exc:
                 errors.append(redact_text(exc))
         return [], [], "; ".join(errors) or None
