@@ -1,0 +1,512 @@
+{
+  "synthetic_only": true,
+  "cases": [
+    {
+      "name": "doi_exact",
+      "tool": "search_publications",
+      "args": {
+        "doi": "10.1234/pauk-test"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "doi": "10.1234/pauk-test",
+              "year": 2026,
+              "title": {
+                "value": "Synthetic PAUK paper",
+                "status": "available"
+              }
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/items/0/publication_id",
+          "value": "p-paper"
+        }
+      ]
+    },
+    {
+      "name": "doi_normalized",
+      "tool": "search_publications",
+      "args": {
+        "doi": "https://doi.org/10.1234/PAUK-TEST"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "doi": "10.1234/pauk-test",
+              "year": 2026,
+              "title": {
+                "value": "Synthetic PAUK paper",
+                "status": "available"
+              }
+            }
+          ],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "title",
+      "tool": "search_publications",
+      "args": {
+        "title_contains": "Synthetic PAUK"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "doi": "10.1234/pauk-test",
+              "year": 2026,
+              "title": {
+                "value": "Synthetic PAUK paper",
+                "status": "available"
+              }
+            }
+          ],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "canonical_links_only_author_code",
+      "tool": "get_publication_repositories",
+      "args": {
+        "publication_id": "p-paper"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "publication_id": "p-paper",
+          "items": [
+            {
+              "repository_id": "r-code"
+            }
+          ],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "alias_canonical_links",
+      "tool": "get_publication_repositories",
+      "args": {
+        "publication_id": "old-paper"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "publication_id": "p-paper",
+          "items": [
+            {
+              "repository_id": "r-code"
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/publication_id",
+          "value": "p-paper"
+        }
+      ]
+    },
+    {
+      "name": "repository_metadata",
+      "tool": "get_repository",
+      "args": {
+        "repository_id": "r-code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "repository_id": "r-code",
+          "language": {
+            "value": "Python"
+          },
+          "archived": false
+        }
+      }
+    },
+    {
+      "name": "accepted_author_code",
+      "tool": "explain_link",
+      "args": {
+        "publication_id": "p-paper",
+        "repository_id": "r-code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "publication_id": "p-paper",
+          "repository_id": "r-code",
+          "implements": true,
+          "evidence": [
+            {
+              "verdict": "accepted",
+              "pages": [
+                0
+              ],
+              "source_kind": "abstract",
+              "confidence": null,
+              "context": {
+                "value": "Synthetic evidence",
+                "status": "available"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rejected_dependency_not_author_code",
+      "tool": "explain_link",
+      "args": {
+        "publication_id": "p-paper",
+        "repository_id": "r-dependency"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "repository_id": "r-dependency",
+          "implements": false,
+          "evidence": [
+            {
+              "verdict": "rejected",
+              "source_kind": "abstract",
+              "confidence": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "alias_explanation",
+      "tool": "explain_link",
+      "args": {
+        "publication_id": "old-paper",
+        "repository_id": "r-code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "publication_id": "p-paper",
+          "repository_id": "r-code",
+          "implements": true,
+          "evidence": [
+            {
+              "verdict": "accepted",
+              "pages": [
+                0
+              ],
+              "source_kind": "abstract",
+              "confidence": null,
+              "context": {
+                "value": "Synthetic evidence",
+                "status": "available"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty_search",
+      "tool": "search_publications",
+      "args": {
+        "title_contains": "unmatched synthetic string"
+      },
+      "kind": "empty",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "unknown_repository",
+      "tool": "get_repository",
+      "args": {
+        "repository_id": "synthetic-missing"
+      },
+      "kind": "not_found",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NOT_FOUND"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown_publication",
+      "tool": "get_publication_repositories",
+      "args": {
+        "publication_id": "synthetic-missing"
+      },
+      "kind": "not_found",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NOT_FOUND"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ambiguous_repository",
+      "tool": "get_repository",
+      "args": {
+        "repository_id": "ambiguous-repo"
+      },
+      "kind": "not_found",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "AMBIGUOUS_ID"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_search_mode",
+      "tool": "search_publications",
+      "args": {},
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "both_search_modes",
+      "tool": "search_publications",
+      "args": {
+        "doi": "10.1234/pauk-test",
+        "title_contains": "Synthetic"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown_argument",
+      "tool": "get_repository",
+      "args": {
+        "repository_id": "r-code",
+        "synthetic_extra": true
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "string_page_size",
+      "tool": "search_publications",
+      "args": {
+        "doi": "10.1234/pauk-test",
+        "page_size": "1"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "boolean_page_size",
+      "tool": "search_publications",
+      "args": {
+        "doi": "10.1234/pauk-test",
+        "page_size": true
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_repository_id",
+      "tool": "get_repository",
+      "args": {},
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "oversized_evidence_page",
+      "tool": "explain_link",
+      "args": {
+        "publication_id": "p-paper",
+        "repository_id": "r-code",
+        "page_size": 11
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tampered_cursor",
+      "tool": "search_publications",
+      "args": {
+        "doi": "10.1234/pauk-test",
+        "cursor": "synthetic-bad-cursor"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "CURSOR"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repository_search",
+      "tool": "search_publications",
+      "args": {
+        "repository_contains": "pauk-test/code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "doi": "10.1234/pauk-test",
+              "year": 2026
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/items/0/publication_id",
+          "value": "p-paper"
+        }
+      ]
+    },
+    {
+      "name": "repository_mentions_excluded",
+      "tool": "search_publications",
+      "args": {
+        "repository_contains": "Dependency"
+      },
+      "kind": "empty",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "title_and_repository_modes",
+      "tool": "search_publications",
+      "args": {
+        "title_contains": "Synthetic",
+        "repository_contains": "code"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    }
+  ]
+}
