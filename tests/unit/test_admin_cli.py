@@ -1,9 +1,11 @@
 import argparse
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import mongomock
+from pymongo.errors import AutoReconnect
 
 from pauk.admin import cli as admin_cli
 from pauk.admin import decisions, feed
@@ -17,7 +19,7 @@ from pauk.graph.overrides import (
 )
 from pauk.settings import Settings
 from pauk.storage.prepared import REVISIONS
-from tests.unit.test_mutations import FakeGraph
+from tests.unit.test_admin_nodes import FakePanelGraph
 
 
 def parse(*argv):
@@ -56,9 +58,54 @@ class ParseValueTest(unittest.TestCase):
             {"url": "https://x.org/?a=1"})
 
 
+class CliCompensationTest(unittest.TestCase):
+    def test_failed_existing_link_changes_restore_exact_properties(self):
+        for merged in (False, True):
+            with self.subTest(merged=merged):
+                graph = FakePanelGraph()
+                graph.add("Person", "A1", merged_ids=["A0"] if merged else [])
+                graph.add("Publication", "W1")
+                edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+                graph.relationships[edge] = {"is_corresponding": False}
+                args = parse("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1",
+                             "--set", "is_corresponding=true", "--set", "note=temporary")
+                db = mongomock.MongoClient()["pauk_test"]
+                with (patch.object(admin_cli, "record_relationship_override", side_effect=AutoReconnect("before commit")),
+                      self.assertRaises(AutoReconnect)):
+                    admin_cli._dispatch(args, graph, db, "editor")
+                self.assertEqual(graph.relationships[edge], {"is_corresponding": False})
+
+    def test_failed_decision_writes_restore_every_mutation_kind(self):
+        commands = (
+            ("node", "create", "Person", "A2", "--set", "name_en=New"),
+            ("node", "set", "Publication", "W1", "--set", "code_url=https://github.com/org/repo"),
+            ("node", "delete", "Person", "A1", "--cascade"),
+            ("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1", "--set", "is_corresponding=false"),
+            ("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1"),
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                graph = FakePanelGraph()
+                graph.add("Person", "A1", name_en="Original")
+                graph.add("Publication", "W1", code_url="N/A")
+                edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+                graph.relationships[edge] = {"is_corresponding": True}
+                before = {key: {name: value for name, value in node.items() if name != "updated_at"}
+                          for key, node in graph.nodes.items()}
+                db = mongomock.MongoClient()["pauk_test"]
+                with (patch.object(admin_cli, "record_override", side_effect=AutoReconnect("before commit")),
+                      patch.object(admin_cli, "record_relationship_override", side_effect=AutoReconnect("before commit")),
+                      self.assertRaises(AutoReconnect)):
+                    admin_cli._dispatch(parse(*command), graph, db, "editor")
+                after = {key: {name: value for name, value in node.items() if name != "updated_at"}
+                         for key, node in graph.nodes.items()}
+                self.assertEqual(after, before)
+                self.assertEqual(graph.relationships, {edge: {"is_corresponding": True}})
+
+
 class RunTest(unittest.TestCase):
     def setUp(self):
-        self.graph = FakeGraph()
+        self.graph = FakePanelGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
         self.config = Settings()
         patcher = patch("pauk.admin.cli.audited_client", return_value=self.graph)
@@ -70,6 +117,43 @@ class RunTest(unittest.TestCase):
         admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
                       self.config, None)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
+
+    def test_code_urls_use_the_same_format_in_the_graph_and_decision(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        self.graph.add("Publication", "W1", code_url=None)
+        for raw in ('https://github.com/a/b', '["https://github.com/a/b"]'):
+            with self.subTest(raw=raw):
+                admin_cli.run(parse("node", "set", "Publication", "W1", "--set", "code_url=" + raw),
+                              self.config, db)
+                stored = self.graph.nodes["Publication", "W1"]["code_url"]
+                self.assertIsInstance(stored, str)
+                self.assertEqual(json.loads(stored), ["https://github.com/a/b"])
+                self.assertEqual(db.graph_overrides.find_one()["fields"]["code_url"], stored)
+
+    def test_delayed_cli_recording_preserves_the_newer_edit_and_original_value(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        original = admin_cli.record_override
+        interleaved = False
+
+        def save_second_before_recording_first(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                admin_cli.run(parse("--actor", "user:second", "node", "set", "Person", "A1",
+                                    "--set", "name_ru=Иоанн"), self.config, db)
+            return original(*args, **kwargs)
+
+        with patch.object(admin_cli, "record_override", save_second_before_recording_first):
+            admin_cli.run(parse("--actor", "user:first", "node", "set", "Person", "A1",
+                                "--set", "name_ru=Пётр"), self.config, db)
+        admin_cli.run(parse("overrides", "apply"), self.config, db)
+
+        self.assertTrue(interleaved)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иоанн")
+        (decision,) = active_overrides(db)
+        self.assertEqual(decision["fields"]["name_ru"], "Иоанн")
+        self.assertIsNone(decision["auto_value"]["name_ru"])
+        self.assertEqual(decision["actor"], "user:second")
 
     def test_an_unknown_field_stops_with_a_message_not_a_traceback(self):
         # The person at the keyboard should read what went wrong.
@@ -199,7 +283,7 @@ if __name__ == "__main__":
 
 class RelationshipOverrideCliTest(unittest.TestCase):
     def setUp(self):
-        self.graph = FakeGraph()
+        self.graph = FakePanelGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
         self.graph.add("Publication", "W1", title="paper")
         self.graph.close = lambda: None
@@ -253,7 +337,7 @@ class PrintingCommandsTest(unittest.TestCase):
     """Commands that mostly print - still worth a run, they touch the graph."""
 
     def setUp(self):
-        self.graph = FakeGraph()
+        self.graph = FakePanelGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
         self.graph.close = lambda: None
         self.config = Settings()
@@ -318,7 +402,7 @@ class DeleteSnapshotTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        self.graph = FakeGraph()
+        self.graph = FakePanelGraph()
         self.graph.add("Person", "A1", name_ru="Иван Петров", name_en="Ivan Petrov")
         self.args = argparse.Namespace(label="Person", id="A1", cascade=False,
                                        once=False, note="")

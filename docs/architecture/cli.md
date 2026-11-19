@@ -22,15 +22,17 @@ messages.
 ## `run` / `collect`
 
 ```
-pauk run     --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
-pauk collect --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
+pauk run     [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
+pauk collect [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
 ```
 
 `run` is `collect`, `normalize` and `enrich` (all stages) in one call. It
 does **not** include `publish graph`: loading into the shared Neo4j stays a
 separate manual step (`PipelineRunner.run()`). `--work`, `--works-file` and
 `--from` + `--to` are alternative ways to select works; `--name` overrides
-the generated group name.
+the generated group name. `--work` and `--works-file` remain aliases for
+`--id` and `--ids-file`. Collection is implemented only for OpenAlex in this
+release; the selector names are source-neutral for future adapters.
 
 Before collecting new works, `collect` repairs stored records whose author
 list was cut off by the OpenAlex list endpoint limit
@@ -39,13 +41,13 @@ list was cut off by the OpenAlex list endpoint limit
 ## `normalize`
 
 ```
-pauk normalize --group <group>
+pauk normalize --group <group> [--source openalex]
 ```
 
 Parses the raw MongoDB collection (`raw`, filtered by `group`) into the
-prepared collections. Re-running on the same group is safe: it keeps
-enrichment data and `_processing` already on existing rows and merges them
-with the refreshed raw content (`OpenAlexNormalizer.run()`). Entities in
+prepared collections through the adapter/identity/aggregate orchestrator.
+Re-running an unchanged record is a no-op; a changed record resets dependent
+enrichment centrally. Entities in
 MongoDB are global: if the same work id already appeared in another group,
 normalization sees its current state by id (`PreparedStore.get_models`), not
 only what this group has accumulated. See [storage.md](storage.md).
@@ -104,6 +106,31 @@ graph**, not one group. It is the only way to catch duplicates that reached
 Neo4j from different runs and never sat side by side in one group. It is not
 part of `run`; run it by hand once several groups have accumulated. See
 [pipeline/dedup.md](pipeline/dedup.md).
+
+## `versions link` / `versions report`
+
+```
+pauk versions link [--llm] [--force]
+pauk versions report [--output <path>]
+```
+
+Both find publication pairs that look like versions of one work under
+different DOIs, which `dedup` keeps as separate nodes (preprint → publication,
+original → translation, conference paper → journal article, a revision under
+its own DOI), plus look-alikes explained by their bucket (an erratum, a cover,
+a series entry). Neither merges anything.
+
+`link` takes the graph lock and writes every pair as an
+`(:Publication)-[:IS_VERSION {bucket, ...}]->(:Publication)` edge, removes
+edges the rules no longer produce, and puts mergeable pairs into the review
+queue (`/review`, "Версии публикаций"). `--llm` asks the LLM
+(the standard `PAUK_LLM_MODEL`) about MEDIUM_FUZZY pairs no earlier run asked
+about; `--force` asks again. The admin panel runs it as the `versions` job.
+
+`report` only reads the graph (MongoDB is not needed) and writes the journal
+(by default `data/cache/version_candidates_report.jsonl`, MEDIUM_FUZZY
+unrouted); `link` writes its own routed one to `data/cache/version_candidates.jsonl`.
+See [pipeline/version-candidates.md](pipeline/version-candidates.md).
 
 ## `admin`: manual graph edits
 
@@ -173,9 +200,10 @@ asks for confirmation; `--yes` skips it.
 pauk admin prune [--apply] [--limit N]
 ```
 
-`publish graph` only adds. A row deleted from Mongo, or a link a row stopped
-asserting, stays in the graph forever. This command finds such leftovers
-and, with `--apply`, removes them. Without `--apply` it prints the list and
+`publish graph` adds and updates, synchronizes confirmed `MENTIONS_LINK` and
+`IMPLEMENTS` relationships, folds duplicates and reapplies manual deletions.
+Other stale records and relationships need reconciliation. This command finds
+those leftovers and, with `--apply`, removes them. Without `--apply` it prints the list and
 changes nothing; `--limit` (default 20) caps how many of each kind are
 printed.
 
@@ -203,9 +231,10 @@ The change feed (`audit`) and the archive of replaced prepared rows
 Restoring a deleted record is unaffected: a snapshot of its fields lives in
 the decision itself, and decisions are not trimmed.
 
-### `admin worker` and `admin user`
+### `admin serve`, `admin worker` and `admin user`
 
 ```
+pauk admin serve [--host <address>] [--port <port>]
 pauk admin worker [--once] [--poll <seconds>] [--name <name>]
 pauk admin user add <login> [--role <role>]
 pauk admin user list
@@ -213,7 +242,10 @@ pauk admin user enable <login>
 pauk admin user disable <login>
 ```
 
-`worker` performs the runs scheduled from the panel, one at a time; `--once`
+`serve` runs the panel's web server (port 8505 by default) through uvicorn,
+with uvicorn's own lines in PAUK's log layout. `worker` performs the runs
+scheduled from the panel, one at a time, and tags its lines with the job in
+hand; `--once`
 takes at most one job and exits. `user` manages panel accounts (default
 role `editor`). `user` needs MongoDB only. See [../admin-panel.md](../admin-panel.md).
 
@@ -244,7 +276,8 @@ Runs OSA on every repository of the snapshot that has no report yet, except
 third-party ones (cited, never `IMPLEMENTS`, no ITMO contributor), and
 writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
 `reports/index.json`. Repository ids limit the run, `--force` regenerates
-existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.
+existing reports. Needs `OPENROUTER_API_KEY` and OpenRouter access; on the
+server use `OPENROUTER_PROXY_URL`. The worker image includes `uvx`.
 Exits non-zero if any report failed. `PAUK_REPORTS_DIR` sets another folder.
 See [reports.md](reports.md).
 

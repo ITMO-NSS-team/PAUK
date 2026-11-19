@@ -765,17 +765,17 @@ class PdfStageTest(LocalPdfTest):
 
     def test_cached_versions_are_isolated_between_parallel_publications(self):
         self.config.pdf_dir.mkdir(parents=True)
-        for identifier in ("V1", "V2"):
+        for identifier in ("W3", "W4"):
             (self.config.pdf_dir / f"{identifier}.pdf").write_bytes(self.server.pdf)
         self.prepared.write_models("publications", [
-            Publication(id="W1", title="first", merged_ids=["V1"]),
-            Publication(id="W2", title="second", merged_ids=["V2"]),
+            Publication(id="W1", title="first", merged_ids=["W3"]),
+            Publication(id="W2", title="second", merged_ids=["W4"]),
         ])
         CodeLinksStage(self.prepared, self.raw, config=self.config).run()
         for publication in self.prepared.read_models("publications", Publication):
             self.assertEqual(publication.processing["code_links"].status, ProcessingStatus.COMPLETED)
         links = {row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)}
-        for pub_id, pdf_id in (("W1", "V1"), ("W2", "V2")):
+        for pub_id, pdf_id in (("W1", "W3"), ("W2", "W4")):
             self.assertEqual({occ.pdf_id for link in links[pub_id].links for occ in link.occurrences}, {pdf_id})
         self.assertFalse(self.server.counts)
 

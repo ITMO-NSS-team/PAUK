@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, model_validator
@@ -13,6 +14,11 @@ class Authorship(BaseModel):
     # it had none and the persons stage filled it from the author's own
     # records ("openalex" / "orcid").
     affiliation_source: str | None = None
+    # None means the source did not provide usable institution evidence.
+    institution_rors: list[str] | None = None
+    institution_source_person_id: str | None = None
+    institution_source_id: str | None = None
+    institution_observed_at: datetime | None = None
     is_corresponding: bool = False
 
 

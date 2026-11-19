@@ -30,8 +30,15 @@ def preserve(db: Database, ids: Iterable[str]) -> None:
 
 
 def snapshots(db: Database, ids: Iterable[str]) -> dict[str, list[dict]]:
-    """Newest pre-merge state first, including provenance for republishing."""
+    """Order captures by time and prepared revision, retaining provenance.
+
+    Legacy captures with equal timestamps and absent or equal revisions do
+    not establish a chronological order between distinct payloads.
+    """
     result: dict[str, list[dict]] = {}
-    for entry in db[COLLECTION].find({"person_id": {"$in": list(ids)}}).sort("saved_at", -1):
+    # Distinct pre-merge states can share a wall-clock timestamp. The prepared
+    # revision identifies the later state without relying on insertion order.
+    order = [("saved_at", -1), ("snapshot._version", -1)]
+    for entry in db[COLLECTION].find({"person_id": {"$in": list(ids)}}).sort(order):
         result.setdefault(entry["person_id"], []).append(entry["snapshot"])
     return result

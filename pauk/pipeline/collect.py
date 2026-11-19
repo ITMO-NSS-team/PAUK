@@ -24,6 +24,21 @@ AUTHORSHIP_TRUNCATION_LIMIT = 100
 FULL_AUTHOR_LIST = "full_author_list"
 
 
+def _record_key(work: dict) -> str:
+    work_id = (work.get("id") or "").rstrip("/").rsplit("/", 1)[-1].upper()
+    return f"openalex:{work_id}"
+
+
+def _append_work(raw: RawStore, work: dict, request: dict) -> None:
+    raw.append(
+        "openalex_works", work, request,
+        provider="openalex",
+        record_type="publication",
+        record_key=_record_key(work),
+        schema_version=2,
+    )
+
+
 def _authors_truncated(work: dict) -> bool:
     return bool(work.get("is_authors_truncated")) or \
         len(work.get("authorships") or []) == AUTHORSHIP_TRUNCATION_LIMIT
@@ -91,7 +106,7 @@ class Collector:
             if not _authors_truncated(payload):
                 continue
             full = self.client.get_work(work_id)
-            self.raw.append("openalex_works", full, {
+            _append_work(self.raw, full, {
                 "work_id": work_id, "refetch": FULL_AUTHOR_LIST,
             })
             count += 1
@@ -107,7 +122,7 @@ class Collector:
             if selector.work_id.rstrip("/").split("/")[-1].upper() in known_ids:
                 return 0
             work = self.client.get_work(selector.work_id)
-            self.raw.append("openalex_works", work, {"work_id": selector.work_id})
+            _append_work(self.raw, work, {"work_id": selector.work_id})
             self._report_saved()
             return 1
         if isinstance(selector, WorksFileSelector):
@@ -116,7 +131,7 @@ class Collector:
                 if work_id.rstrip("/").split("/")[-1].upper() in known_ids:
                     continue
                 work = self.client.get_work(work_id)
-                self.raw.append("openalex_works", work, {"work_id": work_id})
+                _append_work(self.raw, work, {"work_id": work_id})
                 known_ids.add(work_id.rstrip("/").split("/")[-1].upper())
                 count += 1
                 self._report_saved()
@@ -132,7 +147,7 @@ class Collector:
                 # endpoint has all of it.
                 work = self.client.get_work(work_id)
                 request["refetch"] = FULL_AUTHOR_LIST
-            self.raw.append("openalex_works", work, request)
+            _append_work(self.raw, work, request)
             known_ids.add(work_id)
             count += 1
             self._report_saved()

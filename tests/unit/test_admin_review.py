@@ -1,5 +1,7 @@
 import re
+import tempfile
 import unittest
+from pathlib import Path
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -7,15 +9,68 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
-from pauk.admin.review_routes import _reason_words
+from pauk.admin.review_routes import _reason_words, _shown
+from pauk.aliases import MergeAliasConflict, flatten_merges
+from pauk.graph.alias_review import record_alias_conflict
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
-from pauk.models import Person, Publication
+from pauk.graph.overrides import DELETE, record_relationship_override
+from pauk.jobs import locks, store
+from pauk.jobs.models import GRAPH, JobKind, JobState
+from pauk.models import GitHubProfile, Person, Publication
+from pauk.pipeline.stages.github_match import GitHubMatchStage, hold_reason
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, review
+from pauk.storage import PreparedStore, RawStore, review
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
+
+
+class AliasIncidentPageTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().alias_review
+        with self.assertRaises(MergeAliasConflict) as caught:
+            flatten_merges([("A", "B"), ("A", "C")], label="Person")
+        record_alias_conflict(self.db, caught.exception, "publish:example")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.get_session] = lambda: {
+            "login": "audit", "role": "editor", "csrf": "local-test-token"}
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        self.client = TestClient(app, follow_redirects=False)
+        self.addCleanup(self.client.close)
+
+    def test_alias_incident_displays_edges_and_no_identity_answer_form(self):
+        response = self.client.get("/review")
+        self.assertEqual(response.status_code, 200)
+        for text in ("конфликт алиасов", "A → B", "A → C", "publish:example",
+                     "Требуется исправить историю слияний"):
+            self.assertIn(text, response.text)
+        self.assertNotIn('action="/review/answer"', response.text)
+        self.assertNotIn('action="/review/withdraw"', response.text)
+
+    def test_alias_actions_and_disguised_group_actions_are_rejected(self):
+        for kind in (review.ALIAS, review.GROUP, review.PAIR):
+            members = "A,B" if kind == review.PAIR else "A,B,C"
+            for verdict in ("same", "different", "split", "skip", "choose"):
+                with self.subTest(kind=kind, verdict=verdict):
+                    response = self.client.post("/review/answer", data={
+                        "csrf": "local-test-token", "kind": kind, "members": members,
+                        "same": ["A", "B"], "verdict": verdict, "tab": "open"})
+                    self.assertEqual(response.status_code, 400)
+            response = self.client.post("/review/withdraw", data={
+                "csrf": "local-test-token", "kind": kind, "members": members})
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(review.count(self.db, answered=False, skipped=False), 1)
+
+    def test_expanded_group_submission_cannot_leave_partial_identity_answers(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": "local-test-token", "kind": review.GROUP, "members": "A,B,C,X",
+            "same": ["A", "X"], "verdict": "split", "tab": "open"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(self.db.review_pairs.count_documents({}), 1)
 
 
 class ReviewPageTest(unittest.TestCase):
@@ -32,6 +87,24 @@ class ReviewPageTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
+
+    def test_unrelated_question_does_not_invent_zero_coauthors(self):
+        row = {
+            "_id": "github_person:A1:ada",
+            "kind": review.GITHUB,
+            "members": ["A1", "ada"],
+            "evidence": {},
+        }
+        self.assertIsNone(_shown(row)["shared_coauthors"])
+
+    def test_explicit_zero_coauthors_is_preserved(self):
+        row = {
+            "_id": "person_pair:A1:A2",
+            "kind": review.PAIR,
+            "members": ["A1", "A2"],
+            "evidence": {"shared_coauthors": 0, "shared_authors": ["A3"]},
+        }
+        self.assertEqual(_shown(row)["shared_coauthors"], 0)
 
     def csrf(self):
         body = self.client.get("/review").text
@@ -194,6 +267,12 @@ class ReviewPageTest(unittest.TestCase):
         self.assertEqual(_reason_words("group spans 5 distinct email values"),
                          "в группе 5 разных значений поля email")
 
+    def test_every_reason_the_account_matcher_gives_is_in_russian(self):
+        for reason in (hold_reason(["name_exact"]), hold_reason(["name_fuzzy"]),
+                       hold_reason(["name_exact"], ambiguous=True),
+                       hold_reason(["name_exact"], contested=True)):
+            self.assertNotEqual(_reason_words(reason), reason, reason)
+
     def test_the_reason_is_shown_in_russian(self):
         self.sign_in()
         body = self.client.get("/review", params={"tab": "open"}).text
@@ -322,6 +401,17 @@ class FoldNowTest(unittest.TestCase):
         self.answer(verdict="different")
         self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
 
+    def test_a_held_graph_is_not_folded_under_a_running_job(self):
+        # A dedup that read both nodes before the click would write its own
+        # plan for them after it.
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        locks.acquire(self.db, GRAPH, "dedup-elsewhere")
+        response = self.answer()
+        self.assertIn("done=waiting", response.headers["location"])
+        self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
+        self.assertEqual(review.decisions(self.db), {frozenset({"A1", "A2"}): review.SAME})
+
 
 class FactsInTheRowTest(unittest.TestCase):
     """What is known about each person, beside their name."""
@@ -390,7 +480,7 @@ class DisputedTabTest(unittest.TestCase):
 
     def test_the_tab_shows_what_the_rules_now_say(self):
         body = self.body()
-        self.assertIn("одинаковое имя, и есть чем подтвердить", body)
+        self.assertIn("одинаковое имя и есть подтверждение", body)
         self.assertIn("разные люди", body)
 
     def test_the_answer_is_shown_as_still_in_force(self):
@@ -519,6 +609,7 @@ class GitHubQuestionTest(unittest.TestCase):
         review.record_held(self.db, [{
             "status": "held", "login": "XieN-N", "person": "A5140754163",
             "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
+            "profile": {"name": "Stanislav Shtuka", "company": None, "location": "Vladivostok"},
             "score": 0.6, "signals": ["name_exact"],
             "repos": ["https://github.com/screemix/Wikontic"],
             "held_because": ["the name matches exactly and nothing else backs it"],
@@ -545,6 +636,18 @@ class GitHubQuestionTest(unittest.TestCase):
         body = self.body()
         self.assertIn("%23q-github_person-A5140754163-XieN-N", body)
         self.assertIn('<tr id="q-github_person-A5140754163-XieN-N">', body)
+
+    def test_the_account_shows_its_profile_and_its_login_once(self):
+        body = self.body()
+        self.assertIn("Vladivostok", body)
+        self.assertNotIn("XieN-N на GitHub", body)
+
+    def test_the_graph_does_not_wipe_the_accounts_profile(self):
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: FakePanelGraph()
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.assertIn("Vladivostok", client.get("/review").text)
 
     def test_the_account_points_at_github_and_the_person_at_their_card(self):
         # Sending a login to /nodes/Person would open a card for a node that
@@ -587,6 +690,277 @@ class GitHubQuestionTest(unittest.TestCase):
             "members": "A5140754163,XieN-N", "verdict": "same"})
         self.assertIn("привяжется на следующем сборе",
                       self.client.get("/review", params={"tab": "answered"}).text)
+
+
+    def test_a_refusal_after_a_merge_can_be_confirmed_from_the_disputed_tab(self):
+        original_id = "A5140754163"
+        with tempfile.TemporaryDirectory() as directory:
+            prepared = PreparedStore(self.db, "sample")
+            prepared.write_models("persons", [Person(id=original_id, is_itmo=True, name_raw="Stanislav Shtuka")])
+            account = GitHubProfile(id="github_XieN-N", login="XieN-N", type="user", name="Stanislav Shtuka")
+            prepared.write_models("github_profiles", [account])
+            stage = GitHubMatchStage(prepared, RawStore(self.db, "sample"), Settings(data_dir=Path(directory)))
+            stage.run()
+            refusal = RenderedForms(self.body()).with_button("не его")
+            self.assertEqual(self.client.post(refusal["action"], data=refusal["fields"]).status_code, 303)
+
+            prepared.write_models("persons", [Person(id="A2", is_itmo=True, name_raw="Stanislav Shtuka",
+                                                     merged_ids=[original_id])])
+            account.company = "ITMO University"
+            prepared.write_models("github_profiles", [account])
+            stage.run()
+
+            page = self.client.get("/review", params={"tab": "disputed"})
+            confirm = RenderedForms(page.text).with_button("оставить как есть")
+            self.assertEqual(set(confirm["fields"]["members"].split(",")), {original_id, "XieN-N"})
+            response = self.client.post(confirm["action"], data=confirm["fields"])
+
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+            self.assertEqual(review.github_decisions(self.db, {original_id: "A2"}),
+                             {frozenset({"A2", "XieN-N"}): review.DIFFERENT})
+            stage.run()
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+            prepared.write_models("persons", [Person(id="A3", is_itmo=True, name_raw="Stanislav Shtuka",
+                                                     merged_ids=[original_id, "A2"])])
+            stage.run()
+            self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_stale_refusal_form_does_not_acknowledge_unseen_evidence(self):
+        form = RenderedForms(self.body()).with_button("не его")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        row = {"status": "disputed", "login": "XieN-N", "person": "A5140754163", "rule": "email_exact",
+               "evidence": {"email": ["new@lab.test"]}}
+        review.record_disputed(self.db, [row])
+
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        review.record_disputed(self.db, [row])
+
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+
+class GitHubChoiceTest(unittest.TestCase):
+    """An account several authors fit, answered by naming the one it belongs to."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "login": "coder42", "person": "A1", "name_raw": "Ivan Petrov",
+            "url": "https://github.com/coder42", "signals": ["name_exact"], "repos": [],
+            "candidates": [{"person": "A1", "name_raw": "Ivan Petrov", "signals": ["name_exact"]},
+                           {"person": "A2", "name_raw": "Ivan Petrov", "signals": ["name_exact"]}],
+            "held_because": ["the name matches exactly and nothing else backs it"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def answer(self, verdict, chosen="", login="coder42"):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": login, "verdict": verdict, "chosen": chosen})
+
+    def test_the_authors_are_offered_and_the_account_is_not(self):
+        body = self.client.get("/review").text
+        offered = re.findall(r'name="chosen" value="([^"]+)"', body)
+        self.assertEqual(offered, ["A1", "A2"])
+        self.assertIn('name="login" value="coder42"', body)
+        self.assertNotIn('value="same"', body)
+
+    def test_the_account_comes_before_the_people(self):
+        body = self.client.get("/review").text
+        account = body.index('href="https://github.com/coder42"')
+        self.assertLess(account, body.index("/nodes/Person/A1"))
+        self.assertLess(account, body.index("/nodes/Person/A2"))
+
+    def test_choosing_records_the_author(self):
+        self.assertEqual(self.answer("choose", "A2").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A2"}): review.SAME,
+                          frozenset({"coder42", "A1"}): review.DIFFERENT})
+
+    def test_choosing_nobody_sends_the_form_back(self):
+        self.assertIn("problem=", self.answer("choose").headers["location"])
+        self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_an_author_outside_the_question_is_refused(self):
+        self.assertEqual(self.answer("choose", "A9").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_the_account_has_to_be_one_of_the_members(self):
+        self.assertEqual(self.answer("choose", "A2", login="").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_none_of_them_refuses_every_author(self):
+        self.assertEqual(self.answer("different").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A1", "A2"}): review.DIFFERENT})
+
+    def test_a_yes_naming_nobody_is_refused(self):
+        self.assertEqual(self.answer("same").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_confirming_the_rendered_choice_preserves_it_and_clears_the_disagreement(self):
+        note = 'Checked the profile & publications: "same author"'
+        self.assertEqual(self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": "coder42", "verdict": "choose", "chosen": "A1", "note": note,
+        }).status_code, 303)
+        review.record_disputed(self.db, [{
+            "status": "disputed", "login": "coder42", "person": "A2",
+            "rule": "email_exact",
+        }])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303, response.text)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["chosen"], "A1")
+        self.assertEqual(answer["note"], note)
+        self.assertEqual(answer["actor"], "user:roman")
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1"}): review.SAME,
+            frozenset({"coder42", "A2"}): review.DIFFERENT,
+        })
+
+    def test_a_choice_recorded_before_its_question_can_be_confirmed_from_the_rendered_form(self):
+        self.db[review.COLLECTION].delete_many({})
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A1")
+        review.record_disputed(self.db, [{
+            "status": "disputed", "login": "coder42", "person": "A2", "rule": "email_exact",
+        }])
+
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        self.assertEqual(review.questions(self.db, answered=True)[0]["chosen"], "A1")
+
+    def test_a_stale_none_form_replaces_a_choice_saved_from_another_form(self):
+        page = self.client.get("/review")
+        stale_form = RenderedForms(page.text).with_button("никто из них")
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+
+        response = self.client.post(stale_form["action"], data=stale_form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        (answer,) = review.questions(self.db, answered=True, kind=review.GITHUB)
+        self.assertEqual(answer["verdict"], review.DIFFERENT)
+        self.assertNotIn("chosen", answer)
+        self.assertEqual(review.github_decisions(self.db), {
+            frozenset({"coder42", "A1", "A2"}): review.DIFFERENT,
+        })
+
+    def test_an_old_confirmation_cannot_acknowledge_new_evidence(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        row = {"status": "disputed", "login": "coder42", "person": "A2", "rule": "email_exact",
+               "signals": ["email_exact"], "evidence": {"email": ["first@lab.test"]}}
+        review.record_disputed(self.db, [row])
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+        row["evidence"]["email"] = ["new@lab.test"]
+        review.record_disputed(self.db, [row])
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+        self.assertEqual(review.questions(self.db, answered=True)[0]["chosen"], "A1")
+
+    def test_a_confirmed_disagreement_reopens_only_when_its_evidence_changes(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        row = {"status": "disputed", "login": "coder42", "person": "A2", "rule": "email_exact",
+               "signals": ["email_exact"], "evidence": {"email": ["first@lab.test"]}}
+        review.record_disputed(self.db, [row])
+        form = RenderedForms(self.client.get("/review?tab=disputed").text).with_button("оставить как есть")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+
+        review.record_disputed(self.db, [row])
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        row["evidence"]["email"] = ["new@lab.test"]
+        review.record_disputed(self.db, [row])
+        self.assertEqual(review.count(self.db, disputed=True), 1)
+
+    def test_repeating_the_same_confirmation_does_not_rewrite_the_answer(self):
+        self.assertEqual(self.answer("choose", "A1").status_code, 303)
+        review.record_disputed(self.db, [{"status": "disputed", "login": "coder42", "person": "A2",
+                                         "rule": "email_exact", "evidence": {"email": ["account@lab.test"]}}])
+        page = self.client.get("/review", params={"tab": "disputed"})
+        form = RenderedForms(page.text).with_button("оставить как есть")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        (before,) = review.questions(self.db, answered=True)
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.questions(self.db, answered=True), [before])
+
+    def test_rechoosing_from_rendered_forms_removes_the_old_owners_published_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory))
+            prepared = PreparedStore(self.db, "sample")
+            prepared.write_models("persons", [Person(id=pid, is_itmo=True, name_raw="Ivan Petrov")
+                                               for pid in ("A1", "A2")])
+            prepared.write_models("github_profiles", [GitHubProfile(
+                id="github_coder42", login="coder42", name="Ivan Petrov", type="user",
+                emails=["account@lab.test"],
+            )])
+            stage = GitHubMatchStage(prepared, RawStore(self.db, "sample"), config)
+            graph = FakePanelGraph()
+
+            for chosen in ("A1", "A2"):
+                if chosen == "A2":
+                    page = self.client.get("/review", params={"tab": "answered"})
+                    withdraw = RenderedForms(page.text).with_button("передумать")
+                    self.assertEqual(self.client.post(withdraw["action"], data=withdraw["fields"]).status_code, 303)
+                page = self.client.get("/review")
+                form = RenderedForms(page.text).with_button("это его аккаунт")
+                form["fields"]["chosen"] = chosen
+                self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+                stage.run()
+                load_prepared_rows(graph, {filename: list(prepared.read_rows(entity))
+                                           for entity, filename in ENTITY_FILES.items()})
+                self.assertEqual(graph.nodes["Person", chosen]["github"], "coder42")
+
+            self.assertIsNone(graph.nodes["Person", "A1"].get("github"))
+            self.assertIsNone(graph.nodes["Person", "A1"].get("email"))
+            self.assertEqual(graph.nodes["Person", "A2"]["email"], "account@lab.test")
+
+    def test_a_cross_group_conflict_can_be_resolved_from_the_rendered_choice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory))
+            owner = Person(id="A1", is_itmo=True, name_raw="Ivan Petrov")
+            PreparedStore(self.db, "original").write_models("persons", [owner])
+            review.record_verdict(self.db, review.GITHUB, [owner.id, "coder42"], review.SAME)
+            prepared = PreparedStore(self.db, "other")
+            prepared.write_models("persons", [Person(id="A2", is_itmo=True, name_raw="Ivan Petrov")])
+            prepared.write_models("github_profiles", [GitHubProfile(
+                id="github_coder42", login="coder42", name="Ivan Petrov", type="user", company="ITMO",
+            )])
+            stage = GitHubMatchStage(prepared, RawStore(self.db, "other"), config)
+            stage.run()
+            before = self.db.persons.find_one({"id": owner.id})
+
+            page = self.client.get("/review")
+            form = RenderedForms(page.text).with_button("это его аккаунт")
+            self.assertEqual(set(form["fields"]["members"].split(",")), {"A1", "A2", "coder42"})
+            form["fields"]["chosen"] = "A2"
+            self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+            stage.run()
+
+            chosen, = prepared.read_models("persons", Person)
+            self.assertEqual(chosen.id, "A2")
+            self.assertEqual(chosen.github, "coder42")
+            self.assertEqual(self.db.persons.find_one({"id": owner.id}), before)
 
 
 class StaffChoiceTest(unittest.TestCase):
@@ -1031,3 +1405,164 @@ class SplitBackTest(unittest.TestCase):
         self.fold()
         self.db.persons.delete_one({"id": "A2"})
         self.assertNotIn("/review/withdraw", self.body())
+
+
+class VersionQuestionTest(unittest.TestCase):
+    """Two publications the version rules linked: nothing folds, the edge moves."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "PREPRINT_PUBLISHED",
+            "mergeable": True, "record_a": "W1", "title_a": "Spider webs, preprint",
+            "record_b": "W2", "title_b": "Spider webs", "venue_a": "arXiv", "venue_b": "Sensors",
+            "title_sim": 0.86, "abstract_sim": None,
+        }])
+        self.graph = FakePanelGraph()
+        self.graph.add("Publication", "W1")
+        self.graph.add("Publication", "W2")
+        self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")] = {
+            "bucket": "PREPRINT_PUBLISHED", "status": "held"}
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self, tab="versions"):
+        return self.client.get("/review", params={"tab": tab}).text
+
+    def answer(self, verdict):
+        csrf = self.body().split('name="csrf" value="')[1].split('"')[0]
+        return self.client.post("/review/answer", data={
+            "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2", "verdict": verdict})
+
+    def test_the_tab_shows_both_publications_and_the_bucket(self):
+        body = self.body()
+        self.assertIn("две публикации", body)
+        self.assertIn("/nodes/Publication/W1", body)
+        self.assertIn("препринт и публикация", body)
+        self.assertIn("arXiv", body)
+        self.assertIn("одна работа", body)
+
+    def test_open_queue_preserves_versions_github_choices_and_alias_incidents(self):
+        review.record_held(self.db, [{
+            "status": "held", "login": "coder42", "person": "A1", "name_raw": "Ivan Petrov",
+            "url": "https://github.com/coder42",
+            "candidates": [{"person": "A1", "name_raw": "Ivan Petrov", "signals": ["name_exact"]},
+                           {"person": "A2", "name_raw": "Ivan Petrov", "signals": ["name_exact"]}],
+        }])
+        with self.assertRaises(MergeAliasConflict) as caught:
+            flatten_merges([("A3", "A4"), ("A3", "A5")], label="Person")
+        record_alias_conflict(self.db, caught.exception, "publish:example")
+
+        body = self.body("open")
+        for text in ("две публикации", "/nodes/Publication/W1", "arXiv", "Sensors",
+                     "аккаунт GitHub", 'name="chosen" value="A1"', 'name="chosen" value="A2"',
+                     "имя совпадает целиком", "конфликт алиасов", "A3 → A4", "A3 → A5"):
+            with self.subTest(text=text):
+                self.assertIn(text, body)
+        self.assertEqual(review.count(self.db, answered=False, skipped=False), 3)
+
+    def test_same_confirms_the_edge_and_folds_nothing(self):
+        response = self.answer("same")
+        self.assertIn("done=linked", response.headers["location"])
+        edge = self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        self.assertEqual(edge["status"], "same")
+        self.assertIn(("Publication", "W1"), self.graph.nodes)
+
+    def test_a_missing_venue_does_not_shift_the_other(self):
+        self.db[review.COLLECTION].update_many({}, {"$unset": {"evidence.venue_a": ""}})
+        body = self.body()
+        self.assertLess(body.index("/nodes/Publication/W2"), body.index("Sensors"))
+
+    def test_same_restores_an_edge_from_the_review_evidence(self):
+        del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        response = self.answer("same")
+        self.assertIn("done=linked", response.headers["location"])
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual((edge["bucket"], edge["status"]), ("PREPRINT_PUBLISHED", "same"))
+
+    def test_different_removes_the_edge(self):
+        response = self.answer("different")
+        self.assertIn("done=unlinked", response.headers["location"])
+        self.assertNotIn(("Publication", "IS_VERSION", "Publication", "W1", "W2"),
+                         self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+
+    def withdraw(self):
+        csrf = self.body("answered").split('name="csrf" value="')[1].split('"')[0]
+        return self.client.post("/review/withdraw", data={
+            "csrf": csrf, "kind": review.PUB_VERSION, "members": "W1,W2"})
+
+    def test_withdrawing_same_puts_the_edge_back_on_hold(self):
+        self.answer("same")
+        response = self.withdraw()
+        self.assertIn("done=reopened", response.headers["location"])
+        edge = self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        self.assertEqual(edge["status"], "held")
+        self.assertIn("/nodes/Publication/W1", self.body())
+        self.assertEqual(review.version_decisions(self.db), {})
+
+    def test_withdrawing_different_waits_for_the_next_link(self):
+        self.answer("different")
+        response = self.withdraw()
+        self.assertIn("done=relink", response.headers["location"])
+        self.assertIn("/nodes/Publication/W1", self.body())
+
+    def test_a_graph_that_is_down_does_not_promise_a_merge(self):
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
+        response = self.answer("same")
+        self.assertIn("done=version_waiting", response.headers["location"])
+        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        self.assertEqual(job.payload["members"], ["W1", "W2"])
+
+    def test_a_held_graph_keeps_the_edge_and_queues_one_run(self):
+        # A `versions link` holding the graph has read the answers already:
+        # an edge removed now would be written back by its plan.
+        locks.acquire(self.db, GRAPH, "versions-link-elsewhere")
+        response = self.answer("different")
+        self.assertIn("done=version_busy", response.headers["location"])
+        self.assertIn(("Publication", "IS_VERSION", "Publication", "W1", "W2"),
+                      self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+        self.answer("same")
+        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        self.assertEqual(job.state, JobState.QUEUED)
+        self.assertFalse(job.payload.get("llm"))
+        self.assertEqual(job.payload["members"], ["W1", "W2"])
+
+    def fold_publication(self):
+        old_key = ("Publication", "IS_VERSION", "Publication", "W1", "W2")
+        new_key = ("Publication", "IS_VERSION", "Publication", "W3", "W2")
+        del self.graph.nodes["Publication", "W1"]
+        self.graph.add("Publication", "W3", merged_ids=["W1"])
+        self.graph.relationships[new_key] = self.graph.relationships.pop(old_key)
+        return new_key
+
+    def test_different_removes_the_edge_on_the_survivor(self):
+        new_key = self.fold_publication()
+        self.assertIn("done=unlinked", self.answer("different").headers["location"])
+        self.assertNotIn(new_key, self.graph.relationships)
+        self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
+
+    def test_same_and_withdraw_update_the_edge_on_the_survivor(self):
+        new_key = self.fold_publication()
+        self.assertIn("done=linked", self.answer("same").headers["location"])
+        self.assertEqual(self.graph.relationships[new_key]["status"], "same")
+        self.assertIn("done=reopened", self.withdraw().headers["location"])
+        self.assertEqual(self.graph.relationships[new_key]["status"], "held")
+
+    def test_folded_members_do_not_create_a_self_loop(self):
+        del self.graph.nodes["Publication", "W1"]
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W1"]
+        self.graph.relationships.clear()
+        self.assertIn("done=version_folded", self.answer("same").headers["location"])
+        self.assertEqual(self.graph.relationships, {})
+
+    def test_same_on_an_edge_deleted_by_hand_says_it_stays_deleted(self):
+        del self.graph.relationships[("Publication", "IS_VERSION", "Publication", "W1", "W2")]
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                     "W1", "W2", DELETE)
+        response = self.answer("same")
+        self.assertIn("done=no_edge_deleted", response.headers["location"])

@@ -9,7 +9,13 @@ from collections import defaultdict
 
 import requests
 
-from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists, flatten_merges
+from pauk.aliases import flatten_merges
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+)
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -281,16 +287,35 @@ class RecordingNeo4jClient:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
+            membership = _person_membership_update(existing, clean, node_id)
             clean = _preserve_merged_person_lists(existing, clean)
-            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
-            self.nodes["Person"].setdefault(node_id, {}).update(clean)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self._set_properties(self.nodes["Person"].setdefault(node_id, {}), clean)
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
                                    tgt_match_prop: str = "id") -> int:
         src_primary = src_label.split(":")[0]
         tgt_primary = tgt_label.split(":")[0]
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             src_ok = src_id in self.nodes.get(src_primary, {})
             if tgt_match_prop == "id":
                 tgt_ok = tgt_id in self.nodes.get(tgt_primary, {})
@@ -305,11 +330,15 @@ class RecordingNeo4jClient:
                     edge.get("is_corresponding"), props.get("is_corresponding")
                 ))
                 self._set_properties(edge, props)
-                if rel_type == "AUTHORED" and has_corresponding:
+                preserve = bool(
+                    self.nodes[src_primary][src_id].get("merged_ids")
+                    or self.nodes[tgt_primary].get(tgt_id, {}).get("merged_ids")
+                )
+                if rel_type == "AUTHORED" and has_corresponding and preserve:
                     edge["is_corresponding"] = bool(corresponding)
-                matched += 1
+                matched += input_count
             else:
-                self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
+                self.unresolved.extend([(src_label, rel_type, tgt_label, src_id, tgt_id)] * input_count)
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -386,7 +415,7 @@ class RecordingNeo4jClient:
         duplicate. On both nodes and edges the canonical's own values win,
         but anything only the duplicate knew fills the gap."""
         removed = 0
-        for dup_id, canonical_id in flatten_merges(merges):
+        for dup_id, canonical_id in flatten_merges(merges, label=label):
             if dup_id == canonical_id:
                 continue
             if dup_id not in self.nodes.get(label, {}):
@@ -406,6 +435,9 @@ class RecordingNeo4jClient:
                 else:
                     continue
                 del self.edges[key]
+                if src_primary == tgt_primary and moved_key[3] == moved_key[4]:
+                    # An edge between the two halves of a fold goes with the duplicate.
+                    continue
                 existing = self.edges.get(moved_key, {})
                 merged = {**props, **existing}
                 if rel_type == "AUTHORED" and any(value is not None for value in (
@@ -418,6 +450,10 @@ class RecordingNeo4jClient:
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
+            canonical_props["merged_ids"] = list(dict.fromkeys(
+                alias for alias in [*(canonical_props.get("merged_ids") or []), dup_id]
+                if alias != canonical_id
+            ))
             removed += 1
         return removed
 
@@ -450,10 +486,12 @@ class RecordingNeo4jClient:
             if props.get("fields")
         }
 
-    def fetch_publications_for_dedup(self) -> list[dict]:
+    def fetch_publications_for_dedup(self, ids=None, *, folded_only=False) -> list[dict]:
         """Mirror of Neo4jClient.fetch_publications_for_dedup."""
         rows = []
         for publication_id, props in self.nodes.get("Publication", {}).items():
+            if (ids is not None and publication_id not in ids) or (folded_only and not props.get("merged_ids")):
+                continue
             authors = [
                 {"person_id": src_id,
                  "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_raw"),
@@ -464,12 +502,42 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": publication_id,
                 **{field: props.get(field) for field in (
-                    "type", "doi", "title", "journal", "publication_date", "year",
+                    "type", "doi", "title", "journal", "venue_type", "publication_date", "year",
                     "openalex_url", "pdf_urls", "abstract", "versions", "merged_ids")},
                 "author_count": len(authors),
                 "authors": authors,
             })
         return rows
+
+    def fetch_version_edges(self, members=None):
+        return {(src, tgt): props.copy() for (sl, rel, tl, src, tgt), props in self.edges.items()
+                if (sl, rel, tl) == ("Publication", "IS_VERSION", "Publication")
+                and (members is None or (src in members and tgt in members))}
+
+    def fetch_canonical_id(self, label, node_id):
+        return self.fetch_merged_id_map(label).get(node_id)
+
+    def fetch_node_properties(self, label, node_id):
+        props = self.nodes.get(label, {}).get(node_id)
+        return {"id": node_id, **props} if props is not None else None
+
+    def fetch_node_relationships(self, label, node_id):
+        from pauk.graph.mutations import RELATIONSHIPS
+
+        result = []
+        for (src, rel, tgt, src_id, tgt_key), props in self.edges.items():
+            match = RELATIONSHIPS.get((src, rel, tgt), "id")
+            target = next((other for other, node in self.nodes[tgt].items()
+                           if node.get(match, other) == tgt_key), tgt_key)
+            if src == label and src_id == node_id:
+                result.append({"type": rel, "labels": [tgt], "other_id": target,
+                               "other_props": self.nodes[tgt].get(target, {}),
+                               "relationship_props": props.copy(), "outgoing": True})
+            elif tgt == label and target == node_id:
+                result.append({"type": rel, "labels": [src], "other_id": src_id,
+                               "other_props": self.nodes[src].get(src_id, {}),
+                               "relationship_props": props.copy(), "outgoing": False})
+        return result
 
     def fetch_repositories_for_dedup(self) -> list[dict]:
         """Mirror of Neo4jClient.fetch_repositories_for_dedup."""
@@ -481,6 +549,19 @@ class RecordingNeo4jClient:
                 1 for (src_primary, rel_type, _tgt, src_id, _tid) in self.edges
                 if rel_type == "IMPLEMENTS" and src_primary == "Repository" and src_id == repository_id),
         } for repository_id, props in self.nodes.get("Repository", {}).items()]
+
+    def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
+        """Mirror of Neo4jClient.fetch_relationship_pairs (id-matched targets only)."""
+        return {(src_id, tgt_id) for (src, rel, tgt, src_id, tgt_id) in self.edges
+                if (src, rel, tgt) == (src_label, rel_type, tgt_label)}
+
+    def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs,
+                                   tgt_match_prop="id") -> int:
+        removed = 0
+        for src_id, tgt_id in pairs:
+            if self.edges.pop((src_label, rel_type, tgt_label, src_id, tgt_id), None) is not None:
+                removed += 1
+        return removed
 
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Mirror of Neo4jClient.fetch_merged_id_map over recorded state."""
@@ -498,6 +579,15 @@ class RecordingNeo4jClient:
 
     def merge_repository_nodes_batch(self, merges) -> int:
         return self._fold_nodes("Repository", merges)
+
+    def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs, tgt_match_prop="id") -> int:
+        removed = 0
+        for source, target in pairs:
+            key = src_label, rel_type, tgt_label, source, target
+            if key in self.edges:
+                del self.edges[key]
+                removed += 1
+        return removed
 
     def close(self) -> None:
         pass

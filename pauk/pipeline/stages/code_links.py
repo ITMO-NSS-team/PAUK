@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlparse
 
 import pymupdf as fitz
 
-from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, PublicationSourceRecord, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import DownloadState, HttpClient
@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 _LINE_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)"
 _WRAP = _LINE_WRAP + "?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
-# Repetition must consume a line break to avoid exponential backtracking.
 _SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github"
@@ -42,8 +41,9 @@ GITHUB_URL = re.compile(
     + r"\.com"
     + _WRAP
     + r"/"
+    + "(?>"
     + _SEGMENT
-    + r"/"
+    + r")/"
     + _SEGMENT,
     re.IGNORECASE,
 )
@@ -575,6 +575,17 @@ def _preserve_pdf_occurrences(
     return occurrences_by_url
 
 
+def _tag_pdf_occurrences(
+    page_occurrences: list[dict[str, list[LinkOccurrence]]],
+    pdf_id: str,
+) -> None:
+    """Attach one source-record cache identity to extracted occurrences."""
+    for page_found in page_occurrences:
+        for found in page_found.values():
+            for occurrence in found:
+                occurrence.pdf_id = pdf_id
+
+
 def _archived_repository_url(publication: Publication) -> str | None:
     """The repository a software or dataset deposit is an archive of.
 
@@ -615,6 +626,7 @@ class _PdfRequest:
 @dataclass(frozen=True)
 class _PdfSave:
     publication: Publication
+    record_key: str
     data: bytes
 
     @property
@@ -630,6 +642,10 @@ def _pdf_host(url: str) -> str:
     with suppress(ValueError):
         return urlparse(url).hostname or ""
     return ""
+
+
+def _primary_pdf_record(publication: Publication) -> PublicationSourceRecord | None:
+    return next((record for record in publication.source_records if record.pdf_urls or record.doi), None)
 
 
 class CodeLinksStage(EnrichmentStage):
@@ -654,7 +670,7 @@ class CodeLinksStage(EnrichmentStage):
 
     def _perform_pdf_io(self, task: _PdfTask) -> bytes | None:
         if isinstance(task, _PdfSave):
-            self.pdf_store.save(task.publication.id, task.data)
+            self.pdf_store.save(task.record_key, task.data)
             return None
         return self.http.get_bytes(task.url, state=task.state, **task.options)
 
@@ -662,9 +678,13 @@ class CodeLinksStage(EnrichmentStage):
         """Interleave hosts so one publisher cannot fill the initial worker pool."""
         groups: dict[str, deque[Publication]] = {}
         for publication in candidates:
+            record = _primary_pdf_record(publication)
+            record_key = record.key if record else publication.id
             source = ""
-            if not self.pdf_store.exists(publication.id):
-                source = next(iter(publication.pdf_urls), self.config.pdf_crawler_url if publication.doi else "")
+            if not self.pdf_store.exists(record_key):
+                urls = record.pdf_urls if record else publication.pdf_urls
+                doi = record.doi if record else publication.doi
+                source = next(iter(urls), self.config.pdf_crawler_url if doi else "")
             groups.setdefault(_pdf_host(source), deque()).append(publication)
         while groups:
             for host in list(groups):
@@ -904,80 +924,105 @@ class CodeLinksStage(EnrichmentStage):
             return False
 
     def _pdf_workflow(self, pub: Publication) -> _PdfWorkflow:
-        """Collect primary and cached-version PDF evidence across queued I/O tasks."""
-        version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
-        cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
-        # An already cached version makes a new download of a missing survivor unnecessary.
-        if cached_versions and not self.pdf_store.exists(pub.id):
+        """Collect source-record and cached-version evidence across queued I/O."""
+        primary = _primary_pdf_record(pub)
+        primary_id = primary.key if primary else pub.id
+        primary_cached = self.pdf_store.exists(primary_id)
+        version_ids = dict.fromkeys([
+            *(pub.source_keys if pub.schema_version >= 2 else []),
+            *pub.merged_ids,
+            *(version.openalex_id for version in pub.versions),
+        ])
+        cached_versions = []
+        seen_files = {self.pdf_store.cache_identity(primary_id)} if primary_cached else set()
+        for pdf_id in version_ids:
+            if pdf_id == primary_id or not self.pdf_store.exists(pdf_id):
+                continue
+            cache_identity = self.pdf_store.cache_identity(pdf_id)
+            if cache_identity in seen_files:
+                continue
+            seen_files.add(cache_identity)
+            cached_versions.append(pdf_id)
+
+        if cached_versions and not primary_cached:
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = yield from self._primary_pdf_workflow(pub)
-        parsed_pdf_ids = {pub.id} if pages else set()
-        failed_pdf_ids = {pub.id} if error else set()
-        for page_found in occurrences:
-            for found in page_found.values():
-                for occurrence in found:
-                    occurrence.pdf_id = pub.id
-        # Merged records can retain a more complete cached PDF than the survivor.
+            pages, occurrences, error = yield from self._primary_pdf_workflow(pub, primary)
+        parsed_ids = {primary_id} if pages else set()
+        failed_ids = {primary_id} if error else set()
+        _tag_pdf_occurrences(occurrences, primary_id)
         errors = [error] if error else []
+
         for pdf_id in cached_versions:
             try:
                 version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
             except CancelledError:
                 raise
             except Exception as exc:
-                failed_pdf_ids.add(pdf_id)
+                failed_ids.add(pdf_id)
                 errors.append(f"{pdf_id}: {redact_text(exc)}")
                 continue
-            parsed_pdf_ids.add(pdf_id)
-            for page_found in version_occurrences:
-                for found in page_found.values():
-                    for occurrence in found:
-                        occurrence.pdf_id = pdf_id
+            parsed_ids.add(pdf_id)
+            _tag_pdf_occurrences(version_occurrences, pdf_id)
             pages.extend(version_pages)
             occurrences.extend(version_occurrences)
-        if cached_versions and not pages and not self.pdf_store.exists(pub.id):
-            # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = yield from self._primary_pdf_workflow(pub)
+
+        if not pages:
+            for record in pub.source_records:
+                if record.key == primary_id or record.key in cached_versions or not (record.pdf_urls or record.doi):
+                    continue
+                fallback_pages, fallback_occurrences, fallback_error = yield from self._primary_pdf_workflow(pub, record)
+                if fallback_pages:
+                    parsed_ids.add(record.key)
+                    _tag_pdf_occurrences(fallback_occurrences, record.key)
+                    pages.extend(fallback_pages)
+                    occurrences.extend(fallback_occurrences)
+                    errors = []
+                    break
+                if fallback_error:
+                    failed_ids.add(record.key)
+                    errors.append(fallback_error)
+
+        if cached_versions and not pages and not primary_cached:
+            primary_pages, primary_occurrences, primary_error = yield from self._primary_pdf_workflow(pub, primary)
             if primary_error:
-                failed_pdf_ids.add(pub.id)
+                failed_ids.add(primary_id)
                 errors.append(primary_error)
             if primary_pages:
-                parsed_pdf_ids.add(pub.id)
-                for page_found in primary_occurrences:
-                    for found in page_found.values():
-                        for occurrence in found:
-                            occurrence.pdf_id = pub.id
+                parsed_ids.add(primary_id)
+                _tag_pdf_occurrences(primary_occurrences, primary_id)
                 pages.extend(primary_pages)
                 occurrences.extend(primary_occurrences)
-        return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_pdf_ids, failed_pdf_ids)
+        return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_ids, failed_ids)
 
     def _primary_pdf_workflow(
-        self, pub: Publication,
+        self, pub: Publication, record: PublicationSourceRecord | None,
     ) -> Generator[_PdfTask, bytes | None, tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]]:
-        """Try the cache, direct sources and crawler; queue downloads and cache writes."""
+        """Try the cache, direct sources and crawler for one source record."""
+        record_key = record.key if record else pub.id
         errors = []
-        if self.pdf_store.exists(pub.id):
+        if self.pdf_store.exists(record_key):
             try:
-                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
+                pages, occurrences = _extract_pdf(self.pdf_store.read(record_key))
                 return pages, occurrences, None
             except CancelledError:
                 raise
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        sources = [(url, {}) for url in dict.fromkeys(pub.pdf_urls)]
-        if self.crawler_available and pub.doi:
+        pdf_urls = record.pdf_urls if record else pub.pdf_urls
+        doi = record.doi if record else pub.doi
+        sources = [(url, {}) for url in dict.fromkeys(pdf_urls)]
+        if self.crawler_available and doi:
             sources.append((
-                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),
+                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": doi}),
                 {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0, "deadline": CRAWLER_DOWNLOAD_TIMEOUT},
             ))
         for source_url, kwargs in sources:
             try:
                 pdf_bytes = cast(bytes, (yield _PdfRequest(pub, source_url, kwargs)))
                 pages, occurrences = _extract_pdf(pdf_bytes)
-                # Error pages must never poison the cache for subsequent attempts.
-                yield _PdfSave(pub, pdf_bytes)
+                yield _PdfSave(pub, record_key, pdf_bytes)
                 return pages, occurrences, None
             except CancelledError:
                 raise

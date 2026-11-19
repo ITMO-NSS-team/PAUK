@@ -1,6 +1,7 @@
 from .department import Department
+from .identity import ExternalIdentifier, PublicationSourceRecord, SourceAuthor
 from .organization import Organization
-from .person import Affiliation, Person
+from .person import Affiliation, GitHubMatchResult, GitHubMatchState, Person
 from .processing import ClassificationStatus
 from .publication import Funding, Publication, PublicationVersion, VersionAuthor
 from .relations import Authorship, Contribution, MentionsLink
@@ -13,7 +14,10 @@ __all__ = [
     "CodeLink",
     "Contribution",
     "Department",
+    "ExternalIdentifier",
     "Funding",
+    "GitHubMatchResult",
+    "GitHubMatchState",
     "GitHubProfile",
     "LinkCandidate",
     "LinkOccurrence",
@@ -21,8 +25,10 @@ __all__ = [
     "Organization",
     "Person",
     "Publication",
+    "PublicationSourceRecord",
     "PublicationVersion",
     "RepoLink",
     "Repository",
+    "SourceAuthor",
     "VersionAuthor",
 ]

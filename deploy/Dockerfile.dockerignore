@@ -1,0 +1,11 @@
+.git
+.venv
+.env*
+**/__pycache__
+**/node_modules
+pauk/gui/web/dist
+pauk/gui/web/dist-public
+
+data/*
+!data/static
+data/static/russian_names.csv

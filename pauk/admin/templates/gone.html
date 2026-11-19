@@ -35,6 +35,7 @@
   {% if restorable %}
   <form method="post" action="/nodes/{{ label }}/restore/{{ node_id | urlencode }}" style="margin-top:24px">
     <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="seen_write" value="{{ decision_version }}">
     <button type="submit">Восстановить</button>
   </form>
   {% else %}

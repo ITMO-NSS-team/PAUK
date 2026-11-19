@@ -18,6 +18,28 @@
 <p class="note">Группа разобрана. Отмеченные склеятся при следующем прогоне.</p>
 {% elif done == "waiting" %}
 <p class="note">Ответ сохранён. Записи склеятся при следующем прогоне.</p>
+{% elif done == "linked" %}
+<p class="note">Связь IS_VERSION подтверждена. Публикации остаются отдельными узлами.</p>
+{% elif done == "unlinked" %}
+<p class="note">Связь IS_VERSION убрана. Следующий прогон версий её не вернёт.</p>
+{% elif done == "already_unlinked" %}
+<p class="note">Решение записано. Связи IS_VERSION между публикациями уже нет.</p>
+{% elif done == "version_folded" %}
+<p class="note">Решение записано. Оба ID сейчас указывают на одну публикацию.</p>
+{% elif done == "version_missing" %}
+<p class="note">Решение записано. Одной из публикаций сейчас нет в графе.</p>
+{% elif done == "reopened" %}
+<p class="note">Ответ снят, связь IS_VERSION снова ждёт решения.</p>
+{% elif done == "relink" %}
+<p class="note">Ответ снят. Связь IS_VERSION вернётся при следующем прогоне версий, если правила ещё находят эту пару.</p>
+{% elif done == "version_waiting" %}
+<p class="note">Решение записано, но граф сейчас недоступен. Сверка этой пары поставлена в очередь.</p>
+{% elif done == "version_busy" %}
+<p class="note">Решение записано, но граф сейчас занят другой задачей. Сверка этой пары поставлена в очередь.</p>
+{% elif done == "no_edge" %}
+<p class="note">Решение записано, но связи IS_VERSION между этими узлами сейчас нет. Следующий прогон версий создаст её уже подтверждённой, если правила ещё находят эту пару.</p>
+{% elif done == "no_edge_deleted" %}
+<p class="note">Решение записано, но связь IS_VERSION между этими узлами удалена вручную. Прогон версий её не создаст, пока ручное удаление не отменят.</p>
 {% endif %}
 
 <div class="tabs">
@@ -31,6 +53,8 @@
     Отложенные{% if counts.skipped %} {{ counts.skipped }}{% endif %}</a>
   <a href="/review?tab=answered" {% if tab == "answered" %}class="on"{% endif %}>
     Отвеченные{% if counts.answered %} {{ counts.answered }}{% endif %}</a>
+  <a href="/review?tab=versions" {% if tab == "versions" %}class="on"{% endif %}>
+    Версии публикаций{% if counts.versions %} {{ counts.versions }}{% endif %}</a>
 </div>
 
 {% if not rows %}
@@ -39,6 +63,7 @@
   {% elif tab == "answered" %}Пока никто ничего не решил.
   {% elif tab == "disputed" %}Расхождений нет. Правила пайплайна не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
+  {% elif tab == "versions" %}Пар-версий нет. Очередь наполняет «Версии публикаций» на странице задач.
   {% else %}Вопросов нет. Новые появляются после дедупликации и сопоставления аккаунтов GitHub.{% endif %}</p>
 {% else %}
 <div class="card scroll">
@@ -69,14 +94,28 @@
           {{ who.name }}{% if row.chosen == who.id %} <span class="kind kind-created">выбрана</span>{% endif %}
           {% endif %}
           {% if row.degrees.get(who.id) %}<span class="muted"> · {{ row.degrees[who.id] }}</span>{% endif %}
+          {% elif row.is_choice and not who.account %}
+          {% if user.can_write and not row.verdict %}
+          <label style="display:inline; font-size:inherit; color:inherit">
+            <input type="radio" form="answer-{{ row.id }}" name="chosen" value="{{ who.id }}">
+            <a href="{{ who.href }}">{{ who.name }}</a></label>
+          {% else %}
+          <a href="{{ who.href }}">{{ who.name }}</a>{% if row.chosen == who.id %} <span class="kind kind-created">выбран</span>{% endif %}
+          {% endif %}
           {% else %}
           <a href="{{ who.href }}"
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
           {% endif %}
-          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span>
+          {% if not who.account %}<br><span class="muted val">{{ who.id }}</span>{% endif %}
+          {% if row.is_version and row.venues[loop.index0] %}<br><span class="muted">{{ row.venues[loop.index0] }}</span>{% endif %}
+          {% if who.signals %}<div class="muted">{{ who.signals|join(", ") }}</div>{% endif %}
           {% set facts = who.facts or {} %}
-          {% if facts.orcid or facts.email or facts.department or facts.works %}
+          {% if facts.orcid or facts.email or facts.department or facts.works
+                or facts.name or facts.company or facts.location %}
           <div class="facts">
+            {% if facts.name %}<span title="имя в профиле GitHub">{{ facts.name }}</span>{% endif %}
+            {% if facts.company %}<span title="компания">{{ facts.company }}</span>{% endif %}
+            {% if facts.location %}<span title="город">{{ facts.location }}</span>{% endif %}
             {% if facts.orcid %}<span title="ORCID">{{ facts.orcid }}</span>{% endif %}
             {% if facts.email %}<span title="почта">{{ facts.email }}</span>{% endif %}
             {% if facts.department %}<span title="подразделение">{{ facts.department }}</span>{% endif %}
@@ -88,6 +127,14 @@
         {% endfor %}
       </td>
       <td>
+        {% if row.is_alias %}
+        <p class="note bad">Требуется исправить историю слияний. Это не вопрос о том,
+          один ли это человек. Обычное решение ревью не исправляет конфликт алиасов.</p>
+        {% if row.operation %}<div>Операция: <span class="val">{{ row.operation }}</span></div>{% endif %}
+        {% for edge in row.alias_edges %}
+        <div class="val">{{ edge.alias }} → {{ edge.target }}</div>
+        {% endfor %}
+        {% endif %}
         {% if row.shared_coauthors is not none %}
         <div>соавторов <b>{{ row.shared_coauthors }}</b>,
           подразделений <b>{{ row.shared_departments }}</b></div>
@@ -117,8 +164,14 @@
         {% if row.is_group and not row.verdict %}
         <span class="muted">Отметьте слева тех, кто один человек.</span>
         {% endif %}
+        {% if row.is_version %}
+        <div>{{ row.bucket }}</div>
+        <div class="muted">заголовки {{ row.title_sim }}{% if row.abstract_sim is not none %},
+          аннотации {{ row.abstract_sim }}{% endif %}</div>
+        {% if row.llm_reason %}<div class="muted">LLM: {{ row.llm_reason }}</div>{% endif %}
+        {% endif %}
         {% if row.is_github %}
-        <div>{{ row.signals|join(", ") }}</div>
+        {% if not row.is_choice %}<div>{{ row.signals|join(", ") }}</div>{% endif %}
         {% for repo in row.repos %}
         <div class="muted val"><a href="{{ repo }}" target="_blank" rel="noopener">{{ repo }}</a></div>
         {% endfor %}
@@ -139,13 +192,18 @@
         <div style="margin-bottom:8px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
             {% if row.is_staff %}{% if row.chosen %}запись выбрана{% else %}никто из каталога{% endif %}
-            {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
+            {% elif row.is_github %}
+              {% if row.chosen %}автор выбран{% elif row.verdict == "same" %}его аккаунт
+              {% elif row.is_choice %}никто из них{% else %}не его аккаунт{% endif %}
+            {% elif row.is_version %}{% if row.verdict == "same" %}одна работа{% else %}разные работы{% endif %}
+            {% elif row.is_publication %}{% if row.verdict == "same" %}одна публикация{% else %}разные публикации{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {% if row.is_staff %}
             {% if row.chosen %}<br><span class="muted">склеит записи при следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
             <br><span class="muted">привяжется на следующем сборе</span>
+          {% elif row.is_version %}
           {% elif row.verdict == "same" %}
             {% if row.applied_at %}<br><span class="muted">склеено {{ row.applied_at|moment }}</span>
             {% else %}<br><span class="muted">склеится при следующем прогоне</span>{% endif %}
@@ -154,14 +212,26 @@
         {% elif row.skipped_by %}
         <div class="muted" style="margin-bottom:8px">отложил {{ row.skipped_by }}</div>
         {% endif %}
-        {% if user.can_write %}
+        {% if row.is_alias %}
+        <span class="muted">Ответы и слияния заблокированы до отдельного исправления
+          и проверки алиасов. Эта страница не исправляет данные.</span>
+        {% elif user.can_write %}
         {% if row.verdict and row.disputed_at %}
         <form method="post" action="/review/answer" class="verdicts">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
           <input type="hidden" name="members" value="{{ row.members|join(',') }}">
           <input type="hidden" name="tab" value="{{ tab }}">
+          {% if row.is_github and row.disputed_token %}
+          <input type="hidden" name="dispute_token" value="{{ row.disputed_token }}">
+          {% endif %}
+          {% if row.is_choice and row.verdict == "same" %}
+          <input type="hidden" name="verdict" value="choose">
+          <input type="hidden" name="login" value="{{ row.login }}">
+          <input type="hidden" name="chosen" value="{{ row.chosen }}">
+          {% else %}
           <input type="hidden" name="verdict" value="{{ row.verdict }}">
+          {% endif %}
           <input type="hidden" name="note" value="{{ row.note }}">
           <button type="submit" class="ghost">оставить как есть</button>
         </form>
@@ -204,15 +274,24 @@
             <button type="submit" name="verdict" value="choose">это выбранная запись</button>
             {% elif row.is_group %}
             <button type="submit" name="verdict" value="split">отмеченные это один человек</button>
+            {% elif row.is_choice %}
+            <input type="hidden" name="login" value="{{ row.login }}">
+            <button type="submit" name="verdict" value="choose">это его аккаунт</button>
             {% elif row.is_github %}
             <button type="submit" name="verdict" value="same">это его аккаунт</button>
+            {% elif row.is_version %}
+            <button type="submit" name="verdict" value="same">одна работа</button>
+            {% elif row.is_publication %}
+            <button type="submit" name="verdict" value="same">одна публикация</button>
             {% else %}
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
             <button type="submit" name="verdict" value="different" class="ghost">
-              {% if row.is_staff %}никто из них
+              {% if row.is_staff or row.is_choice %}никто из них
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
+              {% elif row.is_version %}разные работы
+              {% elif row.is_publication %}разные публикации
               {% else %}разные{% endif %}</button>
             {% if not row.skipped_by %}
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>

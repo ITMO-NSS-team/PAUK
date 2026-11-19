@@ -92,6 +92,34 @@ class StagesTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
+    def test_source_key_and_legacy_id_do_not_parse_the_same_pdf_twice(self):
+        config = Settings(data_dir=self.root / "data", pdf_crawler_url="")
+        config.pdf_dir.mkdir(parents=True)
+        (config.pdf_dir / "W1.pdf").write_bytes(
+            _make_pdf_bytes(["Code: https://github.com/org/repo"]),
+        )
+        prepared = PreparedStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="Paper",
+            schema_version=2,
+            merged_ids=["W1"],
+            source_records=[{
+                "source": "openalex",
+                "source_id": "W1",
+                "pdf_urls": ["https://example.org/paper.pdf"],
+            }],
+        )])
+        with patch("pauk.pipeline.stages.code_links.HttpClient") as client:
+            CodeLinksStage(prepared, RawStore(self.db, "sample"), config=config).run()
+            client.return_value.get_bytes.assert_not_called()
+
+        publication = next(prepared.read_models("publications", Publication))
+        [link] = next(prepared.read_models("repo_links", RepoLink)).links
+        self.assertEqual(publication.processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(publication.full_text.count("https://github.com/org/repo"), 1)
+        self.assertEqual([occurrence.pdf_id for occurrence in link.occurrences], ["openalex:W1"])
+
     def test_code_links_marks_empty_and_found_results(self):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
@@ -1474,6 +1502,13 @@ class CollectOccurrencesTest(unittest.TestCase):
 
 
 class GithubUrlRegexTest(unittest.TestCase):
+    def test_long_owner_without_repo_does_not_backtrack(self):
+        script = (
+            "from pauk.pipeline.stages.code_links import GITHUB_URL; "
+            "assert GITHUB_URL.search('github.com/' + 'a' * 200000 + ' end') is None"
+        )
+        subprocess.run([sys.executable, "-c", script], check=True, timeout=10, capture_output=True)
+
     def test_long_owner_only_urls_do_not_block_later_repository_links(self):
         # A subprocess bounds a regex hang without leaving the test runner blocked.
         script = (

@@ -91,7 +91,9 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
             runs wanting a different resource entirely.
     """
     moment = now()
-    query: dict = {"state": str(JobState.QUEUED)}
+    query: dict = {"state": str(JobState.QUEUED), "$or": [
+        {"available_at": {"$exists": False}}, {"available_at": {"$lte": moment}},
+    ]}
     if busy:
         query["resource"] = {"$nin": sorted(busy)}
     document = db[COLLECTION].find_one_and_update(
@@ -117,7 +119,7 @@ def start(db: Database, job_id: str) -> bool:
     return result.matched_count > 0
 
 
-def requeue(db: Database, job_id: str) -> bool:
+def requeue(db: Database, job_id: str, *, delay_seconds: int = 0) -> bool:
     """Put a job back because the resource it needs was taken.
 
     Not a failure: the run is still wanted, just not now. Accepts a running
@@ -127,7 +129,8 @@ def requeue(db: Database, job_id: str) -> bool:
     result = db[COLLECTION].update_one(
         {"_id": job_id, "state": {"$in": [str(JobState.CLAIMED), str(JobState.RUNNING)]}},
         {"$set": {"state": str(JobState.QUEUED), "worker": None,
-                  "started_at": None, "heartbeat_at": None}})
+                  "started_at": None, "heartbeat_at": None,
+                  "available_at": now() + timedelta(seconds=delay_seconds)}})
     return result.matched_count > 0
 
 

@@ -7,10 +7,11 @@ before any other note in `architecture/`.
 **Files:** nothing specific: an overview across all of `pauk/`; see the links
 below for the details of each subpackage.
 
-PAUK collects ITMO publications from OpenAlex, enriches them with data from
+PAUK collects ITMO publications through typed source adapters (currently
+OpenAlex), enriches them with data from
 external sources (Crossref, ORCID, GitHub), finds links to code in them, and
-loads the result into Neo4j. `pauk/gui/` reads the graph and draws an
-interactive map.
+loads the result into Neo4j. `pauk/cache/` exports the graph; `pauk/gui/`
+turns the snapshot into an interactive static map.
 
 It is a single Python package, `pauk/`.
 
@@ -20,10 +21,10 @@ The same flow as a detailed Mermaid diagram:
 [`../diagrams/pipeline-flow.md`](../diagrams/pipeline-flow.md).
 
 ```
-OpenAlex API
+Source API (OpenAlex today)
   |  pauk collect
 MongoDB: raw                                 RawStore, append-only
-  |  pauk normalize
+  |  pauk normalize                          adapter -> identity resolver -> aggregate builder
 MongoDB: publications/persons/...            PreparedStore, 7 collections
   |  pauk enrich [stage]                     persons -> departments -> code_links -> link_relevance ->
   |                                          emails -> repositories -> repo_people -> dedup ->
@@ -35,7 +36,7 @@ Neo4j                                        accumulates across runs, MERGE
 Neo4j                                        folds duplicates across groups
   |  pauk cache export
 data/cache/graph_snapshot_<dd-mm-yyyy>.json  snapshot on disk
-  |  pauk gui build                             pauk reports build (OSA, outside the VPN)
+  |  pauk gui build                             pauk reports build (OSA, proxy if needed)
 data/gui/{public,private}/*.json             data/gui/private/reports/<lang>/<repo id>.pdf
 ```
 
@@ -47,7 +48,8 @@ of the `groups` field on MongoDB documents; entities are global, not per group
 `persons`, `departments`, `organizations`, `repositories`, `github_profiles`
 and `repo_links` (`PreparedStore.COLLECTIONS`).
 
-**Neo4j is the only place where data from different runs accumulates.** Each
+**Neo4j is the published graph across groups.** Mongo entities also accumulate
+enrichment and group membership, but the site reads published graph state. Each
 `pauk publish graph --group <group>` pours its group in through `MERGE ...
 ON CREATE / ON MATCH`. Reading only the latest group would lose everything
 collected earlier, which is why the cache and the visualization read the
@@ -58,6 +60,7 @@ graph, not files on disk.
 | Package | What it does | Details |
 |---|---|---|
 | `pauk/models/` | pydantic schema of the prepared rows | [models.md](models.md) |
+| `pauk/ingest/` | source adapters, identity resolution and aggregate building | [pipeline/overview.md](pipeline/overview.md) |
 | `pauk/sources/` | HTTP clients for external APIs | [sources.md](sources.md) |
 | `pauk/storage/` | raw and prepared data in MongoDB | [storage.md](storage.md) |
 | `pauk/pipeline/` | collect, normalize, enrich, dedup | [pipeline/overview.md](pipeline/overview.md) |
@@ -67,6 +70,7 @@ graph, not files on disk.
 | `pauk/reports/` | OSA PDF reports on the snapshot's repositories, for the site | [reports.md](reports.md) |
 | `pauk/cli.py` | `pauk ...` commands | [cli.md](cli.md) |
 | `pauk/admin/` | admin panel and worker | [../admin-panel.md](../admin-panel.md) |
+| `pauk/ops/` | service status, database backups, site releases and a durable operation journal | [ops.md](ops.md) |
 | `scripts/` | one-off and operations utilities | [scripts.md](scripts.md) |
 | - | deploying to the lab server | [deploy.md](deploy.md) |
 
@@ -82,9 +86,9 @@ enrichment stage on that row: `not_started`, `completed`, `completed_empty`,
 `not_applicable`, `failed`. `EnrichmentStage.needs_attempt()`
 (`pauk/pipeline/stages/base.py`) decides whether to touch a row again:
 `FAILED` and `NOT_STARTED` yes, anything else no, unless `--force` is passed.
-Stages save complete working sets with `write_models()` or completed rows
-with `upsert_models()`. The latter preserves finished work if a run stops
-before the stage ends. Because entities in MongoDB are global,
+Stages persist complete working sets with `write_models()` or changed rows
+with `upsert_models()`. The latter preserves finished external responses
+across an interrupted run. Because entities in MongoDB are global,
 `processing` is visible to the next group that touches the same entity, so
 reprocessing does not start from zero (see [storage.md](storage.md)).
 
@@ -100,8 +104,9 @@ warning with the exact count goes to the log; no placeholders are created).
 ## Deduplication: two levels
 
 - **Within one group** (`pipeline/stages/dedup.py`, the `dedup` stage, always
-  part of `pauk enrich` and `pauk run`): local and offline; it folds persons,
-  publications and repositories that matched within this run's rows.
+  part of `pauk enrich` and `pauk run`): it folds persons,
+  publications and repositories that matched within this run's rows. Person
+  resolution can call the LLM; it is not an offline-only stage.
 - **Across the whole graph** (`pauk/graph/dedup.py`, `pauk dedup graph`, a
   separate command, not part of a normal run): the same merge rules, but it
   reads all of Neo4j, catching duplicates that entered the graph from
@@ -111,3 +116,5 @@ Both use the same decision functions (`plan_person_merges` and the paired
 logic for publications and repositories); they differ only in where rows come
 from (MongoDB vs Cypher) and where the result is written. See
 [pipeline/dedup.md](pipeline/dedup.md).
+Both layers resolve alias chains through `pauk/aliases.py`; cycles or conflicting
+survivors are rejected before applying the map.

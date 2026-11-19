@@ -42,7 +42,7 @@ _CHAR = r"(?:-(?!\n)|[\w.])"
 _SEGMENT = _CHAR + r"+(?:" + _LINE_WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?github" + _WRAP + r"\.com" + _WRAP + r"/"
-    + _SEGMENT + r"/" + _SEGMENT, re.IGNORECASE)
+    + "(?>" + _SEGMENT + r")/" + _SEGMENT, re.IGNORECASE)
 ```
 
 - **The scheme is optional**: it catches a bare `github.com/org/repo` in prose,
@@ -55,7 +55,9 @@ GITHUB_URL = re.compile(
   preprocessing of the whole text. A break is handled only while the regex
   engine is still parsing `github.com/owner/repo`, not after it. The next
   line's continuation may be ordinary text, so the joined result is kept as a
-  candidate.
+  candidate. The break is required inside the repeated segment; making it
+  optional causes exponential backtracking on a long owner without a repo.
+  The atomic owner group avoids retrying shorter prefixes when `/` is absent.
 - **A break after `_` is also recognized**: both the short address and the one
   with the next line's continuation are kept. Other ordinary line breaks are not
   joined; blank lines and page boundaries are not crossed.
@@ -212,20 +214,23 @@ Cancellation interrupts body reads and retry/host waits. Before headers
 arrive, stopping may take up to the socket timeout; OS DNS lookup has no hard
 deadline. Sessions close after workers finish.
 
-`data/pdf/<publication_id>.pdf` (`PdfStore`, with a `{fetched_at}` pointer in
-the `pdfs` collection). The write is atomic (temporary file plus `os.replace`)
+`data/pdf/<sha256(source-record-key)>.pdf` (`PdfStore`, with a
+`{record_key, filename, fetched_at}` pointer in the `pdfs` collection). Legacy
+`W….pdf` files remain readable without renaming. The write is atomic
+(temporary file plus `os.replace`)
 and happens only after the PDF parsed successfully, so HTML error pages never
 reach the cache. If an old cached file cannot be read, direct links and the
 crawler are tried, and a successful PDF replaces the corrupt file. A valid
 cache is not downloaded again. Normalized page texts are joined into
 `Publication.full_text` with `"\n\n"`.
 
-After the primary PDF, the stage reads already-cached files from `merged_ids`
-and `versions[].openalex_id`, once per id. Versions cause no extra network
-downloads. If the primary PDF is absent but a version cache is readable, it is
-used without trying to download another primary PDF. If all version caches
-are corrupt, the normal primary sources are still tried; the version error
-remains explicit and its earlier occurrences are not lost.
+After the highest-ranked source record, the stage reads already-cached files
+from the other `source_keys`, `merged_ids` and `versions[].openalex_id`, once
+per key. If no cached record is usable, it tries the remaining source records'
+own PDF URLs/DOI in rank order. Every occurrence therefore names the record
+whose PDF supplied it. If all version caches are corrupt, the normal source
+records are still tried; the cache error remains explicit and earlier
+occurrences are not lost.
 
 Texts are combined in `full_text`, and every occurrence keeps its own `pdf_id`
 and local page number. Caches are read even without `pdf_urls`. Failure or
@@ -233,6 +238,10 @@ disappearance of a previously used version PDF preserves its old occurrences
 and sets `failed`; evidence from a successfully reread PDF is replaced rather
 than mixed with stale evidence. URL spellings differing only by HTTP/HTTPS,
 case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
+
+During the compatibility release, `openalex:W…` and legacy `W….pdf` may resolve
+to the same file. Cached candidates are deduplicated by the resolved file path,
+so that file contributes text and occurrences only once.
 
 ## Statuses
 
