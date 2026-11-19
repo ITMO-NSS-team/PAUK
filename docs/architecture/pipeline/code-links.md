@@ -181,9 +181,9 @@ the next one. Initial publications are interleaved by their primary host.
 Each source URL is queued under its own host; a failed source
 releases that host before an alternative URL or the crawler is queued.
 Sources waiting in the host queue do not occupy network workers.
-Redirects pass through the HTTP limiter. Each download thread has its own
-session. Downloads and cache writes share a worker pool; PDF extraction
-runs on the coordinating thread.
+Retries and redirects waiting for host admission also release the worker.
+Each download thread has its own session. Downloads and cache writes share
+a worker pool; PDF extraction runs on the coordinating thread.
 `PDF_HOST_RPS` in `pauk/settings.py` sets request rates for specific publishers.
 
 Settings in `pauk/settings.py`:
@@ -205,8 +205,9 @@ positive pause. If no source succeeds, the publication stays `FAILED` for a
 later `enrich` run. The crawler has no retries and uses a 180-second read
 timeout and deadline.
 
-Results are upserted as they finish; stopping preserves completed work and
-untouched group members. Progress callbacks also run while downloads wait.
+Results are saved as they finish. Before replacing links, the stage clears
+completed statuses so a partial write can be retried without `--force`.
+Stopping saves results whose cache writes have started before exiting.
 Cancellation interrupts body reads and retry/host waits. Before headers
 arrive, stopping may take up to the socket timeout; OS DNS lookup has no hard
 deadline. Sessions close after workers finish.

@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError
 from contextlib import ExitStack, contextmanager, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -26,7 +27,7 @@ from pauk.settings import (
     ORCID_RPS,
 )
 
-from .rate_limit import LONG_WAIT_SECONDS, HostPaused, HostRateLimiter, RateLimit
+from .rate_limit import LONG_WAIT_SECONDS, HostPaused, HostRateLimiter, RateLimit, RequestDeferred
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,16 @@ DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 class _DownloadDeadline(requests.Timeout):
     """Distinguish the attempt deadline from a socket timeout."""
+
+
+@dataclass
+class DownloadState:
+    """Resume a deferred download without repeating a completed redirect or retry."""
+
+    attempt: int = 0
+    deadline: float | None = None
+    prepared: requests.PreparedRequest | None = None
+    history: list[requests.Response] = field(default_factory=list)
 
 
 class HttpRequestError(requests.RequestException):
@@ -109,9 +120,10 @@ class HttpClient:
         return self._request(method, url, params=params, json=json, retries=retries).json()
 
     def get_bytes(self, url: str, *, retries: int = 3, timeout: float | tuple[float, float] | None = None,
-                  deadline: float | None = None, max_wait: float | None = None) -> bytes:
+                  deadline: float | None = None, max_wait: float | None = None,
+                  state: DownloadState | None = None) -> bytes:
         """Send a GET request and return the raw response body."""
-        if deadline is None and max_wait is None:
+        if deadline is None and max_wait is None and state is None:
             return self._request("GET", url, retries=retries, timeout=timeout).content
         if deadline is not None and (isinstance(deadline, bool) or not math.isfinite(deadline) or deadline <= 0):
             raise ValueError("deadline must be positive and finite")
@@ -120,7 +132,7 @@ class HttpClient:
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
             raise ValueError("retries must be a nonnegative integer")
         return self._request("GET", url, retries=retries, timeout=timeout, deadline=deadline,
-                             max_wait=max_wait, consume=self._read_body).content
+                             max_wait=max_wait, consume=self._read_body, state=state).content
 
     def _read_body(self, response: requests.Response) -> bytes:
         chunks = []
@@ -160,10 +172,12 @@ class HttpClient:
         try:
             if self._cancelled.is_set():
                 raise CancelledError
+            if end is not None and time.monotonic() >= end:
+                raise _DownloadDeadline
             yield
             if self._cancelled.is_set():
                 raise CancelledError
-            if expired.is_set():
+            if expired.is_set() or (end is not None and time.monotonic() >= end):
                 raise _DownloadDeadline
         except (requests.RequestException, UrllibError, OSError):
             if self._cancelled.is_set():
@@ -189,6 +203,7 @@ class HttpClient:
         retries: int = 3, timeout: float | tuple[float, float] | None = None,
         deadline: float | None = None, max_wait: float | None = None,
         consume: Callable[[requests.Response], bytes] | None = None,
+        state: DownloadState | None = None,
     ) -> requests.Response:
         method = method.upper()
         safe_url = self._safe_request_url(method, url, params)
@@ -198,7 +213,7 @@ class HttpClient:
         if json is not None:
             request_kwargs["json"] = json
 
-        for attempt in range(retries + 1):
+        for attempt in range(state.attempt if state is not None else 0, retries + 1):
             if self._cancelled.is_set():
                 raise CancelledError
             try:
@@ -206,8 +221,12 @@ class HttpClient:
                     response = self._send(method, url, request_kwargs, attempt)
                 else:
                     end = time.monotonic() + deadline if deadline is not None else None
+                    if state is not None:
+                        if state.deadline is None:
+                            state.deadline = end
+                        end = state.deadline
                     response = self._send(method, url, request_kwargs, attempt, consume=consume,
-                                          end=end, max_wait=max_wait)
+                                          end=end, max_wait=max_wait, state=state)
             except HostPaused as exc:
                 raise HttpRequestError(method, safe_url, cause_type=str(exc)) from None
             except (requests.RequestException, UrllibError, OSError) as exc:
@@ -217,36 +236,31 @@ class HttpClient:
                 if attempt == retries or (max_wait is not None and delay > max_wait):
                     cause = "download deadline exceeded" if isinstance(exc, (_DownloadDeadline, TimeoutError)) else type(exc).__name__
                     raise HttpRequestError(method, safe_url, cause_type=cause) from None
-                self._wait(delay, type(exc).__name__, method, safe_url, attempt, retries,
-                           cancel=self._cancelled if consume is not None else None)
-                continue
-
-            delay = self._retry_delay(response, attempt)
-            if delay is not None and max_wait is not None and delay > max_wait:
-                raise HttpRequestError(method, safe_url, status_code=response.status_code,
-                                       cause_type=f"retry delayed for {delay:.0f}s") from None
-            if delay is not None and attempt < retries:
-                self._wait(delay, self._retry_reason(response), method, safe_url, attempt, retries,
-                           cancel=self._cancelled if consume is not None else None)
-                continue
-            try:
-                response.raise_for_status()
-            except requests.HTTPError:
-                response_url = response.url if isinstance(response.url, str) else safe_url
-                raise HttpRequestError(
-                    method,
-                    response_url,
-                    status_code=response.status_code,
-                ) from None
-            return response
+                reason = type(exc).__name__
+            else:
+                delay = self._retry_delay(response, attempt)
+                if delay is not None and max_wait is not None and delay > max_wait:
+                    raise HttpRequestError(method, safe_url, status_code=response.status_code,
+                                           cause_type=f"retry delayed for {delay:.0f}s") from None
+                if delay is None or attempt == retries:
+                    try:
+                        response.raise_for_status()
+                    except requests.HTTPError:
+                        response_url = response.url if isinstance(response.url, str) else safe_url
+                        raise HttpRequestError(method, response_url, status_code=response.status_code) from None
+                    return response
+                reason = self._retry_reason(response)
+            self._wait(delay, reason, method, safe_url, attempt, retries,
+                       cancel=self._cancelled if consume is not None else None, state=state)
         raise RuntimeError(f"unreachable retry state for {redact_url(url)}")
 
     def _send(self, method: str, url: str, kwargs: dict, attempt: int, *,
               consume: Callable[[requests.Response], bytes] | None = None,
-              end: float | None = None, max_wait: float | None = None) -> requests.Response:
+              end: float | None = None, max_wait: float | None = None,
+              state: DownloadState | None = None) -> requests.Response:
         """Admit each redirect separately, using Requests' prepared next request."""
-        prepared = None
-        history = []
+        prepared = state.prepared if state is not None else None
+        history = state.history if state is not None else []
         while True:
             current_url = prepared.url if prepared is not None else url
             try:
@@ -269,7 +283,7 @@ class HttpClient:
                     limit = limit.stricter(PUBLIC_LIMITS[host])
             if prepared is None and limit is None and consume is None:
                 return self.session.request(method, url, **kwargs)
-            admission = ({"cancel": self._cancelled, "deadline": end, "max_wait": max_wait}
+            admission = ({"cancel": self._cancelled, "deadline": end, "max_wait": max_wait, "defer": state is not None}
                          if consume is not None else {})
             with ExitStack() as cleanup:
                 if scoped_limit is not None:
@@ -319,6 +333,8 @@ class HttpClient:
                 response.close()
                 raise requests.TooManyRedirects
             prepared = following
+            if state is not None:
+                state.prepared = prepared
 
     def _observe_limit(self, host: str, response: requests.Response, attempt: int) -> None:
         count = self._positive_header(response, "X-Rate-Limit-Limit")
@@ -359,7 +375,8 @@ class HttpClient:
             return redact_url(url)
 
     @staticmethod
-    def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int, *, cancel=None) -> None:
+    def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int, *, cancel=None,
+              state: DownloadState | None = None) -> None:
         """Sleep before a retry, logging any wait of LONG_WAIT_SECONDS or more."""
         if delay >= LONG_WAIT_SECONDS:
             resume_at = (datetime.now().astimezone() + timedelta(seconds=delay)).isoformat(timespec="seconds")
@@ -367,6 +384,12 @@ class HttpClient:
                 "waiting %.0fs until %s before retrying %s %s (%s, retry %d/%d)",
                 delay, resume_at, method, safe_url, reason, attempt + 1, retries,
             )
+        if state is not None:
+            state.attempt = attempt + 1
+            state.deadline = None
+            state.prepared = None
+            state.history.clear()
+            raise RequestDeferred(time.monotonic() + delay)
         if cancel is None:
             time.sleep(delay)
         elif cancel.wait(delay):

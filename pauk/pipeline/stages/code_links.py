@@ -8,9 +8,11 @@ from collections import Counter, defaultdict, deque
 from collections.abc import Generator, Iterator
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPoolExecutor, wait
 from contextlib import closing, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from time import monotonic
+from heapq import heappop, heappush
+from itertools import count
+from time import monotonic, sleep
 from typing import cast
 from urllib.parse import urlencode, urlparse
 
@@ -19,8 +21,9 @@ import pymupdf as fitz
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
-from pauk.sources.base import HttpClient
+from pauk.sources.base import DownloadState, HttpClient
 from pauk.sources.pdf import PdfDownloader
+from pauk.sources.rate_limit import RequestDeferred
 from pauk.storage import PdfStore
 from pauk.urls import normalize_repo_url
 
@@ -601,10 +604,12 @@ class _PdfRequest:
     publication: Publication
     url: str
     options: dict[str, int]
+    state: DownloadState = field(default_factory=DownloadState)
 
     @property
     def host(self) -> str:
-        return _pdf_host(self.url)
+        prepared = self.state.prepared
+        return _pdf_host(prepared.url if prepared is not None else self.url)
 
 
 @dataclass(frozen=True)
@@ -651,7 +656,7 @@ class CodeLinksStage(EnrichmentStage):
         if isinstance(task, _PdfSave):
             self.pdf_store.save(task.publication.id, task.data)
             return None
-        return self.http.get_bytes(task.url, **task.options)
+        return self.http.get_bytes(task.url, state=task.state, **task.options)
 
     def _candidate_order(self, candidates: list[Publication]) -> Iterator[Publication]:
         """Interleave hosts so one publisher cannot fill the initial worker pool."""
@@ -670,8 +675,10 @@ class CodeLinksStage(EnrichmentStage):
     def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
         """Queue individual source URLs and parse completed PDFs on the caller thread."""
         pool = ThreadPoolExecutor(max_workers=self.config.code_links_concurrency, thread_name_prefix="pauk-pdf")
-        pending: dict[Future[bytes | None], tuple[_PdfWorkflow, _PdfTask]] = {}
+        pending: dict[Future[bytes | None], tuple[_PdfWorkflow, _PdfTask, str]] = {}
         remaining: dict[str, deque[tuple[_PdfWorkflow, _PdfTask]]] = {}
+        deferred: list[tuple[float, int, _PdfWorkflow, _PdfTask]] = []
+        sequence = count()
         workflows: set[_PdfWorkflow] = set()
         completed: deque[tuple[Publication, _PdfResult]] = deque()
         publications = self._candidate_order(candidates)
@@ -679,12 +686,17 @@ class CodeLinksStage(EnrichmentStage):
         reserved = Counter()
         done_count = 0
         reported = 0.0
+        stopped: Exception | KeyboardInterrupt | None = None
 
-        def heartbeat():
-            nonlocal reported
-            if self.on_progress is not None and monotonic() - reported >= self.REPORT_SECONDS:
+        def heartbeat() -> bool:
+            nonlocal reported, stopped
+            if stopped is None and self.on_progress is not None and monotonic() - reported >= self.REPORT_SECONDS:
                 reported = monotonic()
-                self.on_progress(self.progress_label, done_count, len(candidates))
+                try:
+                    self.on_progress(self.progress_label, done_count, len(candidates))
+                except (Exception, KeyboardInterrupt) as error:
+                    stopped = error
+            return stopped is None
 
         def advance(publication: Publication, workflow: _PdfWorkflow, *, data: bytes | None = None,
                     error: Exception | None = None) -> None:
@@ -703,7 +715,10 @@ class CodeLinksStage(EnrichmentStage):
 
         def fill_window():
             nonlocal exhausted
-            while len(pending) < self.config.code_links_concurrency:
+            while len(pending) < self.config.code_links_concurrency and heartbeat():
+                while deferred and deferred[0][0] <= monotonic():
+                    _, _, workflow, task = heappop(deferred)
+                    remaining.setdefault(task.host, deque()).append((workflow, task))
                 submitted = False
                 # Slow downloads must not strand already parsed PDFs waiting for a cache write.
                 for host in sorted(remaining, key=bool):
@@ -712,7 +727,7 @@ class CodeLinksStage(EnrichmentStage):
                     workflow, task = remaining[host].popleft()
                     if not remaining[host]:
                         del remaining[host]
-                    pending[pool.submit(self._perform_pdf_io, task)] = (workflow, task)
+                    pending[pool.submit(self._perform_pdf_io, task)] = (workflow, task, host)
                     reserved[host] += 1
                     submitted = True
                     if len(pending) >= self.config.code_links_concurrency:
@@ -728,7 +743,6 @@ class CodeLinksStage(EnrichmentStage):
                 except StopIteration:
                     exhausted = True
                     return
-                heartbeat()
                 workflow = self._pdf_workflow(publication)
                 workflows.add(workflow)
                 advance(publication, workflow)
@@ -736,33 +750,56 @@ class CodeLinksStage(EnrichmentStage):
         try:
             if not candidates:
                 return
-            probe = pool.submit(self._crawler_available)
-            while not probe.done():
-                heartbeat()
-                wait((probe,), timeout=PDF_POLL_SECONDS)
-            self.crawler_available = probe.result()
             with self.progress_bar(total=len(candidates)) as bar:
-                while pending or remaining or completed or not exhausted:
+                try:
+                    probe = pool.submit(self._crawler_available)
+                    while not probe.done() and heartbeat():
+                        wait((probe,), timeout=PDF_POLL_SECONDS)
+                    if stopped is None:
+                        self.crawler_available = probe.result()
+                    while (pending or remaining or deferred or completed or not exhausted) and heartbeat():
+                        fill_window()
+                        while completed and stopped is None:
+                            yield completed.popleft()
+                            done_count += 1
+                            bar.update()
+                            fill_window()
+                        if stopped is not None:
+                            break
+                        if not pending:
+                            if deferred:
+                                sleep(min(PDF_POLL_SECONDS, max(0., deferred[0][0] - monotonic())))
+                            continue
+                        ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                        for future in ready:
+                            workflow, task, host = pending.pop(future)
+                            reserved[host] -= 1
+                            try:
+                                data = future.result()
+                            except RequestDeferred as retry:
+                                heappush(deferred, (retry.ready_at, next(sequence), workflow, task))
+                            except Exception as error:
+                                advance(task.publication, workflow, error=error)
+                            else:
+                                advance(task.publication, workflow, data=data)
                     heartbeat()
-                    fill_window()
+                except KeyboardInterrupt as error:
+                    stopped = error
+                if stopped is not None:
+                    self.http.cancel()
+                    for future, (workflow, task, _host) in pending.items():
+                        if isinstance(task, _PdfSave):
+                            # The workflow already parsed these bytes. Finish its cache write before saving evidence.
+                            try:
+                                future.result()
+                            except Exception:
+                                continue
+                            advance(task.publication, workflow)
+                        else:
+                            future.cancel()
                     while completed:
                         yield completed.popleft()
-                        done_count += 1
-                        bar.update()
-                        fill_window()
-                    if not pending:
-                        continue
-                    ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
-                    for future in ready:
-                        workflow, task = pending.pop(future)
-                        reserved[task.host] -= 1
-                        try:
-                            data = future.result()
-                        except Exception as error:
-                            advance(task.publication, workflow, error=error)
-                        else:
-                            advance(task.publication, workflow, data=data)
-                heartbeat()
+                    raise stopped
         finally:
             self.http.cancel()
             for future in pending:
@@ -806,10 +843,13 @@ class CodeLinksStage(EnrichmentStage):
             occurrences_by_url = _merge_url_spellings(occurrences_by_url)
             archived_identity = normalize_repo_url(archived) if archived else None
             urls = list(occurrences_by_url)
-            # Replacing the evidence invalidates any verdict made from the
-            # previous contexts; the next link_relevance pass must judge the
-            # new set even when that stage had already completed.
-            pub.processing.pop("link_relevance", None)
+            # Make a failed write recoverable before replacing the old evidence.
+            reset_links = pub.processing.pop("link_relevance", None) is not None
+            if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+                pub.processing[self.name] = ProcessingState(attempts=state.attempts)
+                reset_links = True
+            if reset_links:
+                self.prepared.upsert_models("publications", [pub])
             pub.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED
                 if pdf_error

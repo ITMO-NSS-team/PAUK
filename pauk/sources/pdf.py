@@ -8,7 +8,7 @@ from concurrent.futures import CancelledError
 
 from pauk.settings import PDF_HOST_RPS, Settings
 
-from .base import HttpClient
+from .base import DownloadState, HttpClient
 from .rate_limit import HostRateLimiter, RateLimit
 
 PDF_RATE_LIMITER = HostRateLimiter(host_limits={host: RateLimit(rate) for host, rate in PDF_HOST_RPS.items()})
@@ -43,12 +43,13 @@ class PdfDownloader:
         return self._local.client
 
     def get_bytes(self, url: str, *, retries: int | None = None, timeout: float | None = None,
-                  deadline: float | None = None) -> bytes:
+                  deadline: float | None = None, state: DownloadState | None = None) -> bytes:
         return self._client().get_bytes(
             url, retries=self.config.pdf_retries if retries is None else retries,
             timeout=(self.config.pdf_connect_timeout, self.config.pdf_read_timeout if timeout is None else timeout),
             deadline=self.config.pdf_download_deadline if deadline is None else deadline,
             max_wait=self.config.pdf_max_retry_wait,
+            state=state,
         )
 
     def cancel(self) -> None:

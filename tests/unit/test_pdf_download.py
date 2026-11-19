@@ -19,8 +19,8 @@ import mongomock
 import pymupdf
 import requests
 
-from pauk.models import Publication, RepoLink
-from pauk.models.processing import ProcessingStatus
+from pauk.models import CodeLink, Publication, RepoLink
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.code_links import CodeLinksStage, _extract_pdf
 from pauk.settings import Settings
 from pauk.sources.base import HttpClient, HttpRequestError
@@ -98,6 +98,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/pause":
             status = 429
             headers["Retry-After"] = "3600"
+        elif path == "/pause-once" and count == 1:
+            status = 429
+            headers["Retry-After"] = "1"
         elif path == "/limited":
             headers.update({"X-Concurrency-Limit": "1", "X-Rate-Limit-Limit": "2", "X-Rate-Limit-Interval": "1s"})
         elif path in {"/redirect", "/redirect-drip", "/redirect-slow"}:
@@ -649,6 +652,92 @@ class PdfStageTest(LocalPdfTest):
         saved = {row.id: row for row in self.prepared.read_models("publications", Publication)}
         self.assertEqual(set(saved), {"W1", "W2"})
         self.assertEqual(saved["W2"].processing["code_links"].attempts, 1)
+
+    def test_a_retry_pause_leaves_the_worker_free_for_another_host(self):
+        other = self.url.replace("127.0.0.1", "localhost")
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="rate limited", pdf_urls=[self.url + "/pause-once"]),
+            Publication(id="W2", title="ready", pdf_urls=[other + "/pdf"]),
+        ])
+        config = Settings(**(self.config.__dict__ | {"code_links_concurrency": 1, "pdf_retries": 1}))
+        first = []
+
+        def progress(_label, done, _total):
+            if done == 1 and not first:
+                first.extend(row.id for row in self.prepared.read_models("publications", Publication)
+                             if "code_links" in row.processing)
+                self.assertEqual(self.server.counts["/pause-once"], 1)
+
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 2)
+        self.assertEqual(first, ["W2"])
+        self.assertEqual(self.server.counts["/pause-once"], 2)
+
+    def test_a_paused_redirect_target_does_not_block_the_worker_or_repeat_the_redirect(self):
+        target = self.url.replace("127.0.0.1", "localhost") + "/redirect-target"
+        self.client.rate_limiter._state("localhost", RateLimit())
+        self.client.rate_limiter.pause("localhost", 0.5)
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="redirect", pdf_urls=[self.url + "/redirect?to=" + quote(target, safe="")]),
+            Publication(id="W2", title="ready", pdf_urls=[self.url + "/pdf"]),
+        ])
+        config = Settings(**(self.config.__dict__ | {"code_links_concurrency": 1}))
+        first = []
+
+        def progress(_label, done, _total):
+            if done == 1 and not first:
+                first.extend(row.id for row in self.prepared.read_models("publications", Publication)
+                             if "code_links" in row.processing)
+
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        self.assertEqual(stage.run()["publications"], 2)
+        self.assertEqual(first, ["W2"])
+        self.assertEqual(self.server.counts["/redirect"], 1)
+        self.assertEqual(self.server.counts["/redirect-target"], 1)
+
+    def test_cancellation_saves_an_already_cached_pdf_without_reparsing(self):
+        self.prepared.write_models("publications", [Publication(id="W1", title="paper", pdf_urls=[self.url + "/pdf"])])
+        store = PdfStore(self.db, self.config.pdf_dir)
+
+        def progress(*_args):
+            if store.exists("W1"):
+                raise RuntimeError("stop requested")
+
+        stage = CodeLinksStage(self.prepared, self.raw, config=self.config, on_progress=progress)
+        stage.REPORT_SECONDS = 0
+        with patch("pauk.pipeline.stages.code_links.PdfStore", return_value=store), self.assertRaisesRegex(RuntimeError, "stop requested"):
+            stage.run()
+        saved = next(self.prepared.read_models("publications", Publication))
+        self.assertEqual(saved.processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(CodeLinksStage(self.prepared, self.raw, config=self.config).run()["publications"], 0)
+
+    def test_interrupted_forced_replacement_is_reprocessed_without_force(self):
+        complete = ProcessingState(status=ProcessingStatus.COMPLETED, attempts=2)
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="paper", abstract="https://github.com/org/new", _processing={
+                "code_links": complete, "link_relevance": complete,
+            },
+        )])
+        self.prepared.write_models("repo_links", [RepoLink(
+            publication_id="W1", links=[CodeLink(url="https://github.com/org/old", host="github.com")],
+        )])
+        upsert = self.prepared.upsert_models
+
+        def interrupted(entity, rows):
+            rows = list(rows)
+            if entity == "publications" and rows[0].processing["code_links"].status == ProcessingStatus.COMPLETED:
+                raise RuntimeError("save interrupted")
+            upsert(entity, rows)
+
+        with patch.object(self.prepared, "upsert_models", side_effect=interrupted), self.assertRaisesRegex(RuntimeError, "save interrupted"):
+            CodeLinksStage(self.prepared, self.raw, config=self.config, force=True).run()
+        self.assertEqual(next(self.prepared.read_models("repo_links", RepoLink)).links[0].url, "https://github.com/org/new")
+        saved = next(self.prepared.read_models("publications", Publication))
+        self.assertNotIn("link_relevance", saved.processing)
+        self.assertEqual(CodeLinksStage(self.prepared, self.raw, config=self.config).run()["publications"], 1)
+        self.assertEqual(next(self.prepared.read_models("publications", Publication)).processing["code_links"].attempts, 3)
 
     def test_html_falls_back_without_poisoning_cache_and_cached_pdf_avoids_the_network(self):
         self.prepared.write_models("publications", [Publication(

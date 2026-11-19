@@ -4,7 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 import fitz
@@ -83,7 +83,7 @@ class StagesTest(unittest.TestCase):
         http_client.return_value.get_bytes.assert_called_once_with(
             "https://example.org/paper.pdf", retries=config.pdf_retries,
             timeout=(config.pdf_connect_timeout, config.pdf_read_timeout),
-            deadline=config.pdf_download_deadline, max_wait=config.pdf_max_retry_wait)
+            deadline=config.pdf_download_deadline, max_wait=config.pdf_max_retry_wait, state=ANY)
         self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), valid_pdf)
 
     def setUp(self):
@@ -938,7 +938,7 @@ class StagesTest(unittest.TestCase):
     def test_code_links_falls_back_to_crawler_when_no_pdf_urls(self, http_client):
         pdf_bytes = _make_pdf_bytes(["From the crawler: https://github.com/org/repo"])
 
-        def get_bytes(url, retries=3, timeout=None, deadline=None, max_wait=None):
+        def get_bytes(url, retries=3, timeout=None, deadline=None, max_wait=None, state=None):
             self.assertTrue(url.startswith("http://crawler.local/api/v1/"))
             if url.endswith("/health"):
                 return b"ok"

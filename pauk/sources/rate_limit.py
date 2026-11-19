@@ -25,6 +25,12 @@ class HostPaused(TimeoutError):
         super().__init__(f"host paused for {seconds:.0f}s")
 
 
+class RequestDeferred(Exception):
+    def __init__(self, ready_at: float) -> None:
+        self.ready_at = ready_at
+        super().__init__("request is not ready")
+
+
 @dataclass(frozen=True)
 class RateLimit:
     requests_per_second: float | None = None
@@ -93,7 +99,8 @@ class HostRateLimiter:
 
     @contextmanager
     def slot(self, host: str, limit: RateLimit | None, *, cancel=None,
-             deadline: float | None = None, max_wait: float | None = None) -> Iterator[None]:
+             deadline: float | None = None, max_wait: float | None = None,
+             defer: bool = False) -> Iterator[None]:
         """Hold a host's concurrency slot until the request has finished."""
         configured = self._host_limits.get(host)
         if configured is not None:
@@ -119,6 +126,9 @@ class HostRateLimiter:
                     rate = state.limit.requests_per_second
                     state.next_at = now + 1 / rate if rate is not None else now
                     break
+                if defer:
+                    resume = ready_at if ready_at > now else now + POLL_SECONDS
+                    raise RequestDeferred(min(resume, deadline) if deadline is not None else resume)
                 delay = ready_at - now
                 timeout = min(delay, threading.TIMEOUT_MAX) if delay > 0 else None
                 if deadline is not None:
