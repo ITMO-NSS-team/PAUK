@@ -236,13 +236,18 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+SUPPORTED_CLIENT_VERSIONS = frozenset({("2.3.0", "1.28.0"), ("2.12.0", "1.30.0")})
+
+
 def main() -> int:
     """Публикует только обезличенный итог, без исключений и ответов сервера."""
     logging.basicConfig(level=logging.CRITICAL, format="%(message)s")
     LOGGER.setLevel(logging.INFO)
     args = parser().parse_args()
-    if version("google-adk") != "2.3.0" or version("mcp") != "1.28.0":
-        LOGGER.error('{"status":"blocked","reason":"Requires google-adk 2.3.0 and mcp 1.28.0"}')
+    if (version("google-adk"), version("mcp")) not in SUPPORTED_CLIENT_VERSIONS:
+        LOGGER.error(
+            '{"status":"blocked","reason":"Requires (google-adk 2.3.0, mcp 1.28.0) or (google-adk 2.12.0, mcp 1.30.0)"}'
+        )
         return 2
     token = os.environ.get("PAUK_MCP_TEST_TOKEN", "")
     if len(token) < 24 or "\r" in token or "\n" in token:

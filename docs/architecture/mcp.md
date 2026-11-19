@@ -46,10 +46,17 @@ Every root response identifies `source_system="PAUK"` and
 calls read the prepared PAUK graph, not live Semantic Scholar, Crossref or
 repository APIs. They do not imply a current snapshot/access-check timestamp.
 
-- `search_publications(doi=None, title_contains=None, page_size=10, cursor=None)`:
+- `search_publications(doi=None, title_contains=None, repository_contains=None, page_size=10, cursor=None)`:
   exactly one search mode. DOI equality removes a DOI URL/`doi:` wrapper and
-  ignores case. Title search is literal, case-insensitive `CONTAINS`, not regex.
-  Returns canonical publication ID, title, DOI and year.
+  ignores case. Title search matches publications whose title contains every
+  whitespace-separated token using literal, case-insensitive `CONTAINS` (not
+  regex), ordering exact-phrase matches and `IMPLEMENTS`-linked publications
+  first. Repository search matches publications linked via
+  `(:Repository)-[:IMPLEMENTS]->(:Publication)` (never `MENTIONS_LINK`) whose
+  public repository `name` and approved-host `url` together contain every
+  whitespace-separated token using literal, case-insensitive `CONTAINS`,
+  ordering exact repository name matches and exact phrase matches first. Returns
+  canonical publication ID, title, DOI and year.
 - `get_publication_repositories(publication_id, page_size=10, cursor=None)`:
   only `(:Repository)-[:IMPLEMENTS]->(:Publication)` links. A mention alone is
   not author code. Empty means unknown in PAUK, not no code anywhere.
@@ -146,19 +153,22 @@ Fixture IDs are `p-paper`, `r-code`, `r-dependency`; `old-paper` resolves to
 reasoning quality, production permissions or deployed-client compatibility.
 
 The separate [ADK compatibility gate](../../tests/integration/adk/README.md)
-reproduces 21 synthetic fixture cases through the actual ADK client in its own
+reproduces 24 synthetic fixture cases through the actual ADK client in its own
 environment. It does not exercise a complete CoScientist workflow, models or
 production. That README is authoritative for client setup and commands.
 
 ## CoScientist registration
 
-In the separate CoScientist environment, register before `manager.initialize`:
-appending tools afterwards leaves the native unknown-tool guard stale. Add
-`pauk` to the existing `agents.ResearchAgent.tools` YAML list, keeping other
-tools; select that profile with `COSCIENTIST_CONFIG` before initialization.
-Because CoScientist eagerly builds at package import, first import it with the
-existing/default profile, then register `pauk`, then select the PAUK-enabled
-`COSCIENTIST_CONFIG`, and only then call `manager.initialize`.
+In the separate CoScientist environment, set model/API environment variables
+(`LLM__MAIN_MODEL`, `LLM__OPENAI_API_KEY`, `OPENROUTER_API_KEY`) before the
+first `CoScientist` import (because `CoScientist.agents.common` binds the model
+and LiteLLM API key at import time), and register `pauk` before
+`manager.initialize`: appending tools afterwards leaves the native unknown-tool
+guard stale. Add `pauk` to the existing `agents.ResearchAgent.tools` YAML list,
+keeping other tools; select that profile with `COSCIENTIST_CONFIG` before
+initialization. Because CoScientist eagerly builds at package import, first
+import it with the existing/default profile, then register `pauk`, then select
+the PAUK-enabled `COSCIENTIST_CONFIG`, and only then call `manager.initialize`.
 
 ```python
 import os
@@ -182,8 +192,8 @@ def make_pauk_toolset() -> McpToolset:
 REGISTRY.register_tool(ToolEntry(
     key="pauk", factory=make_pauk_toolset, runtime_resolved=True,
     docs=(
-        ToolDoc("search_publications", "search_publications(doi=None, title_contains=None, page_size=10, cursor=None)",
-                "Find publications by exactly one DOI or title fragment."),
+        ToolDoc("search_publications", "search_publications(doi=None, title_contains=None, repository_contains=None, page_size=10, cursor=None)",
+                "Find publications by exactly one DOI, title fragment, or confirmed repository name/URL."),
         ToolDoc("get_publication_repositories",
                 "get_publication_repositories(publication_id, page_size=10, cursor=None)",
                 "Get stored IMPLEMENTS author-code links; empty means unknown in PAUK."),
@@ -196,5 +206,6 @@ REGISTRY.register_tool(ToolEntry(
 
 Set client-side `PAUK_MCP_URL` (for example `http://127.0.0.1:8091/mcp`) and
 `PAUK_MCP_TOKEN` through the environment, not YAML. This registration pattern was
-checked with CoScientist `c64f579`, ADK `2.3.0` and MCP `1.28.0`, not other revisions
-or production deployments. CoScientist and ADK are not PAUK runtime dependencies.
+checked with CoScientist `c64f579` (ADK `2.3.0`, MCP `1.28.0`) and `900aeae2`
+(ADK `2.12.0`, MCP `1.30.0`), not other revisions or production deployments.
+CoScientist and ADK are not PAUK runtime dependencies.

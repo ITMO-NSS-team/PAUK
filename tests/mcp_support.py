@@ -39,12 +39,16 @@ class SyntheticReader:
             if parameters["id"] == "old-paper":
                 return [{"id": "p-paper"}]
             return [{"id": "r-code"}, {"id": "r-dependency"}] if parameters["id"] == "ambiguous-repo" else []
-        if query in (queries.SEARCH_TITLE, queries.SEARCH_DOI):
-            match = (
-                parameters["query"] == "10.1234/pauk-test"
-                if query == queries.SEARCH_DOI
-                else (str(parameters["query"]) in "synthetic pauk paper")
-            )
+        if query in (queries.SEARCH_TITLE, queries.SEARCH_DOI, queries.SEARCH_REPOSITORY):
+            if query == queries.SEARCH_DOI:
+                match = parameters["query"] == "10.1234/pauk-test"
+            elif query == queries.SEARCH_TITLE:
+                tokens = [token for token in str(parameters["query"]).split(" ") if token]
+                match = bool(tokens) and all(token in "synthetic pauk paper" for token in tokens)
+            else:
+                tokens = [token for token in str(parameters["query"]).split(" ") if token]
+                # Only IMPLEMENTS links (r-code), never MENTIONS_LINK (r-dependency).
+                match = bool(tokens) and all(token in "synthetic code https://github.com/pauk-test/code" for token in tokens)
             return (
                 [{"id": "p-paper", "title": "Synthetic PAUK paper", "doi": "10.1234/pauk-test", "year": 2026}]
                 if match

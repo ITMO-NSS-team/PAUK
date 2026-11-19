@@ -35,6 +35,11 @@ def text(value: object, *, allowed: bool = True, present: bool = False, limit: i
     return Text(value=value[:limit], status="available", truncated=len(value) > limit)
 
 
+def _normalize_tokens(value: str | None) -> str | None:
+    """Collapse internal whitespace and lowercase literal search tokens."""
+    return " ".join(value.lower().split()) if value is not None else None
+
+
 def _identifier(value: object) -> str:
     if not isinstance(value, str) or not 1 <= len(value) <= 256 or value.strip() != value:
         raise MCPError("BACKEND")
@@ -93,13 +98,21 @@ class Service:
         return self.cursors.encode(request, parameters["offset"] + size) if len(rows) > size else None
 
     async def search_publications(self, request: SearchRequest) -> PublicationPage:
-        """Search by exact normalized DOI or a literal case-insensitive title fragment."""
+        """Search by exact normalized DOI, literal title tokens, or confirmed repository name/URL."""
         normalized = request.model_dump()
         normalized["doi"] = normalize_doi(request.doi) if request.doi is not None else None
-        normalized["title_contains"] = request.title_contains.lower() if request.title_contains is not None else None
+        normalized["title_contains"] = _normalize_tokens(request.title_contains)
+        normalized["repository_contains"] = _normalize_tokens(request.repository_contains)
         binding, parameters = self._page({"tool": "search", **normalized})
-        parameters["query"] = binding["doi"] if request.doi is not None else binding["title_contains"]
-        query = queries.SEARCH_DOI if request.doi is not None else queries.SEARCH_TITLE
+        if request.doi is not None:
+            parameters["query"] = binding["doi"]
+            query = queries.SEARCH_DOI
+        elif request.title_contains is not None:
+            parameters["query"] = binding["title_contains"]
+            query = queries.SEARCH_TITLE
+        else:
+            parameters["query"] = binding["repository_contains"]
+            query = queries.SEARCH_REPOSITORY
         rows = await self.reader.query(query, parameters)
         items = [
             Publication(

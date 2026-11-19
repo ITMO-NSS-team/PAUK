@@ -446,6 +446,67 @@
           }
         ]
       }
+    },
+    {
+      "name": "repository_search",
+      "tool": "search_publications",
+      "args": {
+        "repository_contains": "pauk-test/code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "doi": "10.1234/pauk-test",
+              "year": 2026
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/items/0/publication_id",
+          "value": "p-paper"
+        }
+      ]
+    },
+    {
+      "name": "repository_mentions_excluded",
+      "tool": "search_publications",
+      "args": {
+        "repository_contains": "Dependency"
+      },
+      "kind": "empty",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "title_and_repository_modes",
+      "tool": "search_publications",
+      "args": {
+        "title_contains": "Synthetic",
+        "repository_contains": "code"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
     }
   ]
 }

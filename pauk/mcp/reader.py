@@ -6,7 +6,7 @@ from typing import Any, Literal, Protocol
 from neo4j import READ_ACCESS, AsyncDriver, Query
 from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 
-from pauk.mcp.contracts import MCPError
+from pauk.mcp.contracts import APPROVED_REPO_HOSTS, MCPError
 
 NODE_ID = "CASE WHEN size(n.id) <= 256 THEN n.id ELSE null END AS id"
 PUBLICATION = (
@@ -39,9 +39,38 @@ SEARCH_DOI = (
     f"MATCH (n:Publication) WITH n, {DOI_VALUE} AS d WHERE {NORMALIZED_DOI} = $query "
     f"RETURN {PUBLICATION} ORDER BY id SKIP $offset LIMIT $limit"
 )
+_APPROVED_REPO_ORIGINS = [
+    f"{scheme}://{host}{port}"
+    for host in sorted(APPROVED_REPO_HOSTS)
+    for scheme, ports in (("https", ("", ":443")), ("http", ("", ":80")))
+    for port in ports
+]
+SAFE_REPO_URL = (
+    "CASE WHEN r.url IS :: STRING AND size(r.url) <= 2000 "
+    "AND NOT (r.url CONTAINS '@' OR r.url CONTAINS '?' OR r.url CONTAINS '#' "
+    "OR r.url CONTAINS ' ' OR r.url CONTAINS '\\t' OR r.url CONTAINS '\\n' OR r.url CONTAINS '\\r') "
+    f"AND ANY(origin IN {_APPROVED_REPO_ORIGINS!r} "
+    "WHERE toLower(r.url) = origin OR toLower(r.url) STARTS WITH origin + '/') "
+    "THEN toLower(r.url) ELSE '' END"
+)
 SEARCH_TITLE = (
-    "MATCH (n:Publication) WHERE toLower(n.title) CONTAINS $query "
-    f"RETURN {PUBLICATION} ORDER BY id SKIP $offset LIMIT $limit"
+    "MATCH (n:Publication) WITH n, toLower(coalesce(n.title, '')) AS title "
+    "WHERE ALL(token IN split($query, ' ') WHERE token = '' OR title CONTAINS token) "
+    "WITH n, title CONTAINS $query AS exact_phrase, "
+    "EXISTS { (:Repository)-[:IMPLEMENTS]->(n) } AS has_implements "
+    f"RETURN {PUBLICATION} ORDER BY exact_phrase DESC, has_implements DESC, id ASC SKIP $offset LIMIT $limit"
+)
+SEARCH_REPOSITORY = (
+    "MATCH (r:Repository)-[:IMPLEMENTS]->(n:Publication) "
+    "WITH n, CASE WHEN r.name IS :: STRING THEN toLower(r.name) ELSE '' END AS repo_name, "
+    f"CASE WHEN r.name IS :: STRING THEN toLower(r.name) ELSE '' END + ' ' + ({SAFE_REPO_URL}) AS repo_text "
+    "WHERE ALL(token IN split($query, ' ') WHERE token = '' OR repo_text CONTAINS token) "
+    "WITH n, "
+    "max(CASE WHEN repo_name = $query THEN 1 ELSE 0 END) AS exact_name, "
+    "max(CASE WHEN repo_text CONTAINS $query THEN 1 ELSE 0 END) AS exact_phrase "
+    "ORDER BY exact_name DESC, exact_phrase DESC, n.id ASC "
+    "SKIP $offset LIMIT $limit "
+    f"RETURN {PUBLICATION}"
 )
 REPOSITORIES = (
     "MATCH (r:Repository)-[:IMPLEMENTS]->(p:Publication {id: $publication_id}) "

@@ -38,13 +38,15 @@ class SearchRequest(Contract):
 
     doi: DOI | None = None
     title_contains: TitleQuery | None = None
+    repository_contains: TitleQuery | None = None
     page_size: PageSize = 10
     cursor: Cursor | None = None
 
     @model_validator(mode="after")
     def one_query(self) -> "SearchRequest":
         """Require exactly one search mode."""
-        if (self.doi is None) == (self.title_contains is None):
+        provided = sum(value is not None for value in (self.doi, self.title_contains, self.repository_contains))
+        if provided != 1:
             raise ValueError("Exactly one query is required")
         if self.doi is not None and not normalize_doi(self.doi):
             raise ValueError("DOI cannot be empty")
@@ -203,6 +205,20 @@ def normalize_doi(value: str) -> str:
     return normalized
 
 
+APPROVED_REPO_HOSTS = frozenset(
+    {
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "codeberg.org",
+        "sourceforge.net",
+        "huggingface.co",
+        "zenodo.org",
+        "doi.org",
+    }
+)
+
+
 def safe_url(value: object) -> str | None:
     """Withhold local, credential-bearing, signed or malformed URLs without rewriting them."""
     if not isinstance(value, str) or len(value) > 2000 or any(ord(c) < 33 for c in value):
@@ -218,16 +234,7 @@ def safe_url(value: object) -> str | None:
             or parsed.fragment
         ):
             return None
-        if host not in {
-            "github.com",
-            "gitlab.com",
-            "bitbucket.org",
-            "codeberg.org",
-            "sourceforge.net",
-            "huggingface.co",
-            "zenodo.org",
-            "doi.org",
-        } or parsed.port not in (None, 80, 443):
+        if host not in APPROVED_REPO_HOSTS or parsed.port not in (None, 80, 443):
             return None
         return value
     except ValueError:

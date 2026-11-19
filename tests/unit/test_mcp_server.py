@@ -88,7 +88,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     def _assert_tools_contract(self, tools: list[Any]) -> None:
         expected = {
-            "search_publications": {"doi", "title_contains", "page_size", "cursor"},
+            "search_publications": {"doi", "title_contains", "repository_contains", "page_size", "cursor"},
             "get_publication_repositories": {"publication_id", "page_size", "cursor"},
             "get_repository": {"repository_id"},
             "explain_link": {"publication_id", "repository_id", "page_size", "cursor"},
@@ -117,6 +117,12 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             result = await session.call_tool("search_publications", {"doi": "https://doi.org/10.1234/PAUK-TEST"})
             self._assert_pauk_source(result)
             self.assertEqual(result.structuredContent["items"][0]["publication_id"], "p-paper")
+            result = await session.call_tool("search_publications", {"repository_contains": "pauk-test/code"})
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["items"][0]["publication_id"], "p-paper")
+            result = await session.call_tool("search_publications", {"repository_contains": "Dependency"})
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["items"], [])
             result = await session.call_tool("get_publication_repositories", {"publication_id": "old-paper"})
             self._assert_pauk_source(result)
             self.assertEqual(result.structuredContent["publication_id"], "p-paper")

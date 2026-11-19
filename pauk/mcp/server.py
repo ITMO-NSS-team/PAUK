@@ -92,14 +92,16 @@ def _register_publication_tools(mcp: FastMCP, service: Service) -> None:
     async def search_publications(
         doi: DOI | None = None,
         title_contains: TitleQuery | None = None,
+        repository_contains: TitleQuery | None = None,
         page_size: PageSize = 10,
         cursor: Cursor | None = None,
     ) -> PublicationPage:
-        """Find publications by exactly one of normalized DOI or literal title fragment."""
+        """Find publications by exactly one of normalized DOI, literal title fragment, or confirmed repository name/URL."""
         return await service.search_publications(
             SearchRequest(
                 doi=doi,
                 title_contains=title_contains,
+                repository_contains=repository_contains,
                 page_size=page_size,
                 cursor=cursor,
             )

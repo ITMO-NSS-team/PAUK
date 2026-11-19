@@ -1,10 +1,12 @@
 # ADK MCP compatibility gate
 
 Opt-in check of the real PAUK Streamable HTTP app with the Google ADK client
-pattern used by CoSci. Client targets: **google-adk 2.3.0**, **mcp 1.28.0**,
-Python 3.12. The client checks these two installed versions before testing.
+pattern used by CoSci. Client targets: (**google-adk 2.3.0**, **mcp 1.28.0**) or
+(**google-adk 2.12.0**, **mcp 1.30.0**), Python 3.12. The client checks these
+installed version pairs before testing.
 `requirements.txt` pins direct dependencies only; it is **not a transitive lock**.
-The original Windows run used Python 3.12.13. Other platforms and newly resolved
+The original Windows run used Python 3.12.13 (and Python 3.12.11 for the
+`CoScientist_dev` 2.12.0/1.30.0 environment). Other platforms and newly resolved
 transitive dependency sets need their own run; no cross-platform claim is made.
 
 ## Separate environments
@@ -51,9 +53,9 @@ Assertions are acceptance checks, so optimized Python execution is refused.
 Checks include:
 
 - Exactly four PAUK tools and `tool_filter` discovery of `search_publications`.
-- All 21 synthetic cases in `cases.json`: DOI/title search, DOI normalization,
-  canonical aliases, repository metadata, accepted author-code links, and
-  rejected dependency mentions that must not become author-code links.
+- All 24 synthetic cases in `cases.json`: DOI/title/repository search, DOI
+  normalization, canonical aliases, repository metadata, accepted author-code
+  links, and rejected dependency mentions that must not become author-code links.
 - Empty search, unknown/ambiguous identifiers, missing/extra/malformed arguments,
   strict page-size types, evidence bounds and tampered cursors.
 - The full MCP envelope (`content`, `structuredContent`, `isError`), recursive

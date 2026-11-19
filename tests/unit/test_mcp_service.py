@@ -42,9 +42,14 @@ class ContractsTests(unittest.TestCase):
         for arguments in (
             {},
             {"doi": "x", "title_contains": "abc"},
+            {"doi": "x", "repository_contains": "abc"},
+            {"title_contains": "abc", "repository_contains": "def"},
+            {"doi": "x", "title_contains": "abc", "repository_contains": "def"},
             {"doi": "doi:"},
             {"doi": "https://doi.org/"},
             {"title_contains": "ab"},
+            {"repository_contains": "ab"},
+            {"repository_contains": "   "},
             {"doi": "x", "page_size": 26},
             {"doi": "x", "page_size": True},
             {"doi": "x", "page_size": "10"},
@@ -132,6 +137,43 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.search_publications(SearchRequest(doi="https://doi.org/10.A/b"))
         self.assertEqual(reader.calls[-1][0], queries.SEARCH_DOI)
         self.assertEqual(reader.calls[-1][1]["query"], "10.a/b")
+
+    async def test_search_multi_token_conjunctive_order_and_empty(self) -> None:
+        from tests.mcp_support import SyntheticReader
+
+        service = Service(SyntheticReader(), b"synthetic-key")
+        found = await service.search_publications(SearchRequest(title_contains="Synthetic paper"))
+        self.assertEqual([item.publication_id for item in found.items], ["p-paper"])
+        empty = await service.search_publications(SearchRequest(title_contains="unmatched synthetic string"))
+        self.assertEqual(empty.items, [])
+
+    async def test_search_repository_mode_cursor_binding_and_excludes_mentions(self) -> None:
+        from tests.mcp_support import SyntheticReader
+
+        reader = StubReader([[{"id": "p1", "title": "First paper", "doi": None, "year": 2026}, {"id": "p2"}]])
+        service = Service(reader, b"synthetic-key")
+        request = SearchRequest(repository_contains="  Synthetic   Code ", page_size=1)
+        page = await service.search_publications(request)
+        self.assertEqual([item.publication_id for item in page.items], ["p1"])
+        self.assertIsNotNone(page.next_cursor)
+        self.assertEqual(reader.calls[0][0], queries.SEARCH_REPOSITORY)
+        self.assertEqual(reader.calls[0][1]["query"], "synthetic code")
+        self.assertNotIn("MENTIONS_LINK", queries.SEARCH_REPOSITORY)
+        self.assertNotIn("r.description", queries.SEARCH_REPOSITORY)
+        reader.results = [[]]
+        await service.search_publications(request.model_copy(update={"cursor": page.next_cursor}))
+        self.assertEqual(reader.calls[-1][1]["offset"], 1)
+        with self.assertRaises(MCPError) as caught:
+            await service.search_publications(SearchRequest(title_contains="synthetic code", cursor=page.next_cursor))
+        self.assertEqual(caught.exception.code, "CURSOR")
+
+        synthetic_service = Service(SyntheticReader(), b"synthetic-key")
+        by_url = await synthetic_service.search_publications(SearchRequest(repository_contains="pauk-test/code"))
+        self.assertEqual([item.publication_id for item in by_url.items], ["p-paper"])
+        by_name = await synthetic_service.search_publications(SearchRequest(repository_contains="Synthetic code"))
+        self.assertEqual([item.publication_id for item in by_name.items], ["p-paper"])
+        mention_only = await synthetic_service.search_publications(SearchRequest(repository_contains="Dependency"))
+        self.assertEqual(mention_only.items, [])
 
     async def test_empty_author_code_is_unknown_and_only_implements(self) -> None:
         reader = StubReader([[{"id": "p"}], []])
