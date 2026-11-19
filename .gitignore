@@ -56,3 +56,9 @@ graphify-out/
 data/backups/
 
 *.log
+/analysis/forks/cache
+/analysis/forks/raw
+/tmp
+/analysis/forks/out
+analysis/forks/.probe
+/analysis/forks/data
