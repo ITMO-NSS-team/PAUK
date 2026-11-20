@@ -8,7 +8,7 @@ afterEach(() => {
 
 it("toggles panels, opens selected cards and closes on Escape", () => {
   document.body.innerHTML =
-    '<div id="app"><button id="mobile-list"></button><button id="mobile-close"></button><button id="mobile-backdrop"></button></div>';
+    '<div id="app"><button id="mobile-list"></button><button id="mobile-details"></button><button id="mobile-close"></button><button id="mobile-backdrop"></button></div>';
   const store = new Store<AppState>({
     screen: "app",
     lang: "en",
@@ -33,11 +33,9 @@ it("toggles panels, opens selected cards and closes on Escape", () => {
   const app = document.getElementById("app");
   document.getElementById("mobile-list")?.click();
   expect(app?.dataset.mobilePane).toBe("sidebar");
-  document.getElementById("mobile-close")?.click();
-  expect(app?.dataset.mobilePane).toBe("");
   store.set({ selection: { kind: "node", key: "A1" } });
-  expect(app?.dataset.mobilePane).toBe("sidebar");
-  expect(document.getElementById("mobile-list")?.getAttribute("aria-expanded")).toBe("true");
+  expect(app?.dataset.mobilePane).toBe("panel");
+  expect(document.getElementById("mobile-details")?.getAttribute("aria-expanded")).toBe("true");
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   expect(app?.dataset.mobilePane).toBe("");
   unmount();

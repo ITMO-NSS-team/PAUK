@@ -13,6 +13,7 @@ import { isRegionMode, Store, type AppState } from "../core/state";
 import { themeById } from "../core/themes";
 import { mountFilters, mountHiddenAuthorReveal } from "../features/filters";
 import { mountDetailErrors } from "../features/detailErrors";
+import { mountPanelToggles } from "../features/panelToggles";
 import { mountMobilePanels } from "../features/mobilePanels";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
@@ -170,7 +171,17 @@ function renderApp(data: GraphData): void {
   mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey, resources);
   mountDetailErrors(store, resources);
   mountMobilePanels(store);
-  mountTabs(requireElement("tab-buttons"), store);
+  mountPanelToggles(store);
+  new ResizeObserver(() => renderer.refresh()).observe(container);
+  mountTabs(
+    requireElement("tab-buttons"),
+    requireElement("tab-content"),
+    store,
+    renderer,
+    data,
+    pubDetailsByKey,
+    repoDetailsByKey,
+  );
   mountFilters(store);
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
 
