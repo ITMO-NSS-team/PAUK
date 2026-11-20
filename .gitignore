@@ -62,3 +62,6 @@ data/backups/
 /analysis/forks/out
 analysis/forks/.probe
 /analysis/forks/data
+
+# local research drafts and machine-specific instructions
+/local-instructions/
