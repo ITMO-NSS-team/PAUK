@@ -1,18 +1,22 @@
 """Append an arXiv PDF link to papers without full text, found by DOI via Semantic Scholar.
 
-Runs before code_links, which reads the link when the publisher's copy fails.
-A paper with no code links yet has its code_links state dropped so the same
-run reads it; one that already has links keeps them and waits for --force.
+Runs before code_links, which reads each newly discovered source independently
+of the publication's main PDF and existing repository evidence.
 """
 
 from __future__ import annotations
 
 import logging
+import re
+from collections import defaultdict
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from pauk.models import Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.publication import ArxivSource
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpRequestError
 from pauk.sources.semantic_scholar import MAX_BATCH, SemanticScholarClient, arxiv_id
@@ -23,6 +27,18 @@ logger = logging.getLogger(__name__)
 
 ARXIV_HOSTS = frozenset({"arxiv.org", "www.arxiv.org", "export.arxiv.org"})
 DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/")
+_ARXIV_ID = re.compile(r"(?P<base>\d{4}\.\d{4,5}|[a-z][a-z.\-]*/\d{7})(?P<revision>v[1-9]\d*)?")
+_ARXIV_DOI = "10.48550/arxiv."
+
+
+@dataclass(frozen=True)
+class ArxivPreprint:
+    """A prepared record with intrinsic arXiv identity and a possibly reusable cache."""
+
+    publication_id: str
+    base: str
+    revision: str
+    cache_compatible: bool
 
 
 def bare_doi(doi: str) -> str:
@@ -33,12 +49,76 @@ def bare_doi(doi: str) -> str:
     return value
 
 
+def _parse_arxiv_id(identifier: str) -> tuple[str, str] | None:
+    """Return the work ID and optional revision of a valid modern or legacy ID."""
+    match = _ARXIV_ID.fullmatch(identifier.casefold())
+    return (match["base"], match["revision"] or "") if match else None
+
+
+def arxiv_pdf_identity(url: str, *, pdf_only: bool = False) -> tuple[str, str] | None:
+    """Parse an ID only from a recognized arXiv PDF or abstract URL."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in ARXIV_HOSTS:
+        return None
+    route, _, name = parsed.path.lstrip("/").partition("/")
+    if route != "pdf" and (pdf_only or route != "abs"):
+        return None
+    return _parse_arxiv_id(name.removesuffix(".pdf"))
+
+
+def arxiv_doi_identity(doi: str) -> tuple[str, str] | None:
+    """Identify a native arXiv DOI, including an explicitly listed revision."""
+    doi = bare_doi(doi).casefold()
+    return _parse_arxiv_id(doi[len(_ARXIV_DOI):]) if doi.startswith(_ARXIV_DOI) else None
+
+
+def native_arxiv_pdf_url(publication: Publication) -> str | None:
+    """Supply a primary PDF candidate when a native arXiv DOI lists none."""
+    identity = arxiv_doi_identity(publication.doi or "") if not publication.pdf_urls else None
+    return f"https://arxiv.org/pdf/{''.join(identity)}" if identity else None
+
+
+def _preprint_identity(publication: Publication) -> ArxivPreprint | None:
+    """Use intrinsic preprint metadata; aggregated or mixed PDFs cannot establish cache provenance."""
+    doi_id = arxiv_doi_identity(publication.doi or "")
+    supplemental = {source.url for source in publication.arxiv_sources}
+    pdf_ids = {arxiv_pdf_identity(url) for url in publication.pdf_urls if url not in supplemental}
+    recognized = {identity for identity in pdf_ids if identity is not None}
+    preprint_only = publication.type == "preprint" or (publication.type is None and not publication.doi)
+    if not doi_id and (not preprint_only or publication.arxiv_sources or not recognized):
+        return None
+    bases = {base for base, _ in recognized}
+    if not doi_id and len(bases) != 1:
+        return None
+    base, doi_revision = doi_id or (next(iter(bases)), "")
+    revisions = {revision for pdf_base, revision in recognized if pdf_base == base}
+    revision = doi_revision or (next(iter(revisions)) if len(revisions) == 1 else "")
+    cache_compatible = (
+        not publication.arxiv_sources and not publication.merged_ids and not publication.versions
+        and (not pdf_ids or pdf_ids == {(base, revision)})
+    )
+    return ArxivPreprint(publication.id, base, revision, cache_compatible)
+
+
+def arxiv_preprints(publications: Iterable[Publication]) -> dict[str, list[ArxivPreprint]]:
+    """Index prepared preprints by arXiv work ID, keeping duplicates visible."""
+    indexed: dict[str, list[ArxivPreprint]] = defaultdict(list)
+    for publication in publications:
+        if preprint := _preprint_identity(publication):
+            indexed[preprint.base].append(preprint)
+    return indexed
+
+
 def has_arxiv_link(publication: Publication) -> bool:
-    return any((urlsplit(url).hostname or "").lower() in ARXIV_HOSTS for url in publication.pdf_urls)
+    return any(arxiv_pdf_identity(url) is not None for url in publication.pdf_urls)
 
 
 def wants_arxiv_copy(publication: Publication) -> bool:
     return (bool(publication.doi) and not (publication.full_text or "").strip()
+            and not arxiv_doi_identity(publication.doi or "")
             and not has_arxiv_link(publication))
 
 
@@ -59,7 +139,7 @@ class ArxivVersionsStage(EnrichmentStage):
         client = SemanticScholarClient(self.config.request_timeout, self.config.semantic_scholar_api_key,
                                        requests_per_second=self.config.semantic_scholar_rps)
         batches = [candidates[start:start + MAX_BATCH] for start in range(0, len(candidates), MAX_BATCH)]
-        found = failed = 0
+        found, failed = self._seed_native_pdfs(publications), 0
         for batch in self.progress(batches, total=len(batches), unit="batch"):
             dois = [bare_doi(publication.doi or "") for publication in batch]
             try:
@@ -76,11 +156,28 @@ class ArxivVersionsStage(EnrichmentStage):
             self.prepared.upsert_models("publications", batch)
         return {"arxiv_looked_up": len(candidates), "arxiv_found": found, "arxiv_failed": failed}
 
+    def _seed_native_pdfs(self, publications: Iterable[Publication]) -> int:
+        """Restore the primary candidate for native arXiv DOI records without a PDF URL."""
+        changed = []
+        for publication in publications:
+            if not self.selected("publications", publication.id) or (publication.full_text or "").strip():
+                continue
+            if url := native_arxiv_pdf_url(publication):
+                publication.pdf_urls.append(url)
+                if publication.id not in self.with_links:
+                    publication.processing.pop("code_links", None)
+                changed.append(publication)
+        self.prepared.upsert_models("publications", changed)
+        return len(changed)
+
     def _apply(self, publication: Publication, identifier: str | None) -> int:
-        if identifier is None:
+        identity = _parse_arxiv_id(identifier) if identifier else None
+        if identity is None:
             self._record(publication, ProcessingStatus.COMPLETED_EMPTY, 0)
             return 0
-        publication.pdf_urls = [*publication.pdf_urls, f"https://arxiv.org/pdf/{identifier}"]
+        url = f"https://arxiv.org/pdf/{''.join(identity)}"
+        publication.pdf_urls.append(url)
+        publication.arxiv_sources.append(ArxivSource(url=url))
         if publication.id not in self.with_links:
             publication.processing.pop("code_links", None)
         self._record(publication, ProcessingStatus.COMPLETED, 1)

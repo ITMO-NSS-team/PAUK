@@ -83,6 +83,11 @@ class HttpClient:
         """Send a GET request and return the raw response body."""
         return self._request("GET", url, retries=retries, timeout=timeout).content
 
+    def get_bytes_with_url(self, url: str, *, retries: int = 3, timeout: int | None = None) -> tuple[bytes, str]:
+        """Return the response bytes and final URL after following redirects."""
+        response = self._request("GET", url, retries=retries, timeout=timeout)
+        return response.content, response.url
+
     def get_text(self, url: str, *, retries: int = 3, timeout: int | None = None) -> str:
         """Send a GET request and return the decoded response text (charset auto-detected)."""
         return self._request("GET", url, retries=retries, timeout=timeout).text

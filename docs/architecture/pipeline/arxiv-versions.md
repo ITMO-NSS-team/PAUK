@@ -14,38 +14,48 @@ carries the preprint's id in `externalIds.ArXiv`.
 
 ## What the stage does
 
-It takes the publications that have a `doi`, no `full_text` (empty or only
-whitespace), and no link to `arxiv.org` in `pdf_urls`. On the first collect of
-a group nothing has text yet, so every paper with a DOI is looked up, open
-access ones included; for them the extra link is never reached.
+It takes publications that have a non-arXiv DOI, no `full_text` (empty or
+only whitespace), and no recognized arXiv link in `pdf_urls`. On the first
+collect of a group nothing has text yet, so this includes open-access papers.
 
 The DOIs go to `POST /graph/v1/paper/batch?fields=externalIds`, 500 per
 request. For every paper that comes back with an arXiv id,
 `https://arxiv.org/pdf/<id>` is appended to the end of `pdf_urls`. The
-publisher's own links stay first, and `code_links` tries `pdf_urls` before the
-PDF-Crawler-Service, so the preprint is read when the publisher's links fail
-and before the crawler is asked. Each batch is written as it completes, and
-the response goes to `raw` under the source `semantic_scholar`.
-
-`normalize` merges `pdf_urls` with what is already stored, so the appended
-link survives the next collect.
+publisher's own links stay first. Each batch is written as it completes, and
+the response goes to `raw` under the source `semantic_scholar`. A native
+arXiv DOI with no PDF URL gets the canonical primary URL directly, without
+looking it up in Semantic Scholar.
 
 ## Handing the paper to `code_links`
 
-The stage runs before `code_links` in `ALL_STAGES`. A paper that `code_links`
-has already processed would not be read again, because it ended
-`COMPLETED_EMPTY` with no PDF candidates. When the stage adds a link to a paper
-that has no code links in `repo_links`, it drops that paper's `code_links`
-state, and the same run reads the preprint.
+`arxiv_versions` runs before `code_links`. It records each discovered URL in
+`arxiv_sources` with its own extraction state, which survives normalize and
+publication deduplication. `code_links` reads pending sources even when the
+paper already has links or a publisher PDF. A PDF failure leaves that source
+eligible for retry without discarding text or links. If the paper has no old
+code links, discovery also reopens the ordinary extraction path.
 
-A paper that already has links keeps its `code_links` state. A re-run of
-`code_links` rebuilds the links from the abstract and the PDF, which would
-discard links added by hand and the `link_relevance` verdicts already paid
-for. Its arXiv link waits for `pauk enrich code_links --force`.
+A journal paper can borrow a cached PDF from a unique prepared preprint only
+when the cache's recorded source and byte digest verify the arXiv identity.
+An explicit revision requires an exact version match; an unversioned URL
+does not prove a revision. Old cache entries and crawler responses without
+verified provenance do not qualify. When borrowing isn't possible, the stage
+requests the arXiv PDF directly and keeps it in a separate source cache if it
+cannot safely use the preprint's publication cache. Occurrences keep their
+source PDF ID and local page number. Preprint text fills a gap rather than
+replacing existing text.
+
+New occurrences use the ordinary repository URL identity. With `--force`,
+`code_links` removes stale automatic occurrences from successfully reread
+PDFs, not from sources it couldn't read. Manual entries recorded without
+occurrences keep their verdict and are not folded into automatic evidence.
+Links without evidence changes keep their verdicts; newly found or changed
+automatic evidence goes to `link_relevance`. Older appended URLs are not
+backfilled as separately tracked sources.
 
 ## Statuses
 
-- An arXiv link was added: `COMPLETED`, `result_count=1`.
+- Semantic Scholar returned an arXiv link: `COMPLETED`, `result_count=1`.
 - Semantic Scholar does not know the DOI, or knows it without an arXiv id:
   `COMPLETED_EMPTY`. It is not asked again without `--force`.
 - The batch failed after retries, or the response did not match the request:
@@ -89,6 +99,5 @@ is not permission to crawl export, nor does it introduce a faster download route
 An arXiv copy is usually the preprint, not the published version: its text,
 page numbers and, occasionally, its links can differ from the journal's.
 
-A cached PDF in `data/pdf/` is read before any link, so a paper whose cached
-file is a scan without a text layer gets the arXiv link but `code_links` keeps
-reading the scan.
+A cached publisher PDF, including a scan with no text layer, does not block
+extraction of a separately tracked arXiv source.

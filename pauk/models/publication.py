@@ -41,6 +41,13 @@ class PublicationVersion(BaseModel):
     authors: list[VersionAuthor] = Field(default_factory=list)
 
 
+class ArxivSource(BaseModel):
+    """A discovered arXiv PDF and the result of extracting that specific source."""
+
+    url: str
+    state: ProcessingState = Field(default_factory=ProcessingState)
+
+
 class Publication(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -65,6 +72,7 @@ class Publication(BaseModel):
     funding: list[Funding] = Field(default_factory=list)
     openalex_url: str | None = None
     pdf_urls: list[str] = Field(default_factory=list)
+    arxiv_sources: list[ArxivSource] = Field(default_factory=list, exclude_if=lambda sources: not sources)
     abstract: str | None = None
     full_text: str | None = None
     department_ids: list[str] = Field(default_factory=list)

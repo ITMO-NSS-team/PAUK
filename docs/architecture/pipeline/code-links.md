@@ -163,12 +163,12 @@ footnotes and scans without a text layer are not recovered.
 
 ## Fallback through PDF-Crawler-Service
 
-Unique `pdf_urls` are tried first: `best_oa_location.pdf_url`, then the
-non-empty `locations[].pdf_url` in source order, then the arXiv link that
-`arxiv_versions` appends for papers without full text
-([arxiv-versions.md](arxiv-versions.md)). Requests to `arxiv.org` are paced at
-one every three seconds, as arXiv asks. If all direct links failed to
-download or parse (or there are none), but the publication has a `doi` and
+For ordinary extraction, direct `pdf_urls` are tried in source order:
+`best_oa_location.pdf_url`, then the non-empty `locations[].pdf_url`.
+The arXiv links discovered by [`arxiv_versions`](arxiv-versions.md) are
+processed separately, even if a primary PDF was read. They are tried before
+falling back to the crawler and paced at one request every 15 seconds. If
+no PDF could be read, but the publication has a `doi` and
 `PAUK_PDF_CRAWLER_URL` is set, the stage probes `GET {url}/health` once per
 stage run (not per publication, no retries); on success, for such publications
 it calls `GET {url}/download?url=<urlencoded doi>`. Service details and
@@ -176,8 +176,10 @@ configuration: [../deploy.md](../deploy.md).
 
 ## Download and cache
 
-`data/pdf/<publication_id>.pdf` (`PdfStore`, with a `{fetched_at}` pointer in
-the `pdfs` collection). The write is atomic (temporary file plus `os.replace`)
+`data/pdf/<publication_id>.pdf` (`PdfStore`, with a pointer in the `pdfs`
+collection). The pointer records `fetched_at`, the byte digest and the final
+arXiv PDF URL when known; crawler and other unverified downloads do not prove
+an arXiv revision. The file write is atomic (temporary file plus `os.replace`)
 and happens only after the PDF parsed successfully, so HTML error pages never
 reach the cache. If an old cached file cannot be read, direct links and the
 crawler are tried, and a successful PDF replaces the corrupt file. A valid

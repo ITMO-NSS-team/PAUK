@@ -1,13 +1,16 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 import fitz
 import mongomock
 
-from pauk.models import CodeLink, Publication, RepoLink
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.publication import ArxivSource
+from pauk.pipeline.normalize import OpenAlexNormalizer
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.arxiv_versions import (
     ARXIV_HOSTS,
@@ -15,7 +18,10 @@ from pauk.pipeline.stages.arxiv_versions import (
     bare_doi,
     has_arxiv_link,
 )
+from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import CodeLinksStage
+from pauk.pipeline.stages.dedup import _merge_publication
+from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
 from pauk.settings import ARXIV_RPS, Settings
 from pauk.sources.base import HttpClient, HttpRequestError
 from pauk.sources.rate_limit import HostRateLimiter
@@ -32,13 +38,11 @@ from tests.unit.test_rate_limit import _Clock
 STAGE_CLIENT = "pauk.pipeline.stages.arxiv_versions.SemanticScholarClient"
 
 
-def _pdf(text: str) -> bytes:
-    doc = fitz.open()
-    doc.new_page().insert_text((72, 72), text)
-    try:
+def _pdf(*pages: str) -> bytes:
+    with fitz.open() as doc:
+        for text in pages:
+            doc.new_page().insert_text((72, 72), text)
         return doc.tobytes()
-    finally:
-        doc.close()
 
 
 def _record(identifier: str | None) -> dict:
@@ -220,7 +224,7 @@ class ArxivVersionsStageTest(unittest.TestCase):
         self.assertNotIn("code_links", rows["W1"].processing)
         self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
 
-    def test_a_paper_that_already_has_links_keeps_them_until_force(self):
+    def test_a_paper_that_already_has_links_gets_independent_pending_extraction(self):
         done = ProcessingState(status=ProcessingStatus.COMPLETED, result_count=1)
         self.prepared.write_models("publications", [
             Publication(id="W1", title="t", doi="10.1/a", processing={"code_links": done}),
@@ -232,6 +236,24 @@ class ArxivVersionsStageTest(unittest.TestCase):
         rows = self._run()
         self.assertEqual(rows["W1"].pdf_urls, ["https://arxiv.org/pdf/2201.06114"])
         self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(rows["W1"].arxiv_sources, [ArxivSource(url=rows["W1"].pdf_urls[0])])
+
+    def test_source_state_survives_normalize_and_merge(self) -> None:
+        url = "https://arxiv.org/pdf/2201.06114"
+        pending = ArxivSource(url=url)
+        done = ArxivSource(url=url, state=ProcessingState(status=ProcessingStatus.COMPLETED))
+        current = Publication(id="W1", title="Paper", pdf_urls=[url], arxiv_sources=[pending])
+        other = Publication(id="W2", title="Paper", pdf_urls=[url], arxiv_sources=[done])
+        merged = _merge_publication(current, other)
+        self.assertEqual(merged.arxiv_sources, [done])
+        self.assertEqual(_merge_publication(merged, Publication(
+            id="W3", title="Paper", pdf_urls=[url], arxiv_sources=[pending],
+        )).arxiv_sources, [done])
+        self.prepared.write_models("publications", [merged])
+        self.raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": "Paper"}, {})
+        OpenAlexNormalizer(self.raw, self.prepared).run()
+        result, = self.prepared.read_models("publications", Publication)
+        self.assertEqual(result.arxiv_sources, [done])
 
     def test_text_of_only_whitespace_counts_as_no_text(self):
         self.prepared.write_models("publications", [
@@ -358,12 +380,9 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         )])
         s2.return_value.papers_by_doi.return_value = [_record("2201.06114")]
 
-        def download(url, **_):
-            if url == publisher:
-                raise HttpRequestError("GET", url, status_code=403)
-            return _pdf("Our code: https://github.com/org/repo")
-
-        http.return_value.get_bytes.side_effect = download
+        arxiv_url = "https://arxiv.org/pdf/2201.06114"
+        http.return_value.get_bytes.side_effect = HttpRequestError("GET", publisher, status_code=403)
+        http.return_value.get_bytes_with_url.return_value = (_pdf("Our code: https://github.com/org/repo"), arxiv_url)
         ArxivVersionsStage(self.prepared, self.raw, config=self.config).run()
         CodeLinksStage(self.prepared, self.raw, config=self.config).run()
         pub = next(iter(self.prepared.read_models("publications", Publication)))
@@ -371,8 +390,337 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.COMPLETED)
         links = next(iter(self.prepared.read_models("repo_links", RepoLink)))
         self.assertEqual([link.url for link in links.links], ["https://github.com/org/repo"])
-        self.assertEqual([call.args[0] for call in http.return_value.get_bytes.call_args_list],
-                         [publisher, "https://arxiv.org/pdf/2201.06114"])
+        self.assertEqual(http.return_value.mock_calls,
+                         [mock.call.get_bytes(publisher), mock.call.get_bytes_with_url(arxiv_url)])
+
+    def _discover(self, identifier: str = "2201.06114") -> str:
+        with mock.patch(STAGE_CLIENT) as s2:
+            s2.return_value.papers_by_doi.return_value = [_record(identifier)]
+            ArxivVersionsStage(self.prepared, self.raw, config=self.config, selection=self.selection).run()
+        return f"https://arxiv.org/pdf/{identifier}"
+
+    @property
+    def selection(self) -> PreparedSelection:
+        return PreparedSelection("publications", frozenset({"W1"}))
+
+    def _extract(self, **kwargs: bool) -> dict[str, int]:
+        return CodeLinksStage(self.prepared, self.raw, config=self.config, selection=self.selection, **kwargs).run()
+
+    def _work(self) -> Publication:
+        return next(pub for pub in self.prepared.read_models("publications", Publication) if pub.id == "W1")
+
+    def _source_state(self, url: str) -> ProcessingState:
+        return next(source.state for source in self._work().arxiv_sources if source.url == url)
+
+    def _links(self) -> dict[str, CodeLink]:
+        row = next(row for row in self.prepared.read_models("repo_links", RepoLink) if row.publication_id == "W1")
+        return {link.url: link for link in row.links}
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_journal_evidence_uses_the_existing_preprint_id_and_citation_page(self, http: mock.Mock) -> None:
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="Journal", doi="10.1/journal"),
+            Publication(id="W2", title="Preprint", doi="https://doi.org/10.48550/arXiv.2201.06114",
+                        pdf_urls=["https://arxiv.org/pdf/2201.06114v2"]),
+        ])
+        store = PdfStore(self.db, self.config.pdf_dir)
+        store.save("W1", _pdf("Publisher text"))
+        store.save("W2", _pdf("Preprint", "Our code [1].\nReferences\n[1] https://github.com/org/preprint"),
+                   source_url="https://arxiv.org/pdf/2201.06114v2")
+        url = self._discover()
+
+        self._extract()
+
+        self.assertEqual(http.return_value.mock_calls, [])
+        self.assertEqual(self._work().full_text.strip(), "Publisher text")
+        self.assertEqual(self._source_state(url).status, ProcessingStatus.COMPLETED)
+        occurrences = self._links()["https://github.com/org/preprint"].occurrences
+        self.assertEqual({(o.pdf_id, o.page_number, o.source) for o in occurrences},
+                         {("W2", 2, "citation"), ("W2", 2, "reference")})
+        self.assertEqual({pub.id for pub in self.prepared.read_models("publications", Publication)}, {"W1", "W2"})
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_uncached_compatible_preprint_is_downloaded_once_for_both_records(self, http: mock.Mock) -> None:
+        preprint_url = "https://arxiv.org/pdf/2201.06114v2"
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="Journal", doi="10.1/journal"),
+            Publication(id="W2", title="Preprint", type="preprint", pdf_urls=[preprint_url]),
+        ])
+        self._discover()
+        http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/preprint"), preprint_url)
+
+        CodeLinksStage(self.prepared, self.raw, config=self.config).run()
+
+        http.return_value.get_bytes_with_url.assert_called_once_with(preprint_url)
+        store = PdfStore(self.db, self.config.pdf_dir)
+        self.assertFalse(store.exists("W1"))
+        self.assertEqual(store.read_with_source("W2")[1], preprint_url)
+        self.assertEqual(self._links()["https://github.com/org/preprint"].occurrences[0].pdf_id, "W2")
+
+    @mock.patch("pauk.pipeline.stages.link_relevance.llm_client")
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_completed_journal_rejudges_only_new_or_changed_automatic_evidence(
+        self, http: mock.Mock, llm: mock.Mock,
+    ) -> None:
+        done = ProcessingState(status=ProcessingStatus.COMPLETED)
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="Journal", doi="10.1/journal", processing={"code_links": done, "link_relevance": done},
+        )])
+        irrelevant = CodeLink(url="https://github.com/org/irrelevant", is_relevant=False, llm_reason="prior tool",
+                              occurrences=[LinkOccurrence(source="pdf_text", pdf_id="W1", page_number=3)],
+                              classification_status=ClassificationStatus.CLASSIFIED)
+        manual = CodeLink(url="https://github.com/org/manual", is_relevant=True,
+                          classification_status=ClassificationStatus.CLASSIFIED)
+        same = irrelevant.model_copy(update={"url": "http://www.github.com/Org/Shared.git", "availability": "available"})
+        self.prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[irrelevant, manual, same])])
+        source = self._discover()
+        http.return_value.get_bytes_with_url.return_value = (
+            _pdf("https://github.com/org/shared\nhttps://github.com/org/new\nhttps://github.com/org/manual"), source,
+        )
+        llm.return_value.configure_mock(model="test", last_response=None, last_usage=None,
+                                       **{"chat_json.return_value": {"is_authors_artifact": True, "confidence": 0.9}})
+
+        self._extract()
+
+        self.assertEqual(self._links()[irrelevant.url], irrelevant)
+        self.assertEqual(self._links()[manual.url], manual)
+        updated = self._links()[same.url]
+        self.assertEqual(updated.classification_status, ClassificationStatus.PENDING)
+        self.assertIsNone(updated.is_relevant)
+        self.assertEqual(updated.availability, "available")
+        self.assertEqual([o.pdf_id for o in updated.occurrences], ["W1", source])
+        self.assertNotIn("link_relevance", self._work().processing)
+        LinkRelevanceStage(self.prepared, self.raw, config=self.config).run()
+        self.assertEqual(llm.return_value.chat_json.call_count, 2)
+        links_after = self._links()
+        self.assertEqual(links_after[irrelevant.url], irrelevant)
+        self.assertEqual(links_after[manual.url], manual)
+        self.assertTrue(links_after[same.url].is_relevant)
+        self.assertTrue(links_after["https://github.com/org/new"].is_relevant)
+        self.assertEqual(self._extract()["publications"], 0)
+        self._extract(force=True)
+        self.assertEqual(self._links(), links_after)
+        http.return_value.get_bytes_with_url.assert_called_once_with(source)
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_ambiguous_mismatched_and_journal_fallback_caches_are_not_borrowed(self, http: mock.Mock) -> None:
+        cases = ("duplicates", "wrong revision", "copied by discovery", "unrelated URL", "unknown legacy provenance")
+        for index, case in enumerate(cases, 1):
+            with self.subTest(case=case):
+                identifier = f"2201.0611{index}"
+                expected = f"https://arxiv.org/pdf/{identifier}v2"
+                preprint = Publication(id="W2", title="Same title", type="preprint", pdf_urls=[expected])
+                others = [preprint]
+                if case == "duplicates":
+                    others.append(preprint.model_copy(update={"id": "W3"}))
+                elif case == "wrong revision":
+                    preprint.pdf_urls = [expected.removesuffix("v2") + "v1"]
+                elif case == "copied by discovery":
+                    preprint.doi = "10.1/another-journal"
+                    preprint.arxiv_sources.append(ArxivSource(url=expected))
+                elif case == "unrelated URL":
+                    preprint.pdf_urls = [f"https://example.org/arxiv.org/pdf/{identifier}v2"]
+                self.prepared.write_models("publications", [
+                    Publication(id="W1", title="Same title", doi="10.1/journal"), *others,
+                ])
+                self.prepared.write_models("repo_links", [])
+                store = PdfStore(self.db, self.config.pdf_dir)
+                provenance = None if case == "unknown legacy provenance" else expected
+                store.save("W2", _pdf("https://github.com/org/not-the-source"), source_url=provenance)
+                http.reset_mock()
+                http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/true-source"), expected)
+                self._discover(identifier + "v2")
+
+                self._extract()
+
+                http.return_value.get_bytes_with_url.assert_called_once_with(expected)
+                link, = self._links().values()
+                self.assertEqual(link.url, "https://github.com/org/true-source")
+                self.assertEqual({occurrence.pdf_id for occurrence in link.occurrences}, {expected})
+                self.assertFalse(store.exists("W1"))
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_unreadable_preprint_cache_and_failed_download_keep_good_evidence(self, http: mock.Mock) -> None:
+        old = CodeLink(url="https://github.com/org/old", is_relevant=False,
+                       classification_status=ClassificationStatus.CLASSIFIED)
+        done = ProcessingState(status=ProcessingStatus.COMPLETED)
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="Journal", doi="10.1/journal", processing={"code_links": done}),
+            Publication(id="W2", title="Preprint", type="preprint", pdf_urls=["https://arxiv.org/pdf/2201.06114"]),
+        ])
+        self.prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[old])])
+        store = PdfStore(self.db, self.config.pdf_dir)
+        store.save("W2", b"unreadable")
+        url = self._discover()
+        work = self._work()
+        work.full_text = "Previously extracted text"
+        self.prepared.upsert_models("publications", [work])
+        http.return_value.get_bytes_with_url.side_effect = [
+            HttpRequestError("GET", url, status_code=503), (_pdf("https://github.com/org/new"), url),
+        ]
+
+        self._extract()
+        self.assertEqual(self._links(), {old.url: old})
+        self.assertEqual(self._source_state(url).status, ProcessingStatus.FAILED)
+        self._extract()
+
+        self.assertEqual(self._work().full_text, "Previously extracted text")
+        self.assertEqual(self._source_state(url).attempts, 2)
+        self.assertEqual(self._source_state(url).status, ProcessingStatus.COMPLETED)
+        self.assertEqual(self._links()[old.url], old)
+        self.assertEqual(store.read("W2"), b"unreadable")
+        self.assertEqual(self._links()["https://github.com/org/new"].occurrences[0].pdf_id, url)
+        self.assertFalse(store.exists("W1"))
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_crawler_pdf_cannot_be_borrowed_as_an_explicit_arxiv_revision(self, http: mock.Mock) -> None:
+        requested = "https://arxiv.org/pdf/2201.06114v2"
+        other_revision = _pdf("https://github.com/org/v3-only")
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="Journal", doi="10.1/journal"),
+            Publication(id="W2", title="Preprint", type="preprint", doi="10.48550/arXiv.2201.06114",
+                        pdf_urls=[requested]),
+        ])
+        config = replace(self.config, pdf_crawler_url="https://crawler.example")
+        http.return_value.get_bytes_with_url.side_effect = HttpRequestError("GET", requested, status_code=503)
+        http.return_value.get_bytes.return_value = other_revision
+        preprint_only = PreparedSelection("publications", frozenset({"W2"}))
+        CodeLinksStage(self.prepared, self.raw, config=config, selection=preprint_only).run()
+        store = PdfStore(self.db, self.config.pdf_dir)
+        self.assertEqual(store.read_with_source("W2"), (other_revision, None))
+
+        self._discover("2201.06114v2")
+        http.reset_mock()
+        http.return_value.get_bytes_with_url.side_effect = None
+        http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/v2-only"), requested)
+        self._extract()
+
+        http.return_value.get_bytes_with_url.assert_called_once_with(requested)
+        link, = self._links().values()
+        self.assertEqual(link.url, "https://github.com/org/v2-only")
+        self.assertEqual(link.occurrences[0].pdf_id, requested)
+        self.assertEqual(store.read("W2"), other_revision)
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_explicit_download_rejects_a_different_final_revision(self, http: mock.Mock) -> None:
+        self.prepared.write_models("publications", [Publication(id="W1", title="Journal", doi="10.1/journal")])
+        source = self._discover("2201.06114v2")
+        pdf = _pdf("https://github.com/org/wrong-revision")
+        for final in (source.removesuffix("v2") + "v3", source.removesuffix("v2")):
+            with self.subTest(final=final):
+                http.return_value.get_bytes_with_url.return_value = (pdf, final)
+                self._extract()
+                self.assertEqual(self._source_state(source).status, ProcessingStatus.FAILED)
+                self.assertEqual(self._links(), {})
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_native_arxiv_pdf_rejects_a_redirect_to_a_different_revision(self, http: mock.Mock) -> None:
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="Preprint", doi="10.48550/arXiv.2201.06114v2",
+        )])
+        requested = "https://arxiv.org/pdf/2201.06114v2"
+        http.return_value.get_bytes_with_url.return_value = (
+            _pdf("https://github.com/org/wrong-revision"), "https://arxiv.org/pdf/2201.06114v3",
+        )
+
+        self._extract()
+
+        http.return_value.get_bytes_with_url.assert_called_once_with(requested)
+        self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.FAILED)
+        self.assertIsNone(self._work().full_text)
+        self.assertEqual(self._links(), {})
+        self.assertFalse(PdfStore(self.db, self.config.pdf_dir).exists("W1"))
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_force_reconciles_primary_evidence_after_redownload(self, http: mock.Mock) -> None:
+        source = "https://arxiv.org/pdf/2201.06114"
+        publisher = "https://publisher.example/paper.pdf"
+        stale = CodeLink(url="https://github.com/org/stale", occurrences=[LinkOccurrence(
+            pdf_id="W1", page_number=1, source="pdf_text", context="Previous primary text",
+        )], is_relevant=True, classification_status=ClassificationStatus.CLASSIFIED)
+        pdf = _pdf("Primary text without code")
+        for via_crawler in (False, True):
+            with self.subTest(via_crawler=via_crawler):
+                self.prepared.write_models("publications", [Publication(
+                    id="W1", title="Journal", doi="10.1/journal",
+                    pdf_urls=[source] if via_crawler else [publisher, source],
+                    arxiv_sources=[ArxivSource(url=source)],
+                )])
+                self.prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[stale])])
+                config = replace(self.config, pdf_crawler_url="https://crawler.example" if via_crawler else "")
+                with tempfile.TemporaryDirectory() as directory:
+                    config = replace(config, data_dir=Path(directory))
+                    http.return_value.get_bytes.return_value = pdf
+                    http.return_value.get_bytes_with_url.side_effect = HttpRequestError("GET", source, status_code=503)
+                    CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection, force=True).run()
+                self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
+                self.assertEqual(self._links(), {})
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    @mock.patch(STAGE_CLIENT)
+    def test_native_arxiv_doi_recovers_without_lookup_or_duplicate_download(self, s2: mock.Mock, http: mock.Mock) -> None:
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="Preprint", doi="https://doi.org/10.48550/arXiv.2201.06114",
+            processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
+        )])
+        source = "https://arxiv.org/pdf/2201.06114"
+        actual = "https://arxiv.org/pdf/2201.06114v3"
+        http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/native"), actual)
+        stage = ArxivVersionsStage(self.prepared, self.raw, config=self.config)
+        stage.run()
+        self._extract()
+        stage.run()
+        self._extract()
+
+        s2.return_value.papers_by_doi.assert_not_called()
+        http.return_value.get_bytes_with_url.assert_called_once_with(source)
+        self.assertEqual(self._work().pdf_urls, [source])
+        self.assertEqual(self._work().arxiv_sources, [])
+        self.assertEqual(PdfStore(self.db, self.config.pdf_dir).read_with_source("W1")[1], actual)
+        self.assertEqual(self._links()["https://github.com/org/native"].occurrences[0].pdf_id, "W1")
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_force_reconciles_only_extracted_evidence_from_pdfs_read_successfully(self, http: mock.Mock) -> None:
+        self.prepared.write_models("publications", [Publication(id="W1", title="Journal", doi="10.1/journal")])
+        source = self._discover()
+        unavailable = "https://arxiv.org/pdf/2201.06115"
+        path = "https://github.com/org/"
+        store = PdfStore(self.db, self.config.pdf_dir)
+        store.save("W1", _pdf(path + "gone-primary"))
+        store.save_source(source, _pdf(path + "gone-arxiv", "Old " + path + "changed", path + "same"))
+        self._extract()
+        previous = self._links()
+        for link in previous.values():
+            link.classification_status = ClassificationStatus.CLASSIFIED
+            link.is_relevant = True
+            link.llm_confidence = 0.9
+        manual = CodeLink(url=path + "manual", is_relevant=True, classification_status=ClassificationStatus.CLASSIFIED)
+        kept = CodeLink(url=path + "context", occurrences=[LinkOccurrence(pdf_id=source, context="Manual context")])
+        unread = CodeLink(url=path + "unread", occurrences=[LinkOccurrence(
+            pdf_id=unavailable, page_number=1, source="pdf_text", context="Prior good text",
+        )])
+        work = self._work()
+        work.arxiv_sources.append(ArxivSource(url=unavailable))
+        work.processing["link_relevance"] = ProcessingState(status=ProcessingStatus.COMPLETED)
+        self.prepared.upsert_models("publications", [work])
+        self.prepared.write_models("repo_links", [RepoLink(
+            publication_id="W1", links=[*previous.values(), manual, kept, unread],
+        )])
+        store.save("W1", _pdf("No code"))
+        store.save_source(source, _pdf(path + "manual", "New " + path + "changed", path + "same"))
+        http.return_value.get_bytes_with_url.side_effect = HttpRequestError("GET", unavailable, status_code=503)
+
+        self._extract(force=True)
+
+        now = self._links()
+        self.assertEqual(set(now), {path + label for label in ("changed", "same", "manual", "context", "unread")})
+        self.assertEqual(now[path + "changed"].classification_status, ClassificationStatus.PENDING)
+        self.assertEqual(len(now[path + "changed"].occurrences), 1)
+        self.assertIn("New", now[path + "changed"].occurrences[0].context)
+        self.assertEqual(now[path + "same"], previous[path + "same"])
+        self.assertEqual([now[link.url] for link in (manual, kept, unread)], [manual, kept, unread])
+        self.assertNotIn("link_relevance", self._work().processing)
+        self.assertEqual(self._source_state(unavailable).status, ProcessingStatus.FAILED)
 
 
 if __name__ == "__main__":

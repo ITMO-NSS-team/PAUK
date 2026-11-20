@@ -970,6 +970,12 @@ def _merge_publication(base: Publication, extra: Publication,
     ])
     base.code_url = json.dumps(code_urls, ensure_ascii=False) if code_urls else None
     base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
+    arxiv_sources = {source.url: source for source in base.arxiv_sources}
+    for source in extra.arxiv_sources:
+        current = arxiv_sources.get(source.url)
+        if current is None or current.state.status in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+            arxiv_sources[source.url] = source
+    base.arxiv_sources = list(arxiv_sources.values())
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)

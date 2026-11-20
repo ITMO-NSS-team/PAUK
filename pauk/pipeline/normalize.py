@@ -278,6 +278,7 @@ class OpenAlexNormalizer:
                     normalized_publication.versions = existing_publication.versions
                     normalized_publication.merged_ids = existing_publication.merged_ids
                     normalized_publication.processing = existing_publication.processing
+                    normalized_publication.arxiv_sources = existing_publication.arxiv_sources
                     normalized_publication.pdf_urls = list(dict.fromkeys([
                         *normalized_publication.pdf_urls, *existing_publication.pdf_urls,
                     ]))

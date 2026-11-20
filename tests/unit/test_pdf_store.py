@@ -43,6 +43,16 @@ class PdfStoreTest(unittest.TestCase):
         store.save("W1", b"new bytes")
         self.assertEqual(store.read("W1"), b"new bytes")
 
+    def test_provenance_is_bound_to_the_bytes_and_cleared_by_an_unknown_source(self) -> None:
+        store = PdfStore(self.db, self.pdf_dir)
+        source = "https://arxiv.org/pdf/2201.06114v2"
+        store.save("W1", b"v2", source_url=source)
+        self.assertEqual(store.read_with_source("W1"), (b"v2", source))
+        (self.pdf_dir / "W1.pdf").write_bytes(b"other bytes")
+        self.assertEqual(store.read_with_source("W1"), (b"other bytes", None))
+        store.save("W1", b"v2")
+        self.assertEqual(store.read_with_source("W1"), (b"v2", None))
+
     def test_file_handle_is_released_after_read(self):
         # Guards against WinError 32 (a handle held open across a delete):
         # read() must open, read, and close in one step so the caller is free
