@@ -20,9 +20,8 @@
         --border: #333333;
         --text: #dcdcdc;
         --muted: #8a8a8a;
-        --accent: #ff913d;
-        --accent-fill: #ff913d;
-        --accent-soft: rgba(255, 145, 61, 0.18);
+        --accent: #ff7f50;
+        --accent-soft: rgba(255, 127, 80, 0.18);
         --danger-bg: #2a1414;
         --danger-border: #e03131;
         --danger-text: #ffb3b3;
@@ -493,12 +492,9 @@
       }
 
       #panel {
-        width: 320px;
-        flex-shrink: 0;
-        overflow-y: auto;
+        flex: none;
         background: var(--surface);
-        border-left: 1px solid var(--border);
-        padding: 24px 20px;
+        padding: 18px 16px;
         color: var(--text);
         font-size: 12px;
       }
@@ -704,7 +700,7 @@
       }
       .chart-bar-row__fill {
         height: 100%;
-        background: var(--accent-fill);
+        background: var(--accent);
         border-radius: inherit;
         transition: width 0.2s ease-out;
       }
@@ -785,7 +781,7 @@
       .boot-progress-bar {
         height: 100%;
         width: 0%;
-        background: var(--accent-fill);
+        background: var(--accent);
         transition: width 0.2s ease-out;
         border-radius: inherit;
       }
@@ -854,7 +850,7 @@
       }
       .menu-cta {
         padding: 12px 22px;
-        background: var(--accent-fill);
+        background: var(--accent);
         color: #181818;
         border: 1px solid var(--accent);
         border-radius: 5px;
@@ -937,8 +933,7 @@
           height: 100%;
           flex: 1;
         }
-        #sidebar,
-        #panel {
+        #sidebar {
           display: none;
           position: absolute;
           top: 56px;
@@ -950,14 +945,8 @@
         #sidebar {
           left: 0;
         }
-        #panel {
-          right: 0;
-        }
         #app[data-mobile-pane="sidebar"] #sidebar {
           display: flex;
-        }
-        #app[data-mobile-pane="panel"] #panel:not([hidden]) {
-          display: block;
         }
         .mobile-tools {
           display: flex;
@@ -984,8 +973,7 @@
           min-height: 44px;
           border-radius: 5px;
         }
-        #app[data-mobile-pane="sidebar"] #mobile-backdrop,
-        #app[data-mobile-pane="panel"] #mobile-backdrop {
+        #app[data-mobile-pane="sidebar"] #mobile-backdrop {
           display: block;
           position: absolute;
           inset: 0;
@@ -1041,12 +1029,6 @@
           aria-controls="sidebar"
           aria-expanded="false"
         ></button>
-        <button
-          type="button"
-          id="mobile-details"
-          aria-controls="panel"
-          aria-expanded="false"
-        ></button>
         <button type="button" id="mobile-close" hidden></button>
       </div>
       <aside id="sidebar">
@@ -1058,10 +1040,9 @@
         </nav>
         <div class="sidebar-section-label" id="filters-section-label"></div>
         <div id="filter-bar" hidden></div>
-        <div id="tab-content"></div>
+        <section id="panel" hidden></section>
       </aside>
       <div id="map"></div>
-      <aside id="panel" hidden></aside>
     </div>
     <!-- Outside #app and #menu, so "/" opens it from any screen. -->
     <div id="global-search" hidden>

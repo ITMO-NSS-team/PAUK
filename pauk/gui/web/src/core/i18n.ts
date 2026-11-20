@@ -130,7 +130,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   ru: {
     "filter.displayOptions": "Настройки отображения",
     "filter.revealed": "Фильтры изменены, чтобы показать выбранную запись.",
-    "mobile.list": "Список и фильтры",
+    "mobile.list": "Обзор и фильтры",
     "mobile.details": "Карточка",
     "mobile.close": "Закрыть панель",
     "details.failed": "Не удалось загрузить подробности.",
@@ -261,7 +261,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   en: {
     "filter.displayOptions": "Display settings",
     "filter.revealed": "Filters changed to show the selected record.",
-    "mobile.list": "List and filters",
+    "mobile.list": "Overview and filters",
     "mobile.details": "Details",
     "mobile.close": "Close panel",
     "details.failed": "Could not load details.",

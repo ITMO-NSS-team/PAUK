@@ -212,31 +212,25 @@ describe("mountTabs tab switching", () => {
     return nav;
   }
 
-  it("by default mounts tab 1 (authors) and highlights its button", async () => {
-    const data = await loadSampleGraphData();
+  it("highlights the authors button by default", async () => {
     const store = new Store<AppState>(initialState());
     const buttons = buttonsMarkup();
-    const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, store);
 
-    expect(listItems(content)).toHaveLength(data.authors.length);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(
       true,
     );
   });
 
-  it("clicking a tab button unmounts the old tab and mounts the new one", async () => {
-    const data = await loadSampleGraphData();
+  it("clicking a tab button activates its map and overview", async () => {
     const store = new Store<AppState>(initialState());
     const buttons = buttonsMarkup();
-    const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, store);
     (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
 
     expect(store.get().tab).toBe(2);
-    expect(listItems(content)).toHaveLength(data.repos.length);
     expect(buttons.querySelector('[data-tab="2"]')?.classList.contains("tab-button--active")).toBe(
       true,
     );
@@ -246,12 +240,10 @@ describe("mountTabs tab switching", () => {
   });
 
   it("clicking a tab button does not touch selection by itself, resetting a stale selection on graph rebuild is done by map/build.ts::mountReactiveGraph (see tests/build.test.ts)", async () => {
-    const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
     const buttons = buttonsMarkup();
-    const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, store);
     (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
 
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });

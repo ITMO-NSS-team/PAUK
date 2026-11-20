@@ -5,9 +5,8 @@
   --border: #333333;
   --text: #dcdcdc;
   --muted: #8a8a8a;
-  --accent: #ff913d;
-  --accent-fill: #ff913d;
-  --accent-soft: rgba(255, 145, 61, 0.18);
+  --accent: #ff7f50;
+  --accent-soft: rgba(255, 127, 80, 0.18);
   --ops-good: #8bb69b;
   --ops-warning: #d6b477;
   --ops-bad: #e39797;
@@ -273,12 +272,12 @@ strong {
 }
 .ops-button--primary {
   border-color: var(--accent);
-  background: var(--accent-fill);
+  background: var(--accent);
   color: #181818;
   font-weight: 600;
 }
 .ops-button--primary:hover:not(:disabled) {
-  background: var(--accent-fill);
+  background: var(--accent);
   border-color: var(--accent);
   filter: brightness(1.08);
 }
@@ -403,7 +402,7 @@ strong {
 .ops-meter i {
   display: block;
   height: 100%;
-  background: var(--accent-fill);
+  background: var(--accent);
   border-radius: inherit;
   opacity: 0.8;
 }
@@ -705,11 +704,11 @@ strong {
   transition: transform 0.15s;
 }
 .ops-switch[aria-checked="true"] {
-  background: var(--accent-fill);
+  background: var(--accent);
   border-color: var(--accent);
 }
 .ops-switch[aria-checked="true"] > span {
-  background: var(--bg);
+  background: #181818;
   transform: translateX(12px);
 }
 .ops-settings-rows {
@@ -839,7 +838,7 @@ strong {
 .ops-inline-progress > i {
   display: block;
   height: 100%;
-  background: var(--accent-fill);
+  background: var(--accent);
 }
 .ops-running-banner {
   display: flex;
@@ -1388,6 +1387,6 @@ input[type="checkbox"] {
     width: 42px;
     height: 2px;
     margin-top: 32px;
-    background: var(--accent-fill);
+    background: var(--accent);
   }
 }

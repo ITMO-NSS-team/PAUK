@@ -169,15 +169,7 @@ function renderApp(data: GraphData): void {
   mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey, resources);
   mountDetailErrors(store, resources);
   mountMobilePanels(store);
-  mountTabs(
-    requireElement("tab-buttons"),
-    requireElement("tab-content"),
-    store,
-    renderer,
-    data,
-    pubDetailsByKey,
-    repoDetailsByKey,
-  );
+  mountTabs(requireElement("tab-buttons"), store);
   mountFilters(store);
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
   mountUrlSync(store, data);
