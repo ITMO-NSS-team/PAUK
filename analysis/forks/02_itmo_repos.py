@@ -13,8 +13,8 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
 
-DATA = Path("/analysis/forks/data")
-CATALOG = Path("/analysis/itmo_github_orgs.json")
+DATA = Path(__file__).resolve().parent / "data"
+CATALOG = Path(__file__).resolve().parent.parent / "itmo_github_orgs.json"
 ITMO_TEXT = re.compile(r"(?<!\w)itmo(?!\w)", re.IGNORECASE)
 
 

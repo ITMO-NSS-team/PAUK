@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/analysis/forks")
 
 import gh  # noqa: E402
 
-OUT = Path("/analysis/forks/out")
+OUT = Path(__file__).resolve().parent / "out"
 
 TARGETS = [
     "aimclub/FEDOT",

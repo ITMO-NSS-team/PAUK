@@ -11,7 +11,7 @@ import requests
 
 API = "https://api.github.com"
 TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
-CACHE = Path("/analysis/forks/cache")
+CACHE = Path(__file__).resolve().parent / "cache"
 CACHE.mkdir(parents=True, exist_ok=True)
 
 session = requests.Session()

@@ -9,15 +9,12 @@ the authorship of the divergence.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/analysis/forks")
 
 import gh  # noqa: E402
 
-RAW = Path("/analysis/forks/raw")
-DATA = Path("/analysis/forks/data")
+RAW = Path(__file__).resolve().parent / "raw"
+DATA = Path(__file__).resolve().parent / "data"
 
 
 def compare_record(fork: dict, upstream_owner: str, upstream_name: str, base: str) -> dict:

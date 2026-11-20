@@ -10,7 +10,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
+DATA = Path(__file__).resolve().parent / "data"
 
 
 def load(name: str) -> list[dict]:

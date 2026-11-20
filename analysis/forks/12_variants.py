@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
-OUT = Path("/analysis/forks/out")
+DATA = Path(__file__).resolve().parent / "data"
+OUT = Path(__file__).resolve().parent / "out"
 
 rows = json.loads((DATA / "repo_ownership.json").read_text(encoding="utf-8"))
 by_id = {row["id"]: row for row in rows}

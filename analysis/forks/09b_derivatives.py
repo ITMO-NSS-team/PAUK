@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
-OUT = Path("/analysis/forks/out")
+DATA = Path(__file__).resolve().parent / "data"
+OUT = Path(__file__).resolve().parent / "out"
 
 forks = json.loads((OUT / "forks_classified.json").read_text(encoding="utf-8"))
 compares = {

@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/analysis/forks")
 
 import gh  # noqa: E402
 
-DATA = Path("/analysis/forks/data")
+DATA = Path(__file__).resolve().parent / "data"
 
 
 def main() -> None:

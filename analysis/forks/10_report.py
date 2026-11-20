@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import csv
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
-OUT = Path("/analysis/forks/out")
+DATA = Path(__file__).resolve().parent / "data"
+OUT = Path(__file__).resolve().parent / "out"
 
 forks = json.loads((OUT / "forks_classified.json").read_text(encoding="utf-8"))
 panel = json.loads((OUT / "panel.json").read_text(encoding="utf-8"))

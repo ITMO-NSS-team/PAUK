@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/analysis/forks")
 
 import gh  # noqa: E402
 
-DATA = Path("/analysis/forks/data")
+DATA = Path(__file__).resolve().parent / "data"
 
 
 def main() -> None:
@@ -24,7 +21,7 @@ def main() -> None:
         head = f"{row['fork_owner']}:{row['fork_branch'] or 'main'}"
         key = f"pulls__{row['fork_owner']}__{repo}".lower()
 
-        def fetch():
+        def fetch(owner=owner, repo=repo, head=head):
             status, payload = gh.get(
                 f"{gh.API}/repos/{owner}/{repo}/pulls",
                 params={"state": "all", "head": head, "per_page": 100},

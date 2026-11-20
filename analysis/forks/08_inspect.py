@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-OUT = Path("/analysis/forks/out")
+OUT = Path(__file__).resolve().parent / "out"
 forks = json.loads((OUT / "forks_classified.json").read_text(encoding="utf-8"))
 
 changed = [f for f in forks if f["category"] != "inactive" and f["category"] != "unknown"]

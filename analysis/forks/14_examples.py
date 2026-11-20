@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
-OUT = Path("/analysis/forks/out")
+DATA = Path(__file__).resolve().parent / "data"
+OUT = Path(__file__).resolve().parent / "out"
 population = set(json.loads((OUT / "population.json").read_text(encoding="utf-8"))["repo_ids"])
 forks = [f for f in json.loads((OUT / "forks_classified.json").read_text(encoding="utf-8")) if f["repo_id"] in population]
 

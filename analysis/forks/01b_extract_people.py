@@ -8,7 +8,7 @@ from pathlib import Path
 
 from neo4j import GraphDatabase
 
-OUT = Path("/analysis/forks/data")
+OUT = Path(__file__).resolve().parent / "data"
 OUT.mkdir(parents=True, exist_ok=True)
 
 driver = GraphDatabase.driver(

@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-
-sys.path.insert(0, "/analysis/forks")
 
 import gh  # noqa: E402
 
-DATA = Path("/analysis/forks/data")
-RAW = Path("/analysis/forks/raw")
+DATA = Path(__file__).resolve().parent / "data"
+RAW = Path(__file__).resolve().parent / "raw"
 RAW.mkdir(parents=True, exist_ok=True)
 
 

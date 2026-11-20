@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
+DATA = Path(__file__).resolve().parent / "data"
 
 repos = json.loads((DATA / "forks_by_repo.json").read_text(encoding="utf-8"))
 total = sum(len(r["forks"]) for r in repos)
