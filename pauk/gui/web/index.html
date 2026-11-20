@@ -212,8 +212,8 @@
         font-size: 11px;
         letter-spacing: 0.08em;
       }
-      #brand {
-        margin-left: auto;
+      #brand { margin-left: auto; }
+      #brand, #map-back {
         padding: 8px 12px;
         border: 1px solid var(--border);
         border-radius: 5px;
@@ -222,7 +222,7 @@
         font-size: 11px;
         font-weight: 500;
       }
-      #brand:hover {
+      #brand:hover, #map-back:hover {
         background: var(--surface-2);
         border-color: var(--muted);
       }
@@ -1019,6 +1019,7 @@
           <img src="./src/assets/icons/pauk-frame-accent.png" alt="" /><strong>PAUK</strong
           ><span>MAP</span>
         </div>
+        <button type="button" id="map-back" hidden></button>
         <button type="button" id="brand">← Menu</button>
       </header>
       <button type="button" id="mobile-backdrop" tabindex="-1" aria-label="Close panel"></button>

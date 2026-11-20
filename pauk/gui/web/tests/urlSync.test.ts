@@ -105,6 +105,37 @@ describe("mountUrlSync", () => {
     expect(history.length).toBe(lengthBefore);
   });
 
+  it("returns to the selected author, filters and camera position", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("missing author fixture");
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: author.key } }));
+    const initial = store.get();
+    const position = { x: 0.2, y: 0.6, ratio: 0.3, angle: 0 };
+    let current = position;
+    const camera = {
+      getState: () => current,
+      async animate(state: typeof position) { current = state; },
+    };
+    const button = document.createElement("button");
+    const unmount = mountUrlSync(store, data, { camera, button });
+    try {
+      expect(button.hidden).toBe(true);
+      store.set({ tab: 2, selection: null });
+      expect(button.textContent).toContain("Авторы");
+      current = { ...position, x: 0.9 };
+      store.set({ filters: { ...initial.filters, minCoauth: 3 } });
+      const popped = new Promise<void>((done) => window.addEventListener("popstate", () => done(), { once: true }));
+      button.click();
+      await popped;
+      expect(store.get()).toEqual(initial);
+      expect(current).toEqual(position);
+      expect(button.hidden).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
   it("unmount removes the popstate handler", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());

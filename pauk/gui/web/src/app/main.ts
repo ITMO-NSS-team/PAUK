@@ -150,6 +150,7 @@ function renderApp(data: GraphData): void {
   });
 
   // Before mountReactiveGraph, which drops a selection missing from the graph.
+  mountUrlSync(store, data, { camera: renderer.getCamera(), button: requireElement("map-back") });
   mountHiddenAuthorReveal(store, data);
   const proximitySize = mountNodeProximity(renderer, store);
   mountReactiveGraph(renderer, store, data, pubDetailsByKey, proximitySize);
@@ -172,7 +173,6 @@ function renderApp(data: GraphData): void {
   mountTabs(requireElement("tab-buttons"), store);
   mountFilters(store);
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
-  mountUrlSync(store, data);
 
   console.info("Graph rendered (lists are ready, detail files load in the background):", {
     departments: data.departments.length,

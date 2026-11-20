@@ -2,7 +2,7 @@ import { t, type LocaleKey } from "../../core/i18n";
 import type { AppState, Store, TabId } from "../../core/state";
 
 /** Buttons in index.html carry only `data-tab`, the text comes from i18n. */
-const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
+export const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
   1: "tab.authors",
   2: "tab.repos",
   3: "tab.pubs",
