@@ -240,9 +240,7 @@ def main() -> None:
                 f for f in derivatives if f["independence"] in ("external", "itmo_other_team", "unknown")
             ]
             next_year = [
-                f for f in rows
-                if f["fork_year"] == year + 1 and f["category"] == "derivative"
-                and f["independence"] in ("external", "itmo_other_team", "unknown")
+                f for f in rows if f["fork_year"] == year + 1 and f["category"] == "derivative"
             ]
             panel.append({
                 "repo_id": repo_id,

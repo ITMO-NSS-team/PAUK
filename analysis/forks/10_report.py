@@ -61,7 +61,7 @@ summary = {
     "panel_positive_rows": sum(p["target_next_year"] for p in panel),
     "panel_repos_with_positive": len({p["repo_id"] for p in panel if p["target_next_year"]}),
     "panel_years": dict(sorted(Counter(p["year"] for p in panel).items())),
-    "events_by_year": dict(sorted(Counter(f["fork_year"] for f in independent_derivative if f["fork_year"]).items())),
+    "events_by_year": dict(sorted(Counter(f["fork_year"] for f in derivative if f["fork_year"]).items())),
     "forks_by_year": dict(sorted(Counter(f["fork_year"] for f in forks if f["fork_year"]).items())),
 }
 (OUT / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -80,10 +80,8 @@ rows = [
     ("из них contribution", summary["forks_contribution"]),
     ("из них modified", summary["forks_modified"]),
     ("из них derivative", summary["forks_derivative"]),
-    ("из них derivative (независимые от исходной команды)", summary["forks_derivative_independent"]),
     ("Форков с недоступным сравнением", summary["forks_unknown"]),
     ("Репозиториев с подтверждённым производным развитием", summary["repos_with_derivative"]),
-    ("Репозиториев с независимым производным развитием", summary["repos_with_independent_derivative"]),
     ("Наблюдений «репозиторий — год»", summary["panel_rows"]),
     ("Положительных наблюдений", summary["panel_positive_rows"]),
 ]

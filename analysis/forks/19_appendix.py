@@ -102,6 +102,9 @@ def main() -> None:
     self_mentions = [
         row for row in repo_targets if (row["publication_id"], row["target_id"]) in impl_pairs
     ]
+    other_code = [
+        row for row in repo_targets if (row["publication_id"], row["target_id"]) not in impl_pairs
+    ]
 
     lines += [
         "## Канал упоминаний (`MENTIONS_LINK`)\n",
@@ -116,6 +119,7 @@ def main() -> None:
         f"| `is_relevant = false` | {len(irrelevant)} |",
         f"| `is_relevant = null` | {len(undecided)} |",
         f"| Публикация реализует упомянутый репозиторий | {len(self_mentions)} |",
+        f"| Ссылка на код вне реализации публикации | {len(other_code)} |",
         "",
     ]
     for title, rows in (
@@ -125,6 +129,7 @@ def main() -> None:
         ("`is_relevant = false`", irrelevant),
         ("`is_relevant = null`", undecided),
         ("Самоупоминания: публикация реализует упомянутый репозиторий", self_mentions),
+        ("Ссылки на код вне реализации публикации", other_code),
     ):
         lines += list_section(title, rows)
 
