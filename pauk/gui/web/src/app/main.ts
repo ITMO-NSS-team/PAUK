@@ -21,6 +21,7 @@ import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
 import { mountThemePicker } from "../features/themePicker";
 import { mountUrlSync } from "../features/urlSync";
+import { mountNodeProximity } from "../map/proximity";
 import { mountReactiveGraph, populateGraph } from "../map/build";
 import { mountRegions } from "../map/regions";
 
@@ -150,7 +151,8 @@ function renderApp(data: GraphData): void {
 
   // Before mountReactiveGraph, which drops a selection missing from the graph.
   mountHiddenAuthorReveal(store, data);
-  mountReactiveGraph(renderer, store, data, pubDetailsByKey);
+  const proximitySize = mountNodeProximity(renderer, store);
+  mountReactiveGraph(renderer, store, data, pubDetailsByKey, proximitySize);
   // Map colors are read from the theme on every render, so a theme change
   // needs only the container background and a refresh.
   let mapTheme = initial.theme;

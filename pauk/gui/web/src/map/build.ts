@@ -232,6 +232,7 @@ function applyGraphStyling(
   renderer: Sigma,
   store: Store<AppState>,
   pubDetails: PubDetailsByKey,
+  proximitySize: (key: string) => number | undefined,
 ): { setHoveredNode: (key: string | null) => void; setCameraRatio: (ratio: number) => void } {
   const graph = renderer.getGraph();
   let hoveredNode: string | null = null;
@@ -293,6 +294,8 @@ function applyGraphStyling(
       res.size = MAP_CONFIG.node.radiusSelected;
     }
 
+    if (!isSelected) res.size = proximitySize(nodeKey) ?? data.size;
+
     const selKey = selectionFocusKey();
     const isNeighborOfSelection = isNeighborOf(selKey, nodeKey);
     const isHoveredNode = hoveredNode !== null && hoveredNode === nodeKey;
@@ -329,6 +332,7 @@ function applyGraphStyling(
       }
     }
 
+    if (selKey !== null && !isSelected && !isNeighborOfSelection) res.label = "";
     return res;
   });
 
@@ -434,9 +438,10 @@ export function mountReactiveGraph(
   store: Store<AppState>,
   data: GraphData,
   pubDetails: PubDetailsByKey,
+  proximitySize: (key: string) => number | undefined = () => undefined,
 ): () => void {
   const graph = renderer.getGraph();
-  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails);
+  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails, proximitySize);
 
   function onEnterNode({ node }: { node: string }): void {
     // In region mode the region under the cursor is highlighted instead.

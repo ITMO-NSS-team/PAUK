@@ -15,7 +15,9 @@ export const MAP_CONFIG = {
   },
 
   node: {
-    radius: 3,
+    radius: 2,
+    proximityDistance: 24,
+    radiusNearCursor: 5,
     radiusSelected: 5,
     // Department without a color; should not happen on real data.
     fallbackColor: "#9d9d9d",
