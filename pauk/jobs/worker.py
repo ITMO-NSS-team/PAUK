@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from pauk.jobs import locks, store
+from pauk.jobs import locks, store, version_repairs
 from pauk.jobs.models import Job, JobKind, parse_payload
 from pauk.logging import set_run
 from pauk.settings import Settings
@@ -79,9 +79,17 @@ def _dedup(config: Settings, db: Database, payload, stop: Stop,
 
 def _versions(config: Settings, db: Database, payload, stop: Stop,
               report: Report) -> dict[str, int]:
+    if payload.repair is not None:
+        from pauk.graph.version_repair import run_pending_version_repair
+        report("применение сохранённого решения о версиях")
+        repair = payload.repair
+        return run_pending_version_repair(config, db, repair.collection_name,
+                                          repair.document_id, repair.token)
     from pauk.graph.version_link import run_version_link, run_version_pair
     if payload.members is not None:
         report("сверка связи версий публикаций")
+        if payload.mode == "current":
+            return run_version_pair(config, db, payload.members, reopen=False)
         return run_version_pair(config, db, payload.members)
     report("связи версий публикаций по всему графу")
     return run_version_link(config, db, llm=payload.llm)
@@ -292,6 +300,7 @@ class Worker:
         store.mark_present(self.db, self.name)
         # Jobs left behind by a worker that is gone; nothing else moves them.
         store.reap_stale(self.db)
+        version_repairs.dispatch_pending(self.db)
         # Jobs waiting on a held resource are passed over, not taken and dropped.
         job = store.claim(self.db, self.name, busy=locks.taken(self.db))
         if job is None:
@@ -299,6 +308,10 @@ class Worker:
         if job.cancel_requested:
             # Asked to stop between being queued and being picked up.
             store.cancelled(self.db, job.id)
+            if job.kind == JobKind.VERSIONS:
+                payload = parse_payload(job.kind, job.payload)
+                if payload.repair is not None:
+                    version_repairs.defer_attempt(self.db, payload.repair)
             logger.info("job %s cancelled before it started", job.id)
             return True
         return self._perform(job)
@@ -328,14 +341,22 @@ class Worker:
         except locks.Busy as error:
             # Not a failure: it goes back for whoever gets there next.
             logger.info("job %s waits: %s", job.id, error)
+            if job.kind == JobKind.VERSIONS and payload.repair is not None:
+                version_repairs.defer_attempt(self.db, payload.repair)
             store.requeue(self.db, job.id)
             return False
         except Cancelled as reason:
             logger.info("job %s stopped: %s", job.id, reason)
+            if job.kind == JobKind.VERSIONS and payload.repair is not None:
+                version_repairs.defer_attempt(self.db, payload.repair)
             store.cancelled(self.db, job.id)
             return True
         except Exception as error:  # the worker outlives one bad job
-            if (job.kind == JobKind.VERSIONS and payload.members is not None
+            if job.kind == JobKind.VERSIONS and payload.repair is not None:
+                version_repairs.defer_attempt(self.db, payload.repair,
+                                              error=f"{type(error).__name__}: {error}")
+            if (job.kind == JobKind.VERSIONS
+                    and (payload.members is not None or payload.repair is not None)
                     and isinstance(error, (ServiceUnavailable, SessionExpired))):
                 logger.info("job %s waits for Neo4j: %s", job.id, error)
                 store.requeue(self.db, job.id, delay_seconds=60)

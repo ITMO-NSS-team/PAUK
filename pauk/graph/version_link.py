@@ -148,7 +148,7 @@ def _ask_llm(config: Settings, mongo_db: Database, force: bool) -> tuple[int, in
         client.close()
 
 
-def _version_overrides(db, aliases, scope=None):
+def _version_overrides(db, aliases, scope=None, *, ignore_delete_id: str | None = None):
     query = {"active": True, "kind": "rel", "rel_type": REL_TYPE,
              "src_label": "Publication", "tgt_label": "Publication"}
     if scope is not None:
@@ -164,7 +164,8 @@ def _version_overrides(db, aliases, scope=None):
         pair = frozenset(direction)
         if len(pair) == 2:
             if row["op"] == DELETE:
-                deleted.add(pair)
+                if row["_id"] != ignore_delete_id:
+                    deleted.add(pair)
             elif row["op"] == LINK:
                 claims[pair] = direction
     return claims, deleted
@@ -196,7 +197,7 @@ def _desired_pair(rows, existing, candidate, answer, claim, deleted, *,
     }
     if candidate:
         direction = claim or edge_direction(*rows, candidate)
-        status = HELD if candidate["mergeable"] or (reopen and existing) else None
+        status = HELD if candidate["mergeable"] else None
         return {direction: {
             "bucket": candidate["bucket"], "mergeable": candidate["mergeable"],
             "status": CONFIRMED if confirmed or automatic else status,
@@ -222,14 +223,26 @@ def _desired_pair(rows, existing, candidate, answer, claim, deleted, *,
                 **confirmation,
                 **{field: evidence.get(field) for field in _EDGE_FIELDS},
             }}
-    if reopen and existing:
+        if claim:
+            return {claim: {"status": CONFIRMED, **confirmation}}
+    prior = existing or previous or {}
+    reopenable = {direction: props for direction, props in prior.items()
+                  if props.get("bucket") in MERGE_BUCKETS or (not props.get("bucket") and
+                      (props.get("mergeable") is True or props.get("status") == HELD))}
+    if reopen and reopenable:
         preferred = edge_direction(*rows, {})
-        direction = claim if claim in existing else preferred if preferred in existing else min(existing)
-        return {direction: {"status": HELD, **confirmation}}
-    if claim in existing:
-        return {claim: {"status": None, **confirmation}}
-    if restore_claim and previous and claim in previous:
-        return {claim: {**previous[claim], "status": None, **confirmation}}
+        direction = claim if claim in reopenable else preferred if preferred in reopenable else min(reopenable)
+        props = reopenable[direction]
+        return {direction: {
+            **{key: props[key] for key in ("bucket", "mergeable", *_EDGE_FIELDS) if key in props},
+            "status": HELD, **confirmation,
+        }}
+    if claim:
+        props = (previous or {}).get(claim, {}) if restore_claim else {}
+        return {claim: {
+            **{key: props[key] for key in ("bucket", "mergeable", *_EDGE_FIELDS) if key in props},
+            "status": None, **confirmation,
+        }}
     return {}
 
 
@@ -260,38 +273,79 @@ def _write_diff(client, stale, updates):
     return written, removed
 
 
-def reconcile_version_pair(client, db, members, *, reopen=False, record_question=False, previous=None):
-    """Reconcile one pair while the caller holds GRAPH."""
-    resolved = [resolve_folded_id(client, "Publication", member) for member in members]
-    if resolved[0] == resolved[1]:
-        return "version_folded", 0, 0
+def _sync_version_questions(db, candidates, answers, edges, deleted, *, aliases=None,
+                            scope=None, withdrawn=(), snapshot=None):
+    """Keep the queue aligned with effective edges, without inventing human answers.
 
-    ids = tuple(sorted(resolved))
+    An explicit withdrawal may leave an older question waiting for a pair the
+    rules no longer find. Preserve that existing question, not a diagnostic
+    candidate or an old automatic confirmation masquerading as new evidence.
+    """
+    held_edges = {frozenset(direction): props for direction, props in edges.items()
+                  if props.get("status") == HELD}
+    held_rows = [row for pair, row in candidates.items()
+                 if pair not in deleted and pair not in answers and row["mergeable"] and pair in held_edges]
+    snapshot = review.version_snapshot(db, scope) if snapshot is None else snapshot
+    keep = set()
+    for pair, question in review.version_queue_state(snapshot, aliases).items():
+        if pair in withdrawn and pair not in candidates and pair not in answers and pair not in deleted:
+            keep.add(question["_id"])
+            props = held_edges.get(pair, {})
+            evidence = {**(question.get("evidence") or {}),
+                        **{key: props[key] for key in ("bucket", "mergeable", *_EDGE_FIELDS) if key in props}}
+            if pair in held_edges and evidence.get("bucket") in MERGE_BUCKETS:
+                original = (evidence.get("record_a", question["members"][0]),
+                            evidence.get("record_b", question["members"][1]))
+                a, b = ((aliases or {}).get(member, member) for member in original)
+                held_rows.append({**evidence, "status": HELD, "entity": "publication", "record_a": a, "record_b": b})
+    asked = review.record_held(db, held_rows, source=review.GRAPH, aliases=aliases, snapshot=snapshot)
+    retired = review.retire_versions(db, held_rows, scope=scope, snapshot=snapshot, aliases=aliases, keep_ids=keep)
+    return asked, retired
+
+
+def reconcile_version_pair(client, db, members, *, reopen=False, record_question=False, previous=None,
+                           sync_questions: bool = True, ignore_delete_id: str | None = None):
+    """Reconcile one pair while the caller holds GRAPH.
+
+    Queue synchronization is enabled even for legacy ``record_question=False``
+    callers. Active manual LINKs prove existence independently of any snapshot;
+    snapshot status/provenance never supplies an acceptance decision. The legacy
+    projection arguments remain only for compatibility, not decision-first undo.
+    """
+    resolved = [resolve_folded_id(client, "Publication", member) for member in members]
+    ids = tuple(sorted(set(resolved)))
     rows = sorted(client.fetch_publications_for_dedup(list(ids)), key=lambda row: row["id"])
-    if len(rows) != 2:
-        return "version_missing", 0, 0
     aliases = dict(zip(members, resolved, strict=True))
     for row in rows:
         aliases.update(dict.fromkeys(row.get("merged_ids") or [], row["id"]))
     scope = tuple({work_id, *(alias for alias, target in aliases.items() if target == work_id)}
-                  for work_id in ids)
+                  for work_id in sorted(resolved))
+    snapshot = review.version_snapshot(db, scope)
+    if len(ids) != 2 or len(rows) != 2:
+        if sync_questions:
+            _sync_version_questions(db, {}, {}, {}, set(), scope=scope, snapshot=snapshot)
+        return "version_folded" if len(ids) != 2 else "version_missing", 0, 0
     pair = frozenset(ids)
-    answer = review.version_answers(db, aliases, scope).get(pair)
-    claims, deleted = _version_overrides(db, aliases, scope)
+    answer = review.version_answers(db, aliases, scope, snapshot=snapshot).get(pair)
+    question = review.version_queue_state(snapshot, aliases).get(pair)
+    if reopen and previous is None and question and (question.get("withdrawn_answer") or {}).get("verdict") == review.SAME:
+        evidence = question.get("evidence") or {}
+        if evidence.get("bucket") in MERGE_BUCKETS:
+            previous = {edge_direction(*rows, {}): evidence}
+    claims, deleted = _version_overrides(db, aliases, scope, ignore_delete_id=ignore_delete_id)
     existing = client.fetch_version_edges(ids)
     candidate = None
     if pair not in deleted and (answer is None or answer["verdict"] != review.DIFFERENT):
         candidate = _candidate(*rows, VersionJudge(known=stored_verdicts(db, aliases, scope)))
     desired = _desired_pair(rows, existing, candidate, answer, claims.get(pair), pair in deleted,
-                            reopen=reopen, previous=previous, restore_claim=record_question)
+                            reopen=reopen, previous=previous,
+                            restore_claim=record_question or ignore_delete_id is not None)
     written, removed = _write_diff(client, *_diff(existing, desired))
     automatic = any(props.get("confirmation_source") == "auto" for props in desired.values())
-    if record_question or automatic:
-        held_rows = [candidate] if (candidate and candidate["mergeable"] and answer is None
-                                    and any(props.get("status") == HELD for props in desired.values())) else []
-        if record_question:
-            review.record_held(db, held_rows, source=review.GRAPH)
-        review.retire_versions(db, held_rows, scope=scope)
+    if sync_questions:
+        _sync_version_questions(db, {pair: candidate} if candidate else {},
+                                {pair: answer} if answer else {}, desired, deleted,
+                                aliases=aliases, scope=scope, withdrawn={pair} if reopen else (), snapshot=snapshot)
     if pair in deleted:
         done = "no_edge_deleted"
     elif answer and answer["verdict"] == review.DIFFERENT:
@@ -305,11 +359,11 @@ def reconcile_version_pair(client, db, members, *, reopen=False, record_question
     return done, written, removed
 
 
-def run_version_pair(config: Settings, db: Database, members: tuple[str, str]) -> dict[str, int]:
+def run_version_pair(config: Settings, db: Database, members: tuple[str, str], *, reopen: bool = True) -> dict[str, int]:
     with held(db, GRAPH), actor_context("etl-pipeline", source="versions-review"):
         client = audited_client(config, db)
         try:
-            _, written, removed = reconcile_version_pair(client, db, members, reopen=True)
+            _, written, removed = reconcile_version_pair(client, db, members, reopen=reopen)
             return {"version_edges": written, "version_edges_removed": removed}
         finally:
             client.close()
@@ -321,7 +375,8 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         rows = client.fetch_publications_for_dedup()
         by_id = {row["id"]: row for row in rows}
         aliases = client.fetch_merged_id_map("Publication")
-        answers = review.version_answers(mongo_db, aliases)
+        snapshot = review.version_snapshot(mongo_db)
+        answers = review.version_answers(mongo_db, aliases, snapshot=snapshot)
         judge = VersionJudge(known=stored_verdicts(mongo_db, aliases))
         report = find_version_candidates(client, judge, rows)
         claims, deleted = _version_overrides(mongo_db, aliases)
@@ -332,7 +387,7 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
 
         stale = []
         updates = []
-        for pair in sorted(previous.keys() | candidates.keys() | answers.keys(), key=sorted):
+        for pair in sorted(previous.keys() | candidates.keys() | answers.keys() | claims.keys(), key=sorted):
             existing = previous.get(pair, {})
             desired = _desired_pair([by_id[work_id] for work_id in sorted(pair) if work_id in by_id],
                                     existing, candidates.get(pair), answers.get(pair),
@@ -345,7 +400,8 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         with actor_context("etl-pipeline", source="versions-graph"):
             written, removed = _write_diff(client, stale, updates)
             overrides = apply_overrides(client, mongo_db)
-            fresh = review.version_answers(mongo_db, aliases)
+            fresh_snapshot = review.version_snapshot(mongo_db)
+            fresh = review.version_answers(mongo_db, aliases, snapshot=fresh_snapshot)
             late = sorted((pair for pair in answers.keys() | fresh.keys()
                            if answers.get(pair) != fresh.get(pair)), key=sorted)
             for pair in late:
@@ -360,12 +416,10 @@ def _link_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 removed += dropped
 
         final_edges = client.fetch_version_edges()
-        held_pairs = {frozenset(direction) for direction, props in final_edges.items()
-                      if props.get("status") == HELD}
-        held_rows = [row for pair, row in candidates.items()
-                     if pair not in deleted and pair not in fresh and row["mergeable"] and pair in held_pairs]
-        asked = review.record_held(mongo_db, held_rows, source=review.GRAPH)
-        retired = review.retire_versions(mongo_db, held_rows)
+        asked, retired = _sync_version_questions(
+            mongo_db, candidates, fresh, final_edges, deleted, aliases=aliases,
+            withdrawn={pair for pair in late if pair not in fresh}, snapshot=fresh_snapshot,
+        )
         config.cache_dir.mkdir(parents=True, exist_ok=True)
         with AtomicWriter(config.cache_dir / CANDIDATES_FILENAME) as fh:
             for row in report:

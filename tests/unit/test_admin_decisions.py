@@ -20,7 +20,11 @@ from pauk.graph.overrides import (
     tombstoned_ids,
     tombstoned_relationships,
 )
+from pauk.jobs.locks import acquire, release
+from pauk.jobs.models import GRAPH
+from pauk.jobs.worker import Worker
 from pauk.settings import Settings
+from pauk.storage import review, version_repair
 from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -348,6 +352,239 @@ class UndoRestoresTest(unittest.TestCase):
         response = self.undo("A9")
         self.assertIn("undone=1", response.headers["location"])
         self.assertNotIn(("Person", "A9"), self.graph.nodes)
+
+
+class VersionDeletionUndoTest(unittest.TestCase):
+    """Removing a version tombstone must not restore yesterday's acceptance."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient().pauk_test
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        for work_id, day in (("W1", "2024-01-01"), ("W2", "2024-06-01")):
+            self.graph.add(
+                "Publication", work_id, title="Robust neural network classification method",
+                doi=f"10.1/{work_id}", publication_date=day,
+                authors=[{"person_id": "A1"}],
+            )
+        self.edge = ("Publication", "IS_VERSION", "Publication", "W2", "W1")
+        self.snapshot = {
+            "bucket": "MISSED_BY_NORM", "mergeable": True, "title_sim": 1.0,
+            "status": "same", "confirmation_source": "auto", "confirmation_policy": "rules-v1",
+        }
+        record_relationship_override(self.db, *self.edge, actor="user:roman", snapshot=self.snapshot)
+        self.document_id = relationship_override_id(*self.edge)
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def undo(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", kind="rel")
+        return self.client.post(form["action"], data=form["fields"])
+
+    def deletion_active(self):
+        return self.db.graph_overrides.find_one({"_id": self.document_id})["active"]
+
+    def test_old_auto_confirmation_is_recomputed_and_held_question_is_created(self):
+        self.assertEqual(self.undo().status_code, 303)
+        self.assertFalse(self.deletion_active())
+        edges = self.graph.fetch_version_edges(("W1", "W2"))
+        self.assertEqual(len(edges), 1)
+        props = next(iter(edges.values()))
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertNotIn("confirmation_policy", props)
+        question = self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION})
+        self.assertIsNotNone(question)
+        self.assertNotIn("verdict", question)
+
+    def test_qualifying_content_is_reconfirmed_under_current_policy(self):
+        abstract = (
+            "We evaluate convolutional networks for retinal image classification using independently labelled "
+            "photographs collected across several clinical centres. Patient level separation prevents leakage "
+            "between training and evaluation cohorts. The proposed calibration procedure improves sensitivity "
+            "while preserving specificity under camera changes. External validation measures confidence "
+            "intervals, subgroup performance, and robustness against illumination artefacts in diabetic screening."
+        )
+        for work_id in ("W1", "W2"):
+            self.graph.nodes["Publication", work_id]["abstract"] = abstract
+        self.assertEqual(self.undo().status_code, 303)
+        props = next(iter(self.graph.fetch_version_edges(("W1", "W2")).values()))
+        self.assertEqual(props["status"], "same")
+        self.assertEqual(props["confirmation_source"], "auto")
+        self.assertEqual(props["confirmation_policy"], "rules-v3")
+        self.assertFalse(self.db[review.COLLECTION].find_one())
+
+    def test_new_human_same_uses_review_provenance(self):
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.assertEqual(self.undo().status_code, 303)
+        props = next(iter(self.graph.fetch_version_edges(("W1", "W2")).values()))
+        self.assertEqual(props["status"], "same")
+        self.assertEqual(props["confirmation_source"], "review")
+        self.assertNotIn("confirmation_policy", props)
+        self.assertFalse(self.deletion_active())
+
+    def test_new_human_different_prevents_resurrection(self):
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        self.assertEqual(self.undo().status_code, 303)
+        self.assertFalse(self.graph.fetch_version_edges(("W1", "W2")))
+        self.assertFalse(self.deletion_active())
+
+    def test_disappeared_candidate_is_not_restored_from_snapshot(self):
+        self.graph.nodes["Publication", "W2"].update(
+            title="Unrelated chemical synthesis under pressure", authors=[{"person_id": "A2"}]
+        )
+        self.assertEqual(self.undo().status_code, 303)
+        self.assertFalse(self.graph.fetch_version_edges(("W1", "W2")))
+        self.assertFalse(self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION}))
+        self.assertFalse(self.deletion_active())
+
+    def test_human_same_can_restore_saved_evidence_after_candidate_disappears(self):
+        self.graph.nodes["Publication", "W2"]["title"] = "Unrelated chemical synthesis under pressure"
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.assertEqual(self.undo().status_code, 303)
+        props = next(iter(self.graph.fetch_version_edges(("W1", "W2")).values()))
+        self.assertEqual(props["status"], "same")
+        self.assertEqual(props["confirmation_source"], "review")
+        self.assertNotIn("confirmation_policy", props)
+
+    def test_recreated_edge_is_not_overwritten_with_snapshot_custom_fields(self):
+        current_edge = ("Publication", "IS_VERSION", "Publication", "W1", "W2")
+        self.graph.relationships[current_edge] = {**self.snapshot, "context": "newer metadata"}
+        self.assertEqual(self.undo().status_code, 303)
+        self.assertEqual(self.graph.relationships[current_edge]["context"], "newer metadata")
+        self.assertEqual(self.graph.relationships[current_edge]["status"], "held")
+
+    def test_another_direction_tombstone_is_not_ignored(self):
+        reverse = ("Publication", "IS_VERSION", "Publication", "W1", "W2")
+        record_relationship_override(self.db, *reverse)
+        row = self.db.graph_overrides.find_one({"_id": self.document_id})
+        session = self.db[SESSIONS].find_one()
+        response = self.client.post("/overrides/undo", data={
+            "csrf": session["csrf"], "kind": "rel", "src_label": "Publication",
+            "rel_type": "IS_VERSION", "tgt_label": "Publication", "src_id": "W2",
+            "target_id": "W1", "op": "delete", "seen_write": row["write_id"],
+        })
+        self.assertEqual(response.status_code, 303)
+        self.assertFalse(self.graph.fetch_version_edges(("W1", "W2")))
+        self.assertTrue(self.db.graph_overrides.find_one({"_id": relationship_override_id(*reverse)})["active"])
+
+    def test_missing_endpoint_preserves_the_tombstone(self):
+        del self.graph.nodes["Publication", "W1"]
+        self.assertEqual(self.undo().status_code, 400)
+        self.assertTrue(self.deletion_active())
+        self.assertFalse(self.graph.relationships)
+
+    def test_busy_graph_keeps_both_stores_unchanged(self):
+        self.assertTrue(acquire(self.db, GRAPH, "another-writer"))
+        try:
+            self.assertEqual(self.undo().status_code, 409)
+        finally:
+            release(self.db, GRAPH, "another-writer")
+        self.assertTrue(self.deletion_active())
+        self.assertFalse(self.graph.relationships)
+        self.assertFalse(self.db[review.COLLECTION].find_one())
+
+    def test_failed_mongo_withdrawal_leaves_graph_and_questions_untouched(self):
+        with patch.object(decision_routes, "deactivate_relationship_override", side_effect=AutoReconnect("offline")):
+            self.assertEqual(self.undo().status_code, 503)
+        self.assertTrue(self.deletion_active())
+        self.assertFalse(self.graph.relationships)
+        self.assertFalse(self.db[review.COLLECTION].find_one())
+
+    def test_partially_failed_projection_is_retryable_without_snapshot_rollback(self):
+        original = self.graph.upsert_relationships_batch
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", kind="rel")
+
+        def fail_after_write(*args, **kwargs):
+            original(*args, **kwargs)
+            raise ServiceUnavailable("lost graph reply")
+
+        with patch.object(self.graph, "upsert_relationships_batch", side_effect=fail_after_write):
+            response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("undone=pending", response.headers["location"])
+        self.assertFalse(self.deletion_active())
+        source = self.db.graph_overrides.find_one({"_id": self.document_id})
+        self.assertIn(version_repair.FIELD, source)
+        self.assertEqual(next(iter(self.graph.relationships.values()))["status"], "held")
+        retry = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(retry.status_code, 303)
+        self.assertNotIn("pending", retry.headers["location"])
+        self.assertNotIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": self.document_id}))
+        self.assertIsNotNone(self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION}))
+
+    def test_failed_withdrawal_leaves_a_preexisting_edge_untouched(self):
+        before = {"bucket": "MISSED_BY_NORM", "status": "held", "context": "current metadata"}
+        self.graph.relationships[self.edge] = before.copy()
+        with patch.object(decision_routes, "deactivate_relationship_override", side_effect=AutoReconnect("offline")):
+            self.assertEqual(self.undo().status_code, 503)
+        self.assertEqual(self.graph.relationships[self.edge], before)
+        self.assertTrue(self.deletion_active())
+
+    def test_failed_commit_never_runs_destructive_snapshot_compensation(self):
+        with (
+            patch.object(decision_routes, "deactivate_relationship_override", side_effect=AutoReconnect("offline")),
+            patch.object(self.graph, "delete_relationships_batch", side_effect=ServiceUnavailable("must not run")) as delete,
+        ):
+            self.assertEqual(self.undo().status_code, 503)
+            delete.assert_not_called()
+        self.assertTrue(self.deletion_active())
+        self.assertFalse(self.graph.relationships)
+
+    def test_queue_failure_is_rediscovered_and_completed_by_the_worker(self):
+        with patch.object(review, "record_held", side_effect=AutoReconnect("queue unavailable")):
+            response = self.undo()
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("undone=pending", response.headers["location"])
+        self.assertFalse(self.deletion_active())
+        props = next(iter(self.graph.fetch_version_edges(("W1", "W2")).values()))
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": self.document_id}))
+        self.db.graph_overrides.update_one({"_id": self.document_id}, {
+            "$set": {f"{version_repair.FIELD}.next_attempt_at": datetime.min.replace(tzinfo=UTC)},
+        })
+        with patch("pauk.graph.version_repair.audited_client", return_value=self.graph):
+            self.assertTrue(Worker(Settings(), self.db, name="repair-test").run_once())
+        self.assertNotIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": self.document_id}))
+        question = self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION})
+        self.assertIsNotNone(question)
+        self.assertNotIn("verdict", question)
+
+    def test_offline_graph_saves_a_pending_undo_without_touching_the_graph(self):
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
+        response = self.undo()
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("undone=pending", response.headers["location"])
+        self.assertFalse(self.deletion_active())
+        self.assertFalse(self.graph.relationships)
+        self.assertIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": self.document_id}))
+
+    def test_pending_undo_stays_visible_and_can_be_retried_without_original_form(self):
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: None
+        self.assertEqual(self.undo().status_code, 303)
+        page = self.client.get("/overrides")
+        self.assertIn("Ожидает согласования версий", page.text)
+        retry = RenderedForms(page.text).with_button("повторить согласование")
+        self.client.app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        response = self.client.post(retry["action"], data=retry["fields"])
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("repair=applied", response.headers["location"])
+        self.assertNotIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": self.document_id}))
+        self.assertIsNotNone(self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION}))
+        stale = self.client.post(retry["action"], data=retry["fields"])
+        self.assertEqual(stale.status_code, 409)
+
+    def test_a_new_decision_prevents_retry_of_an_old_undo_form(self):
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить", kind="rel")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
+        record_relationship_override(self.db, *self.edge)
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(self.deletion_active())
 
 
 class SnapshotTest(unittest.TestCase):

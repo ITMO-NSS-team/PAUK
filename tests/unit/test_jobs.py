@@ -13,6 +13,7 @@ from pauk.jobs.models import (
     Job,
     JobKind,
     JobState,
+    VersionRepairRef,
     aware,
     now,
     parse_payload,
@@ -174,6 +175,41 @@ class PayloadTest(unittest.TestCase):
                               (JobKind.DEDUP, {}), (JobKind.MAP, {})):
             with self.subTest(kind=kind):
                 self.assertEqual(resource_for(kind, parse_payload(kind, payload)), GRAPH)
+
+    def test_a_legacy_versions_pair_still_reopens_by_default(self):
+        payload = parse_payload(JobKind.VERSIONS, {"members": ["W1", "W2"]})
+        self.assertEqual(payload.mode, "reopen")
+        self.assertIsNone(payload.repair)
+
+    def test_a_versions_repair_reference_round_trips(self):
+        repair = {"collection_name": "graph_overrides", "document_id": "decision", "token": "generation"}
+        payload = parse_payload(JobKind.VERSIONS, {"repair": repair, "mode": "current"})
+        self.assertEqual(payload.repair.model_dump(), repair)
+        self.assertEqual(payload.mode, "current")
+        self.assertIsNone(payload.members)
+        self.assertEqual(resource_for(JobKind.VERSIONS, payload), GRAPH)
+        self.assertEqual(parse_payload(JobKind.VERSIONS, payload.model_dump()).repair, payload.repair)
+
+    def test_a_versions_repair_reference_is_restricted_to_source_collections(self):
+        for collection_name in ("persons", "jobs", "", "review_pairs"):
+            with self.subTest(collection_name=collection_name):
+                repair = {"collection_name": collection_name, "document_id": "decision", "token": "generation"}
+                if collection_name == "review_pairs":
+                    self.assertIsNotNone(parse_payload(JobKind.VERSIONS, {"repair": repair}).repair)
+                else:
+                    with self.assertRaises(ValidationError):
+                        parse_payload(JobKind.VERSIONS, {"repair": repair})
+
+    def test_a_versions_repair_needs_a_document_and_token(self):
+        for missing in ("document_id", "token"):
+            with self.subTest(missing=missing), self.assertRaises(ValidationError):
+                repair = {"collection_name": "review_pairs", "document_id": "question", "token": "generation"}
+                repair[missing] = ""
+                parse_payload(JobKind.VERSIONS, {"repair": repair})
+
+    def test_a_versions_mode_cannot_name_an_arbitrary_action(self):
+        with self.assertRaises(ValidationError):
+            parse_payload(JobKind.VERSIONS, {"mode": "replay"})
 
     def test_a_path_cannot_be_asked_for(self):
         # --works-file names a file on the machine running the pipeline, and
@@ -357,6 +393,40 @@ class QueueTest(unittest.TestCase):
         job = self.queue()
         self.assertIsInstance(store.read(self.db, job.id), Job)
         self.assertEqual(store.read(self.db, job.id).payload, {"group": "2024"})
+
+
+class VersionRepairQueueTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.repair = VersionRepairRef(collection_name="review_pairs", document_id="question", token="first")
+
+    def queue(self):
+        return store.enqueue(self.db, JobKind.VERSIONS, {"repair": self.repair.model_dump()})
+
+    def test_each_live_state_prevents_a_duplicate_attempt(self):
+        job = self.queue()
+        for state in (JobState.QUEUED, JobState.CLAIMED, JobState.RUNNING):
+            with self.subTest(state=state):
+                self.db[store.COLLECTION].update_one({"_id": job.id}, {"$set": {"state": str(state)}})
+                self.assertTrue(store.has_live_version_repair(self.db, self.repair))
+
+    def test_a_final_attempt_does_not_hide_the_obligation(self):
+        job = self.queue()
+        for state in (JobState.DONE, JobState.CANCELLED, JobState.FAILED):
+            with self.subTest(state=state):
+                self.db[store.COLLECTION].update_one({"_id": job.id}, {"$set": {"state": str(state)}})
+                self.assertFalse(store.has_live_version_repair(self.db, self.repair))
+
+    def test_dedupe_is_scoped_to_collection_document_and_generation(self):
+        self.queue()
+        for changed in ({"collection_name": "graph_overrides"}, {"document_id": "other"}, {"token": "second"}):
+            with self.subTest(changed=changed):
+                repair = self.repair.model_copy(update=changed)
+                self.assertFalse(store.has_live_version_repair(self.db, repair))
+
+    def test_an_ordinary_pair_job_does_not_cover_a_repair(self):
+        store.enqueue(self.db, JobKind.VERSIONS, {"members": ["W1", "W2"]})
+        self.assertFalse(store.has_live_version_repair(self.db, self.repair))
 
 
 class GraphIsHeldWhilePublishingTest(unittest.TestCase):

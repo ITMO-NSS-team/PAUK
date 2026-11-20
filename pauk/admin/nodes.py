@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import suppress
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -60,11 +61,14 @@ from pauk.graph.mutations import (
 from pauk.graph.overrides import (
     CREATE,
     LINK,
+    VERSION_RELATIONSHIP,
     deactivate_override,
     override_generation,
     record_override,
     record_relationship_override,
 )
+from pauk.graph.version_repair import try_apply_version_override_locked, version_mutation_lock
+from pauk.jobs.locks import Busy
 
 logger = logging.getLogger("pauk.admin")
 
@@ -425,7 +429,17 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
+    choice = _relationship_choice(label, str(form.get("triple", "")))
+    try:
+        with version_mutation_lock(db, choice[:3]):
+            return _link_locked(label, node_id, user, db, graph, form, choice)
+    except Busy:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Граф занят; повторите изменение связи позже.") from None
+
+
+def _link_locked(label, node_id, user, db, graph, form, choice):
+    """Persist a link while the version writer lock, if needed, is held."""
+    src_label, rel_type, tgt_label, outgoing = choice
     other = str(form.get("other_id", "")).strip()
     if not other:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the other end is empty")
@@ -434,6 +448,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     if match_prop is None:
         return _link_failed(label, node_id,
                             f"Граф не знает связи ({src_label})-[:{rel_type}]->({tgt_label}).")
+    existing_version_link = False
     try:
         if outgoing:
             src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
@@ -446,6 +461,10 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
                     label, node_id,
                     f"У этого узла не заполнено поле {match_prop}, а связь ищет по нему. "
                     f"Заполните {match_prop} и повторите.")
+        if (src_label, rel_type, tgt_label) == VERSION_RELATIONSHIP:
+            with suppress(NotFound):
+                read_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
+                existing_version_link = True
         create_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
     except NotFound:
         # Usually an id pasted where the link matches on a url or a login.
@@ -458,14 +477,16 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
     # Claimed so a prune tells it from an edge the pipeline stopped making.
-    decisions.record_change(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
-                                             src_id, tgt_id),
+    decisions.record_change(undo=lambda: None if existing_version_link else delete_relationship(
+                graph, src_label, rel_type, tgt_label, src_id, tgt_id),
             write=lambda: record_relationship_override(
                 db, src_label, rel_type, tgt_label, src_id, tgt_id,
                 op=LINK, actor=user.actor))
     logger.info("%s linked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
-    return RedirectResponse(_node_url(label, node_id, "linked=1"),
+    pending = ((src_label, rel_type, tgt_label) == VERSION_RELATIONSHIP
+               and try_apply_version_override_locked(graph, db, src_id, tgt_id))
+    return RedirectResponse(_node_url(label, node_id, "linked=1" + ("&version_pending=1" if pending else "")),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -493,7 +514,17 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
+    choice = _relationship_choice(label, str(form.get("triple", "")))
+    try:
+        with version_mutation_lock(db, choice[:3]):
+            return _unlink_locked(label, node_id, user, db, graph, form, choice)
+    except Busy:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Граф занят; повторите изменение связи позже.") from None
+
+
+def _unlink_locked(label, node_id, user, db, graph, form, choice):
+    """Keep deletion snapshots and their compensation inside the same version lock."""
+    src_label, rel_type, tgt_label, outgoing = choice
     other = str(form.get("other_id", "")).strip()
     # As in the link form: a target is addressed by match_prop, not always by id.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
@@ -519,7 +550,9 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s unlinked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
-    return RedirectResponse(_node_url(label, node_id, "unlinked=1"),
+    pending = ((src_label, rel_type, tgt_label) == VERSION_RELATIONSHIP
+               and try_apply_version_override_locked(graph, db, src_id, tgt_id))
+    return RedirectResponse(_node_url(label, node_id, "unlinked=1" + ("&version_pending=1" if pending else "")),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 

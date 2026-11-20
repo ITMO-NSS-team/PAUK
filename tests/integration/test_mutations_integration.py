@@ -13,29 +13,44 @@ Skipped unless testcontainers is installed and Docker is reachable:
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from itertools import permutations, product
 from pathlib import Path
 from threading import Barrier
 from types import SimpleNamespace
+from unittest.mock import patch
+from uuid import uuid4
 
 import mongomock
+from pymongo import MongoClient
 
+from pauk.admin.cli import _run_relationship
+from pauk.admin.decisions import undo_version_deletion
+from pauk.cache.export import GraphSnapshotExporter
 from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import NotFound, VersionConflict, merge_nodes, update_node
+from pauk.graph.overrides import deactivate_relationship_override, relationship_override_id
 from pauk.graph.unmerge import split_person
+from pauk.graph.version_link import run_version_link
+from pauk.gui.graph_builder.builder import write_site_data
+from pauk.jobs.locks import Busy, held
+from pauk.jobs.models import GRAPH
+from pauk.jobs.worker import Worker
 from pauk.models import GitHubProfile, Person
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.pipeline.stages.github_match import GitHubMatchStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore, review
+from pauk.storage import PreparedStore, RawStore, review, version_repair
 
 try:
+    from testcontainers.community.mongodb import MongoDbContainer
     from testcontainers.community.neo4j import Neo4jContainer
 
     _IMPORT_ERROR: Exception | None = None
@@ -506,6 +521,183 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertNotIn("is_corresponding", rows[0])
         self.assertEqual(rows[0]["affiliation"], "Keep this")
+
+
+class VersionPolicyAgainstRealGraphTest(unittest.TestCase):
+    """An obsolete auto approval disappears from freshly exported map data."""
+
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n")
+        self.db = mongomock.MongoClient().pauk_versions_test
+        _client.upsert_nodes_batch("Person", [("A1", {"is_itmo": True, "name_en": "Test Author"})])
+        title = "Machine learning methods for medical image classification"
+        _client.upsert_nodes_batch("Publication", [
+            ("W1", {
+                "title": title, "doi": "10.1/retina", "publication_date": "2024-01-01", "year": 2024,
+                "abstract": "We study diabetic retinopathy in retinal photographs. A convolutional network "
+                            "learns vascular lesions and microaneurysms from independently annotated screening "
+                            "images. Patient level splits prevent leakage between cohorts. External validation "
+                            "measures sensitivity and specificity under camera changes, supporting reliable "
+                            "triage for ophthalmic screening in community clinics.",
+            }),
+            ("W2", {
+                "title": title, "doi": "10.1/brain", "publication_date": "2024-06-01", "year": 2024,
+                "abstract": "We study brain tumours in magnetic resonance volumes. A segmentation network "
+                            "estimates glioma boundaries and edema from independently delineated clinical "
+                            "scans. Subject level partitions prevent leakage between cohorts. External evaluation "
+                            "measures lesion overlap and boundary distance under scanner changes, supporting "
+                            "reliable surgical planning for neurooncology patients.",
+            }),
+        ])
+        _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", [
+            ("A1", "W1", {"position": 1}), ("A1", "W2", {"position": 1}),
+        ])
+        _client.upsert_relationships_batch("Publication", "Publication", "IS_VERSION", [
+            ("W1", "W2", {"bucket": "MISSED_BY_NORM", "mergeable": True, "status": "same",
+                            "confirmation_source": "auto", "confirmation_policy": "rules-v1"}),
+        ])
+
+    def test_policy_downgrade_and_human_answers_reach_both_map_variants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(
+                data_dir=Path(directory), neo4j_uri=_container.get_connection_url(),
+                neo4j_user=_container.username, neo4j_password=_PASSWORD,
+            )
+
+            def map_versions(name):
+                snapshot = GraphSnapshotExporter(config).export(Path(directory) / f"{name}.json")
+                output = Path(directory) / name
+                write_site_data(snapshot, output, seed=42)
+                found = []
+                for variant in ("private", "public"):
+                    summary = json.loads((output / variant / "graph-data.json").read_text())
+                    found.append(summary["version_edges"])
+                self.assertEqual(found[0], found[1])
+                return found[0]
+
+            self.assertEqual(len(map_versions("before")), 1)
+            with patch("pauk.graph.version_link.audited_client", return_value=_client), patch.object(_client, "close"):
+                result = run_version_link(config, self.db)
+                self.assertEqual(result["version_auto_confirmed"], 0)
+                self.assertEqual(result["version_manual_pending"], 1)
+                props = next(iter(_client.fetch_version_edges().values()))
+                self.assertEqual(props["status"], "held")
+                self.assertNotIn("confirmation_source", props)
+                self.assertNotIn("confirmation_policy", props)
+                self.assertIsNotNone(self.db[review.COLLECTION].find_one({"kind": review.PUB_VERSION}))
+                self.assertFalse(map_versions("held"))
+                repeated = run_version_link(config, self.db)
+                self.assertEqual(repeated["version_edges"], 0)
+                self.assertEqual(repeated["version_edges_removed"], 0)
+                review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+                self.assertEqual(run_version_link(config, self.db)["version_review_confirmed"], 1)
+                self.assertEqual(len(map_versions("human-same")), 1)
+                review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+                run_version_link(config, self.db)
+                self.assertFalse(_client.fetch_version_edges())
+                self.assertFalse(map_versions("human-different"))
+
+
+class DurableVersionsAgainstRealDatabasesTest(unittest.TestCase):
+    """Independent clients coordinate through disposable Mongo and Neo4j servers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mongo = MongoDbContainer(image="mongo:4.4")
+        try:
+            cls.mongo.start()
+        except Exception as error:
+            cls.mongo.stop()
+            raise unittest.SkipTest(f"could not start isolated Mongo: {error}") from error
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.mongo.stop()
+
+    def setUp(self):
+        self.mongo_client = MongoClient(self.mongo.get_connection_url())
+        self.db = self.mongo_client[f"pauk_version_repair_{uuid4().hex}"]
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n")
+        _client.upsert_nodes_batch("Publication", [
+            ("W1", {"title": "Optical sensor measurements"}),
+            ("W2", {"title": "Unrelated chemical synthesis"}),
+        ])
+
+    def tearDown(self):
+        self.mongo_client.drop_database(self.db.name)
+        self.mongo_client.close()
+
+    def relationship_args(self, command, once=False):
+        return SimpleNamespace(src_label="Publication", rel_type="IS_VERSION", tgt_label="Publication",
+                               src_id="W2", tgt_id="W1", rel_command=command, assignments=[],
+                               once=once, note="integration manual link")
+
+    def test_independent_cli_client_cannot_write_while_undo_owns_graph(self):
+        def other_writer():
+            mongo = MongoClient(self.mongo.get_connection_url())
+            graph = Neo4jClient(_container.get_connection_url(), _container.username, _PASSWORD)
+            try:
+                with self.assertRaises(Busy):
+                    _run_relationship(self.relationship_args("add", once=True), graph,
+                                      mongo[self.db.name], "user:second-client")
+            finally:
+                graph.close()
+                mongo.close()
+
+        with held(self.db, GRAPH, owner="undo-client"), ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(other_writer).result(timeout=20)
+        self.assertFalse(_client.fetch_version_edges())
+        self.assertFalse(list(self.db.graph_overrides.find()))
+
+    def test_offline_undo_is_recovered_by_a_new_worker_client(self):
+        _run_relationship(self.relationship_args("add"), _client, self.db, "user:creator")
+        _run_relationship(self.relationship_args("delete"), _client, self.db, "user:creator")
+        document_id = relationship_override_id("Publication", "IS_VERSION", "Publication", "W2", "W1")
+        source = self.db.graph_overrides.find_one({"_id": document_id})
+        self.assertTrue(source["manual_exists"])
+        self.assertEqual(source["snapshot"], {})
+        expected = source["write_id"]
+
+        def withdraw():
+            return deactivate_relationship_override(
+                self.db, "Publication", "IS_VERSION", "Publication", "W2", "W1",
+                only_op="delete", expected_write_id=expected,
+            )
+
+        self.assertEqual(undo_version_deletion(None, self.db, "W2", "W1", document_id, withdraw,
+                                               expected_write_id=expected), "pending")
+        self.assertFalse(_client.fetch_version_edges())
+        self.assertIn(version_repair.FIELD, self.db.graph_overrides.find_one({"_id": document_id}))
+        with tempfile.TemporaryDirectory() as directory, MongoClient(self.mongo.get_connection_url()) as fresh:
+            config = Settings(data_dir=Path(directory), mongo_uri=self.mongo.get_connection_url(),
+                              mongo_db=self.db.name, neo4j_uri=_container.get_connection_url(),
+                              neo4j_user=_container.username, neo4j_password=_PASSWORD)
+            self.assertTrue(Worker(config, fresh[self.db.name], name="fresh-worker").run_once())
+        source = self.db.graph_overrides.find_one({"_id": document_id})
+        self.assertNotIn(version_repair.FIELD, source)
+        self.assertEqual((source["op"], source["active"]), ("link", True))
+        edges = _client.fetch_version_edges()
+        self.assertEqual(set(edges), {("W2", "W1")})
+        self.assertNotIn("status", edges["W2", "W1"])
+        self.assertNotIn("confirmation_source", edges["W2", "W1"])
+        self.assertEqual(undo_version_deletion(None, self.db, "W2", "W1", document_id, withdraw,
+                                               expected_write_id=expected), "1")
+
+    def test_same_millisecond_review_aba_cannot_be_retired_from_old_snapshot(self):
+        report = [{"status": "held", "entity": "publication", "record_a": "W1", "record_b": "W2",
+                   "bucket": "MISSED_BY_NORM", "mergeable": True}]
+        review.record_held(self.db, report, source=review.GRAPH)
+        snapshot = review.version_snapshot(self.db)
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"], actor="user:withdrawer")
+        self.assertEqual(review.retire_versions(self.db, [], snapshot=snapshot), 0)
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W2"]})
+        self.assertNotIn("verdict", source)
+        self.assertIn(version_repair.FIELD, source)
+        self.assertNotIn(review.VERSION_RETIRED, source)
 
 
 if __name__ == "__main__":

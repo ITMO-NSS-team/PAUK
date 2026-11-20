@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 
 from fastapi import HTTPException, status
+from neo4j.exceptions import DriverError, Neo4jError
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from pauk.admin import feed
-from pauk.graph.mutations import field_values_equal
+from pauk.graph.client import resolve_folded_id
+from pauk.graph.mutations import MutationError, field_values_equal, read_node
 from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
@@ -28,6 +30,10 @@ from pauk.graph.overrides import (
     persist_decision,
     relationship_override_id,
 )
+from pauk.graph.version_repair import apply_pending_version_repair_locked
+from pauk.jobs.locks import held
+from pauk.jobs.models import GRAPH
+from pauk.storage import version_repair
 
 PAGE = 50
 
@@ -76,6 +82,54 @@ def record_change(undo, write) -> None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
+
+
+def undo_version_deletion(graph, db: Database, src_id: str, tgt_id: str, document_id: str,
+                          withdraw, *, expected_write_id: str) -> str:
+    """Commit the withdrawal and its repair obligation before changing the graph.
+
+    Retrying the same form resumes its intent; it cannot withdraw a newer
+    decision. Version undo never rolls the pair back to an old edge snapshot.
+    """
+    with held(db, GRAPH):
+        source = db[COLLECTION].find_one({"_id": document_id}) or {}
+        retry = (source.get("version_undo_from") == expected_write_id
+                 and bool(source.get("version_undo_intent")))
+        if not retry:
+            if (source.get("write_id") or "") != expected_write_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Решение изменилось. Обновите страницу.")
+            if graph is not None:
+                try:
+                    for member in {src_id, tgt_id}:
+                        read_node(graph, "Publication", resolve_folded_id(graph, "Publication", member))
+                except (Neo4jError, DriverError):
+                    graph = None
+            try:
+                withdraw()
+            except DecisionWriteConflict:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Решение изменилось. Обновите страницу.") from None
+            except PyMongoError:
+                raise HTTPException(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    "Mongo не подтвердила отмену решения. Граф не меняли; повторите ту же операцию.",
+                ) from None
+            source = db[COLLECTION].find_one({"_id": document_id}) or {}
+        intent = source.get(version_repair.FIELD)
+        if intent is None:
+            return "1"
+        if graph is None:
+            return "pending"
+        try:
+            done, result = apply_pending_version_repair_locked(
+                graph, db, COLLECTION, document_id, intent["token"],
+            )
+        except (MutationError, Neo4jError, DriverError, PyMongoError):
+            logger.warning("version undo %s saved; its repair is still pending", document_id)
+            return "pending"
+        if result.get("version_repairs_pending") or done == "version_obsolete":
+            return "pending"
+        return "1" if done in {"relink", "unlinked", "already_unlinked", "no_edge", "no_edge_deleted",
+                               "version_missing", "version_folded"} else "link"
 
 
 def _moment(value) -> str:

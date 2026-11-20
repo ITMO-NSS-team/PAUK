@@ -10,10 +10,36 @@
 <p class="note">Решение отменено, связь восстановлена.</p>
 {% elif undone == "field" %}
 <p class="note">Решение отменено, поле вернулось к значению источника.</p>
+{% elif undone == "pending" %}
+<p class="note">Решение сохранено. Согласование связи и вопроса ожидает воркера; повтор той же операции безопасен.</p>
 {% elif undone %}
 <p class="note">Решение отменено.
    {% if undone == "1" %}Если отменили удаление, а записи не видно, значит, журнал не сохранил её поля.
    Она вернётся при следующей публикации, если есть в собранных данных.{% endif %}</p>
+{% endif %}
+
+{% if request.query_params.get('repair') == 'applied' %}
+<p class="note">Связь и вопросы согласованы с сохранённым решением.</p>
+{% elif request.query_params.get('repair') == 'pending' %}
+<p class="note">Решение сохранено; согласование ещё ожидает доступного графа и воркера.</p>
+{% endif %}
+{% if pending_repairs %}
+<h2>Ожидает согласования версий</h2>
+<div class="card">
+{% for pending in pending_repairs %}
+<p>{{ pending.members | join(' / ') }}
+{% if pending.last_error %}<span class="muted"> — последняя попытка завершилась ошибкой</span>{% endif %}</p>
+{% if user.can_write %}
+<form method="post" action="/overrides/retry-version">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="collection" value="{{ pending.collection }}">
+<input type="hidden" name="document_id" value="{{ pending.document_id }}">
+<input type="hidden" name="token" value="{{ pending.token }}">
+<button type="submit" class="ghost">повторить согласование</button>
+</form>
+{% endif %}
+{% endfor %}
+</div>
 {% endif %}
 
 <div class="tabs">
@@ -76,7 +102,7 @@
           {% if not row.undoable %}
           <span class="muted">–</span>
           {% else %}
-          <form method="post" action="/overrides/undo">
+          <form method="post" action="{{ '/overrides/undo-version' if row.kind == 'rel' and row.src_label == 'Publication' and row.rel_type == 'IS_VERSION' and row.tgt_label == 'Publication' else '/overrides/undo' }}">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="kind" value="{{ row.kind }}">
             <input type="hidden" name="op" value="{{ row.op }}">

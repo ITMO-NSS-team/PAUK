@@ -15,6 +15,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from neo4j.exceptions import AuthError, ServiceUnavailable, SessionExpired
+from pymongo.errors import PyMongoError
 
 from pauk.admin.deps import (
     CsrfChecked,
@@ -36,11 +37,12 @@ from pauk.graph.mutations import (
 )
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
 from pauk.graph.version_link import reconcile_version_pair
+from pauk.graph.version_repair import apply_pending_version_repair_locked
 from pauk.jobs import store
 from pauk.jobs.locks import Busy, held
-from pauk.jobs.models import GRAPH, JobKind, JobState
+from pauk.jobs.models import GRAPH, JobKind, JobState, VersionRepairRef
 from pauk.pipeline.stages.dedup import merge_rank
-from pauk.storage import review
+from pauk.storage import review, version_repair
 
 logger = logging.getLogger("pauk.admin")
 
@@ -264,15 +266,22 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
     if tab not in TABS:
         tab = "pressing"
     page = max(page, 1)
-    total = review.count(db, **TABS[tab])
+    aliases = {}
+    if graph is not None and hasattr(graph, "fetch_merged_id_map"):
+        try:
+            aliases = graph.fetch_merged_id_map("Publication")
+        except (ServiceUnavailable, SessionExpired, AuthError):
+            logger.warning("version aliases unavailable while showing review queue")
+    alias_options = {"aliases": aliases} if aliases else {}
+    total = review.count(db, **TABS[tab], **alias_options)
     back = f"/review?tab={tab}&page={page}"
     return templates.TemplateResponse(request, "review.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((total + PAGE - 1) // PAGE, 1), "total": total,
         "rows": _with_facts(graph, _splittable(db, [
             _shown(row, back) for row in
-            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab])])),
-        "counts": {name: review.count(db, **filters) for name, filters in TABS.items()},
+            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab], **alias_options)])),
+        "counts": {name: review.count(db, **filters, **alias_options) for name, filters in TABS.items()},
     })
 
 
@@ -357,27 +366,55 @@ def _fold_held(graph, db, members: list[str], actor: str) -> str:
 
 
 def _version_answer_to_graph(graph, db, members: list[str], actor: str) -> str:
+    source_id = review.question_id(review.PUB_VERSION, members)
+    try:
+        source = db[review.COLLECTION].find_one({"_id": source_id}) or {}
+    except PyMongoError:
+        return "version_waiting"
+    intent = source.get(version_repair.FIELD)
     if graph is not None:
         try:
             with held(db, GRAPH):
-                done, _, _ = reconcile_version_pair(graph, db, members, reopen=True)
+                if intent:
+                    done, result = apply_pending_version_repair_locked(
+                        graph, db, review.COLLECTION, source_id, intent["token"],
+                    )
+                    if result.get("version_repairs_pending") or result.get("version_repairs_obsolete"):
+                        _queue_version_pair(db, members, actor)
+                        return "version_waiting"
+                else:
+                    done, _, _ = reconcile_version_pair(graph, db, members, reopen=True)
             return done
         except Busy:
             _queue_version_pair(db, members, actor)
             return "version_busy"
-        except (ServiceUnavailable, SessionExpired, AuthError) as error:
-            logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
+        except (ServiceUnavailable, SessionExpired, AuthError, PyMongoError, MutationError) as error:
+            logger.warning("version answer for %s saved; projection pending: %s", members, error)
     _queue_version_pair(db, members, actor)
     return "version_waiting"
 
 
 def _queue_version_pair(db, members: list[str], actor: str) -> None:
     members = sorted(members)
-    queued = db[store.COLLECTION].find_one({
-        "kind": str(JobKind.VERSIONS), "state": str(JobState.QUEUED), "payload.members": members,
-    }, {"_id": 1})
-    if queued is None:
-        store.enqueue(db, JobKind.VERSIONS, {"members": members}, actor=actor)
+    try:
+        source_id = review.question_id(review.PUB_VERSION, members)
+        source = db[review.COLLECTION].find_one({"_id": source_id}) or {}
+        intent = source.get(version_repair.FIELD)
+        if intent:
+            repair = VersionRepairRef(collection_name=review.COLLECTION, document_id=source_id, token=intent["token"])
+            if not store.has_live_version_repair(db, repair):
+                store.enqueue(db, JobKind.VERSIONS,
+                              {"members": members, "mode": intent["mode"], "repair": repair.model_dump()}, actor=actor)
+            return
+        queued = db[store.COLLECTION].find_one({
+            "kind": str(JobKind.VERSIONS), "state": str(JobState.QUEUED), "payload.members": members,
+        }, {"_id": 1})
+        if queued is None:
+            store.enqueue(db, JobKind.VERSIONS, {"members": members}, actor=actor)
+    except PyMongoError:
+        # New actions already own an atomic source intent; worker polling repairs
+        # even the gap where enqueue never reached Mongo.
+        logger.warning("version decision saved; worker will rediscover its pending repair")
 
 
 @router.post("/review/answer")
@@ -528,7 +565,7 @@ async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     kind = str(form.get("kind", review.PAIR))
     members = [part for part in str(form.get("members", "")).split(",") if part]
     try:
-        dropped = review.withdraw(db, kind, members)
+        dropped = review.withdraw(db, kind, members, actor=user.actor)
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     if not dropped:

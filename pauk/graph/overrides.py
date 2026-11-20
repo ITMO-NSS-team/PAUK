@@ -21,6 +21,8 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
+from pauk.storage import version_repair
+
 from .mutations import (
     MutationError,
     UnknownEntity,
@@ -45,6 +47,7 @@ DELETE = "delete"
 CREATE = "create"
 LINK = "link"
 OPERATIONS = (SET, DELETE, CREATE)
+VERSION_RELATIONSHIP = ("Publication", "IS_VERSION", "Publication")
 
 
 class DecisionWriteUncertain(PyMongoError):
@@ -297,12 +300,22 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
 
     def build(existing: dict) -> dict:
-        return {"$set": {
+        fields = {
             "kind": "rel", "src_label": src_label, "rel_type": rel_type,
             "tgt_label": tgt_label, "src_id": src_id, "target_id": tgt_id,
             "op": op, "snapshot": dict(snapshot or {}) if op == DELETE else {},
             "actor": actor, "note": note or existing.get("note", ""), "active": True,
-        }, "$setOnInsert": {"created_at": _now()}}
+        }
+        update = {"$set": fields, "$setOnInsert": {"created_at": _now()}}
+        if (src_label, rel_type, tgt_label) == VERSION_RELATIONSHIP:
+            fields["manual_exists"] = bool(op == LINK or existing.get("manual_exists")
+                                           or (existing.get("active") and existing.get("op") == LINK))
+            if fields["manual_exists"]:
+                fields["manual_direction"] = [src_id, tgt_id]
+            fields[version_repair.FIELD] = version_repair.make_intent((src_id, tgt_id))
+            update["$unset"] = {"version_undo_from": "", "version_undo_intent": "",
+                                "version_repair_completed": ""}
+        return update
 
     stored = _write_decision(db, document_id, build)
     logger.info("override recorded: %s (%s %s)-[:%s]->(%s %s)",
@@ -326,11 +339,24 @@ def deactivate_relationship_override(db: Database, src_label: str, rel_type: str
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
 
     def build(existing: dict) -> dict | None:
+        version_edge = (src_label, rel_type, tgt_label) == VERSION_RELATIONSHIP
+        if (version_edge and expected_write_id is not None
+                and existing.get("version_undo_from") == expected_write_id
+                and existing.get("version_undo_intent")):
+            return None
         if expected_write_id is not None and (existing.get("write_id") or "") != expected_write_id:
             raise DecisionWriteConflict("the relationship decision changed")
         if not existing.get("active") or (only_op is not None and existing.get("op") != only_op):
             return None
-        return {"$set": {"active": False}}
+        fields: dict = {"active": False}
+        if version_edge and existing.get("op") == DELETE:
+            intent = version_repair.make_intent((src_id, tgt_id))
+            fields.update({version_repair.FIELD: intent,
+                           "version_undo_from": existing.get("write_id") or "",
+                           "version_undo_intent": intent["token"]})
+            if existing.get("manual_exists"):
+                fields.update(op=LINK, active=True)
+        return {"$set": fields}
 
     return _write_decision(db, document_id, build) is not None
 

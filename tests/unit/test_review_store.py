@@ -786,6 +786,217 @@ class UndoingAnAppliedAnswerTest(unittest.TestCase):
             review.record_undo(self.db, review.PAIR, ["C1", "C2"])
 
 
+class VersionQuestionScopeTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().version_scope
+        review.record_held(self.db, [
+            {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+             "record_a": a, "record_b": b}
+            for a, b in (("W1", "W2"), ("W1", "W9"), ("W1", "W8"), ("W1", "W3"), ("W2", "W3"))
+        ])
+
+    def test_scoped_retirement_removes_alias_pair_but_not_neighbor_questions(self):
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W8"], review.SAME)
+        self.assertEqual(review.retire_versions(self.db, [], scope=({"W1"}, {"W2", "W8", "W9"})), 2)
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W8"), ("W1", "W3"), ("W2", "W3")})
+
+    def test_overlapping_folded_scope_does_not_match_a_question_with_an_outside_member(self):
+        self.assertEqual(review.retire_versions(
+            self.db, [], scope=({"W1", "W2", "W8", "W9"}, {"W1", "W2", "W8", "W9"})), 3)
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W3"), ("W2", "W3")})
+
+    def test_scoped_retirement_preserves_answered_and_skipped_documents(self):
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:reader")
+        before = review.questions(self.db, answered=True) + review.questions(self.db, skipped=True)
+        self.assertEqual(review.retire_versions(self.db, [], scope=({"W1"}, {"W2", "W9"})), 0)
+        for question in before:
+            self.assertEqual(self.db[review.COLLECTION].find_one({"_id": question["_id"]}), question)
+
+
+class VersionSnapshotTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().version_snapshot
+        self.report = {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+                       "record_a": "W1", "record_b": "W2", "title_a": "First", "title_b": "Second"}
+        review.record_held(self.db, [self.report])
+        self.key = review.question_id(review.PUB_VERSION, ["W1", "W2"])
+        self.collection = self.db[review.COLLECTION]
+        self.aliases = {"W9": "W2"}
+
+    def row(self):
+        return self.collection.find_one({"_id": self.key})
+
+    def test_every_version_mutation_advances_token_even_within_one_millisecond(self):
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
+        tokens = {self.row()["write_id"]}
+        with patch.object(review, "_now", return_value=moment):
+            review.record_held(self.db, [self.report])
+            tokens.add(self.row()["write_id"])
+            answer = review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+            tokens.add(answer["write_id"])
+            intent = answer["version_repair"]
+            review.record_held(self.db, [self.report])
+            tokens.add(self.row()["write_id"])
+            self.assertEqual(self.row()["version_repair"], intent)
+            self.assertEqual(self.row()["decided_at"], moment.replace(tzinfo=None))
+            review.skip(self.db, review.PUB_VERSION, ["W1", "W2"])
+            tokens.add(self.row()["write_id"])
+            self.assertEqual(self.row()["version_repair"], intent)
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+            tokens.add(self.row()["write_id"])
+        self.assertEqual(len(tokens), 6)
+        self.assertEqual(self.row()["version_repair"]["mode"], "reopen")
+        self.assertNotEqual(self.row()["version_repair"]["token"], intent["token"])
+        self.assertEqual(self.row()["withdrawn_answer"]["verdict"], review.SAME)
+
+    def test_snapshot_aba_retirement_preserves_withdrawal_and_repair(self):
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            snapshot = review.version_snapshot(self.db)
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME,
+                                  actor="user:reviewer", note="original answer")
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"], actor="user:withdrawer")
+            after = self.row()
+            self.assertEqual(review.retire_versions(self.db, [], snapshot=snapshot), 0)
+        self.assertEqual(self.row(), after)
+        self.assertEqual(after["withdrawn_by"], "user:withdrawer")
+        self.assertEqual(after["withdrawn_answer"]["actor"], "user:reviewer")
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_snapshot_never_sweeps_a_newly_created_question(self):
+        snapshot = review.version_snapshot(self.db)
+        review.record_held(self.db, [{**self.report, "record_b": "W3"}])
+        self.assertEqual(review.retire_versions(self.db, [], snapshot=snapshot), 1)
+        self.assertEqual([row["members"] for row in review.questions(self.db)], [["W1", "W3"]])
+
+    def test_legacy_absent_token_is_supported_but_does_not_match_a_new_write(self):
+        self.collection.update_one({"_id": self.key}, {"$unset": {"write_id": ""}})
+        snapshot = review.version_snapshot(self.db)
+        review.record_held(self.db, [self.report])
+        self.assertEqual(review.retire_versions(self.db, [], snapshot=snapshot), 0)
+        self.collection.update_one({"_id": self.key}, {"$unset": {"write_id": ""}})
+        self.assertEqual(review.retire_versions(self.db, [], snapshot=review.version_snapshot(self.db)), 1)
+
+    def test_a_cas_miss_is_not_retried_using_the_latest_token(self):
+        snapshot = review.version_snapshot(self.db)
+        delete = self.collection.delete_one
+
+        def refresh_then_delete(query):
+            review.record_held(self.db, [self.report])
+            return delete(query)
+
+        with patch.object(self.collection, "delete_one", side_effect=refresh_then_delete) as attempt:
+            self.assertEqual(review.retire_versions(self.db, [], snapshot=snapshot), 0)
+            attempt.assert_called_once()
+        self.assertIsNotNone(self.row())
+
+    def test_soft_retirement_preserves_intent_and_provenance_after_ack(self):
+        from pauk.storage import version_repair
+
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        before = self.row()
+        self.assertEqual(review.retire_versions(self.db, [], snapshot=review.version_snapshot(self.db)), 1)
+        retired = self.row()
+        self.assertEqual(retired["version_repair"], before["version_repair"])
+        self.assertEqual(retired["withdrawn_at"], before["withdrawn_at"])
+        self.assertEqual(review.count(self.db), 0)
+        version_repair.ack(self.db, review.COLLECTION, self.key, before["version_repair"]["token"])
+        self.assertEqual(review.retire_versions(self.db, []), 0)
+        self.assertIsNotNone(self.row())
+        review.record_held(self.db, [{**self.report, "status": "separate"}])
+        self.assertIn(review.VERSION_RETIRED, self.row())
+        review.record_held(self.db, [self.report])
+        self.assertNotIn(review.VERSION_RETIRED, self.row())
+        self.assertEqual(self.row()["withdrawn_at"], before["withdrawn_at"])
+        self.assertEqual(self.row()["withdrawn_answer"], before["withdrawn_answer"])
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_partial_legacy_withdrawal_provenance_is_never_physically_deleted(self):
+        self.collection.update_one({"_id": self.key}, {"$set": {"withdrawn_answer": {"verdict": review.SAME}}})
+        self.assertEqual(review.retire_versions(self.db, []), 1)
+        self.assertEqual(self.row()["withdrawn_answer"], {"verdict": review.SAME})
+        self.assertIn(review.VERSION_RETIRED, self.row())
+        self.assertEqual(review.count(self.db), 0)
+
+    def test_withdrawing_an_unasked_version_preserves_durable_reopen_provenance(self):
+        review.record_verdict(self.db, review.PUB_VERSION, ["W3", "W4"], review.SAME)
+        review.withdraw(self.db, review.PUB_VERSION, ["W3", "W4"])
+        row = self.collection.find_one({"members": ["W3", "W4"]})
+        self.assertEqual(row["version_repair"]["mode"], "reopen")
+        self.assertIn(review.VERSION_RETIRED, row)
+        self.assertEqual(row["withdrawn_answer"]["verdict"], review.SAME)
+        self.assertEqual(review.count(self.db), 1)
+
+    def test_skipped_alias_is_the_source_and_an_open_duplicate_is_retired(self):
+        original = {**self.report, "record_b": "W9"}
+        review.record_held(self.db, [original])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:original")
+        source = self.collection.find_one({"members": ["W1", "W9"]})
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=False), 0)
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=True), 1)
+        snapshot = review.version_snapshot(self.db)
+        review.record_held(self.db, [self.report], aliases=self.aliases, snapshot=snapshot)
+        self.assertEqual(review.retire_versions(self.db, [self.report], aliases=self.aliases, snapshot=snapshot), 1)
+        self.assertIsNone(self.row())
+        (effective,) = review.questions(self.db, aliases=self.aliases, skipped=True, answered=False)
+        for field in ("_id", "members", "skipped_at", "skipped_by"):
+            self.assertEqual(effective[field], source[field])
+        self.assertEqual(effective["evidence"]["names"], ["First", "Second"])
+        self.assertNotIn("verdict", effective)
+
+    def test_newer_answer_and_withdrawal_beat_older_alias_skip_without_rewriting_it(self):
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:older")
+        older = self.collection.find_one({"members": ["W1", "W9"]})
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 2, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False), 0)
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 3, tzinfo=UTC)):
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=False), 1)
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=True), 0)
+        unchanged = self.collection.find_one({"_id": older["_id"]})
+        for field in ("skipped_at", "skipped_by", "members"):
+            self.assertEqual(unchanged[field], older[field])
+
+    def test_a_later_alias_skip_cannot_revoke_an_existing_answer(self):
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 2, tzinfo=UTC)):
+            review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        self.assertEqual(review.version_decisions(self.db, self.aliases), {frozenset(("W1", "W2")): review.SAME})
+        self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False), 0)
+
+    def test_legacy_human_state_without_a_timestamp_is_not_copied_to_current_ids(self):
+        self.collection.delete_many({})
+        key = review.question_id(review.PUB_VERSION, ["W1", "W9"])
+        self.collection.insert_one({"_id": key, "kind": review.PUB_VERSION, "members": ["W1", "W9"],
+                                    "skipped_at": None, "skipped_by": "user:legacy", "evidence": {}})
+        review.record_held(self.db, [self.report], aliases=self.aliases)
+        self.assertEqual(self.collection.count_documents({}), 1)
+        (row,) = self.collection.find()
+        self.assertEqual(row["_id"], key)
+        self.assertEqual(row["skipped_by"], "user:legacy")
+        self.assertIn("write_id", row)
+
+    def test_newer_withdrawal_suppresses_an_older_answer_despite_evidence_refresh(self):
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W9"], review.SAME)
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 2, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        self.assertEqual(review.version_answers(self.db, self.aliases), {})
+        state = review.version_queue_state(review.version_snapshot(self.db), self.aliases)
+        self.assertEqual(state[frozenset(("W1", "W2"))]["_id"], self.key)
+
+
 class MarkingWhatARunFoldedTest(unittest.TestCase):
     """A run folds hundreds of pairs and knows only what became what."""
 

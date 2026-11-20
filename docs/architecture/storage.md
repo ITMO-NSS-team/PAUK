@@ -184,7 +184,7 @@ again updates the document instead of creating a second one.
 | Field | Meaning |
 |---|---|
 | `_id` | `<kind>:<id>:<id>...` with members sorted, so (a, b) and (b, a) are one question |
-| `kind` | `person_pair`, `person_group`, `github_person`, `staff_record`, or the read-only diagnostic `person_alias_conflict` |
+| `kind` | `person_pair`, `person_group`, `github_person`, `staff_record`, `publication_version`, or the read-only diagnostic `person_alias_conflict` |
 | `members` | who the question is about: person records, an account login, catalog records |
 | `evidence` | what the rules gathered: names, shared coauthors, departments, refusal reasons (`held_because`); refreshed on every repeated refusal so there is something to compare against |
 | `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
@@ -194,6 +194,22 @@ again updates the document instead of creating a second one.
 | `skipped_at`, `skipped_by`, `disputed_at`, `disputed_rule` | the question was postponed; the rules changed their mind after a "different" answer |
 | `disputed_members`, `disputed_token` | the original members involved in a GitHub discrepancy and a fingerprint of its evidence |
 | `acknowledged_dispute_token` | the GitHub evidence a reviewer explicitly accepted with "оставить как есть" |
+| `write_id` (publication versions) | opaque token advanced by evidence/answer/skip/withdraw/retirement; CAS protects snapshot-based retirement from ABA changes |
+| `withdrawn_at`, `withdrawn_by`, `withdrawn_answer` (publication versions) | original human withdrawal provenance, separate from automatic evidence freshness |
+| `version_retired_at` (publication versions) | inactive queue marker preserving withdrawal history or a pending repair; genuine reasks reactivate it |
+| `version_repair` | obligation stored atomically with a version answer/withdrawal: unique token, unordered members, current/reopen mode, due time and last error |
+
+Publication-version queue projection resolves aliases across original rows, so
+an old skipped source does not gain an unskipped canonical duplicate. New human
+answers/withdrawals take precedence without copying actor/time into another row;
+`seen_at` never changes human recency. `pauk/pair_rows.py::latest_pair_rows` shares
+only neutral selection mechanics with the successful LLM verdict cache.
+Repair intents are also used by version relationship overrides. Worker polling
+rediscovers them independently of jobs; token-CAS acknowledgement happens after
+graph and questions both succeed. Sparse deadline indexes support this polling.
+All API, CLI and worker writers must be upgraded together: an old writer that
+does not advance review tokens defeats CAS assumptions. Legacy tokenless rows
+are supported and acquire tokens lazily; person/GitHub transitions are unchanged.
 
 An answer and its application are different things and live in different
 fields. Applying changes the graph once; the answer keeps all later runs in

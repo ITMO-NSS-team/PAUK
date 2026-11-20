@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Store, type AppState } from "../src/core/state";
 import { mountUrlSync } from "../src/features/urlSync";
 import { loadSampleGraphData } from "./fixtures";
@@ -104,6 +104,32 @@ describe("mountUrlSync", () => {
     expect(store.get().selection).toEqual({ kind: "node", key: pub.key });
     expect(history.length).toBe(lengthBefore);
   });
+
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty", "unknown"])(
+    "popstate sends malformed tab %s to the menu without rewriting browser history",
+    async (tab) => {
+      const data = await loadSampleGraphData();
+      const store = new Store<AppState>(initialState({ tab: 3 }));
+      const unmount = mountUrlSync(store, data);
+      const search = `?tab=${tab}&sel=edge&s=A1&t=A2`;
+      history.pushState(null, "", search);
+      const lengthBefore = history.length;
+      const push = vi.spyOn(history, "pushState");
+      const replace = vi.spyOn(history, "replaceState");
+      try {
+        window.dispatchEvent(new PopStateEvent("popstate"));
+        expect(store.get()).toMatchObject({ screen: "menu", tab: 1, selection: null });
+        expect(location.search).toBe(search);
+        expect(history.length).toBe(lengthBefore);
+        expect(push).not.toHaveBeenCalled();
+        expect(replace).not.toHaveBeenCalled();
+      } finally {
+        unmount();
+        push.mockRestore();
+        replace.mockRestore();
+      }
+    },
+  );
 
   it("unmount removes the popstate handler", async () => {
     const data = await loadSampleGraphData();

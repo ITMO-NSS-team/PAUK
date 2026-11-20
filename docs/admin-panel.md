@@ -298,7 +298,22 @@ withdrawn with "передумать" (change my mind), and the question returns
 queue. For two publications the `IS_VERSION` edge goes back with it: a
 confirmed one is held again, a removed one returns if the current rules still
 find a candidate. When Neo4j is busy or unavailable, a job retries the pair
-using the latest answer in MongoDB.
+using the latest answer in MongoDB. Version answers and withdrawals atomically
+carry a tokened reconciliation obligation in their own Mongo row, so a crash or
+enqueue failure cannot lose the follow-up. Workers rediscover it with backoff;
+cancelling an attempt does not undo the saved human decision. Skipped alias
+questions remain postponed under their original human history rather than being
+asked again under a new publication ID.
+
+Manual version link/unlink/undo and CLI writes share GRAPH with version runs.
+Undo of a version deletion commits its decision and repair obligation first,
+then derives the current edge/question state; it never rolls back the pair to
+an old graph snapshot. Manual existence survives deletion/undo independently of
+acceptance status. The manual-decisions page lists pending repairs, including
+saved operations whose graph is unavailable, with a retry button. The original
+undo form is safe to repeat; stale forms cannot override a newer decision.
+Applied and pending outcomes are distinct. Old tokenless data stays readable;
+update API/CLI/worker writers together before relying on the new CAS protocol.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record

@@ -20,6 +20,7 @@
 {% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось.</p>{% endif %}
 {% if request.query_params.get("linked") %}<p class="note">Связь создана.</p>{% endif %}
 {% if request.query_params.get("unlinked") %}<p class="note">Связь удалена. Следующая публикация её не вернёт.</p>{% endif %}
+{% if request.query_params.get("version_pending") %}<p class="note">Решение сохранено; согласование версий и вопросов ожидает воркера.</p>{% endif %}
 
 <form method="post" action="/nodes/{{ label }}/{{ node_id | urlencode }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">

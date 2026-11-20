@@ -11,7 +11,7 @@ const TAB_SLUGS: Record<TabId, string> = {
   3: "pubs",
 };
 
-const SLUG_TO_TAB: Record<string, TabId> = Object.fromEntries(
+const SLUG_TO_TAB = new Map<string, TabId>(
   Object.entries(TAB_SLUGS).map(([id, slug]) => [slug, Number(id) as TabId]),
 );
 
@@ -60,7 +60,7 @@ export function serializeUrlState(state: { screen: Screen; tab: TabId; selection
 export function parseUrlState(search: string, data: GraphData): { screen: Screen; tab: TabId; selection: Selection } {
   const params = new URLSearchParams(search);
   const rawTab = params.get("tab");
-  const tab = rawTab !== null ? SLUG_TO_TAB[rawTab] : undefined;
+  const tab = rawTab !== null ? SLUG_TO_TAB.get(rawTab) : undefined;
 
   if (rawTab === null || rawTab === MENU_SLUG || tab === undefined) {
     return { screen: "menu", tab: 1, selection: null };

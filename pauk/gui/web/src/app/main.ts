@@ -10,6 +10,7 @@ import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
 import { isRegionMode, Store, type AppState } from "../core/state";
 import { themeById } from "../core/themes";
+import { parseUrlState } from "../core/url";
 import { mountFilters, mountHiddenAuthorReveal } from "../features/filters";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
@@ -126,9 +127,6 @@ function renderApp(data: GraphData): void {
   const authorDetailsByKey = new Map<string, AuthorDetail>();
   const repoDetailsByKey = new Map<string, RepoDetail>();
 
-  // A page load always opens the menu and ignores the URL; parseUrlState
-  // is used only for back/forward in urlSync.
-
   const container = requireElement("map");
   container.style.background = themeById(store.get().theme).map.background;
 
@@ -184,6 +182,8 @@ function renderApp(data: GraphData): void {
   );
   mountFilters(store);
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
+  // Reveal and camera subscribers must see the selection before URL canonicalization.
+  store.set(parseUrlState(location.search, data));
   mountUrlSync(store, data);
 
   console.info("Graph rendered (lists are ready, detail files load in the background):", {

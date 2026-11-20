@@ -100,6 +100,8 @@ def ensure_indexes(db: Database) -> None:
     db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
     db.review_pairs.create_index([("members", 1)])
     db.version_llm_verdicts.create_index([("members", 1)])
+    for name in ("graph_overrides", "review_pairs"):
+        db[name].create_index([("version_repair.next_attempt_at", 1)], sparse=True)
     # Without these, every tab count walks the collection that grows fastest.
     db.review_pairs.create_index([("kind", 1), ("verdict", 1)])
     db.review_pairs.create_index([("evidence.held_because", 1), ("verdict", 1)])

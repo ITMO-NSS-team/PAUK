@@ -22,6 +22,17 @@ class EnsureIndexesTest(unittest.TestCase):
         self.assertIn((("source", 1), ("group", 1), ("fetched_at", 1)), index_keys)
         self.assertIn((("source", 1), ("fetched_at", 1)), index_keys)
 
+    def test_repair_deadline_indexes_are_sparse_and_idempotent(self):
+        db = mongomock.MongoClient().pauk_test
+        ensure_indexes(db)
+        ensure_indexes(db)
+        for name in ("graph_overrides", "review_pairs"):
+            with self.subTest(collection=name):
+                found = [info for info in db[name].index_information().values()
+                         if info["key"] == [("version_repair.next_attempt_at", 1)]]
+                self.assertEqual(len(found), 1)
+                self.assertTrue(found[0]["sparse"])
+
 
 class CompressionTest(unittest.TestCase):
     """The two heavy collections are asked for compressed, once, at creation.

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -96,11 +97,21 @@ class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
 
 
+class VersionRepairRef(BaseModel):
+    """One generation of a durable obligation, not a saved graph decision."""
+
+    collection_name: Literal["graph_overrides", "review_pairs"]
+    document_id: str = Field(min_length=1)
+    token: str = Field(min_length=1)
+
+
 class VersionsPayload(BaseModel):
-    """Whether to ask the LLM about MEDIUM_FUZZY pairs nobody asked about yet."""
+    """A full pass, a legacy pair reopen, or a durable repair reference."""
 
     llm: bool = False
     members: tuple[str, str] | None = None
+    mode: Literal["current", "reopen"] = "reopen"
+    repair: VersionRepairRef | None = None
 
     @field_validator("members")
     @classmethod

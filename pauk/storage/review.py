@@ -39,8 +39,13 @@ import logging
 from datetime import UTC, datetime
 from hashlib import sha256
 from itertools import combinations
+from uuid import uuid4
 
 from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
+
+from pauk.pair_rows import latest_pair_rows
+from pauk.storage import version_repair
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,8 @@ SAME = "same"
 DIFFERENT = "different"
 VERDICTS = (SAME, DIFFERENT)
 DISPUTE_FIELDS = ("disputed_at", "disputed_rule", "disputed_members", "disputed_token")
+VERSION_RETIRED = "version_retired_at"
+VERSION_WITHDRAWAL_FIELDS = ("withdrawn_at", "withdrawn_by", "withdrawn_answer")
 
 #: Which pass asked. The same pair can come from both, and it is one question.
 STAGE = "stage"
@@ -152,6 +159,8 @@ def kind_of(row: dict) -> str:
 def require_answerable(db: Database, kind: str, members: list[str]) -> None:
     """Integrity incidents cannot become identity decisions through a forged form."""
     question_id(kind, members)
+    if kind == PUB_VERSION and len(set(members)) != 2:
+        raise ReviewError("a version question needs exactly two publications")
     if kind == ALIAS or (kind in PERSON_KINDS and db[COLLECTION].find_one(
         {"kind": ALIAS, "members": {"$all": sorted(set(members))},
          "auto_resolved_at": {"$exists": False}}, {"_id": 1}
@@ -196,7 +205,7 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
 
 
 def record_held(db: Database, report: list[dict], source: str = STAGE,
-                *, aliases: dict[str, str] | None = None) -> int:
+                *, aliases: dict[str, str] | None = None, snapshot: list[dict] | None = None) -> int:
     """Store what a run refused to decide, as questions.
 
     Only held rows create questions. Automatic separations retire an older
@@ -218,6 +227,12 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
         How many questions were written or refreshed.
     """
     moment = _now()
+    aliases = aliases or {}
+    version_rows = None
+    if any(row.get("status") == "held" and kind_of(row) == PUB_VERSION for row in report):
+        version_rows = version_snapshot(db) if snapshot is None else snapshot
+    version_states = version_queue_state(version_rows or [], aliases)
+    version_by_id = {row["_id"]: row for row in version_rows or []}
     # Look up the existing queue once, not once per automatically rejected
     # candidate. Large runs can contain millions of rejected pairs.
     pending: dict[str, list[str]] = {}
@@ -250,6 +265,35 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
                     if name not in ("status", "person_a", "person_b", "persons",
                                     "name_a", "name_b")}
         evidence["names"] = names_of(row, members)
+        if kind == PUB_VERSION:
+            pair = frozenset(aliases.get(member, member) for member in members)
+            if len(pair) != 2:
+                continue
+            state = version_states.get(pair)
+            names = {aliases.get(member, member): name
+                     for member, name in zip(members, evidence["names"], strict=True)}
+            members = sorted(pair)
+            key = question_id(kind, members)
+            evidence["names"] = [names.get(member) for member in members]
+            if state is not None and _version_has_human_state(state):
+                key = state["_id"]
+                evidence["names"] = [names.get(aliases.get(member, member)) for member in state["members"]]
+            changes = {"evidence": evidence, "seen_at": moment, "source": source, "write_id": uuid4().hex}
+            observed = version_by_id.get(key)
+            if observed is None:
+                try:
+                    db[COLLECTION].insert_one({"_id": key, "kind": kind, "members": members, **changes})
+                except DuplicateKeyError:
+                    continue
+            else:
+                result = db[COLLECTION].update_one(
+                    _version_cas(observed),
+                    {"$set": changes, "$unset": {"auto_resolved_at": "", "auto_resolution": "", VERSION_RETIRED: ""}},
+                )
+                if not result.matched_count:
+                    continue
+            written += 1
+            continue
         db[COLLECTION].update_one(
             {"_id": question_id(kind, members)},
             {"$set": {"evidence": evidence, "seen_at": moment, "source": source},
@@ -486,10 +530,13 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                           "choosing one; see record_account_choice")
     key = question_id(kind, members)
     moment = _now()
+    version_changes = ({"write_id": uuid4().hex,
+                        version_repair.FIELD: version_repair.make_intent(sorted(set(members)), mode="current")}
+                       if kind == PUB_VERSION else {})
     _write_answer(
         db, key,
         {"$set": {"verdict": verdict, "actor": actor, "note": note,
-                  "decided_at": moment},
+                  "decided_at": moment, **version_changes},
          # An answer settles what a skip postponed and what the rules disputed.
          "$unset": {"skipped_at": "", "skipped_by": "",
                     # A binary answer replaces a choice made from an older form.
@@ -513,9 +560,11 @@ def skip(db: Database, kind: str, members: list[str], actor: str = "unknown") ->
     worked through and one that cannot.
     """
     require_answerable(db, kind, members)
+    changes = {"skipped_at": _now(), "skipped_by": actor}
+    if kind == PUB_VERSION:
+        changes["write_id"] = uuid4().hex
     result = db[COLLECTION].update_one(
-        {"_id": question_id(kind, members)},
-        {"$set": {"skipped_at": _now(), "skipped_by": actor}})
+        {"_id": question_id(kind, members)}, {"$set": changes})
     return result.matched_count > 0
 
 
@@ -584,7 +633,7 @@ def record_split(db: Database, members: list[str], same: list[str],
     return written
 
 
-def withdraw(db: Database, kind: str, members: list[str]) -> bool:
+def withdraw(db: Database, kind: str, members: list[str], *, actor: str = "unknown") -> bool:
     """Take an answer back, leaving the question in the queue.
 
     The question itself is kept: it was asked by a real run, and deleting it
@@ -606,6 +655,25 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
         # They are one node by now: dropping the answer strands both.
         raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
     evidence = (asked or {}).get("evidence") or {}
+    if kind == PUB_VERSION:
+        if asked is None:
+            return False
+        moment = _now()
+        changes = {"withdrawn_at": moment, "withdrawn_by": actor, "write_id": uuid4().hex,
+                   version_repair.FIELD: version_repair.make_intent(sorted(set(members)), mode="reopen")}
+        if "verdict" in asked:
+            changes["withdrawn_answer"] = {
+                field: asked[field] for field in ("verdict", "actor", "note", "decided_at") if field in asked
+            }
+        if not (evidence.get("held_because") or evidence.get("bucket")):
+            changes[VERSION_RETIRED] = moment
+        result = db[COLLECTION].update_one(
+            _version_cas(asked),
+            {"$set": changes,
+             "$unset": dict.fromkeys(("verdict", "actor", "note", "decided_at", "applied_at", "chosen",
+                                      "skipped_at", "skipped_by", *DISPUTE_FIELDS, "acknowledged_dispute_token"), "")},
+        )
+        return result.matched_count > 0
     if asked is not None and not (evidence.get("held_because") or evidence.get("bucket")):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(
@@ -821,33 +889,84 @@ def _github_answers(db: Database, aliases: dict[str, str]) -> dict[frozenset[str
 
 
 def version_pair_filter(scope: tuple[set[str], set[str]]) -> dict:
-    return {"$and": [{"members": {"$in": sorted(ids)}} for ids in scope]}
+    """Match only a pair within the scope, even when both endpoints folded together."""
+    return {"$and": [{"members": {"$in": sorted(ids)}} for ids in scope],
+            "members": {"$size": 2, "$not": {"$elemMatch": {"$nin": sorted(set.union(*scope))}}}}
+
+
+def version_snapshot(db: Database, scope: tuple[set[str], set[str]] | None = None) -> list[dict]:
+    """Read original rows and their mutation tokens before deriving answers or queue state."""
+    query = {"kind": PUB_VERSION}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    return list(db[COLLECTION].find(query))
+
+
+def _version_cas(row: dict) -> dict:
+    """A timestamp cannot distinguish open → answer → withdrawal within one BSON millisecond."""
+    return {"_id": row["_id"], "kind": PUB_VERSION,
+            "write_id": row.get("write_id", {"$exists": False})}
+
+
+def _utc_time(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.min.replace(tzinfo=UTC)
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _version_has_human_state(row: dict) -> bool:
+    return any(field in row for field in ("verdict", "skipped_at", *VERSION_WITHDRAWAL_FIELDS))
+
+
+def _version_human_event(row: dict) -> tuple[datetime | None, int]:
+    """Evidence observation never makes an old skip, answer or withdrawal newer."""
+    events = [(row.get("decided_at"), 2)] if "verdict" in row else []
+    if row.get("withdrawn_at") is not None:
+        events.append((row["withdrawn_at"], 1))
+    if "verdict" not in row and row.get("skipped_at") is not None:
+        events.append((row["skipped_at"], 0))
+    return max(events, key=lambda event: (_utc_time(event[0]), event[1])) if events else (None, -1)
+
+
+def version_queue_state(rows: list[dict], aliases: dict[str, str] | None = None) -> dict[frozenset[str], dict]:
+    """Select effective original questions, including retired reopen provenance.
+
+    A human action outranks a mere evidence refresh. Explicit answers and
+    withdrawals beat an equally old skip; current IDs and the original key
+    deterministically break other ties. No human state is copied between rows.
+    """
+    aliases = aliases or {}
+    found = {}
+    ranks = {}
+    for row in rows:
+        original = frozenset(row["members"])
+        pair = frozenset(aliases.get(member, member) for member in original)
+        if len(pair) != 2:
+            continue
+        event, explicit = _version_human_event(row)
+        rank = (_version_has_human_state(row), _utc_time(event), explicit,
+                original == pair, row["_id"])
+        if pair not in ranks or rank > ranks[pair]:
+            ranks[pair], found[pair] = rank, row
+    found.update(_version_answer_rows(rows, aliases))
+    return found
+
+
+def _version_answer_rows(rows: list[dict], aliases: dict[str, str] | None) -> dict[frozenset[str], dict]:
+    """A skip postpones a question; unlike withdrawal it cannot revoke an answer."""
+    found = latest_pair_rows((row for row in rows if row.get("verdict") in VERDICTS), aliases,
+                             timestamp_field="decided_at")
+    withdrawn = latest_pair_rows((row for row in rows if "verdict" not in row and row.get("withdrawn_at")),
+                                 aliases, timestamp_field="withdrawn_at")
+    return {pair: row for pair, row in found.items()
+            if pair not in withdrawn or _utc_time(row.get("decided_at")) >= _utc_time(withdrawn[pair]["withdrawn_at"])}
 
 
 def version_answers(db: Database, aliases: dict[str, str] | None = None,
-                    scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
-    """Resolve review rows to the active pair without rewriting their original IDs."""
-    aliases = aliases or {}
-    query = {"kind": PUB_VERSION, "verdict": {"$exists": True}}
-    if scope is not None:
-        query.update(version_pair_filter(scope))
-    found: dict[frozenset[str], dict] = {}
-    ranks: dict[frozenset[str], tuple] = {}
-    for row in db[COLLECTION].find(query):
-        original = frozenset(row["members"])
-        members = frozenset(aliases.get(member, member) for member in original)
-        if len(members) != 2:
-            continue
-        decided_at = row.get("decided_at")
-        if decided_at is None:
-            decided_at = datetime.min.replace(tzinfo=UTC)
-        elif decided_at.tzinfo is None:
-            decided_at = decided_at.replace(tzinfo=UTC)
-        rank = (decided_at, original == members, row["_id"])
-        if members not in ranks or rank > ranks[members]:
-            ranks[members] = rank
-            found[members] = row
-    return found
+                    scope: tuple[set[str], set[str]] | None = None, *,
+                    snapshot: list[dict] | None = None) -> dict[frozenset[str], dict]:
+    """Resolve answers without letting an older alias answer outlive a newer withdrawal."""
+    return _version_answer_rows(version_snapshot(db, scope) if snapshot is None else snapshot, aliases)
 
 
 def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> dict[frozenset[str], str]:
@@ -855,28 +974,45 @@ def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> di
 
 
 def retire_versions(db: Database, asked: list[dict], *,
-                    scope: tuple[set[str], set[str]] | None = None) -> int:
-    """Drop open version questions that no longer require a human.
+                    scope: tuple[set[str], set[str]] | None = None,
+                    snapshot: list[dict] | None = None, aliases: dict[str, str] | None = None,
+                    keep_ids: set[str] | None = None) -> int:
+    """Retire only unchanged rows observed open in the caller's complete snapshot.
 
-    A version question is about an edge: the rules may stop linking the pair
-    or accept it automatically under the current policy. Neither needs an
-    open question. Answered and skipped questions stay, so a decision is never lost.
-
-    Args:
-        asked: The rows this run held, as given to `record_held`.
-
-    Returns:
-        How many questions were dropped.
+    CAS misses are left alone, never retried with a newer token. Pending repair
+    obligations and withdrawal history survive as inactive rows, even after
+    acknowledgement; only evidence-only questions may be physically deleted.
     """
-    keep = [question_id(PUB_VERSION, members_of(row)) for row in asked]
-    query = {"kind": PUB_VERSION, "_id": {"$nin": keep},
-             "verdict": {"$exists": False}, "skipped_at": {"$exists": False}}
-    if scope is not None:
-        query.update(version_pair_filter(scope))
-    result = db[COLLECTION].delete_many(query)
-    if result.deleted_count:
-        logger.info("review: %d version question(s) no longer asked", result.deleted_count)
-    return result.deleted_count
+    rows = version_snapshot(db, scope) if snapshot is None else snapshot
+    keep = set(keep_ids or ())
+    states = version_queue_state(rows, aliases)
+    aliases = aliases or {}
+    for row in asked:
+        pair = frozenset(aliases.get(member, member) for member in members_of(row))
+        if len(pair) != 2:
+            continue
+        state = states.get(pair)
+        keep.add(state["_id"] if state is not None and _version_has_human_state(state)
+                 else question_id(PUB_VERSION, list(pair)))
+    retired = 0
+    for row in rows:
+        if (row["_id"] in keep or any(field in row for field in ("verdict", "skipped_at", VERSION_RETIRED))):
+            continue
+        query = {**_version_cas(row), "verdict": {"$exists": False}, "skipped_at": {"$exists": False},
+                 VERSION_RETIRED: {"$exists": False}}
+        if scope is not None:
+            query.update(version_pair_filter(scope))
+        if version_repair.FIELD in row or any(field in row for field in VERSION_WITHDRAWAL_FIELDS):
+            result = db[COLLECTION].update_one(
+                query, {"$set": {VERSION_RETIRED: _now(), "write_id": uuid4().hex}},
+            )
+            retired += result.modified_count
+        else:
+            query.update(dict.fromkeys((version_repair.FIELD, *VERSION_WITHDRAWAL_FIELDS), {"$exists": False}))
+            retired += db[COLLECTION].delete_one(query).deleted_count
+    if retired:
+        logger.info("review: %d version question(s) no longer asked", retired)
+    return retired
 
 
 def decisions(db: Database, aliases: dict[str, str] | None = None,
@@ -928,6 +1064,8 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     Built in one place so a tab and the number on it can never disagree.
     """
     query: dict = {}
+    if answered is not True:
+        query[VERSION_RETIRED] = {"$exists": False}
     if pressing:
         query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF, ALIAS]}},
                         {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
@@ -946,7 +1084,16 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     return query
 
 
-def questions(db: Database, *, limit: int = 50, skip: int = 0, **filters) -> list[dict]:
+def _queue_query(db: Database, aliases: dict[str, str] | None, filters: dict) -> dict:
+    query = _query(**filters)
+    if aliases is None or filters.get("answered") is True or filters.get("kind", "") not in ("", PUB_VERSION):
+        return query
+    selected = [row["_id"] for row in version_queue_state(version_snapshot(db), aliases).values()]
+    return {"$and": [query, {"$or": [{"kind": {"$ne": PUB_VERSION}}, {"_id": {"$in": selected}}]}]}
+
+
+def questions(db: Database, *, limit: int = 50, skip: int = 0,
+              aliases: dict[str, str] | None = None, **filters) -> list[dict]:
     """One page of the queue, the longest-waiting first.
 
     Args:
@@ -956,13 +1103,13 @@ def questions(db: Database, *, limit: int = 50, skip: int = 0, **filters) -> lis
             person's time, `answered` and `skipped` take True, False or
             None for both, `kind` and `reason` match exactly.
     """
-    rows = db[COLLECTION].find(_query(**filters)).sort(
+    rows = db[COLLECTION].find(_queue_query(db, aliases, filters)).sort(
         [("seen_at", 1), ("_id", 1)]).skip(skip).limit(limit)
     return list(rows)
 
 
-def count(db: Database, **filters) -> int:
-    return db[COLLECTION].count_documents(_query(**filters))
+def count(db: Database, *, aliases: dict[str, str] | None = None, **filters) -> int:
+    return db[COLLECTION].count_documents(_queue_query(db, aliases, filters))
 
 
 def reasons(db: Database) -> list[str]:

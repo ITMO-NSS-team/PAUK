@@ -5,18 +5,26 @@ import { requireElement } from "../core/dom";
 import { t, type Lang } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
+type Filters = AppState["filters"];
+
+interface FilterControl {
+  row: HTMLElement;
+  sync: (filters: Filters) => void;
+  dispose: () => void;
+}
+
 interface FilterRowOptions {
   label: string;
   min: number;
   max: number;
   /** Defaults to 1; fractional for continuous values like camera ratio. */
   step?: number;
-  value: number;
+  value: (filters: Filters) => number;
   /** Debounced: applying a filter rebuilds the whole graph. */
   onChange: (value: number) => void;
 }
 
-function buildFilterRow(options: FilterRowOptions): HTMLElement {
+function buildFilterRow(options: FilterRowOptions, filters: Filters): FilterControl {
   const row = document.createElement("label");
   row.className = "filter-row";
 
@@ -29,56 +37,95 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   input.min = String(options.min);
   input.max = String(options.max);
   input.step = String(options.step ?? 1);
-  input.value = String(options.value);
+  let appliedValue = options.value(filters);
+  input.value = String(appliedValue);
 
   const value = document.createElement("span");
   value.className = "filter-row__value";
-  value.textContent = String(options.value);
+  value.textContent = String(appliedValue);
 
   // The value label updates on every tick, onChange is debounced: a graph
   // rebuild per pixel of dragging lags.
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   // The thumb tilts toward the drag direction, see index.html.
-  let lastValue = options.value;
-  input.addEventListener("pointerdown", () => delete input.dataset.tilt);
-  input.addEventListener("input", () => {
+  let lastValue = appliedValue;
+  function onPointerDown(): void {
+    delete input.dataset.tilt;
+  }
+  function onInput(): void {
     value.textContent = input.value;
     const parsed = Number(input.value);
     if (parsed !== lastValue) input.dataset.tilt = parsed < lastValue ? "left" : "right";
     lastValue = parsed;
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => options.onChange(parsed), FILTER_CONFIG.debounceMs);
-  });
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      options.onChange(parsed);
+    }, FILTER_CONFIG.debounceMs);
+  }
+  input.addEventListener("pointerdown", onPointerDown);
+  input.addEventListener("input", onInput);
 
   row.append(label, input, value);
-  return row;
+  return {
+    row,
+    sync(nextFilters) {
+      const next = options.value(nextFilters);
+      // Other fields and lazy details must not interrupt an in-progress drag.
+      if (next === appliedValue) return;
+      appliedValue = next;
+      clearTimeout(debounceTimer);
+      debounceTimer = undefined;
+      input.value = String(next);
+      value.textContent = String(next);
+      lastValue = next;
+      delete input.dataset.tilt;
+    },
+    dispose() {
+      clearTimeout(debounceTimer);
+      input.removeEventListener("pointerdown", onPointerDown);
+      input.removeEventListener("input", onInput);
+    },
+  };
 }
 
 interface CheckboxRowOptions {
   label: string;
-  checked: boolean;
+  checked: (filters: Filters) => boolean;
   onChange: (checked: boolean) => void;
 }
 
-function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
+function buildCheckboxRow(options: CheckboxRowOptions, filters: Filters): FilterControl {
   const row = document.createElement("label");
   row.className = "filter-row";
 
   const input = document.createElement("input");
   input.type = "checkbox";
-  input.checked = options.checked;
-  input.addEventListener("change", () => options.onChange(input.checked));
+  input.checked = options.checked(filters);
+  function onChange(): void {
+    options.onChange(input.checked);
+  }
+  input.addEventListener("change", onChange);
 
   const label = document.createElement("span");
   label.className = "filter-row__label";
   label.textContent = options.label;
 
   row.append(input, label);
-  return row;
+  return {
+    row,
+    sync(nextFilters) {
+      input.checked = options.checked(nextFilters);
+    },
+    dispose() {
+      input.removeEventListener("change", onChange);
+    },
+  };
 }
 
 /**
- * Rebuilds the rows only on tab or language change, not on every store update.
+ * Rebuilds the rows only on tab or language change, discarding pending edits.
+ * Other updates synchronize existing controls without interrupting other fields.
  *
  * @returns Unmount function.
  */
@@ -88,73 +135,80 @@ export function mountFilters(store: Store<AppState>): () => void {
 
   let prevTab: AppState["tab"] | null = null;
   let prevLang: Lang | null = null;
+  let controls: FilterControl[] = [];
 
   function setFilter(patch: Partial<AppState["filters"]>): void {
     store.set({ filters: { ...store.get().filters, ...patch } });
   }
 
   function render(state: AppState): void {
-    if (state.tab === prevTab && state.lang === prevLang) return;
+    if (state.tab === prevTab && state.lang === prevLang) {
+      controls.forEach((control) => control.sync(state.filters));
+      return;
+    }
+    controls.forEach((control) => control.dispose());
     prevTab = state.tab;
     prevLang = state.lang;
 
     const { lang, filters } = state;
+    const rangeRow = (options: FilterRowOptions) => buildFilterRow(options, filters);
+    const checkboxRow = (options: CheckboxRowOptions) => buildCheckboxRow(options, filters);
     sectionLabel.textContent = t("section.filters", lang);
-    const rows: HTMLElement[] = [
-      buildFilterRow({
+    const rows: FilterControl[] = [
+      rangeRow({
         label: t("filter.edgeZoom", lang),
         min: FILTER_CONFIG.edgeZoom.min,
         max: FILTER_CONFIG.edgeZoom.max,
         step: FILTER_CONFIG.edgeZoom.step,
-        value: filters.edgeZoomThreshold,
+        value: (filters) => filters.edgeZoomThreshold,
         onChange: (value) => setFilter({ edgeZoomThreshold: value }),
       }),
     ];
 
     if (state.tab === 1) {
       rows.push(
-        buildFilterRow({
+        rangeRow({
           label: t("filter.coauth", lang),
           min: FILTER_CONFIG.coauth.min,
           max: FILTER_CONFIG.coauth.max,
-          value: filters.minCoauth,
+          value: (filters) => filters.minCoauth,
           onChange: (value) => setFilter({ minCoauth: value }),
         }),
-        buildCheckboxRow({
+        checkboxRow({
           label: t("filter.showNoDept", lang),
-          checked: filters.showNoDeptAuthors,
+          checked: (filters) => filters.showNoDeptAuthors,
           onChange: (checked) => setFilter({ showNoDeptAuthors: checked }),
         }),
-        buildCheckboxRow({
+        checkboxRow({
           label: t("filter.showExternal", lang),
-          checked: filters.showExternalAuthors,
+          checked: (filters) => filters.showExternalAuthors,
           onChange: (checked) => setFilter({ showExternalAuthors: checked }),
         }),
-        buildCheckboxRow({
+        checkboxRow({
           label: t("filter.showIsolated", lang),
-          checked: filters.showIsolatedAuthors,
+          checked: (filters) => filters.showIsolatedAuthors,
           onChange: (checked) => setFilter({ showIsolatedAuthors: checked }),
         }),
       );
     } else if (state.tab === 3) {
       rows.push(
-        buildFilterRow({
+        rangeRow({
           label: t("filter.sharedAuthors", lang),
           min: FILTER_CONFIG.sharedAuthors.min,
           max: FILTER_CONFIG.sharedAuthors.max,
-          value: filters.minSharedAuthors,
+          value: (filters) => filters.minSharedAuthors,
           onChange: (value) => setFilter({ minSharedAuthors: value }),
         }),
-        buildFilterRow({
+        rangeRow({
           label: t("filter.yearMax", lang),
           min: FILTER_CONFIG.year.min,
           max: FILTER_CONFIG.year.max,
-          value: filters.yearMax,
+          value: (filters) => filters.yearMax,
           onChange: (value) => setFilter({ yearMax: value }),
         }),
-        buildCheckboxRow({
+        checkboxRow({
           label: t("filter.showNoDept", lang),
-          checked: filters.showNoDeptPubs,
+          checked: (filters) => filters.showNoDeptPubs,
           onChange: (checked) => setFilter({ showNoDeptPubs: checked }),
         }),
       );
@@ -162,49 +216,57 @@ export function mountFilters(store: Store<AppState>): () => void {
 
     // Region toggle is per tab, region thresholds are shared.
     rows.push(
-      buildCheckboxRow({
+      checkboxRow({
         label: t("filter.showRegions", lang),
-        checked: filters.showRegions[state.tab],
+        checked: (filters) => filters.showRegions[state.tab],
         onChange: (checked) =>
           setFilter({ showRegions: { ...store.get().filters.showRegions, [state.tab]: checked } }),
       }),
-      buildFilterRow({
+      rangeRow({
         label: t("filter.regionZoom", lang),
         min: FILTER_CONFIG.regionZoom.min,
         max: FILTER_CONFIG.regionZoom.max,
         step: FILTER_CONFIG.regionZoom.step,
-        value: filters.regionZoomThreshold,
+        value: (filters) => filters.regionZoomThreshold,
         onChange: (value) => setFilter({ regionZoomThreshold: value }),
       }),
-      buildFilterRow({
+      rangeRow({
         label: t("filter.regionMinNodes", lang),
         min: FILTER_CONFIG.regionMinNodes.min,
         max: FILTER_CONFIG.regionMinNodes.max,
-        value: filters.regionMinNodes,
+        value: (filters) => filters.regionMinNodes,
         onChange: (value) => setFilter({ regionMinNodes: value }),
       }),
     );
 
+    controls = rows;
     container.hidden = false;
-    container.replaceChildren(...rows);
+    container.replaceChildren(...controls.map((control) => control.row));
   }
 
   render(store.get());
-  return store.subscribe(render);
+  const unsubscribe = store.subscribe(render);
+  return () => {
+    unsubscribe();
+    controls.forEach((control) => control.dispose());
+  };
 }
 
 /**
- * Turns on the filter that hides the selected author (external, isolated),
- * e.g. after a link from a publication card. Must subscribe before
+ * Reveals a hidden author (external, isolated) on node-selection/navigation
+ * transitions, not on explicit filter changes. Must subscribe before
  * map/build.ts::mountReactiveGraph, which drops selections missing from the graph.
  *
  * @returns Unmount function.
  */
 export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
   const external = new Set(data.authors.filter((a) => a.is_itmo === false).map((a) => a.key));
+  let prev = store.get();
   return store.subscribe((state) => {
+    const navigated = state.selection !== prev.selection || state.tab !== prev.tab || state.screen !== prev.screen;
+    prev = state;
     const { selection, filters } = state;
-    if (selection?.kind !== "node") return;
+    if (!navigated || selection?.kind !== "node") return;
     const needExternal = !filters.showExternalAuthors && external.has(selection.key);
     // Isolated status depends on whether external authors are shown.
     const withExternal = filters.showExternalAuthors || needExternal;

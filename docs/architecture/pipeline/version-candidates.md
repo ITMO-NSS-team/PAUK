@@ -119,13 +119,59 @@ The types `software`/`dataset`/`peer-review`/`grant`/`other`/`paratext` reach ne
 deposits have their own versioning (repository dedup handles it), and a
 paper-title heuristic says nothing about them.
 
-## Automatic acceptance (`rules-v1`)
+## Automatic acceptance (`rules-v3`)
 
 `AUTO_CONFIRM_BUCKETS` and `can_auto_confirm_version()` define a separate
 acceptance policy after classification. Exact titles alone are insufficient:
 `MISSED_BY_NORM` and `DOI_SIBLING` are classified before author/date checks.
+All five automatic buckets first require **equal, independently substantive
+abstracts**, through the shared `abstract_version_evidence()` helper. Missing,
+one-sided, short, boilerplate-only or mismatched text holds a candidate for a
+human; it never establishes `different` or removes candidate eligibility.
 
-| Bucket | Additional acceptance guards |
+Abstract equality uses NFC Unicode normalization, HTML entities, known
+presentational tags and whitespace normalization, preserving **all** substantive
+case. There is no finite whitelist of measurement units: `5 mS` and `5 MS`,
+bare/composite units and chemical symbols must not become equal by casefolding.
+It does **not** use `_fold_title`: punctuation, numbers, negation and word order
+remain. Compatibility folding does not flatten `m²` to `m2`; semantic
+sub/superscript markup is not stripped as mere presentation. Only legal-fragment
+recognition and quality word counting ignore case; ordinary case-only abstract
+differences deliberately stay held, rather than claiming semantic equivalence.
+Only narrow known copyright, Creative Commons and missing-abstract fragments
+are removed before checking residual text. Unrecognized or differently worded
+scientific text is not treated as equivalent.
+
+The residual abstract on **each** side must meet these explicit engineering
+quality floors (`_ABSTRACT_*` constants), not an empirically measured precision
+guarantee:
+
+- at least **160 characters**, **24 word tokens**, and **16 distinct words**;
+- distinct words / total words **≥0.50**;
+- the most frequent word accounts for **≤0.15** of all words;
+- the fraction of trigram occurrences belonging to repeated trigrams is
+  **≤0.25** (all occurrences of a repeated trigram count, including its first).
+
+Word tokens must contain a letter: numeric padding does not satisfy the word
+floors, although every number remains part of equality. These safeguards
+reject common placeholders and repetitive padding, but cannot prove that any
+arbitrary text is scientific or identify all possible templates. Genuine
+translations, rewritten or short abstracts deliberately tend toward review.
+
+Even equal substantive abstracts do not automatically join two known
+**conference** venues. `_venue_kind()` first excludes repository/preprint
+metadata and hosts, then recognizes publication types `conference-paper` and
+`proceedings-article`, explicit conference venues and proceedings-like names.
+Conference publication types beat conflicting journal metadata; opaque names
+such as ICRA/ICCV need explicit type evidence, not an acronym guess. Explicit
+journal metadata and the final nonempty-name fallback follow. Reused conference
+content still needs a human. The same precedence is used by MEDIUM routing.
+No authoritative version/translation metadata is present in these candidate
+rows; `Publication.versions` is a deduplication ledger, not such evidence.
+This policy adds no external API or LLM requests. Notice, series, supplement
+and cover exclusions remain unchanged.
+
+| Bucket | Further acceptance guards after the shared content/venue gates |
 |---|---|
 | `MISSED_BY_NORM` | author Jaccard ≥0.50, known date gap ≤1100 days |
 | `DOI_SIBLING` | at least one shared author; existing DOI/title/type guards remain |
@@ -134,10 +180,20 @@ acceptance policy after classification. Exact titles alone are insufficient:
 | `STRONG_FUZZY` | author Jaccard ≥0.50, known date gap ≤1100 days; existing title similarity ≥0.90 remains |
 
 Author overlap uses person IDs, not names. Missing dates do not count as zero;
-known years can supply the existing date-gap fallback. These are conservative
-policy guards, not a measured precision guarantee. A mergeable candidate
-failing them stays in manual review. Acceptance is pairwise, never propagated
-transitively through an entire component.
+known years can supply the existing date-gap fallback. A mergeable candidate
+failing any guard stays in manual review. Acceptance is pairwise, never
+propagated transitively through an entire component.
+
+Candidate/report signals include `abstract_evidence` (`match`, `unknown` or
+`mismatch`) and `abstract_evidence_reason`, including early normalized-title
+and DOI-sibling candidates. Unknown reasons identify each side's quality
+outcome; the other reasons are `equal_substantive_text` and
+`different_substantive_text`. These are journal signals, **not new Neo4j
+properties**. Normalization/qualification is cached by raw abstract and
+reused between classification, reporting and acceptance; content qualification
+is not moved ahead of cheap filters for rejected blocked pairs. Existing
+shingle similarity and its **0.40/0.45** routing thresholds remain unchanged
+and are not evidence permitting automatic acceptance.
 
 Every MEDIUM_FUZZY subtype below still needs a human, including `STRONG`,
 `LLM_SAME` and `CONF_JOURNAL`; an LLM verdict does not by itself confirm the
@@ -145,19 +201,69 @@ edge. `MEDIUM_FUZZY_RELATED` and the four look-alike buckets are neither
 auto-accepted nor queued for confirmation.
 
 Accepted edges carry `confirmation_source: "auto"` or `"review"`; automatic
-ones also carry `confirmation_policy: "rules-v1"`. Human decisions and manual
+ones also carry `confirmation_policy: "rules-v3"`. Human decisions and manual
 DELETE overrides outrank this policy. An automatically accepted edge returns
 to held/unconfirmed or disappears when its evidence changes; its provenance
 is cleared, unlike a human `same`, which survives rule changes. Automation
 does not fabricate human answers in MongoDB.
 
-The next ordinary `versions link` applies the policy to existing candidates
-and retires old open questions that now need no human answer. Answered and
+The next ordinary `versions link` reevaluates existing automatic candidates
+under the current policy; no unconditional cleanup migration is needed. It
+retires old open questions that now need no human answer. Answered and
 skipped questions remain for history. The result separates effective
 `version_auto_confirmed`, `version_review_confirmed` and
 `version_manual_pending` counts from changed-edge counts, including on an
 idempotent run. Their real distribution is only known after a run on the
 selected graph; a backlog size alone does not establish it.
+
+Full runs and immediate/deferred pair reconciliation synchronize questions by
+one transition rule: eligible held pairs have a question; automatic, diagnostic,
+deleted and human-rejected pairs do not have an unanswered question. Retiring
+questions does not erase answered/skipped history. An explicit withdrawal about
+a pair no longer classified can retain its existing question; it does not turn
+a diagnostic bucket into held or create evidence from an old edge snapshot.
+
+All manual `IS_VERSION` writers use the same GRAPH lock, including UI and CLI
+add/delete/undo and CLI `--once`. The lock is taken before pair reads, writes,
+persistence and any graph-first compensation. Public wrappers and already-locked
+internals keep `held()` non-reentrant.
+
+Version deletion undo is **decision-first**: its token-CAS withdrawal atomically
+stores a `version_repair` obligation on the override document, then the current
+policy synchronizes graph and questions. It never deletes current pair edges to
+restore a stale pre-undo snapshot. Manual `manual_exists`/`manual_direction`
+provenance survives LINK → DELETE → undo, including an originally bare `{}` edge;
+undo restores an active LINK claim. Full reconciliation includes claim-only
+pairs and can recreate their unconfirmed existence. Historical snapshot status
+or `confirmation_*` never confirms the work; human DIFFERENT and any active
+DELETE still win. Legacy active LINK proves manual origin, but legacy DELETE
+alone does not, and no automatic audit backfill is performed.
+
+The repair intent is part of the source decision, not dependent on inserting a
+job afterwards. Version answers/withdrawals use the same protocol in review rows.
+Worker polling rediscovers due intents, dispatches existing VERSIONS jobs and
+acknowledges only the matching intent after graph **and** question success.
+Failures, lost job replies, cancellation and stale attempts retain the obligation
+with backoff; obsolete attempts cannot acknowledge a newer one. Explicit
+`current` versus `reopen` modes prevent undo repair from inheriting withdrawal
+semantics. Legacy member-only jobs retain their earlier reopen default. Pending
+repairs remain visible/retryable on the manual-decisions page even without a
+worker; retrying the original undo form cannot withdraw a newer decision.
+
+Version review rows have opaque `write_id` mutation tokens. Full/scoped
+reconciliation captures original rows before deriving answers and retires only
+snapshot-open rows whose token is unchanged. Same-millisecond answer/withdrawal
+ABA changes are therefore protected. Pending repair or withdrawal provenance
+causes soft retirement (`version_retired_at`), not physical deletion. Alias-aware
+queue/counts reuse the original effective skipped/withdrawn source and do not
+copy human events into a canonical duplicate; evidence refresh does not advance
+human recency.
+
+Successful LLM verdicts carry `judged_at` in UTC. When folded publication IDs
+make cache rows collide, the newest successful result wins, followed by current
+IDs and a stable key tie-breaker. Timestamp-free legacy rows use those fallback
+rules without claiming known recency. A failed forced call preserves the previous
+success and its timestamp. This routing cache never supplies a human acceptance.
 
 ## Splitting MEDIUM_FUZZY
 

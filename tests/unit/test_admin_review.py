@@ -1,6 +1,7 @@
 import re
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -27,6 +28,7 @@ from pauk.storage import PreparedStore, RawStore, review
 from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
+from tests.unit.test_version_link import SPIDER_ABSTRACT
 
 
 class AliasIncidentPageTest(unittest.TestCase):
@@ -1448,6 +1450,46 @@ class VersionQuestionTest(unittest.TestCase):
                 self.assertIn(text, body)
         self.assertEqual(review.count(self.db, answered=False, skipped=False), 3)
 
+    def test_skipped_alias_and_current_duplicate_are_one_effective_question_on_every_tab(self):
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W9"]
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "PREPRINT_PUBLISHED",
+            "record_a": "W1", "record_b": "W9", "title_a": "Original first", "title_b": "Original second"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:original")
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W9"]})
+        response = self.client.get("/review", params={"tab": "versions"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('id="q-publication_version-W1-W2"', response.text)
+        self.assertEqual(response.context["counts"]["versions"], 0)
+        self.assertEqual(response.context["counts"]["open"], 0)
+        self.assertEqual(response.context["counts"]["skipped"], 1)
+        skipped = self.body("skipped")
+        self.assertIn('id="q-publication_version-W1-W9"', skipped)
+        self.assertIn('name="members" value="W1,W9"', skipped)
+        self.assertIn("отложил user:original", skipped)
+        self.assertEqual(self.db[review.COLLECTION].find_one({"_id": source["_id"]}), source)
+        self.assertNotIn("skipped_by", self.db[review.COLLECTION].find_one({"members": ["W1", "W2"]}))
+
+    def test_newer_answer_and_withdrawal_do_not_resurface_the_old_alias_skip(self):
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W9"]
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "PREPRINT_PUBLISHED",
+            "record_a": "W1", "record_b": "W9"}])
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:older")
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W9"]})
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 2, tzinfo=UTC)):
+            self.assertEqual(self.answer("same").status_code, 303)
+        self.assertNotIn('id="q-publication_version-W1-W9"', self.body("skipped"))
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 3, tzinfo=UTC)):
+            self.assertEqual(self.withdraw().status_code, 303)
+        response = self.client.get("/review", params={"tab": "versions"})
+        self.assertIn('id="q-publication_version-W1-W2"', response.text)
+        self.assertNotIn('id="q-publication_version-W1-W9"', response.text)
+        self.assertEqual(response.context["counts"]["versions"], 1)
+        self.assertEqual(response.context["counts"]["skipped"], 0)
+        self.assertEqual(self.db[review.COLLECTION].find_one({"_id": source["_id"]}), source)
+
     def test_same_confirms_the_edge_and_folds_nothing(self):
         response = self.answer("same")
         self.assertIn("done=linked", response.headers["location"])
@@ -1485,6 +1527,7 @@ class VersionQuestionTest(unittest.TestCase):
                 "title": "Deep learning methods for spider web classification",
                 "doi": "10.1/" + work_id, "publication_date": "2026-01-01", "type": "article",
                 "authors": [{"person_id": "A1", "name": "Test Author"}],
+                "abstract": SPIDER_ABSTRACT,
             })
 
     def test_withdrawing_same_from_a_confident_pair_restores_automatic_acceptance(self):
@@ -1521,6 +1564,47 @@ class VersionQuestionTest(unittest.TestCase):
         self.assertEqual((edge["status"], edge["confirmation_source"]), ("same", "auto"))
         self.assertEqual(review.count(self.db, answered=False), 0)
 
+    def test_scoped_policy_downgrade_recreates_a_visible_question(self):
+        self._make_auto_pair()
+        self.answer("same")
+        self.withdraw()
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        self.graph.nodes["Publication", "W2"]["abstract"] = None
+        with patch("pauk.graph.version_link.audited_client", return_value=self.graph):
+            run_version_pair(Settings(), self.db, ("W1", "W2"))
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual(edge["status"], "held")
+        self.assertNotIn("confirmation_source", edge)
+        self.assertNotIn("confirmation_policy", edge)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        self.assertIn("/nodes/Publication/W1", self.body())
+        self.assertIn("одна работа", self.body())
+
+    def _withdraw_diagnostic(self, *, deferred):
+        self._make_auto_pair()
+        self.answer("same")
+        self.graph.nodes["Publication", "W2"]["title"] = (
+            "Front Cover: " + self.graph.nodes["Publication", "W1"]["title"])
+        if deferred:
+            with locks.held(self.db, GRAPH):
+                self.assertIn("done=version_busy", self.withdraw().headers["location"])
+            (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
+            with patch("pauk.graph.version_link.audited_client", return_value=self.graph):
+                run_version_pair(Settings(), self.db, tuple(job.payload["members"]))
+        else:
+            self.assertEqual(self.withdraw().status_code, 303)
+        (edge,) = self.graph.relationships.values()
+        self.assertEqual(edge["bucket"], "COVER")
+        self.assertFalse({"status", "confirmation_source", "confirmation_policy"} & edge.keys())
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        self.assertNotIn('action="/review/answer"', self.body())
+
+    def test_withdrawal_to_a_diagnostic_pair_removes_the_question_immediately(self):
+        self._withdraw_diagnostic(deferred=False)
+
+    def test_queued_withdrawal_to_a_diagnostic_pair_removes_the_question(self):
+        self._withdraw_diagnostic(deferred=True)
+
     def test_withdrawing_same_puts_the_edge_back_on_hold(self):
         self.answer("same")
         response = self.withdraw()
@@ -1543,7 +1627,7 @@ class VersionQuestionTest(unittest.TestCase):
         (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
         self.assertEqual(job.payload["members"], ["W1", "W2"])
 
-    def test_a_held_graph_keeps_the_edge_and_queues_one_run(self):
+    def test_a_held_graph_keeps_the_edge_and_queues_each_decision_generation(self):
         # A `versions link` holding the graph has read the answers already:
         # an edge removed now would be written back by its plan.
         locks.acquire(self.db, GRAPH, "versions-link-elsewhere")
@@ -1553,10 +1637,17 @@ class VersionQuestionTest(unittest.TestCase):
                       self.graph.relationships)
         self.assertEqual(review.version_decisions(self.db), {frozenset(("W1", "W2")): "different"})
         self.answer("same")
-        (job,) = store.recent(self.db, kind=str(JobKind.VERSIONS))
-        self.assertEqual(job.state, JobState.QUEUED)
-        self.assertFalse(job.payload.get("llm"))
-        self.assertEqual(job.payload["members"], ["W1", "W2"])
+        jobs = store.recent(self.db, kind=str(JobKind.VERSIONS))
+        self.assertEqual(len(jobs), 2)
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W2"]})
+        tokens = {job.payload["repair"]["token"] for job in jobs}
+        self.assertEqual(len(tokens), 2)
+        self.assertIn(source["version_repair"]["token"], tokens)
+        for job in jobs:
+            self.assertEqual(job.state, JobState.QUEUED)
+            self.assertFalse(job.payload.get("llm"))
+            self.assertEqual(job.payload["members"], ["W1", "W2"])
+            self.assertEqual(job.payload["mode"], "current")
 
     def fold_publication(self):
         old_key = ("Publication", "IS_VERSION", "Publication", "W1", "W2")

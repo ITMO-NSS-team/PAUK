@@ -12,9 +12,10 @@ import json
 import logging
 from contextlib import suppress
 
+from fastapi import HTTPException
 from pymongo.database import Database
 
-from pauk.admin import feed
+from pauk.admin import decisions, feed
 from pauk.admin.auth import ROLES, AuthError, create_user, list_users, set_active
 from pauk.graph import prune
 from pauk.graph.audit import actor_context, audited_client
@@ -37,6 +38,7 @@ from pauk.graph.overrides import (
     CREATE,
     DELETE,
     LINK,
+    VERSION_RELATIONSHIP,
     active_overrides,
     apply_overrides,
     deactivate_override,
@@ -45,8 +47,11 @@ from pauk.graph.overrides import (
     persist_decision,
     record_override,
     record_relationship_override,
+    relationship_override_id,
 )
-from pauk.jobs.locks import Busy
+from pauk.graph.version_repair import try_apply_version_override_locked, version_mutation_lock
+from pauk.jobs.locks import Busy, held
+from pauk.jobs.models import GRAPH
 from pauk.jobs.worker import POLL_SECONDS as WORKER_POLL
 from pauk.jobs.worker import Worker
 from pauk.settings import Settings
@@ -263,6 +268,8 @@ def run(args, config: Settings, db: Database | None) -> None:
                 _dispatch(args, client, db, actor)
     except MutationError as error:
         raise SystemExit(str(error)) from None
+    except HTTPException as error:
+        raise SystemExit(str(error.detail)) from None
     finally:
         client.close()
 
@@ -482,6 +489,22 @@ def _run_overrides(args, client, db) -> None:
         else:
             raise SystemExit(f"no override recorded for {args.label} {args.id}")
     elif args.overrides_command == "undo-rel":
+        triple = (args.src_label, args.rel_type, args.tgt_label)
+        if triple == VERSION_RELATIONSHIP:
+            document_id = relationship_override_id(*triple, args.src_id, args.tgt_id)
+            row = db.graph_overrides.find_one({"_id": document_id})
+            if row is None or (not row.get("active") and not row.get("version_undo_intent")):
+                raise SystemExit("no override recorded for that relationship")
+            token = row.get("version_undo_from") if row.get("version_undo_intent") else row.get("write_id") or ""
+            outcome = decisions.undo_version_deletion(
+                client, db, args.src_id, args.tgt_id, document_id,
+                lambda: deactivate_relationship_override(db, *triple, args.src_id, args.tgt_id,
+                                                         only_op=DELETE, expected_write_id=token),
+                expected_write_id=token,
+            )
+            print("version decision saved; reconciliation pending" if outcome == "pending"
+                  else "version deletion withdrawn and reconciled")
+            return
         # Only the removal: both kinds share one document id.
         if deactivate_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
                                             args.src_id, args.tgt_id, only_op=DELETE):
@@ -490,11 +513,24 @@ def _run_overrides(args, client, db) -> None:
         else:
             raise SystemExit("no override recorded for that relationship")
     else:
-        result = apply_overrides(client, db)
+        with held(db, GRAPH):
+            result = apply_overrides(client, db)
         print(", ".join(f"{key}={value}" for key, value in result.items()))
 
 
 def _run_relationship(args, client, db, actor: str) -> None:
+    triple = (args.src_label, args.rel_type, args.tgt_label)
+    if triple == VERSION_RELATIONSHIP and db is None:
+        raise SystemExit("IS_VERSION writes require MongoDB for GRAPH locking, including --once")
+    with version_mutation_lock(db, triple):
+        _run_relationship_locked(args, client, db, actor)
+        if (triple == VERSION_RELATIONSHIP and not args.once
+                and try_apply_version_override_locked(client, db, args.src_id, args.tgt_id)):
+            print("decision saved; version reconciliation is pending in the worker")
+
+
+def _run_relationship_locked(args, client, db, actor: str) -> None:
+    """The version-specific caller holds GRAPH across reads, persistence and compensation."""
     fields = _parse_assignments(args.assignments) if args.rel_command == "add" else {}
     before = None
     if db is not None and not args.once:

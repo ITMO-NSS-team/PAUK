@@ -1,4 +1,4 @@
-// The menu is shown on every page load, even when the URL points to a node.
+// The menu is shown while loading; URL hydration chooses the screen once the graph is ready.
 
 import { requireElement } from "../core/dom";
 import { t, type LocaleKey } from "../core/i18n";

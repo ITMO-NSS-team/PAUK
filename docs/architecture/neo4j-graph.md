@@ -79,7 +79,8 @@ paper, a cover, an erratum) to the work it relates to, and carries `bucket`,
 `mergeable`, `status` (`held`, `same` once accepted by policy or a person,
 absent for a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`.
 Confirmed edges also carry `confirmation_source` (`auto` or `review`);
-automatic ones carry `confirmation_policy` (`rules-v1`). Returning to held
+automatic ones carry `confirmation_policy` (`rules-v3`: case-preserving matching substantive
+abstracts plus the bucket's title/author/date guards). Returning to held
 or an unconfirmed state removes both properties. No publish
 writes it: `pauk versions link` (`version_link.py`) reconciles it with
 current graph data and review decisions, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
@@ -462,6 +463,15 @@ Editing a field of a hand-made record keeps it a claim (`op` is not
 overwritten with `set`); otherwise undoing the edit would drop the claim and
 the next reconciliation would delete the record.
 
+`IS_VERSION` has an explicit existence owner: `versions link` also enumerates
+active LINK-only pairs and can recreate their unconfirmed edges. Version
+relationship overrides preserve `manual_exists`/`manual_direction` through a
+DELETE, and undo restores the LINK claim even for a bare edge with no snapshot
+properties. This does not preserve old automatic confirmation: latest human
+answers and acceptance policy derive status independently. Legacy DELETE alone
+is not proof of manual origin. Other relationship claims keep the existing
+protect-only behavior.
+
 **Relationships.** Deleting an edge is recorded as an instruction (`kind:
 "rel"`, `op: "delete"`): a deleted edge would be recreated by `MERGE` from the
 same prepared row, so `load_prepared_rows` accepts a set
@@ -472,8 +482,11 @@ the loader looks it up by: `url` for a repository, `login` for a GitHub
 profile.
 
 The panel also saves the deleted relationship's properties in `snapshot`.
-Both compensation after a Mongo write failure and the later undo button pass
-them back to `create_relationship`. `created_at` and `updated_at` are excluded:
+For non-version relationships, compensation after a Mongo write failure and
+the later undo button pass them back to `create_relationship`. Version undo
+instead commits a durable repair obligation and derives current status; it
+never treats snapshot confirmation fields as authority. `created_at` and
+`updated_at` are excluded:
 the graph assigns new timestamps on recreation. Legacy decisions without a
 snapshot restore a bare edge until publishing supplies its properties again.
 

@@ -9,7 +9,12 @@ import mongomock
 
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.graph import version_link
-from pauk.graph.overrides import DELETE, LINK, record_relationship_override
+from pauk.graph.overrides import (
+    DELETE,
+    LINK,
+    deactivate_relationship_override,
+    record_relationship_override,
+)
 from pauk.graph.version_judge import VERDICTS_COLLECTION, VersionJudge, build_prompt, parse_verdict, stored_verdicts
 from pauk.graph.version_link import edge_direction, plan_version_edges, run_version_link, run_version_pair
 from pauk.gui.graph_builder.builder import write_site_data
@@ -17,6 +22,13 @@ from pauk.gui.graph_builder.tests.test_graph_builder import BuildGraphDataIntegr
 from pauk.settings import Settings
 from pauk.storage import review
 from tests.bench.mocks import RecordingNeo4jClient
+
+SPIDER_ABSTRACT = (
+    "We evaluate spider web classification using a neural network trained on 240 annotated images. "
+    "Independent validation measures capture structural features, sensitivity, and calibration across "
+    "three ecological regions. The proposed method reduces false positives without removing thin "
+    "threads and remains stable under changes in illumination."
+)
 
 
 def pub(client, pid, title, *, doi=None, journal=None, venue_type=None, type="article",
@@ -56,16 +68,17 @@ class VersionLinkTest(unittest.TestCase):
 
     def test_preprint_points_at_its_article_with_the_bucket(self):
         pub(self.graph, "W1", "Deep learning for spider web classification",
-            doi="10.48550/arxiv.2501.00001", journal="arXiv", type="preprint", day="2025-01-01")
+            doi="10.48550/arxiv.2501.00001", journal="arXiv", type="preprint", day="2025-01-01",
+            abstract=SPIDER_ABSTRACT)
         pub(self.graph, "W2", "Deep learning for spider web classification tasks",
-            doi="10.3390/s1", journal="Sensors", day="2025-09-01")
+            doi="10.3390/s1", journal="Sensors", day="2025-09-01", abstract=SPIDER_ABSTRACT)
         result = self.run_link()
         edges = versions(self.graph)
         self.assertEqual(set(edges), {("W1", "W2")})
         self.assertEqual(edges[("W1", "W2")]["bucket"], "PREPRINT_PUBLISHED")
         self.assertEqual(edges[("W1", "W2")]["status"], "same")
         self.assertEqual(edges[("W1", "W2")]["confirmation_source"], "auto")
-        self.assertEqual(edges[("W1", "W2")]["confirmation_policy"], "rules-v1")
+        self.assertEqual(edges[("W1", "W2")]["confirmation_policy"], "rules-v3")
         self.assertEqual(result["version_edges"], 1)
         self.assertEqual(result["version_auto_confirmed"], 1)
         self.assertEqual(result["version_manual_pending"], 0)
@@ -284,8 +297,10 @@ class VersionLinkTest(unittest.TestCase):
         self.assertEqual(row["status"], "same")
 
     def test_different_withdrawn_during_the_run_is_linked_again(self):
-        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a")
-        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b")
+        pub(self.graph, "W1", "One work about spider webs and neural nets", doi="10.1/a",
+            abstract=SPIDER_ABSTRACT)
+        pub(self.graph, "W2", "One work about spider webs and neural nets", doi="10.1/b",
+            abstract=SPIDER_ABSTRACT)
         review.record_held(self.db, [{"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
                                       "record_a": "W1", "record_b": "W2"}])
         review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
@@ -359,8 +374,8 @@ class VersionLinkTest(unittest.TestCase):
 
     def _confident_pair(self):
         title = "One work about spider webs and neural nets"
-        pub(self.graph, "W1", title, doi="10.1/a", authors=("A1",))
-        pub(self.graph, "W2", title, doi="10.1/b", authors=("A1",))
+        pub(self.graph, "W1", title, doi="10.1/a", authors=("A1",), abstract=SPIDER_ABSTRACT)
+        pub(self.graph, "W2", title, doi="10.1/b", authors=("A1",), abstract=SPIDER_ABSTRACT)
 
     def test_auto_confirmation_retires_old_questions_without_faking_a_human_answer(self):
         self._confident_pair()
@@ -400,6 +415,8 @@ class VersionLinkTest(unittest.TestCase):
         self.run_link()
         self.graph.nodes["Publication"]["W1"]["title"] = "Robust output feedback MPC: an interval observer approach"
         self.graph.nodes["Publication"]["W2"]["title"] = "Robust output feedback MPC for LPV systems using interval observers"
+        for work in self.graph.nodes["Publication"].values():
+            work["abstract"] = None
         result = self.run_link()
         (props,) = versions(self.graph).values()
         self.assertEqual((props["bucket"], props["status"]), ("MEDIUM_FUZZY", "held"))
@@ -502,6 +519,389 @@ class VersionLinkTest(unittest.TestCase):
             if accepted == 1:
                 review.record_verdict(self.db, review.PUB_VERSION, ["W3", "W4"], review.SAME)
                 run_version_pair(self.config, self.db, ("W3", "W4"))
+
+    def test_old_policy_auto_downgrades_without_changing_the_publications(self):
+        self._confident_pair()
+        for props in self.graph.nodes["Publication"].values():
+            props["abstract"] = None
+        publications = {key: props.copy() for key, props in self.graph.nodes["Publication"].items()}
+        for scoped in (False, True):
+            with self.subTest(scoped=scoped):
+                self.db[review.COLLECTION].delete_many({})
+                self.graph.edges["Publication", "IS_VERSION", "Publication", "W2", "W1"] = {
+                    "bucket": "MISSED_BY_NORM", "mergeable": True, "title_sim": 1.0,
+                    "status": "same", "confirmation_source": "auto", "confirmation_policy": "rules-v1",
+                }
+                if scoped:
+                    self.assertEqual(version_link.reconcile_version_pair(
+                        self.graph, self.db, ("W1", "W2"), record_question=False)[1:], (1, 0))
+                else:
+                    result = self.run_link()
+                    self.assertEqual((result["version_auto_confirmed"], result["version_manual_pending"]), (0, 1))
+                (props,) = versions(self.graph).values()
+                self.assertEqual(props["status"], "held")
+                self.assertFalse({"confirmation_source", "confirmation_policy"} & props.keys())
+                (question,) = review.questions(self.db, answered=False)
+                self.assertEqual(question["members"], ["W1", "W2"])
+                self.assertEqual(question["evidence"]["bucket"], "MISSED_BY_NORM")
+                if scoped:
+                    self.assertEqual(version_link.reconcile_version_pair(
+                        self.graph, self.db, ("W1", "W2"))[1:], (0, 0))
+                else:
+                    again = self.run_link()
+                    self.assertEqual(again["version_edges"], 0)
+                    self.assertEqual(again["version_manual_pending"], 1)
+                self.assertEqual(self.graph.nodes["Publication"], publications)
+
+    def test_scoped_diagnostic_withdrawal_retires_question_without_forced_hold(self):
+        self._confident_pair()
+        review.record_held(self.db, version_link.find_version_candidates(self.graph))
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.run_link()
+        self.graph.nodes["Publication"]["W2"]["title"] = (
+            "Front Cover: " + self.graph.nodes["Publication"]["W1"]["title"])
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["bucket"], "COVER")
+        self.assertFalse({"status", "confirmation_source", "confirmation_policy"} & props.keys())
+        self.assertEqual(review.count(self.db, kind=review.PUB_VERSION), 0)
+        before = versions(self.graph)
+        self.assertEqual(self.run_link()["version_edges"], 0)
+        self.assertEqual(versions(self.graph), before)
+
+    def test_scoped_related_diagnostic_retires_an_open_question(self):
+        pub(self.graph, "W1", "Robust output feedback MPC: an interval observer approach", doi="10.1/a")
+        pub(self.graph, "W2", "Robust output feedback MPC for LPV systems using interval observers", doi="10.1/b")
+        self.run_link()
+        self.db[VERDICTS_COLLECTION].insert_one({
+            "_id": "W1:W2", "members": ["W1", "W2"], "same_work": False, "reason": "different works"})
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["bucket"], "MEDIUM_FUZZY_RELATED")
+        self.assertNotIn("status", props)
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        self.assertEqual(self.run_link()["version_edges"], 0)
+
+    def test_late_withdrawal_without_candidate_keeps_the_legacy_question_until_next_full_run(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = {
+            "bucket": "STRONG_FUZZY", "status": "held"}
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "STRONG_FUZZY",
+            "record_a": "W1", "record_b": "W2"}])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.run_link()
+        self.answered_mid_run(lambda: review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"]))
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(review.count(self.db), 0)
+
+    def test_scoped_absent_candidate_removes_old_auto_and_only_its_question(self):
+        self._confident_pair()
+        self.run_link()
+        rows = version_link.find_version_candidates(self.graph)
+        review.record_held(self.db, [*rows,
+                                   {**rows[0], "record_b": "W3"},
+                                   {**rows[0], "record_a": "W4"}])
+        self.graph.nodes["Publication"]["W2"]["title"] = "Unrelated galaxies and dark matter"
+        self.assertEqual(version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"))[1:], (0, 1))
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W3"), ("W2", "W4")})
+
+    def test_scoped_pending_question_moves_to_current_ids_without_touching_other_pairs(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"].update(abstract=None, merged_ids=["W9"])
+        review.record_held(self.db, [
+            {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+             "record_a": a, "record_b": b}
+            for a, b in (("W1", "W9"), ("W1", "W3"), ("W9", "W4"))
+        ])
+        run_version_pair(self.config, self.db, ("W1", "W9"))
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W2"), ("W1", "W3"), ("W4", "W9")})
+        self.assertEqual(set(versions(self.graph)), {("W2", "W1")})
+
+    def test_missing_endpoint_retires_only_its_open_alias_questions(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"]["merged_ids"] = ["W9"]
+        del self.graph.nodes["Publication"]["W1"]
+        review.record_held(self.db, [
+            {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+             "record_a": a, "record_b": b}
+            for a, b in (("W1", "W2"), ("W1", "W9"), ("W1", "W3"), ("W2", "W3"))
+        ])
+        self.assertEqual(version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W9")),
+                         ("version_missing", 0, 0))
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W3"), ("W2", "W3")})
+
+    def test_folded_scope_retires_orphans_but_keeps_other_pairs_and_history(self):
+        pub(self.graph, "W2", "Spider web classification methods", doi="10.1/b")
+        self.graph.nodes["Publication"]["W2"]["merged_ids"] = ["W1", "W8", "W9"]
+        review.record_held(self.db, [
+            {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+             "record_a": a, "record_b": b}
+            for a, b in (("W1", "W2"), ("W1", "W8"), ("W1", "W9"), ("W2", "W3"), ("W8", "W3"))
+        ])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W8"], review.SAME)
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        history = review.questions(self.db, answered=True) + review.questions(self.db, skipped=True)
+        self.assertEqual(version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2")),
+                         ("version_folded", 0, 0))
+        self.assertEqual({tuple(row["members"]) for row in review.questions(self.db)},
+                         {("W1", "W8"), ("W1", "W9"), ("W2", "W3"), ("W3", "W8")})
+        for question in history:
+            self.assertEqual(self.db[review.COLLECTION].find_one({"_id": question["_id"]}), question)
+        self.assertEqual(versions(self.graph), {})
+
+    def test_composed_undo_projects_policy_without_mutating_questions_or_tombstone(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"]["abstract"] = None
+        snapshot = {"bucket": "MISSED_BY_NORM", "mergeable": True, "status": "same",
+                    "confirmation_source": "auto", "confirmation_policy": "rules-v1"}
+        override = record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                                "W1", "W2", DELETE, snapshot=snapshot)
+        before = list(self.db[review.COLLECTION].find())
+        version_link.reconcile_version_pair(
+            self.graph, self.db, ("W1", "W2"), previous={("W1", "W2"): snapshot},
+            sync_questions=False, ignore_delete_id=override["_id"],
+        )
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertEqual(list(self.db[review.COLLECTION].find()), before)
+        self.assertEqual(self.db.graph_overrides.find_one({"_id": override["_id"]}), override)
+        deactivate_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                         "W1", "W2", only_op=DELETE, expected_write_id=override["write_id"])
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"))
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        self.assertEqual(self.run_link()["version_edges"], 0)
+
+    def test_ignoring_one_delete_does_not_ignore_the_reverse_delete(self):
+        self._confident_pair()
+        override = record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                                "W1", "W2", DELETE)
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W2", "W1", DELETE)
+        self.assertEqual(version_link.reconcile_version_pair(
+            self.graph, self.db, ("W1", "W2"), ignore_delete_id=override["_id"]),
+            ("no_edge_deleted", 0, 0))
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(review.count(self.db), 0)
+
+    def test_ignoring_a_link_id_does_not_remove_its_manual_direction(self):
+        self._confident_pair()
+        override = record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication",
+                                                "W1", "W2", LINK)
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"), ignore_delete_id=override["_id"])
+        self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
+
+    def test_undo_snapshot_without_candidate_cannot_resurrect_auto_confirmation(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        previous = {("W1", "W2"): {"bucket": "STRONG_FUZZY", "status": "same",
+                                      "confirmation_source": "auto", "confirmation_policy": "rules-v1"}}
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"), previous=previous)
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(review.count(self.db), 0)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"), previous=previous)
+        (props,) = versions(self.graph).values()
+        self.assertEqual((props["status"], props["confirmation_source"]), ("same", "review"))
+        self.assertNotIn("confirmation_policy", props)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"), previous=previous)
+        self.assertEqual(versions(self.graph), {})
+
+    def test_legacy_record_question_restores_only_manual_existence_from_snapshot(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        previous = {("W1", "W2"): {"bucket": "STRONG_FUZZY", "status": "same",
+                                      "confirmation_source": "auto", "confirmation_policy": "rules-v1"}}
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W1", "W2", LINK)
+        version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2"),
+                                            previous=previous, record_question=True)
+        (props,) = versions(self.graph).values()
+        self.assertEqual(set(versions(self.graph)), {("W1", "W2")})
+        self.assertFalse({"status", "confirmation_source", "confirmation_policy"} & props.keys())
+        self.assertEqual(self.run_link()["version_edges"], 0)
+
+    def test_withdrawal_after_final_fresh_snapshot_keeps_the_question_for_durable_repair(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = {
+            "bucket": "STRONG_FUZZY", "status": "same", "confirmation_source": "review"}
+        review.record_held(self.db, [{
+            "status": "held", "entity": "publication", "bucket": "STRONG_FUZZY",
+            "record_a": "W1", "record_b": "W2"}])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        sync = version_link._sync_version_questions
+
+        def withdraw_after_final_fresh(*args, **kwargs):
+            snapshot = kwargs["snapshot"]
+            self.assertEqual(snapshot[0]["verdict"], review.SAME)
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+            return sync(*args, **kwargs)
+
+        with patch.object(version_link, "_sync_version_questions", side_effect=withdraw_after_final_fresh):
+            result = self.run_link()
+        self.assertEqual(result["version_questions_retired"], 0)
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["version_repair"]["mode"], "reopen")
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        (props,) = versions(self.graph).values()
+        self.assertEqual(props["status"], "held")
+        self.assertNotIn("confirmation_source", props)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        after = self.db[review.COLLECTION].find_one({"_id": question["_id"]})
+        self.assertEqual(after["withdrawn_at"], question["withdrawn_at"])
+        self.assertEqual(after["version_repair"], question["version_repair"])
+
+    def test_same_millisecond_aba_after_final_snapshot_recovers_a_removed_edge(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        report = {"status": "held", "entity": "publication", "bucket": "STRONG_FUZZY",
+                  "record_a": "W1", "record_b": "W2"}
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = {
+            "bucket": "STRONG_FUZZY", "status": "held"}
+        sync = version_link._sync_version_questions
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
+
+        def aba_after_final_fresh(*args, **kwargs):
+            self.assertNotIn("verdict", kwargs["snapshot"][0])
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+            return sync(*args, **kwargs)
+
+        with patch.object(review, "_now", return_value=moment):
+            review.record_held(self.db, [report])
+            with patch.object(version_link, "_sync_version_questions", side_effect=aba_after_final_fresh):
+                self.assertEqual(self.run_link()["version_questions_retired"], 0)
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        self.assertEqual(next(iter(versions(self.graph).values()))["status"], "held")
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_skipped_alias_source_survives_scoped_refresh_without_canonical_duplicate(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"].update(abstract=None, merged_ids=["W9"])
+        report = {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+                  "record_a": "W1", "record_b": "W9"}
+        review.record_held(self.db, [report, {**report, "record_b": "W2"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:original")
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W9"]})
+        run_version_pair(self.config, self.db, ("W1", "W2"), reopen=False)
+        (remaining,) = self.db[review.COLLECTION].find()
+        for field in ("_id", "members", "skipped_at", "skipped_by"):
+            self.assertEqual(remaining[field], source[field])
+        self.assertEqual(review.count(self.db, aliases={"W9": "W2"}, answered=False, skipped=False), 0)
+        self.assertEqual(review.count(self.db, aliases={"W9": "W2"}, answered=False, skipped=True), 1)
+        self.assertEqual(self.run_link()["version_edges"], 0)
+        self.assertEqual(self.db[review.COLLECTION].count_documents({}), 1)
+
+    def test_newer_canonical_answer_and_reopen_override_old_alias_skip(self):
+        self._confident_pair()
+        self.graph.nodes["Publication"]["W2"].update(abstract=None, merged_ids=["W9"])
+        report = {"status": "held", "entity": "publication", "bucket": "MISSED_BY_NORM",
+                  "record_a": "W1", "record_b": "W9"}
+        review.record_held(self.db, [report])
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 1, tzinfo=UTC)):
+            review.skip(self.db, review.PUB_VERSION, ["W1", "W9"], actor="user:older")
+        source = self.db[review.COLLECTION].find_one({"members": ["W1", "W9"]})
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 2, tzinfo=UTC)):
+            review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        self.run_link()
+        with patch.object(review, "_now", return_value=datetime(2026, 1, 3, tzinfo=UTC)):
+            review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        run_version_pair(self.config, self.db, ("W1", "W9"))
+        self.assertEqual(review.count(self.db, aliases={"W9": "W2"}, answered=False, skipped=False), 1)
+        self.assertEqual(review.count(self.db, aliases={"W9": "W2"}, answered=False, skipped=True), 0)
+        self.assertEqual(self.db[review.COLLECTION].find_one({"_id": source["_id"]}), source)
+        self.assertEqual(next(iter(versions(self.graph).values()))["status"], "held")
+
+    def test_claim_only_pair_creates_bare_unconfirmed_edge_without_a_snapshot(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W1", "W2", LINK)
+        self.assertEqual(self.run_link()["version_edges"], 1)
+        self.assertEqual(versions(self.graph), {("W1", "W2"): {}})
+        self.assertEqual(review.count(self.db), 0)
+        self.assertEqual(self.run_link()["version_edges"], 0)
+
+    def test_claim_only_restore_still_obeys_human_different_and_reverse_delete(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W1", "W2", LINK)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W2", "W1", DELETE)
+        self.run_link()
+        self.assertEqual(versions(self.graph), {})
+
+    def test_current_pair_job_does_not_implicitly_reopen_obsolete_edges(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = {
+            "bucket": "STRONG_FUZZY", "status": "held"}
+        review.record_held(self.db, [{"status": "held", "entity": "publication", "bucket": "STRONG_FUZZY",
+                                      "record_a": "W1", "record_b": "W2"}])
+        result = run_version_pair(self.config, self.db, ("W1", "W2"), reopen=False)
+        self.assertEqual(result["version_edges_removed"], 1)
+        self.assertEqual(versions(self.graph), {})
+        self.assertEqual(review.count(self.db), 0)
+
+    def test_reopen_does_not_force_an_existing_diagnostic_or_bare_claim_held(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        for properties in ({"bucket": "COVER", "status": "same"}, {}):
+            with self.subTest(properties=properties):
+                self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = properties
+                record_relationship_override(self.db, "Publication", "IS_VERSION", "Publication", "W1", "W2", LINK)
+                run_version_pair(self.config, self.db, ("W1", "W2"))
+                (props,) = versions(self.graph).values()
+                self.assertNotIn("status", props)
+                self.assertEqual(review.count(self.db), 0)
+
+    def test_reopen_reactivates_an_unasked_source_only_when_the_edge_is_genuinely_held(self):
+        pub(self.graph, "W1", "Graphene", doi="10.1/a")
+        pub(self.graph, "W2", "Spiders", doi="10.1/b")
+        self.graph.edges["Publication", "IS_VERSION", "Publication", "W1", "W2"] = {
+            "bucket": "STRONG_FUZZY", "status": "same", "confirmation_source": "review"}
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        (before,) = review.version_snapshot(self.db)
+        self.assertIn(review.VERSION_RETIRED, before)
+        run_version_pair(self.config, self.db, ("W1", "W2"))
+        (after,) = review.questions(self.db, answered=False)
+        self.assertEqual(after["_id"], before["_id"])
+        self.assertNotIn(review.VERSION_RETIRED, after)
+        self.assertEqual(after["evidence"]["bucket"], "STRONG_FUZZY")
+        self.assertEqual(after["withdrawn_at"], before["withdrawn_at"])
+        self.assertEqual(next(iter(versions(self.graph).values()))["status"], "held")
+
+    def test_missing_endpoint_soft_retires_pending_withdrawal_without_losing_history(self):
+        self._confident_pair()
+        review.record_held(self.db, version_link.find_version_candidates(self.graph))
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.SAME)
+        review.withdraw(self.db, review.PUB_VERSION, ["W1", "W2"])
+        (before,) = review.version_snapshot(self.db)
+        del self.graph.nodes["Publication"]["W1"]
+        self.assertEqual(version_link.reconcile_version_pair(self.graph, self.db, ("W1", "W2")),
+                         ("version_missing", 0, 0))
+        (after,) = review.version_snapshot(self.db)
+        self.assertIn(review.VERSION_RETIRED, after)
+        for field in ("withdrawn_at", "withdrawn_answer", "version_repair"):
+            self.assertEqual(after[field], before[field])
+        self.assertEqual(review.count(self.db), 0)
 
     def test_even_routed_medium_candidates_require_a_human(self):
         self._confident_pair()

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FILTER_CONFIG } from "../src/core/config";
 import type { GraphData } from "../src/contracts/graph";
+import { t } from "../src/core/i18n";
 import { mountFilters, mountHiddenAuthorReveal } from "../src/features/filters";
 import { Store, type AppState } from "../src/core/state";
 
@@ -258,6 +259,128 @@ describe("mountFilters", () => {
     });
   });
 
+  it("synchronizes programmatic checkboxes and sliders without replacing their DOM", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      const unmount = mountFilters(store);
+      const controls = [...container.querySelectorAll("input")];
+      store.set({ filters: {
+        ...store.get().filters,
+        minCoauth: 8,
+        showNoDeptAuthors: false,
+        showExternalAuthors: true,
+        showIsolatedAuthors: false,
+        showRegions: { 1: true, 2: false, 3: false },
+      } });
+
+      expect([...container.querySelectorAll("input")]).toEqual(controls);
+      expect(checkboxByLabel("Показывать без департамента")?.checked).toBe(false);
+      expect(checkboxByLabel("Показывать внешних авторов")?.checked).toBe(true);
+      expect(checkboxByLabel(t("filter.showIsolated", "ru"))?.checked).toBe(false);
+      expect(checkboxByLabel("Регионы департаментов")?.checked).toBe(true);
+      expect(container.querySelectorAll<HTMLInputElement>("input[type='range']")[1]?.value).toBe("8");
+      expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("8");
+      unmount();
+    });
+  });
+
+  it("preserves focused slider DOM, drag value and pending debounce across notifications and other filter changes", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      const unmount = mountFilters(store);
+      const inputs = [...container.querySelectorAll<HTMLInputElement>("input[type='range']")];
+      const input = inputs[1];
+      if (!input) throw new Error("the coauthorship slider must be present");
+      input.focus();
+      input.value = "7";
+      input.dispatchEvent(new Event("input"));
+      vi.advanceTimersByTime(100);
+      store.notify();
+      store.set({ theme: "light", selection: { kind: "node", key: "A1" } });
+      store.set({ filters: { ...store.get().filters, regionMinNodes: 25, showExternalAuthors: true } });
+
+      expect([...container.querySelectorAll("input[type='range']")]).toEqual(inputs);
+      expect(document.activeElement).toBe(input);
+      expect(input.value).toBe("7");
+      expect(input.dataset.tilt).toBe("right");
+      expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("7");
+      expect(inputs[3]?.value).toBe("25");
+      expect(container.querySelectorAll(".filter-row__value")[3]?.textContent).toBe("25");
+      expect(checkboxByLabel("Показывать внешних авторов")?.checked).toBe(true);
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 101);
+      expect(store.get().filters.minCoauth).toBe(1);
+      vi.advanceTimersByTime(1);
+      expect(store.get().filters.minCoauth).toBe(7);
+      unmount();
+    });
+  });
+
+  it("lets an external update of the pending field win over the old debounce", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      const unmount = mountFilters(store);
+      const input = container.querySelectorAll<HTMLInputElement>("input[type='range']")[1];
+      if (!input) throw new Error("the coauthorship slider must be present");
+      input.focus();
+      input.value = "7";
+      input.dispatchEvent(new Event("input"));
+      vi.advanceTimersByTime(100);
+      store.set({ filters: { ...store.get().filters, minCoauth: 3 } });
+      expect(document.activeElement).toBe(input);
+      expect(input.value).toBe("3");
+      expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("3");
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
+      expect(store.get().filters.minCoauth).toBe(3);
+      expect(vi.getTimerCount()).toBe(0);
+      unmount();
+    });
+  });
+
+  it.each([{ tab: 3 as const }, { lang: "en" as const }])(
+    "cancels shared and tab-specific pending sliders when rebuilding for %j",
+    (patch) => {
+      withContainer(() => {
+        const store = new Store<AppState>(initialState());
+        const unmount = mountFilters(store);
+        const inputs = container.querySelectorAll<HTMLInputElement>("input[type='range']");
+        const edge = inputs[0];
+        const coauth = inputs[1];
+        if (!edge || !coauth) throw new Error("the initial sliders must be present");
+        edge.value = "0.1";
+        coauth.value = "7";
+        edge.dispatchEvent(new Event("input"));
+        coauth.dispatchEvent(new Event("input"));
+        expect(vi.getTimerCount()).toBe(2);
+        store.set(patch);
+        expect(container.querySelector("input[type='range']")).not.toBe(edge);
+        expect(vi.getTimerCount()).toBe(0);
+        edge.dispatchEvent(new Event("input"));
+        coauth.dispatchEvent(new Event("input"));
+        vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
+        expect(store.get().filters).toMatchObject({ edgeZoomThreshold: 0.2, minCoauth: 1 });
+        unmount();
+      });
+    },
+  );
+
+  it("cancels slider timers and subscriptions on unmount", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      const unmount = mountFilters(store);
+      const input = container.querySelector<HTMLInputElement>("input[type='range']");
+      if (!input) throw new Error("the shared slider must be present");
+      input.value = "0.1";
+      input.dispatchEvent(new Event("input"));
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      store.set({ tab: 3, lang: "en" });
+      expect(container.querySelector("input[type='range']")).toBe(input);
+      input.dispatchEvent(new Event("input"));
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
+      expect(store.get().filters.edgeZoomThreshold).toBe(0.2);
+    });
+  });
+
   it("region sliders write regionZoomThreshold and regionMinNodes, the edge zoom range does not overlap the region range", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
@@ -347,6 +470,47 @@ describe("mountHiddenAuthorReveal", () => {
 
     expect(store.get().filters.showExternalAuthors).toBe(true);
     expect(store.get().filters.showIsolatedAuthors).toBe(false);
+  });
+
+  it.each([
+    ["E1", "showExternalAuthors"],
+    ["A3", "showIsolatedAuthors"],
+  ] as const)("does not undo an explicit filter change for selected %s", (key, field) => {
+    const store = new Store<AppState>(hiddenByDefault());
+    const unmount = mountHiddenAuthorReveal(store, data);
+    store.set({ selection: { kind: "node", key } });
+    expect(store.get().filters[field]).toBe(true);
+    store.set({ filters: { ...store.get().filters, [field]: false } });
+    store.notify();
+    store.set({ lang: "en", theme: "light" });
+    store.set({ filters: { ...store.get().filters, minCoauth: 2 } });
+    expect(store.get().filters[field]).toBe(false);
+
+    store.set({ selection: { kind: "node", key } });
+    expect(store.get().filters[field]).toBe(true);
+    unmount();
+  });
+
+  it("reveals on a screen/tab navigation transition even if the node selection is retained", () => {
+    const selection = { kind: "node", key: "E1" } as const;
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, data);
+    store.set({ screen: "menu", selection });
+    store.set({ filters: { ...store.get().filters, showExternalAuthors: false } });
+    store.set({ screen: "app" });
+    expect(store.get().filters.showExternalAuthors).toBe(true);
+    store.set({ filters: { ...store.get().filters, showExternalAuthors: false } });
+    store.set({ tab: 2 });
+    store.set({ tab: 1 });
+    expect(store.get().filters.showExternalAuthors).toBe(true);
+  });
+
+  it("never reveals hidden authors for edges", () => {
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, data);
+    store.set({ selection: { kind: "edge", s: "A1", t: "E1", w: 1 } });
+    store.notify();
+    expect(store.get().filters).toMatchObject({ showExternalAuthors: false, showIsolatedAuthors: false });
   });
 
   it("selecting a regular ITMO author leaves the filters untouched", () => {

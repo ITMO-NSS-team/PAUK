@@ -166,6 +166,21 @@ mirroring the generator) then `core` (the `Store` state, config, i18n, data
 loading) then `map` (graph population, department regions) then `features`
 (tabs, panel, filters, search, selection) then `app` (entry point).
 
+Initial navigation reads the URL after graph data and selection/reveal
+subscriptions are ready, before the first history replacement. Direct links
+and refresh therefore restore the same tab/selection as Back/Forward;
+detail files enrich the selected card later without changing navigation.
+Empty or unknown tabs retain the menu default. Publication-edge links use
+the combined version/shared-author pair index, including reversed endpoints.
+Tab lookup is an own-key Map: prototype-like slugs such as `constructor` or
+`__proto__` are unknown and open the menu. Filter controls keep their DOM across
+ordinary state notifications; incoming values update checked/value labels
+without discarding an unrelated pending slider edit. Rebuild/unmount cancels
+old debounces. Hidden-author reveal reacts to node-selection/navigation changes,
+not explicit filter toggles, so the first checkbox click can hide the selected
+author and the existing graph logic clears that selection. Edge reveal behavior
+is unchanged.
+
 There are three tabs (Authors, Publications, Repositories) plus a global
 search across all kinds. There is no database health tab on the site: the
 graph checks (`pauk/admin/checks.py`, run and statistics in

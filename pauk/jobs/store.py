@@ -18,6 +18,7 @@ from pauk.jobs.models import (
     Job,
     JobKind,
     JobState,
+    VersionRepairRef,
     aware,
     now,
     parse_payload,
@@ -74,6 +75,20 @@ def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
     db[COLLECTION].insert_one(document)
     logger.info("job %s queued: %s by %s", document["_id"], kind, actor)
     return _as_job(document)
+
+
+def has_live_version_repair(db: Database, repair: VersionRepairRef) -> bool:
+    """Whether this intent generation already has a queued or active attempt.
+
+    Dispatchers may race between this read and enqueue. Duplicate deliveries
+    are safe because the runner checks the source token under the graph lock.
+    """
+    query = {
+        "kind": str(JobKind.VERSIONS),
+        "state": {"$in": [str(JobState.QUEUED), str(JobState.CLAIMED), str(JobState.RUNNING)]},
+        **{f"payload.repair.{name}": value for name, value in repair.model_dump().items()},
+    }
+    return db[COLLECTION].find_one(query, {"_id": 1}) is not None
 
 
 def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None:

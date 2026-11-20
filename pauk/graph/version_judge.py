@@ -20,7 +20,9 @@ the copy before trusting it.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
+from pauk.pair_rows import latest_pair_rows
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore, review
 
@@ -88,7 +90,10 @@ def _pair_key(a_id: str, b_id: str) -> str:
 
 def stored_verdicts(db, aliases: dict[str, str] | None = None,
                     scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
-    """Every verdict an earlier run paid for, keyed as `VersionJudge` looks it up.
+    """The newest successful verdict for each alias-resolved pair.
+
+    Timestamp-free legacy collisions prefer current IDs, then a stable ID tie-breaker;
+    neither fallback claims to recover the original order of those calls.
 
     Args:
         aliases: Merged-away id to the id that survived, as for
@@ -96,14 +101,9 @@ def stored_verdicts(db, aliases: dict[str, str] | None = None,
             verdicts under the survivor, or the pair would be asked (and paid
             for) again.
     """
-    aliases = aliases or {}
-    found: dict[frozenset[str], dict] = {}
     query = review.version_pair_filter(scope) if scope is not None else {}
-    for row in db[VERDICTS_COLLECTION].find(query).sort("_id", 1):
-        members = frozenset(aliases.get(member, member) for member in row["members"])
-        if len(members) == 2:
-            found[members] = {"same_work": row["same_work"], "reason": row.get("reason")}
-    return found
+    rows = latest_pair_rows(db[VERDICTS_COLLECTION].find(query), aliases, timestamp_field="judged_at")
+    return {pair: {"same_work": row["same_work"], "reason": row.get("reason")} for pair, row in rows.items()}
 
 
 def parse_verdict(result: dict) -> dict:
@@ -177,6 +177,7 @@ class VersionJudge:
         if self.store is not None:
             self.store[VERDICTS_COLLECTION].replace_one(
                 {"_id": _pair_key(a["id"], b["id"])},
-                {"members": sorted((a["id"], b["id"])), **verdict, "model": self.client.model},
+                {"members": sorted((a["id"], b["id"])), **verdict,
+                 "model": self.client.model, "judged_at": datetime.now(UTC)},
                 upsert=True)
         return verdict

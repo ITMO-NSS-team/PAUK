@@ -57,6 +57,18 @@ describe("parseUrlState", () => {
     expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // numeric tab ids are not recognized
   });
 
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty", "unknown"])(
+    "treats %s as an unknown tab even with a valid node or edge selection",
+    async (tab) => {
+      const data = await loadSampleGraphData();
+      for (const selection of ["", "&sel=node&key=A1", "&sel=edge&s=A1&t=A2"]) {
+        expect(parseUrlState(`?tab=${tab}${selection}`, data)).toEqual({
+          screen: "menu", tab: 1, selection: null,
+        });
+      }
+    },
+  );
+
   it("restores the node selection by a key that really exists in data", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];

@@ -21,10 +21,11 @@ import json
 import logging
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date
 from difflib import SequenceMatcher
 from functools import lru_cache
+from html import unescape
 from itertools import combinations
 from pathlib import Path
 
@@ -67,7 +68,46 @@ MERGE_BUCKETS = frozenset({
 AUTO_CONFIRM_BUCKETS = frozenset({
     "MISSED_BY_NORM", "DOI_SIBLING", "PREPRINT_PUBLISHED", "RU_EN_TRANSLATION", "STRONG_FUZZY",
 })
-AUTO_CONFIRM_POLICY = "rules-v1"
+AUTO_CONFIRM_POLICY = "rules-v3"
+
+# Engineering safeguards, not empirically measured precision guarantees.
+_ABSTRACT_MIN_CHARS = 160
+_ABSTRACT_MIN_WORDS = 24
+_ABSTRACT_MIN_DISTINCT_WORDS = 16
+_ABSTRACT_MIN_DIVERSITY = 0.50
+_ABSTRACT_MAX_WORD_SHARE = 0.15
+_ABSTRACT_MAX_REPEATED_TRIGRAM_SHARE = 0.25
+_ABSTRACT_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+_ABSTRACT_INLINE_HTML = re.compile(r"</?(?:(?:jats|ce):)?(?:b|i|em|strong|span|italic|bold)\b[^>]*>", re.I)
+_ABSTRACT_BLOCK_HTML = re.compile(r"</?(?:(?:jats|ce):)?(?:p|div|br|section|sec)\b[^>]*>", re.I)
+_ABSTRACT_PLACEHOLDER = re.compile(
+    r"\b(?:no abstract(?: is)? (?:available|provided|found)|"
+    r"abstract(?: is)? (?:not available|unavailable)|this (?:article|paper) has no abstract)\b[.!;]?", re.I,
+)
+_ABSTRACT_BOILERPLATE = tuple(re.compile(pattern, re.I) for pattern in (
+    r"(?:copyright\s*)?©\s*\d{4}\s*(?:(?:the\s+)?authors?(?:\(s\))?|"
+    r"elsevier(?:\s+(?:b\.\s*v\.|ltd\.))?|springer(?: nature)?)[.]?",
+    r"©\s*(?:the\s+)?authors?(?:\(s\))?\s*\d{4}[.]?",
+    r"\ball rights reserved[.]?",
+    r"\bthis (?:article|work) is licensed under (?:a|the) creative commons attribution"
+    r"(?: \d\.\d)?(?: international)? licen[cs]e"
+    r"(?:, which permits use, sharing, adaptation, distribution and reproduction in any medium or format, "
+    r"as long as you give appropriate credit to the original author\(s\) and the source, "
+    r"provide a link to the creative commons licen[cs]e, and indicate if changes were made)?[.]?",
+    r"\bthe images or other third party material in this article are included in the article['’]s "
+    r"creative commons licen[cs]e, unless indicated otherwise in a credit line to the material[.]?",
+    r"\bif material is not included in the article['’]s creative commons licen[cs]e and your intended use "
+    r"is not permitted by statutory regulation or exceeds the permitted use, you will need to obtain "
+    r"permission directly from the copyright holder[.]?",
+    r"\bto view a copy of this licen[cs]e, visit https?://creativecommons\.org/licenses/by/[\d.]+/?[.]?",
+    r"\bspringer nature remains neutral with regard to jurisdictional claims in published maps "
+    r"and institutional affiliations[.]?",
+    r"\bthis is an open access article (?:distributed )?under the (?:terms of the )?"
+    r"(?:creative commons attribution license|cc by license)"
+    r"(?: \(https?://creativecommons\.org/licenses/by/[\d.]+/?\))?"
+    r"(?:, which permits unrestricted use, distribution, and reproduction in any medium, "
+    r"provided the original author and source are credited)?[.]?",
+))
 
 # Repository/preprint hosts, matched against either the DOI or the venue
 # name. Order does not matter - a work never carries two of these.
@@ -183,6 +223,7 @@ _NON_PAPER_TYPES = frozenset({"software", "dataset", "peer-review", "grant", "ot
 # conferences by their name: "Journal of Physics: Conference Series",
 # IFAC-PapersOnLine, LNCS, Procedia, MEDINFO's "Studies in Health Technology
 # and Informatics", or an IEEE event named after its year.
+_CONFERENCE_PUBLICATION_TYPES = frozenset({"conference-paper", "proceedings-article"})
 _CONFERENCE_VENUE = re.compile(
     r"conference|proceedings|symposium|workshop|congress|colloquium|\bconf\b|\bproc\.|"
     r"papersonline|lecture notes in|procedia|advances in intelligent systems|"
@@ -237,6 +278,64 @@ def _shingles(text: str | None, n: int = 3) -> frozenset[str]:
     return frozenset(" ".join(words[i:i + n]) for i in range(len(words) - n + 1))
 
 
+@lru_cache(maxsize=_TEXT_CACHE_SIZE)
+def _abstract_evidence_text(abstract: str | None) -> tuple[str, str]:
+    """Normalize one abstract without erasing scientific content, then qualify it.
+
+    Only presentational HTML is stripped: case, sub/superscripts, punctuation,
+    digits, units, negations and word order are not title-folded away. NFC avoids
+    compatibility normalization that flattens exponents into ordinary digits.
+    Only legal/placeholder recognition and quality counting ignore case; known
+    boilerplate cannot contribute to the quality floors or text identity.
+    """
+    if not abstract or not abstract.strip():
+        return "", "missing"
+    text = unicodedata.normalize("NFC", unescape(abstract))
+    text = _ABSTRACT_BLOCK_HTML.sub(" ", _ABSTRACT_INLINE_HTML.sub("", text))
+    text = " ".join(text.split())
+    text = _ABSTRACT_PLACEHOLDER.sub(" ", text)
+    for pattern in _ABSTRACT_BOILERPLATE:
+        text = pattern.sub(" ", text)
+    text = " ".join(unicodedata.normalize("NFC", text).split())
+    if not text:
+        return "", "boilerplate_or_placeholder"
+    if len(text) < _ABSTRACT_MIN_CHARS:
+        return text, "too_short"
+    words = [word.casefold() for word in _ABSTRACT_WORD.findall(text) if any(char.isalpha() for char in word)]
+    if len(words) < _ABSTRACT_MIN_WORDS:
+        return text, "too_few_words"
+    counts = Counter(words)
+    if len(counts) < _ABSTRACT_MIN_DISTINCT_WORDS:
+        return text, "too_few_distinct_words"
+    if len(counts) / len(words) < _ABSTRACT_MIN_DIVERSITY:
+        return text, "low_lexical_diversity"
+    if max(counts.values()) / len(words) > _ABSTRACT_MAX_WORD_SHARE:
+        return text, "repeated_word_padding"
+    trigrams = Counter(zip(words, words[1:], words[2:], strict=False))
+    repeated_share = sum(count for count in trigrams.values() if count > 1) / (len(words) - 2)
+    if repeated_share > _ABSTRACT_MAX_REPEATED_TRIGRAM_SHARE:
+        return text, "repeated_phrase_padding"
+    return text, "substantive"
+
+
+def abstract_version_evidence(a: dict, b: dict) -> dict[str, str]:
+    """Shared report/acceptance evidence; unknown or mismatch only means hold.
+
+    Each side must independently pass the quality floors before equality can
+    count. The cached per-text result is reused across pairs and policy checks.
+    """
+    text_a, quality_a = _abstract_evidence_text(a.get("abstract"))
+    text_b, quality_b = _abstract_evidence_text(b.get("abstract"))
+    if quality_a != "substantive" or quality_b != "substantive":
+        outcome = "unknown"
+        reason = f"a:{quality_a};b:{quality_b}"
+    elif text_a == text_b:
+        outcome, reason = "match", "equal_substantive_text"
+    else:
+        outcome, reason = "mismatch", "different_substantive_text"
+    return {"abstract_evidence": outcome, "abstract_evidence_reason": reason}
+
+
 def _title_similarity(folded_a: str, folded_b: str, token_jaccard: float, floor: float = 0.0) -> float:
     """max(token Jaccard, SequenceMatcher ratio): the first catches reordered
     words, the second point edits (a hyphen, an ending).
@@ -266,7 +365,7 @@ def _arxiv_id(row: dict) -> str | None:
 def _is_preprint(row: dict) -> bool:
     return (bool(_PREPRINT_DOI.match(_norm_doi(row.get("doi")) or ""))
             or bool(_PREPRINT_VENUE.search(row.get("journal") or ""))
-            or (row.get("type") or "").lower() == "preprint")
+            or (row.get("type") or "").strip().lower() == "preprint")
 
 
 def _has_cyrillic(row: dict) -> bool:
@@ -388,12 +487,21 @@ def _cover_of(a: dict, b: dict) -> tuple[dict, dict] | None:
 
 
 def _venue_kind(row: dict) -> str | None:
-    """"conference", "journal" or None (a repository, a book, nothing known)."""
+    """Return "conference", "journal" or None with explicit evidence precedence.
+
+    Repositories/preprints are not publication venues. Publication types
+    ``conference-paper`` and its supported alias ``proceedings-article``, explicit
+    conference venues and proceedings names outrank a conflicting journal type.
+    Explicit journals then outrank the name-only fallback; other venue types do
+    not become journals merely because they have a name.
+    """
     name = row.get("journal") or ""
-    venue_type = (row.get("venue_type") or "").lower()
-    if venue_type == "repository" or _PREPRINT_VENUE.search(name):
+    venue_type = (row.get("venue_type") or "").strip().lower()
+    publication_type = (row.get("type") or "").strip().lower()
+    if venue_type in {"repository", "preprint"} or _is_preprint(row):
         return None
-    if venue_type == "conference" or _CONFERENCE_VENUE.search(name):
+    if publication_type in _CONFERENCE_PUBLICATION_TYPES \
+            or venue_type == "conference" or _CONFERENCE_VENUE.search(name):
         return "conference"
     if venue_type == "journal" or (not venue_type and name):
         return "journal"
@@ -422,9 +530,14 @@ def can_auto_confirm_version(a: dict, b: dict, bucket: str) -> bool:
     """Apply conservative acceptance guards to an already classified version pair.
 
     Every MEDIUM_FUZZY subtype still needs a human, even with an LLM verdict.
-    Missing dates are not evidence of a short publication gap.
+    Missing dates or independently substantive, matching abstracts are not
+    inferred from titles. Reused content at two conferences still needs review.
     """
     if bucket not in AUTO_CONFIRM_BUCKETS:
+        return False
+    if _venue_kind(a) == _venue_kind(b) == "conference":
+        return False
+    if abstract_version_evidence(a, b)["abstract_evidence"] != "match":
         return False
     shared_authors, author_jaccard = _author_overlap(a, b)
     if bucket == "DOI_SIBLING":
@@ -451,6 +564,7 @@ def _signals(a: dict, b: dict, **extra) -> dict:
         "venue_a": a.get("journal"), "venue_b": b.get("journal"),
         "type_a": a.get("type"), "type_b": b.get("type"),
         "venue_kind_a": _venue_kind(a), "venue_kind_b": _venue_kind(b),
+        **abstract_version_evidence(a, b),
         **extra,
     }
 
@@ -537,26 +651,26 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     abstract_sim = _jaccard(_shingles(abstract_a), _shingles(abstract_b)) if (abstract_a and abstract_b) else None
     split = _is_preprint(a) != _is_preprint(b)
 
-    signals = _signals(
+    if split and title_sim >= 0.80 and shared_authors and (gap is None or gap <= 365 * 3):
+        bucket = "PREPRINT_PUBLISHED"
+    elif _has_cyrillic(a) != _has_cyrillic(b) and title_sim >= 0.75 \
+            and (shared_authors or (abstract_sim is not None and abstract_sim >= 0.4)):
+        bucket = "RU_EN_TRANSLATION"
+    elif title_sim >= 0.90 and (author_jaccard >= 0.30 or len(shared_authors) >= 2) \
+            and (gap is None or gap <= 1100):
+        bucket = "STRONG_FUZZY"
+    elif title_sim >= 0.78 and (author_jaccard >= 0.50 or (abstract_sim is not None and abstract_sim >= 0.45)) \
+            and (gap is None or gap <= 365 * 4):
+        bucket = MEDIUM_FUZZY
+    else:
+        return None
+    return bucket, _signals(
         a, b, title_sim=round(title_sim, 3), token_jaccard=round(token_jaccard, 3),
         author_jaccard=round(author_jaccard, 3), shared_authors=len(shared_authors),
         date_gap_days=gap, preprint_split=split,
         abstract_sim=round(abstract_sim, 3) if abstract_sim is not None else None,
         doi_a=doi_a, doi_b=doi_b,
     )
-
-    if split and title_sim >= 0.80 and shared_authors and (gap is None or gap <= 365 * 3):
-        return "PREPRINT_PUBLISHED", signals
-    if _has_cyrillic(a) != _has_cyrillic(b) and title_sim >= 0.75 \
-            and (shared_authors or (abstract_sim is not None and abstract_sim >= 0.4)):
-        return "RU_EN_TRANSLATION", signals
-    if title_sim >= 0.90 and (author_jaccard >= 0.30 or len(shared_authors) >= 2) \
-            and (gap is None or gap <= 1100):
-        return "STRONG_FUZZY", signals
-    if title_sim >= 0.78 and (author_jaccard >= 0.50 or (abstract_sim is not None and abstract_sim >= 0.45)) \
-            and (gap is None or gap <= 365 * 4):
-        return MEDIUM_FUZZY, signals
-    return None
 
 
 def route_medium_fuzzy(a: dict, b: dict, signals: dict, judge=None) -> str:

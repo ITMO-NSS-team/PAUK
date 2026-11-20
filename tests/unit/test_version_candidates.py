@@ -3,11 +3,20 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 from pauk.graph.version_candidates import (
+    _ABSTRACT_MAX_REPEATED_TRIGRAM_SHARE,
+    _ABSTRACT_MAX_WORD_SHARE,
+    _ABSTRACT_MIN_CHARS,
+    _ABSTRACT_MIN_DISTINCT_WORDS,
+    _ABSTRACT_MIN_DIVERSITY,
+    _ABSTRACT_MIN_WORDS,
     AUTO_CONFIRM_BUCKETS,
+    AUTO_CONFIRM_POLICY,
     MERGE_BUCKETS,
+    _abstract_evidence_text,
     _candidate_pairs,
     _is_preprint,
     _venue_kind,
+    abstract_version_evidence,
     can_auto_confirm_version,
     classify_pair,
     find_version_candidates,
@@ -357,11 +366,44 @@ class ClassifyPairTest(unittest.TestCase):
         self.assertIsNone(result)
 
 
+_RETINAL_ABSTRACT = (
+    "We evaluate retinal image segmentation using a neural network trained on 240 annotated scans. "
+    "Independent validation measures lesion boundaries, sensitivity, and calibration across three clinical cohorts. "
+    "The proposed method reduces false positives without removing small vessels and remains stable under changes "
+    "in illumination."
+)
+_BRAIN_ABSTRACT = (
+    "We investigate brain tumor classification from magnetic resonance images acquired in 180 patients. "
+    "A convolutional model distinguishes glioma grades using volumetric texture features and regional tissue contrast. "
+    "External evaluation estimates diagnostic accuracy, uncertainty, and robustness against scanner variation "
+    "without analyzing retinal vessels."
+)
+_LEGAL_BOILERPLATE = (
+    "© 2024 The Author(s). All rights reserved. This is an open access article distributed under the terms of the "
+    "Creative Commons Attribution License, which permits unrestricted use, distribution, and reproduction in any "
+    "medium, provided the original author and source are credited."
+)
+
+
+_CC_BY_BOILERPLATE = (
+    "© The Author(s) 2024. This article is licensed under a Creative Commons Attribution 4.0 International License, "
+    "which permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you "
+    "give appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence, "
+    "and indicate if changes were made. The images or other third party material in this article are included in the "
+    "article's Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is "
+    "not included in the article's Creative Commons licence and your intended use is not permitted by statutory "
+    "regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder. "
+    "To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/. "
+    "Springer Nature remains neutral with regard to jurisdictional claims in published maps and institutional affiliations."
+)
+
+
 class AutoConfirmationPolicyTest(unittest.TestCase):
     def setUp(self):
         self.a = pub("W1", "Robust neural network classification method",
-                     doi="10.1/a", pdate="2024-01-01", authors=["A1", "A2"])
-        self.b = pub("W2", self.a["title"], doi="10.1/b", pdate="2024-06-01", authors=["A1", "A2"])
+                     doi="10.1/a", pdate="2024-01-01", authors=["A1", "A2"], abstract=_RETINAL_ABSTRACT)
+        self.b = pub("W2", self.a["title"], doi="10.1/b", pdate="2024-06-01", authors=["A1", "A2"],
+                     abstract=_RETINAL_ABSTRACT)
 
     def test_whitelist_is_explicit_and_requires_version_candidates(self):
         self.assertEqual(AUTO_CONFIRM_BUCKETS, {
@@ -417,6 +459,302 @@ class AutoConfirmationPolicyTest(unittest.TestCase):
                 "pauk.graph.version_candidates._title_similarity", return_value=similarity,
             ):
                 self.assertEqual(can_auto_confirm_version(self.a, self.b, "RU_EN_TRANSLATION"), similarity >= 0.9)
+
+
+class AbstractVersionEvidenceTest(unittest.TestCase):
+    def evidence(self, a, b):
+        return abstract_version_evidence({"abstract": a}, {"abstract": b})
+
+    def quality(self, text):
+        return _abstract_evidence_text(text)[1]
+
+    def words(self, count):
+        return [f"boundary{chr(97 + i // 26)}{chr(97 + i % 26)}" for i in range(count)]
+
+    def test_quality_floors_are_explicit_engineering_safeguards(self):
+        self.assertEqual((_ABSTRACT_MIN_CHARS, _ABSTRACT_MIN_WORDS, _ABSTRACT_MIN_DISTINCT_WORDS), (160, 24, 16))
+        self.assertEqual((_ABSTRACT_MIN_DIVERSITY, _ABSTRACT_MAX_WORD_SHARE,
+                          _ABSTRACT_MAX_REPEATED_TRIGRAM_SHARE), (0.5, 0.15, 0.25))
+        self.assertEqual(AUTO_CONFIRM_POLICY, "rules-v3")
+        self.assertEqual(self.quality(_RETINAL_ABSTRACT), "substantive")
+
+    def test_character_floor_boundary(self):
+        words = [word[-2:] for word in self.words(_ABSTRACT_MIN_WORDS)]
+        text = " ".join(words)
+        for length in (_ABSTRACT_MIN_CHARS - 1, _ABSTRACT_MIN_CHARS):
+            with self.subTest(length=length):
+                padded = "x" * (length - len(text)) + text
+                self.assertEqual(len(padded), length)
+                self.assertEqual(self.quality(padded), "substantive" if length == _ABSTRACT_MIN_CHARS else "too_short")
+
+    def test_word_floor_boundary_and_numeric_padding(self):
+        for count in (_ABSTRACT_MIN_WORDS - 1, _ABSTRACT_MIN_WORDS):
+            with self.subTest(count=count):
+                text = " ".join(self.words(count))
+                self.assertEqual(self.quality(text), "substantive" if count == _ABSTRACT_MIN_WORDS else "too_few_words")
+        text = "A short scientific result. " + " ".join(str(i) for i in range(300))
+        self.assertEqual(self.quality(text), "too_few_words")
+
+    def test_distinct_word_floor_boundary(self):
+        for count in (_ABSTRACT_MIN_DISTINCT_WORDS - 1, _ABSTRACT_MIN_DISTINCT_WORDS):
+            with self.subTest(count=count):
+                words = self.words(count)
+                text = " ".join(words + list(reversed(words[:_ABSTRACT_MIN_WORDS - count])))
+                self.assertEqual(self.quality(text),
+                                 "substantive" if count == _ABSTRACT_MIN_DISTINCT_WORDS else "too_few_distinct_words")
+
+    def test_diversity_floor_boundary(self):
+        words = self.words(_ABSTRACT_MIN_DISTINCT_WORDS)
+        boundary = " ".join(words + list(reversed(words)))
+        self.assertEqual(self.quality(boundary), "substantive")
+        self.assertEqual(self.quality(boundary + " " + words[0]), "low_lexical_diversity")
+
+    def test_repeated_word_share_boundary(self):
+        for repeats in (6, 7):
+            with self.subTest(repeats=repeats):
+                text = " ".join(["padding"] * repeats + self.words(40 - repeats))
+                self.assertEqual(self.quality(text), "substantive" if repeats == 6 else "repeated_word_padding")
+
+    def test_repeated_trigram_share_boundary(self):
+        words = self.words(28)
+        for middle in (words[6:], words[6:-1]):
+            with self.subTest(middle=len(middle)):
+                text = " ".join(words[:6] + middle + words[:6])
+                self.assertEqual(self.quality(text), "substantive" if len(middle) == 22 else "repeated_phrase_padding")
+
+    def test_missing_short_legal_and_placeholder_content_is_unknown_not_matching(self):
+        for text in (None, "", " \n ", "We present a classification method.", _LEGAL_BOILERPLATE, _CC_BY_BOILERPLATE,
+                     "No abstract available. " * 30, "Abstract is unavailable. " * 30,
+                     "This paper has no abstract. " * 30,
+                     "© 2024 Elsevier B.V. All rights reserved. " * 20,
+                     "This work is licensed under a Creative Commons Attribution 4.0 International License. " * 10,
+                     _LEGAL_BOILERPLATE + "Retinal results are promising.",
+                     "<p>" + _LEGAL_BOILERPLATE.replace(" ", "\n") + "</p>"):
+            with self.subTest(text=text):
+                evidence = self.evidence(text, text)
+                self.assertEqual(evidence["abstract_evidence"], "unknown")
+                self.assertIn("a:", evidence["abstract_evidence_reason"])
+        self.assertEqual(self.evidence(_RETINAL_ABSTRACT, None)["abstract_evidence"], "unknown")
+        self.assertEqual(self.evidence(None, _RETINAL_ABSTRACT)["abstract_evidence"], "unknown")
+
+    def test_repeated_padding_cannot_make_a_short_result_substantive(self):
+        text = "Retinal results are promising. " + "Method improves image analysis. " * 100
+        self.assertNotEqual(self.quality(text), "substantive")
+        self.assertEqual(self.evidence(text, text)["abstract_evidence"], "unknown")
+
+    def test_unicode_html_and_whitespace_formatting_preserving_case_are_positive(self):
+        text = _RETINAL_ABSTRACT + " Café measurements are reproducible."
+        formatted = "<p>" + text.replace("Café", "Café").replace(
+            "neural network", "<em>neural&nbsp;network</em>").replace(". ", ".</p>\n<p>") + "</p>"
+        self.assertEqual(self.evidence(text, formatted)["abstract_evidence"], "match")
+        self.assertEqual(self.evidence(text + " Salt & water.", text + " Salt &amp; water.")["abstract_evidence"], "match")
+
+    def test_uppercase_substantive_text_is_deliberately_not_identity_evidence(self):
+        self.assertEqual(self.evidence(_RETINAL_ABSTRACT, _RETINAL_ABSTRACT.upper())["abstract_evidence"], "mismatch")
+        self.assertEqual(self.quality(_RETINAL_ABSTRACT.upper()), "substantive")
+
+    def test_quality_counting_remains_case_insensitive(self):
+        text = " ".join(["padding", "PADDING", "Padding", "pAdDiNg", "paDDing", "paddiNG", "PAddING"] + self.words(33))
+        self.assertEqual(self.quality(text), "repeated_word_padding")
+        self.assertEqual(self.quality(_LEGAL_BOILERPLATE.upper() + "No abstract available. " * 30),
+                         "boilerplate_or_placeholder")
+
+    def test_known_boilerplate_is_removed_before_equality_and_quality_checks(self):
+        self.assertEqual(self.evidence(_RETINAL_ABSTRACT, _RETINAL_ABSTRACT + " " + _LEGAL_BOILERPLATE)
+                         ["abstract_evidence"], "match")
+        self.assertEqual(self.evidence(_RETINAL_ABSTRACT, _RETINAL_ABSTRACT + " " + _CC_BY_BOILERPLATE)
+                         ["abstract_evidence"], "match")
+        self.assertEqual(self.evidence(_RETINAL_ABSTRACT, _RETINAL_ABSTRACT + " " + _CC_BY_BOILERPLATE.upper())
+                         ["abstract_evidence"], "match")
+        evidence = self.evidence(_LEGAL_BOILERPLATE * 40 + _RETINAL_ABSTRACT,
+                                 _LEGAL_BOILERPLATE * 40 + _BRAIN_ABSTRACT)
+        self.assertEqual(evidence["abstract_evidence"], "mismatch")
+        self.assertEqual(evidence["abstract_evidence_reason"], "different_substantive_text")
+
+    def test_numbers_units_negation_punctuation_and_order_remain_distinguishable(self):
+        for other in (_RETINAL_ABSTRACT.replace("240", "241"),
+                      _RETINAL_ABSTRACT.replace("without removing", "with removing"),
+                      _RETINAL_ABSTRACT.replace("sensitivity, and calibration", "calibration, and sensitivity"),
+                      _RETINAL_ABSTRACT.replace("240", "24.0")):
+            with self.subTest(other=other):
+                self.assertEqual(self.evidence(_RETINAL_ABSTRACT, other)["abstract_evidence"], "mismatch")
+        for a, b in (("5 mg", "5 g"), ("5 mM", "5 mm"), ("5 μg", "5 mg"),
+                     ("5 m²", "5 m2"), ("p < 0.05", "p > 0.05")):
+            with self.subTest(a=a, b=b):
+                self.assertEqual(self.evidence(_RETINAL_ABSTRACT + " " + a,
+                                               _RETINAL_ABSTRACT + " " + b)["abstract_evidence"], "mismatch")
+
+
+class ClassifiedAcceptanceTest(unittest.TestCase):
+    def pairs(self, abstract_a=_RETINAL_ABSTRACT, abstract_b=_RETINAL_ABSTRACT):
+        cases = (
+            ("MISSED_BY_NORM", "Robust neural network classification method",
+             "Robust neural network classification method", {}, {}),
+            ("DOI_SIBLING", "Expanding the stdpopsim species catalog",
+             "Expanding the stdpopsim species catalog: revision 2", {"doi": "10.7554/elife.84874"},
+             {"doi": "10.7554/elife.84874.2"}),
+            ("PREPRINT_PUBLISHED", "Frequency Estimation of Multi-Sinusoidal Signals in Finite-Time",
+             "Finite Time Frequency Estimation for Multi-Sinusoidal Signals",
+             {"doi": "10.48550/arxiv.2009.06400", "journal": "arXiv", "type": "preprint"}, {}),
+            ("RU_EN_TRANSLATION", "Impact of transverse optical confinment on performance of VCSELs",
+             "Impact of Transverse Optical Confinement on Performance of VCSELs",
+             {"journal": "Письма в журнал технической физики"}, {"journal": "Technical Physics Letters"}),
+            ("STRONG_FUZZY", "Improvement of methods and means of thermal imagers verification and calibration",
+             "Improvement of Methods and Means for the Verification and Calibration of Thermal Imagers", {}, {}),
+        )
+        for bucket, title_a, title_b, options_a, options_b in cases:
+            options_a = {"doi": "10.1/a", "pdate": "2024-01-01", **options_a}
+            options_b = {"doi": "10.1/b", "pdate": "2024-06-01", **options_b}
+            yield bucket, pub("W1", title_a, authors=["A1", "A2"], abstract=abstract_a, **options_a), pub(
+                "W2", title_b, authors=["A1", "A2"], abstract=abstract_b, **options_b)
+
+    def test_real_classification_and_acceptance_positive_paths_for_every_auto_bucket(self):
+        text = _RETINAL_ABSTRACT + " Café conductivity is 5 mS/cm & reproducible."
+        formatted = "<p>" + text.replace("Café", "Café").replace(" ", "&nbsp;") + "</p>"
+        for expected, a, b in self.pairs(abstract_a=text, abstract_b=formatted):
+            with self.subTest(bucket=expected):
+                bucket, signals = classify_pair(a, b)
+                self.assertEqual(bucket, expected)
+                self.assertEqual(signals["abstract_evidence"], "match")
+                self.assertTrue(can_auto_confirm_version(a, b, bucket))
+
+    def test_uppercase_only_changes_hold_every_auto_bucket(self):
+        for expected, a, b in self.pairs(abstract_b=_RETINAL_ABSTRACT.upper()):
+            with self.subTest(bucket=expected):
+                bucket, signals = classify_pair(a, b)
+                self.assertEqual(bucket, expected)
+                self.assertEqual(signals["abstract_evidence"], "mismatch")
+                self.assertFalse(can_auto_confirm_version(a, b, bucket))
+
+    def test_all_scientific_case_and_meaning_changes_hold_actual_classified_candidates(self):
+        scientific_changes = (
+            ("5 mS", "5 MS"), ("5 mGy", "5 MGy"),
+            ("5 mS/cm", "5 MS/cm"), ("5 mGy/s", "5 MGy/s"),
+            ("mS", "MS"), ("mGy", "MGy"), ("mS/cm", "MS/cm"),
+            ("5 qz", "5 QZ"), ("5 mΩ", "5 MΩ"), ("5 μS", "5 μs"),
+            ("Co", "CO"), ("NO", "No"), ("Fe₂O₃", "FE₂O₃"), ("pH", "PH"),
+            ("α state", "Α state"), ("DNA", "dna"),
+            ("5e-3 mS", "5e-3 MS"), ("5e-3 mS", "5e+3 mS"), ("1e-3", "1E-3"),
+            ("5 mg", "5 g"), ("5 mM", "5 mm"), ("5 μg", "5 mg"),
+            ("5 m²", "5 m2"), ("p < 0.05", "p > 0.05"),
+            ("H<sub>2</sub>O", "H2O"), ("m<sup>2</sup>", "m2"),
+            ("without removing noise", "with removing noise"),
+            ("sensitivity, and calibration", "calibration, and sensitivity"), ("240", "241"), ("240", "24.0"),
+        )
+        for first, second in scientific_changes:
+            for expected, a, b in self.pairs(_RETINAL_ABSTRACT + " " + first, _RETINAL_ABSTRACT + " " + second):
+                with self.subTest(bucket=expected, first=first, second=second):
+                    bucket, signals = classify_pair(a, b)
+                    self.assertEqual(bucket, expected)
+                    self.assertIn(bucket, MERGE_BUCKETS)
+                    self.assertEqual(signals["abstract_evidence"], "mismatch")
+                    self.assertFalse(can_auto_confirm_version(a, b, bucket))
+
+    def test_real_classification_and_acceptance_holds_bad_content_in_every_auto_bucket(self):
+        for abstract_a, abstract_b in ((_RETINAL_ABSTRACT, _BRAIN_ABSTRACT), (None, None),
+                                       (_RETINAL_ABSTRACT, None), (None, _RETINAL_ABSTRACT),
+                                       ("We classify retinal images.", "We classify retinal images."),
+                                       (_LEGAL_BOILERPLATE, _LEGAL_BOILERPLATE),
+                                       (_CC_BY_BOILERPLATE, _CC_BY_BOILERPLATE),
+                                       (_CC_BY_BOILERPLATE * 10 + _RETINAL_ABSTRACT,
+                                        _CC_BY_BOILERPLATE * 10 + _BRAIN_ABSTRACT),
+                                       ("No abstract available. " * 30, "No abstract available. " * 30)):
+            for expected, a, b in self.pairs(abstract_a, abstract_b):
+                with self.subTest(bucket=expected, abstract_a=abstract_a, abstract_b=abstract_b):
+                    bucket, signals = classify_pair(a, b)
+                    self.assertEqual(bucket, expected)
+                    self.assertIn(bucket, MERGE_BUCKETS)
+                    self.assertNotEqual(signals["abstract_evidence"], "match")
+                    self.assertIn("abstract_evidence_reason", signals)
+                    self.assertFalse(can_auto_confirm_version(a, b, bucket))
+
+    def test_exact_title_retinal_and_brain_tumor_papers_remain_candidates_but_not_auto_same(self):
+        expected, a, b = next(self.pairs(_RETINAL_ABSTRACT, _BRAIN_ABSTRACT))
+        bucket, signals = classify_pair(a, b)
+        self.assertEqual(bucket, expected)
+        self.assertEqual(bucket, "MISSED_BY_NORM")
+        self.assertEqual(signals["abstract_evidence"], "mismatch")
+        self.assertFalse(can_auto_confirm_version(a, b, bucket))
+
+    def test_report_includes_abstract_outcome_and_reason_for_early_buckets(self):
+        for expected, a, b in list(self.pairs())[:2]:
+            with self.subTest(bucket=expected):
+                report = find_version_candidates(None, rows=[a, b])
+                self.assertEqual(len(report), 1)
+                self.assertEqual(report[0]["bucket"], expected)
+                self.assertEqual(report[0]["abstract_evidence"], "match")
+                self.assertEqual(report[0]["abstract_evidence_reason"], "equal_substantive_text")
+
+    def test_two_conference_venues_stay_manual_despite_reused_abstract(self):
+        for bucket, a, b in self.pairs():
+            if bucket == "PREPRINT_PUBLISHED":
+                continue
+            for a_venue, b_venue in (({"journal": None, "venue_type": "conference"},
+                                      {"journal": None, "venue_type": "conference"}),
+                                     ({"journal": "Journal of Physics: Conference Series", "venue_type": "journal"},
+                                      {"journal": "2024 Neural Imaging Symposium", "venue_type": "journal"})):
+                with self.subTest(bucket=bucket, venues=(a_venue, b_venue)):
+                    first, second = {**a, **a_venue}, {**b, **b_venue}
+                    actual, signals = classify_pair(first, second)
+                    self.assertIn(actual, AUTO_CONFIRM_BUCKETS)
+                    self.assertEqual((signals["venue_kind_a"], signals["venue_kind_b"]), ("conference", "conference"))
+                    self.assertFalse(can_auto_confirm_version(first, second, actual))
+        bucket, a, b = next(self.pairs())
+        a = {**a, "journal": "Imaging Symposium", "versions": [{"doi": b["doi"]}]}
+        b = {**b, "journal": "Vision Conference"}
+        actual, signals = classify_pair(a, b)
+        self.assertEqual(actual, bucket)
+        self.assertEqual(signals["abstract_evidence"], "match")
+        self.assertFalse(can_auto_confirm_version(a, b, actual))
+        self.assertTrue(can_auto_confirm_version(a, {**b, "journal": "Imaging Journal"}, actual))
+
+    def test_explicit_conference_types_prevent_auto_same_with_acronym_venues(self):
+        _, a, b = next(self.pairs())
+        for first_type in ("conference-paper", "proceedings-article"):
+            for second_type in ("conference-paper", "proceedings-article"):
+                for venue_type in (None, "journal", "conference"):
+                    with self.subTest(first_type=first_type, second_type=second_type, venue_type=venue_type):
+                        first = {**a, "journal": "ICRA", "type": first_type, "venue_type": venue_type}
+                        second = {**b, "journal": "ICCV", "type": second_type, "venue_type": "journal"}
+                        bucket, signals = classify_pair(first, second)
+                        self.assertEqual(bucket, "MISSED_BY_NORM")
+                        self.assertEqual(signals["abstract_evidence"], "match")
+                        self.assertEqual((signals["venue_kind_a"], signals["venue_kind_b"]),
+                                         ("conference", "conference"))
+                        self.assertFalse(can_auto_confirm_version(first, second, bucket))
+
+    def test_preprint_exclusion_outranks_conflicting_conference_metadata(self):
+        for expected, a, b in self.pairs():
+            if expected != "PREPRINT_PUBLISHED":
+                continue
+            first = {**a, "venue_type": "conference"}
+            second = {**b, "journal": "ICRA", "type": "conference-paper", "venue_type": "journal"}
+            bucket, signals = classify_pair(first, second)
+            self.assertEqual(bucket, expected)
+            self.assertEqual((signals["venue_kind_a"], signals["venue_kind_b"]), (None, "conference"))
+            self.assertTrue(can_auto_confirm_version(first, second, bucket))
+
+    def test_normalization_is_cached_and_reused_by_classification_and_policy(self):
+        _abstract_evidence_text.cache_clear()
+        bucket, a, b = next(self.pairs())
+        result = classify_pair(a, b)
+        misses = _abstract_evidence_text.cache_info().misses
+        self.assertEqual(result[0], bucket)
+        self.assertEqual(misses, 1)
+        self.assertTrue(can_auto_confirm_version(a, b, bucket))
+        self.assertEqual(_abstract_evidence_text.cache_info().misses, misses)
+        b["abstract"] = _BRAIN_ABSTRACT
+        self.assertFalse(can_auto_confirm_version(a, b, bucket))
+        self.assertEqual(_abstract_evidence_text.cache_info().misses, misses + 1)
+
+    def test_content_work_is_not_moved_before_cheap_candidate_rejection(self):
+        with patch("pauk.graph.version_candidates.abstract_version_evidence", side_effect=AssertionError("expensive")):
+            self.assertIsNone(classify_pair(
+                pub("W1", "Optical properties of icosahedral quasicrystals", abstract=_RETINAL_ABSTRACT),
+                pub("W2", "Survey of protein structure prediction algorithms", abstract=_RETINAL_ABSTRACT)))
+            self.assertIsNone(classify_pair(
+                pub("W1", "Improvement of methods and means of thermal imagers verification and calibration"),
+                pub("W2", "Improvement of Methods and Means for the Verification and Calibration of Thermal Imagers")))
 
 
 class CandidatePairsTest(unittest.TestCase):
@@ -503,6 +841,40 @@ class CoverTest(unittest.TestCase):
         self.assertEqual(bucket, "ERRATUM")
 
 
+class VenueKindTest(unittest.TestCase):
+    def test_supported_conference_types_outrank_journal_metadata_and_name_fallback(self):
+        for publication_type in ("conference-paper", "proceedings-article", " CONFERENCE-PAPER "):
+            for venue_type in (None, "journal", " JOURNAL ", "conference", "book series"):
+                for name in (None, "ICRA", "ICCV"):
+                    with self.subTest(publication_type=publication_type, venue_type=venue_type, name=name):
+                        self.assertEqual(_venue_kind({"type": publication_type, "venue_type": venue_type,
+                                                     "journal": name}), "conference")
+
+    def test_repository_and_preprint_exclusions_have_highest_precedence(self):
+        for metadata in ({"venue_type": "repository"}, {"venue_type": "preprint"},
+                         {"journal": "arXiv"}, {"journal": "Zenodo Conference"},
+                         {"type": "preprint"}, {"type": " PREPRINT "},
+                         {"doi": "https://doi.org/10.48550/arxiv.2009.06400"}):
+            with self.subTest(metadata=metadata):
+                self.assertIsNone(_venue_kind({"journal": "ICRA", "venue_type": "conference",
+                                               "type": "conference-paper", **metadata}))
+
+    def test_conference_venues_outrank_article_types_and_explicit_journals(self):
+        self.assertEqual(_venue_kind({"type": "article", "venue_type": "conference", "journal": "ICRA"}),
+                         "conference")
+        self.assertEqual(_venue_kind({"type": "journal-article", "venue_type": "journal",
+                                      "journal": "Journal of Physics: Conference Series"}), "conference")
+
+    def test_acronyms_and_unsupported_types_do_not_guess_a_conference(self):
+        for name in ("ICRA", "ICCV", "Unknown Acronym"):
+            with self.subTest(name=name):
+                self.assertEqual(_venue_kind({"journal": name}), "journal")
+                self.assertEqual(_venue_kind({"journal": name, "type": "conference-paper-appendix"}), "journal")
+                self.assertIsNone(_venue_kind({"journal": name, "type": "article", "venue_type": "book"}))
+        self.assertEqual(_venue_kind({"venue_type": "journal"}), "journal")
+        self.assertIsNone(_venue_kind({}))
+
+
 class RouteMediumFuzzyTest(unittest.TestCase):
     signals = {"abstract_sim": 0.03, "preprint_split": False,
                "venue_kind_a": "conference", "venue_kind_b": "journal"}
@@ -523,6 +895,44 @@ class RouteMediumFuzzyTest(unittest.TestCase):
         self.assertEqual(self.route({"same_work": False}), "MEDIUM_FUZZY_CONF_JOURNAL")
         self.assertEqual(self.route({"same_work": False}, venue_kind_a="journal"), "MEDIUM_FUZZY_RELATED")
         self.assertNotIn("MEDIUM_FUZZY_RELATED", MERGE_BUCKETS)
+
+    def test_classified_medium_routes_honor_publication_types_and_venue_precedence(self):
+        cases = (
+            ({"type": "conference-paper", "journal": "ICRA"},
+             {"type": "conference-paper", "journal": "ICCV"},
+             ("conference", "conference"), "MEDIUM_FUZZY_RELATED"),
+            ({"type": "conference-paper", "journal": "ICRA", "venue_type": "journal"},
+             {"type": "proceedings-article", "journal": "ICCV", "venue_type": "journal"},
+             ("conference", "conference"), "MEDIUM_FUZZY_RELATED"),
+            ({"type": "conference-paper", "journal": "ICRA", "venue_type": "journal"},
+             {"type": "article", "journal": "Nano Letters", "venue_type": "journal"},
+             ("conference", "journal"), "MEDIUM_FUZZY_CONF_JOURNAL"),
+            ({"type": "proceedings-article", "journal": "ICRA"},
+             {"type": "article", "journal": "Nano Letters"},
+             ("conference", "journal"), "MEDIUM_FUZZY_CONF_JOURNAL"),
+            ({"type": "article", "journal": "ICRA", "venue_type": "conference"},
+             {"type": "article", "journal": "Nano Letters", "venue_type": "journal"},
+             ("conference", "journal"), "MEDIUM_FUZZY_CONF_JOURNAL"),
+            ({"type": "conference-paper", "journal": "ICRA", "venue_type": "repository"},
+             {"type": "article", "journal": "Nano Letters", "venue_type": "journal"},
+             (None, "journal"), "MEDIUM_FUZZY_RELATED"),
+            ({"type": "article", "journal": "ICRA"}, {"type": "article", "journal": "ICCV"},
+             ("journal", "journal"), "MEDIUM_FUZZY_RELATED"),
+        )
+        for first, second, venue_kinds, expected in cases:
+            with self.subTest(first=first, second=second):
+                a = {**pub("W1", "Method of the Joint Clustering in Network and Correlation Spaces",
+                           doi="10.1/a", pdate="2020-06-24", authors=["A1", "A2"]), **first}
+                b = {**pub("W2", "Method for Joint Clustering in Graph and Correlation Spaces",
+                           doi="10.1/b", pdate="2021-12-01", authors=["A1", "A2"]), **second}
+                bucket, signals = classify_pair(a, b)
+                self.assertEqual(bucket, "MEDIUM_FUZZY")
+                self.assertEqual((signals["venue_kind_a"], signals["venue_kind_b"]), venue_kinds)
+                routed = route_medium_fuzzy(a, b, signals, lambda a, b: {"same_work": False})
+                self.assertEqual(routed, expected)
+                self.assertFalse(can_auto_confirm_version(a, b, routed))
+                report = find_version_candidates(None, rows=[a, b], judge=lambda a, b: {"same_work": False})
+                self.assertEqual(report[0]["bucket"], expected)
 
     def test_proceedings_typed_as_journal_count_as_conference(self):
         self.assertEqual(_venue_kind({"journal": "Journal of Physics: Conference Series",
