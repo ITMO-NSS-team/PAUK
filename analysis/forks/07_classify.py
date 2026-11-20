@@ -7,8 +7,8 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DATA = Path("/analysis/forks/data")
-OUT = Path("/analysis/forks/out")
+DATA = Path(__file__).resolve().parent / "data"
+OUT = Path(__file__).resolve().parent / "out"
 OUT.mkdir(parents=True, exist_ok=True)
 
 SOURCE_EXT = {
@@ -56,9 +56,7 @@ def is_functional_file(path: str) -> bool:
     lowered = path.lower()
     if not is_code_file(lowered):
         return False
-    if Path(lowered).suffix == ".ipynb" or NON_FUNCTIONAL.search(lowered):
-        return False
-    return True
+    return not (Path(lowered).suffix == ".ipynb" or NON_FUNCTIONAL.search(lowered))
 
 
 def year_of(value: str | None) -> int | None:
@@ -80,7 +78,9 @@ def main() -> None:
     pauk_logins = {row["github"].casefold() for row in load_lines("graph_persons_github") if row.get("github")}
     orgs = {
         item["login"].casefold()
-        for item in json.loads(Path("/analysis/itmo_github_orgs.json").read_text(encoding="utf-8"))["organizations"]
+        for item in json.loads(
+            (Path(__file__).resolve().parent.parent / "itmo_github_orgs.json").read_text(encoding="utf-8")
+        )["organizations"]
     }
 
     github_of_person = {

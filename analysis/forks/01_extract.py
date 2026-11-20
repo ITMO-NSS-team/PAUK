@@ -12,7 +12,7 @@ from pathlib import Path
 import pymongo
 from neo4j import GraphDatabase
 
-OUT = Path("/analysis/forks/data")
+OUT = Path(__file__).resolve().parent / "data"
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -82,7 +82,8 @@ graph_repos = graph_rows(
     OPTIONAL MATCH (r)-[:OWNED_BY]->(g:GitHubProfile)
     RETURN r.id AS id, r.url AS url, r.created_at AS created_at,
            r.last_updated AS last_updated, r.forks_num AS forks_num,
-           r.stars_num AS stars_num, g.login AS owner_login, g.type AS owner_type
+           r.stars_num AS stars_num, r.is_fork AS is_fork, r.language AS language,
+           r.archived AS archived, g.login AS owner_login, g.type AS owner_type
     """
 )
 dump("graph_repositories", graph_repos)
@@ -107,7 +108,9 @@ dump("implements", implements)
 mentions = graph_rows(
     "MATCH (p:Publication)-[m:MENTIONS_LINK]->(x) "
     "RETURN p.id AS publication_id, x.id AS target_id, labels(x)[0] AS target_label, "
-    "m.is_relevant AS is_relevant"
+    "m.is_relevant AS is_relevant, m.classification_status AS classification_status, "
+    "m.llm_confidence AS llm_confidence, m.llm_reason AS llm_reason, "
+    "m.candidate_urls AS candidate_urls, m.context AS context, m.page_number AS page_number"
 )
 dump("mentions", mentions)
 
