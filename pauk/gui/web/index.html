@@ -20,8 +20,9 @@
         --border: #333333;
         --text: #dcdcdc;
         --muted: #8a8a8a;
-        --accent: #ff7f50;
-        --accent-soft: rgba(255, 127, 80, 0.18);
+        --accent: #ff913d;
+        --accent-fill: #ff913d;
+        --accent-soft: rgba(255, 145, 61, 0.18);
         --danger-bg: #2a1414;
         --danger-border: #e03131;
         --danger-text: #ffb3b3;
@@ -703,7 +704,7 @@
       }
       .chart-bar-row__fill {
         height: 100%;
-        background: var(--accent);
+        background: var(--accent-fill);
         border-radius: inherit;
         transition: width 0.2s ease-out;
       }
@@ -784,7 +785,7 @@
       .boot-progress-bar {
         height: 100%;
         width: 0%;
-        background: var(--accent);
+        background: var(--accent-fill);
         transition: width 0.2s ease-out;
         border-radius: inherit;
       }
@@ -853,7 +854,7 @@
       }
       .menu-cta {
         padding: 12px 22px;
-        background: var(--accent);
+        background: var(--accent-fill);
         color: #181818;
         border: 1px solid var(--accent);
         border-radius: 5px;

@@ -28,9 +28,9 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
 }
 
 describe("themes", () => {
-  it("all themes have unique ids and the same accent", () => {
+  it("themes have unique ids and theme-specific accents", () => {
     expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(THEMES.length);
-    expect(new Set(THEMES.map((theme) => theme.ui.accent)).size).toBe(1);
+    expect(themeById("dark").ui.accent).not.toBe(themeById("light").ui.accent);
   });
 
   it("apply writes CSS variables and color-scheme to the root", () => {
