@@ -133,33 +133,48 @@ def _last_done(db) -> dict[str, object]:
     return found
 
 
-@router.get("/jobs", response_class=HTMLResponse)
-def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
-         kind: str = "", state: str = "", actor: str = "", page: int = 1):
-    """The queue and the history of runs, readable by anyone who can sign in."""
+def _jobs_context(db, user, session, kind: str, state: str, actor: str, page: int) -> dict:
+    """Shared context for the jobs page and its refreshable fragment."""
     page = max(page, 1)
     filters = {"kind": kind, "state": state, "actor": actor}
     total = store.count(db, **filters)
-    return templates.TemplateResponse(request, "jobs.html", {
+    running = store.running(db)
+    return {
         "user": user, "csrf": session["csrf"],
-        # Above the history: a run under way need not be the newest row.
-        "under_way": [_shown(job) for job in store.running(db)],
+        "under_way": [_shown(job) for job in running],
+        "has_active_jobs": bool(running) or bool(store.count(db, state=str(JobState.QUEUED))),
         "rows": [_shown(job) for job in
                  store.recent(db, **filters, skip=(page - 1) * store.PAGE)],
         "total": total, "page": page,
         "pages": max((total + store.PAGE - 1) // store.PAGE, 1),
-        "filters": filters, "kinds": KINDS, "states": STATES,
-        "final": {str(name) for name in FINAL},
-        "actors": sorted(db[store.COLLECTION].distinct("actor")),
-        "last_done": _last_done(db),
-        # Nobody taking jobs is the difference between "running" and "queued forever".
-        "workers": store.workers_present(db),
+        "filters": filters, "final": {str(name) for name in FINAL},
         "result_open_upto": RESULT_OPEN_UPTO,
-        # Read off the pipeline: a new stage must not leave the page stale.
+    }
+
+
+@router.get("/jobs", response_class=HTMLResponse)
+def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
+         kind: str = "", state: str = "", actor: str = "", page: int = 1):
+    """The queue and the history of runs, readable by anyone who can sign in."""
+    context = _jobs_context(db, user, session, kind, state, actor, page)
+    context.update({
+        "kinds": KINDS, "states": STATES,
+        "actors": sorted(db[store.COLLECTION].distinct("actor")),
+        "last_done": _last_done(db), "workers": store.workers_present(db),
         "stages": [stage.name for stage in ALL_STAGES],
-        # Only groups with prepared rows: an empty one looks like a broken publish.
-        "groups": PreparedStore.known_groups(db),
-        "today": date.today().isoformat()})
+        "groups": PreparedStore.known_groups(db), "today": date.today().isoformat(),
+    })
+    return templates.TemplateResponse(request, "jobs.html", context)
+
+
+@router.get("/jobs/fragment", response_class=HTMLResponse)
+def jobs_fragment(request: Request, user: CurrentUser, session: Session, db: Db,
+                  kind: str = "", state: str = "", actor: str = "", page: int = 1):
+    """Render the same job lists without rebuilding the rest of the page."""
+    context = _jobs_context(db, user, session, kind, state, actor, page)
+    response = templates.TemplateResponse(request, "jobs_fragment.html", context)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _collect_payload(form) -> dict:
