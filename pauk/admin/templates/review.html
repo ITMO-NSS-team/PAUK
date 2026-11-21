@@ -18,6 +18,28 @@
 <p class="note">Группа разобрана. Отмеченные склеятся при следующем прогоне.</p>
 {% elif done == "waiting" %}
 <p class="note">Ответ сохранён. Записи склеятся при следующем прогоне.</p>
+{% elif done == "linked" %}
+<p class="note">Связь IS_VERSION подтверждена. Публикации остаются отдельными узлами.</p>
+{% elif done == "unlinked" %}
+<p class="note">Связь IS_VERSION убрана. Следующий прогон версий её не вернёт.</p>
+{% elif done == "already_unlinked" %}
+<p class="note">Решение записано. Связи IS_VERSION между публикациями уже нет.</p>
+{% elif done == "version_folded" %}
+<p class="note">Решение записано. Оба ID сейчас указывают на одну публикацию.</p>
+{% elif done == "version_missing" %}
+<p class="note">Решение записано. Одной из публикаций сейчас нет в графе.</p>
+{% elif done == "reopened" %}
+<p class="note">Ответ снят, связь IS_VERSION снова ждёт решения.</p>
+{% elif done == "relink" %}
+<p class="note">Ответ снят. Связь IS_VERSION вернётся при следующем прогоне версий, если правила ещё находят эту пару.</p>
+{% elif done == "version_waiting" %}
+<p class="note">Решение записано, но граф сейчас недоступен. Сверка этой пары поставлена в очередь.</p>
+{% elif done == "version_busy" %}
+<p class="note">Решение записано, но граф сейчас занят другой задачей. Сверка этой пары поставлена в очередь.</p>
+{% elif done == "no_edge" %}
+<p class="note">Решение записано, но связи IS_VERSION между этими узлами сейчас нет. Следующий прогон версий создаст её уже подтверждённой, если правила ещё находят эту пару.</p>
+{% elif done == "no_edge_deleted" %}
+<p class="note">Решение записано, но связь IS_VERSION между этими узлами удалена вручную. Прогон версий её не создаст, пока ручное удаление не отменят.</p>
 {% endif %}
 
 <div class="tabs">
@@ -31,6 +53,8 @@
     Отложенные{% if counts.skipped %} {{ counts.skipped }}{% endif %}</a>
   <a href="/review?tab=answered" {% if tab == "answered" %}class="on"{% endif %}>
     Отвеченные{% if counts.answered %} {{ counts.answered }}{% endif %}</a>
+  <a href="/review?tab=versions" {% if tab == "versions" %}class="on"{% endif %}>
+    Версии публикаций{% if counts.versions %} {{ counts.versions }}{% endif %}</a>
 </div>
 
 {% if not rows %}
@@ -39,6 +63,7 @@
   {% elif tab == "answered" %}Пока никто ничего не решил.
   {% elif tab == "disputed" %}Расхождений нет. Правила пайплайна не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
+  {% elif tab == "versions" %}Пар-версий нет. Очередь наполняет «Версии публикаций» на странице задач.
   {% else %}Вопросов нет. Новые появляются после дедупликации и сопоставления аккаунтов GitHub.{% endif %}</p>
 {% else %}
 <div class="card scroll">
@@ -82,6 +107,7 @@
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
           {% endif %}
           {% if not who.account %}<br><span class="muted val">{{ who.id }}</span>{% endif %}
+          {% if row.is_version and row.venues[loop.index0] %}<br><span class="muted">{{ row.venues[loop.index0] }}</span>{% endif %}
           {% if who.signals %}<div class="muted">{{ who.signals|join(", ") }}</div>{% endif %}
           {% set facts = who.facts or {} %}
           {% if facts.orcid or facts.email or facts.department or facts.works
@@ -138,6 +164,12 @@
         {% if row.is_group and not row.verdict %}
         <span class="muted">Отметьте слева тех, кто один человек.</span>
         {% endif %}
+        {% if row.is_version %}
+        <div>{{ row.bucket }}</div>
+        <div class="muted">заголовки {{ row.title_sim }}{% if row.abstract_sim is not none %},
+          аннотации {{ row.abstract_sim }}{% endif %}</div>
+        {% if row.llm_reason %}<div class="muted">LLM: {{ row.llm_reason }}</div>{% endif %}
+        {% endif %}
         {% if row.is_github %}
         {% if not row.is_choice %}<div>{{ row.signals|join(", ") }}</div>{% endif %}
         {% for repo in row.repos %}
@@ -163,12 +195,15 @@
             {% elif row.is_github %}
               {% if row.chosen %}автор выбран{% elif row.verdict == "same" %}его аккаунт
               {% elif row.is_choice %}никто из них{% else %}не его аккаунт{% endif %}
+            {% elif row.is_version %}{% if row.verdict == "same" %}одна работа{% else %}разные работы{% endif %}
+            {% elif row.is_publication %}{% if row.verdict == "same" %}одна публикация{% else %}разные публикации{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {% if row.is_staff %}
             {% if row.chosen %}<br><span class="muted">склеит записи при следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
             <br><span class="muted">привяжется на следующем сборе</span>
+          {% elif row.is_version %}
           {% elif row.verdict == "same" %}
             {% if row.applied_at %}<br><span class="muted">склеено {{ row.applied_at|moment }}</span>
             {% else %}<br><span class="muted">склеится при следующем прогоне</span>{% endif %}
@@ -244,6 +279,10 @@
             <button type="submit" name="verdict" value="choose">это его аккаунт</button>
             {% elif row.is_github %}
             <button type="submit" name="verdict" value="same">это его аккаунт</button>
+            {% elif row.is_version %}
+            <button type="submit" name="verdict" value="same">одна работа</button>
+            {% elif row.is_publication %}
+            <button type="submit" name="verdict" value="same">одна публикация</button>
             {% else %}
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
@@ -251,6 +290,8 @@
               {% if row.is_staff or row.is_choice %}никто из них
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
+              {% elif row.is_version %}разные работы
+              {% elif row.is_publication %}разные публикации
               {% else %}разные{% endif %}</button>
             {% if not row.skipped_by %}
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>

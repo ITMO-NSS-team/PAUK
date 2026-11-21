@@ -24,8 +24,10 @@ from urllib.parse import quote
 from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from neo4j.exceptions import AuthError as Neo4jAuthError
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import ConnectionFailure, ExecutionTimeout, PyMongoError
 
 from pauk.admin import (
     audit_routes,
@@ -64,7 +66,7 @@ from pauk.storage import get_mongo_client
 
 logger = logging.getLogger("pauk.admin")
 
-# How long the overview waits for the graph before dropping the counts.
+# Connection timeout for the shared Neo4j driver.
 COUNT_TIMEOUT = 2.0
 
 
@@ -101,7 +103,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _node_counts(graph: _LazyGraph) -> dict[str, int] | None:
-    """How many nodes of each label there are, or None if the graph is silent.
+    """Return counts, or None when graph initialization or counting fails.
 
     The driver is told to connect quickly and not retry, so a person waiting
     for the page is not blocked while the database backs off.
@@ -152,7 +154,6 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         """Show a person what is broken instead of a stack trace."""
         if "text/html" not in request.headers.get("accept", ""):
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
-        # An unreachable Mongo is what this page reports; reading it would raise.
         try:
             session = read_session(request.app.state.db, request.cookies.get(COOKIE))
         except PyMongoError:
@@ -162,6 +163,19 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             {"user": User(login=session["login"], role=session["role"]) if session else None,
              "csrf": session["csrf"] if session else "", "detail": exc.detail},
             status_code=exc.status_code)
+
+    @app.exception_handler(ConnectionFailure)
+    @app.exception_handler(ExecutionTimeout)
+    @app.exception_handler(ServiceUnavailable)
+    @app.exception_handler(SessionExpired)
+    @app.exception_handler(TransientError)
+    @app.exception_handler(Neo4jAuthError)
+    async def storage_unavailable(request: Request, error: Exception):
+        """Render expected database failures without exposing driver details."""
+        mongo = isinstance(error, (ConnectionFailure, ExecutionTimeout))
+        logger.warning("%s request failed: %s", "MongoDB" if mongo else "Neo4j", error, exc_info=True)
+        detail = MONGO_SILENT if mongo else "Не удалось выполнить запрос к Neo4j. Попробуйте открыть страницу позже."
+        return await unavailable(request, HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail))
 
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, session: Session, next: str = "/"):

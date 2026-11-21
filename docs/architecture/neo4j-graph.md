@@ -6,7 +6,7 @@ loading, and graph-level dedup.
 
 **Files:** `pauk/graph/extract.py`, `jsonl_loader.py`, `client.py`,
 `audit.py`, `mutations.py`, `overrides.py`, `schema.py`, `csv_loader.py`,
-`dedup.py`, `load.py`, `pauk/urls.py`.
+`dedup.py`, `load.py`, `version_link.py`, `pauk/urls.py`.
 
 The same schema as a Mermaid diagram:
 [`diagrams/neo4j-schema.md`](../diagrams/neo4j-schema.md). Field-by-field
@@ -20,10 +20,10 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 | Node | Unique key | Labels |
 |---|---|---|
-| Person | `id` (OpenAlex author ID or deterministic local fallback) | `Person` |
+| Person | `id` (opaque PAUK/legacy identity) | `Person` |
 | Department | `id` (the catalog `uid`) | `Department` |
 | Organization | `id` and `name_en` (both unique) | `Organization` |
-| Publication | `id` (bare OpenAlex work ID) | `Publication` |
+| Publication | `id` (opaque PAUK/legacy identity) | `Publication` |
 | Repository | `id` and `url` (both unique) | `Repository` |
 | GitHubProfile | `id` and `login` (both unique) | `GitHubProfile` |
 | LinkCandidate | `id` (the URL itself) | `LinkCandidate` |
@@ -38,6 +38,7 @@ array. In the `versions` ledger each version has its own `pdf_urls`.
 
 (:Publication) -[:PRODUCED_BY]->   (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
+(:Publication) -[:IS_VERSION]->    (:Publication)
 
 (:Repository) -[:DEVELOPED_BY]-> (:Department)
 (:Repository) -[:IMPLEMENTS]->   (:Publication)
@@ -61,7 +62,9 @@ Neo4j cannot store `null` inside an array property, so the sentinel is not
 arrays `pdf_id`, `context_source` and `reference_label` (an empty string means
 no value), `is_relevant`, `classification_status`, `llm_confidence` and
 `llm_reason`. `pdf_id` distinguishes PDFs of merged versions: page numbers
-are local to that file. The array is always sent alongside the contexts,
+are local to that file. New occurrences store the source-record key here;
+legacy OpenAlex ids remain readable during the compatibility release. The
+array is always sent alongside the contexts,
 including empty strings for unknown sources, so republishing cannot leave old
 PDF ids attached to new evidence.
 
@@ -72,6 +75,17 @@ remove values; a partial source record cannot erase another merged record's data
 For an ordinary edge with neither endpoint merged, a later source correction
 can change `is_corresponding` from true to false. Duplicate AUTHORED rows within
 one write batch are still combined by OR; graph folds also retain any true value.
+
+`IS_VERSION` points from a version (a preprint, a translation, a conference
+paper, a cover, an erratum) to the work it relates to, and carries `bucket`,
+`mergeable`, `status` (`held`, `same` once a person confirmed it, absent for
+a look-alike bucket), `title_sim`, `llm_verdict` and `llm_reason`. No publish
+writes it: `pauk versions link` (`version_link.py`) reconciles it with
+current graph data and review decisions, and `GRAPH_OWNED_RELATIONSHIPS` in `extract.py` keeps `pauk admin
+prune` from reading its absence in the prepared rows as staleness; see
+[pipeline/version-candidates.md](pipeline/version-candidates.md).
+`Publication.venue_type` is the OpenAlex source type of the primary venue
+(`journal`, `conference`, `repository`, ...).
 
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
@@ -159,8 +173,13 @@ that never touch the network, so they are tested without a live Neo4j
 (`tests/unit/test_graph_extract.py`).
 
 Neo4j cannot store nested maps or lists of maps (`funding`, `versions`,
-`affiliations`, `counts_by_year`) as node properties, so `extract_node`
+`identifiers`, `source_records`, `affiliations`, `counts_by_year`) as node properties, so `extract_node`
 serializes them to JSON text (`JSON_TEXT_FIELDS`).
+
+Publication nodes also carry native string arrays `sources`/`source_keys`.
+`openalex_url` and `versions` remain during the compatibility release. The
+admin editor treats identity and provenance properties as read-only; they
+must enter through the raw/adapter pipeline.
 
 ## `jsonl_loader.py`: load order
 
@@ -240,7 +259,10 @@ node (an existing relationship of the canonical node wins; the duplicate's
 properties only fill gaps: `SET new += properties(old); SET new += keep`).
 Node fields go through Python logic in `_merge_duplicate_properties` (lists
 are unioned preserving order, booleans OR-ed, JSON lists unpacked, unioned and
-repacked), then the duplicate is `DETACH DELETE`d. Node properties cannot be
+repacked), then the duplicate is `DETACH DELETE`d. An edge between the
+duplicate and the canonical node (an `IS_VERSION` between the two halves of a
+fold) is not moved: it would become a loop, so it goes with the duplicate.
+Node properties cannot be
 merged directly in Cypher with the same trick: it would briefly set
 `canonical.id` to the duplicate's id while the duplicate still exists, and
 fail on the uniqueness constraint.
@@ -299,6 +321,23 @@ module: the `pauk admin` commands and the panel's routes. Callers keep only
 argument parsing and `actor_context`; what counts as a valid edit is defined
 here and nowhere else.
 
+`normalize_fields` also handles `Publication.code_url`: a single URL or list
+becomes JSON text. Node mutations and saved overrides use the same conversion;
+form comparisons use it before deciding which fields changed.
+List fields are derived from the existing model annotations. String lists
+accept one element or JSON; structured lists accept one JSON object or a list.
+`as_stored` uses the loader's `JSON_TEXT_FIELDS` to serialize nested values.
+`field_values_equal` ignores JSON formatting and object-key order, so these
+alone do not create edits or source disagreements.
+Rollback and undo use `from_snapshot=True` to preserve legacy values.
+Saved decisions are normalized where possible and retain legacy values otherwise.
+The field whitelist, audit and version checks still apply; new input remains validated.
+Unchanged legacy fields that fail validation do not block editing other fields.
+`persist_decision` is shared by the panel and CLI: a confirmed write failure
+compensates the graph mutation, while an uncertain commit does not trigger rollback.
+Withdrawal can require the decision's write token, rejecting changes made since
+the form was rendered. `apply_overrides(document_id=...)` limits an undo to its target.
+
 Why a separate layer instead of calling `Neo4jClient` from a handler:
 
 - **Labels and relationship types reach Cypher by interpolation.** They are
@@ -306,9 +345,13 @@ Why a separate layer instead of calling `Neo4jClient` from a handler:
   `f"MERGE (n:{label} ...)"` as a string. While the source of those strings
   is our own literals, that is fine; once the source is an HTTP request,
   the lack of a whitelist becomes an injection. The whitelists (`NODE_FIELDS`,
-  `RELATIONSHIPS`) are derived from `extract.py::NODE_REGISTRY` rather than
-  rewritten beside it: a field the loader does not publish cannot be set by
-  hand either.
+  `NODE_SNAPSHOT_FIELDS`, `RELATIONSHIPS`) are derived from
+  `extract.py::NODE_REGISTRY` rather than rewritten beside it. `NODE_FIELDS`
+  contains only properties an operator may edit. `NODE_SNAPSHOT_FIELDS`
+  additionally contains pipeline-owned identity and provenance properties,
+  so deleting and restoring a node preserves them without making them
+  manually editable. A field the loader does not publish cannot be set by
+  hand or restored from an untrusted snapshot.
 - **The same rules for all callers.** A CLI and a web form, each with its own
   validation, would drift apart.
 - **Concurrent editors.** `update_node` accepts the `updated_at` the editor
@@ -333,6 +376,12 @@ The target key comes from each relationship's specification: `CONTRIBUTED_TO`
 uses a repository's `id`, while `MENTIONS_LINK` uses its `url`. Edge properties
 are preserved except DB-owned timestamps. The panel keeps this snapshot in
 memory and restores the node before reconnecting its edges if Mongo fails.
+
+New `Publication` nodes cannot be created in the graph editor: they must enter
+through raw data, an adapter and identity resolution. Restoration is a separate
+operation and remains available for a publication deleted in the editor; it
+recreates the node from the audited tombstone rather than inventing identity or
+provenance.
 
 `merge_nodes` appends `merged_ids` to the canonical node **before** folding:
 without that, `fetch_merged_id_map` cannot hold the duplicate down, and the
@@ -370,7 +419,7 @@ decisions are reapplied after every publish and every graph dedup.
 | `fields` | what to set; **merged** with what is already stored, not replacing it |
 | `created` | the record was created by hand; unlike `op`, a delete does not overwrite it, and restoring uses it to bring the claim back |
 | `auto_value` | what the field held before the first edit, for the conflicts screen |
-| `snapshot` | for a deletion, every field the node carried, so restoring does not depend on the audit feed |
+| `snapshot` | for a deletion, every restorable field the node carried, including read-only identity and provenance, so restoring does not depend on the audit feed |
 | `active` | cleared on undo; the document stays so the panel can show that an edit existed |
 | `write_id` | unique token for a complete decision change; detects concurrent writes and confirms a commit after a lost reply |
 | `graph_version` | latest graph edit represented in the decision; orders actor and note |

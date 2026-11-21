@@ -231,7 +231,7 @@ before changing the graph.
 
 ## Review queue
 
-"Спорные случаи" holds questions the pipeline cannot settle by evidence. Four
+"Спорные случаи" holds questions the pipeline cannot settle by evidence. Five
 kinds:
 
 | question | asked by | answer |
@@ -240,6 +240,7 @@ kinds:
 | a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
 | whose GitHub account is this? | `github_match` stage | choose the author ("это его аккаунт", this is their account) or "никто из них" (none of them); with a single author, "это его аккаунт" or "не его" (not theirs) |
 | which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
+| are these two publications one work? | `pauk versions link` / the "Версии публикаций" job, for a mergeable version bucket | "одна работа" (one work) confirms the `IS_VERSION` edge, "разные" (different) removes it for good; nothing is merged |
 
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
@@ -251,7 +252,8 @@ a new namesake joined the question) is closed without an answer. An old "это
 fits as well or better: the account is asked about again, with all of them. The
 default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
-accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).
+accounts and the catalog. The rest is under "Все нерешенные" (All unresolved);
+publication versions also have a tab of their own, "Версии публикаций".
 
 Conflicting historical person aliases are separate `person_alias_conflict`
 diagnostics in the priority queue, not identity questions. The page shows the
@@ -293,7 +295,10 @@ rules would rebuild the same group through the remaining records.
 **Skip and reverse.** "не знаю" (don't know) removes the question from the
 unseen tab without answering it. An answer that has not merged anything can be
 withdrawn with "передумать" (change my mind), and the question returns to the
-queue.
+queue. For two publications the `IS_VERSION` edge goes back with it: a
+confirmed one is held again, a removed one returns if the current rules still
+find a candidate. When Neo4j is busy or unavailable, a job retries the pair
+using the latest answer in MongoDB.
 
 **Splitting a merged pair.** Withdrawing an answer is not enough once the graph
 has one node. **"разделить обратно"** (split back) rebuilds the removed record
@@ -309,8 +314,8 @@ from the panel.
 
 ## Queue and cancellation
 
-Only one writer touches the graph at a time. Publish, dedup, map rebuild and
-the pipeline take turns; a job that finds the graph busy goes back to the
+Only one writer touches the graph at a time. Publish, dedup, publication
+versions, map rebuild and the pipeline take turns; a job that finds the graph busy goes back to the
 queue. Collect locks only its own group and runs in parallel. The same lock
 applies to terminal commands: `pauk publish graph` during a publish from the
 panel reports who holds the graph and does nothing.
@@ -366,7 +371,7 @@ uv run pauk admin user enable ivanov
 |---|---|
 | `viewer` | view only: search, node card, relationships, audit log, manual decisions, review questions, DB health, pipeline |
 | `editor` | plus edit fields, create and delete records, link and unlink, answer review questions |
-| `admin` | plus start runs: pipeline, collect, publish, dedup, reconcile, map rebuild, health checks |
+| `admin` | plus start runs: pipeline, collect, publish, dedup, publication versions, reconcile, map rebuild, health checks |
 
 Roles guard against mistakes, not against intruders: the role is a command
 argument, so anyone with server access can grant themselves `admin`.
@@ -385,6 +390,21 @@ answering for 15 minutes. The count is per login, not per address, because the
 panel sits behind a VPN and often a single proxy.
 
 Every edit is written to the audit log with the author, e.g. `user:ivanov`.
+
+`Publication.code_url` accepts one HTTP(S) URL or a JSON list of URLs.
+The panel and CLI store it as JSON text, as required by the map. Invalid
+input rejects the edit before writing either the graph or the decision.
+Other list fields use their existing model declarations: one string or a
+JSON list for string lists, one JSON object or a list for structured values.
+Clearing a field removes its value; an explicit `[]` stays an empty list.
+JSON whitespace and object-key order alone do not count as an edit or a
+source disagreement. Structured lists reject non-finite numbers such as `NaN`.
+
+Requests that need an unavailable database return 503 with an explanation.
+A failure to open the audit log reports a server configuration problem.
+
+Manual edits with sources `admin-ui` and `admin-cli` are excluded from the
+audit entries used to find later pipeline changes.
 
 ## No draft
 
@@ -413,8 +433,8 @@ search page.
 
 A hand-created node survives publishing on its own: the loader touches only
 ids it has rows for. It is still recorded in `graph_overrides` as a "this
-record was created by hand" claim. There is nothing to reapply, but without it
-reconcile could not tell the record from stale data and would delete it. A
+record was created by hand" claim. Its saved fields are reapplied to the existing
+node, and the claim protects it from reconciliation. A
 field edit on such a record is part of the same claim, so it cannot be undone
 in "Ручные решения" (Manual decisions); delete the record instead.
 
@@ -426,7 +446,7 @@ in "Ручные решения" (Manual decisions); delete the record instead.
 | search | list of nodes per label, search by id and text |
 | record card | all fields, edit, delete with confirmation, edit history in the graph and source-row history |
 | new record | create a record the pipeline does not know |
-| relationships | link to and unlink from another record, over the 11 allowed types |
+| relationships | link to and unlink from another record using the allowed relationship combinations |
 | deleted record | what happened to it, and "Восстановить" (Restore) |
 | "Журнал правок" (Audit log) | who changed what and when, via the panel and via the pipeline; filters and pages |
 | "Ручные решения" (Manual decisions) | what is currently applied over the pipeline, each with "отменить" (undo) |
@@ -551,6 +571,9 @@ Handled from both sides:
   and the graph stays untouched;
 - **if Mongo fails between the two writes**, the graph write is rolled back.
 
+The panel and CLI share `persist_decision` for confirmed-failure compensation.
+CLI cascade deletion preserves incident edges, and unlinking keeps edge properties.
+
 Each decision is committed in one Mongo command, including the original
 field values, operation and claim marker. There is no separate read after a
 successful write. If Mongo loses the reply, the panel checks the decision's
@@ -572,6 +595,12 @@ reads that counter before changing the graph; a delayed write from an older
 state is rejected instead of reactivating a cancelled decision or replacing
 a deletion. A new edit after undo starts with only the newly edited fields.
 
+Undo and restore forms carry the decision's write token. A stale form or one
+opened before tokens were added returns 409 and asks for a reload.
+Undo restores the graph first, then withdraws that exact decision. A graph
+failure leaves it active; a confirmed Mongo failure compensates the graph change.
+Only the selected record's remaining field decisions are reapplied.
+
 This covers every edit that leaves a decision behind: field change, node
 deletion, linking and unlinking, creation and restoration.
 
@@ -590,6 +619,8 @@ graph changes, since the allowed mutations could not restore that edge.
 Field rollback also checks the version its own write produced. If another
 editor saved since then, compensation refuses to overwrite that newer edit
 and reports an incomplete rollback.
+Undo and rollback restore saved values without applying new input validation.
+This also permits restoring legacy field formats that new edits cannot submit.
 
 Creation records its claim and replaces any old deletion decision atomically.
 If the claim definitely failed, rollback removes the new node: without the
@@ -628,11 +659,9 @@ enter; nothing breaks.
 
 ## Internals
 
-The panel never edits the graph directly. All changes go through
-`pauk/graph/mutations.py`, which has closed lists: 7 labels, 11 relationship
-types and fields derived from `NODE_REGISTRY`. Neither a label nor a field name
-can come from a form, since they are interpolated into Cypher; arbitrary
-queries are impossible.
+All changes go through `pauk/graph/mutations.py`. Labels, relationship
+combinations and field names are checked against `NODE_REGISTRY` before
+being interpolated into Cypher.
 
 The "Пайплайн" page is the same: the job kind is checked against `JobKind`, the
 group against those that have prepared rows, dates with the same selectors as
@@ -645,10 +674,9 @@ How edits survive publishing:
 - **node deletion** leaves a mark, otherwise `MERGE` would recreate the node on
   the next run;
 - **relationship deletion** also leaves a mark, for the same reason;
-- **creating a record or relationship** is written as a claim. There is nothing
-  to reapply: the loader does not delete what it does not know about, so such a
-  record or link survives publishing by itself. The claim is read only by
-  reconcile, so that hand-made records are not mistaken for leftovers.
+- **creating a record or relationship** is written as a claim that protects it
+  from reconciliation. A node claim also reapplies the saved fields to an
+  existing node. A relationship claim protects the edge without recreating it.
 
 A field change also stores the previous value. The discrepancy screen relies
 on it: when the source starts saying something different from what it said at

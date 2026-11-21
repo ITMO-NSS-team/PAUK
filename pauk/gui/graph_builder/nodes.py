@@ -36,12 +36,7 @@ PUB_TITLE_MAX_LEN = 200
 
 
 def _parse_json_list(text: str | None) -> list:
-    """Parses a JSON-text snapshot field into a list.
-
-    Covers `funding`/`versions`/`affiliations`/`code_url`, see `JSON_TEXT_FIELDS`
-    in `pauk/graph/extract.py`. Missing or broken data gives an empty list: it's
-    not worth failing the whole generation over.
-    """
+    """Read JSON-text lists, wrapping single values from legacy snapshots."""
     if not text:
         return []
     try:
@@ -342,6 +337,22 @@ class PubNodeBuilder:
             title = row["title"] or ""
             if len(title) > PUB_TITLE_MAX_LEN:
                 title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1 keeps the ellipsis within the limit
+            source_records = _parse_json_list(row.get("source_records"))
+            source_links = [
+                {
+                    "source": record.get("source") or "source",
+                    "key": record.get("key") or "",
+                    "url": record.get("source_url") or "",
+                }
+                for record in source_records
+                if record.get("source_url")
+            ]
+            if not source_links and row.get("openalex_url"):
+                source_links = [{
+                    "source": "openalex",
+                    "key": "",
+                    "url": row["openalex_url"],
+                }]
             detail.append(
                 {
                     "key": row["id"],
@@ -355,6 +366,9 @@ class PubNodeBuilder:
                     "fields": row.get("fields") or [],
                     "funding": _parse_json_list(row.get("funding")),
                     "versions": _parse_json_list(row.get("versions")),
+                    "sources": row.get("sources") or [],
+                    "source_keys": row.get("source_keys") or [],
+                    "source_links": source_links,
                     "openalex_url": row.get("openalex_url") or "",
                     "abstract": row.get("abstract") or "",
                 }

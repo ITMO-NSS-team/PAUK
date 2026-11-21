@@ -9,6 +9,7 @@ from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.overrides import CREATE, active_overrides
 from pauk.settings import Settings
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_admin_nodes import FakePanelGraph
 
 
@@ -227,19 +228,86 @@ class RestoreTest(unittest.TestCase):
         return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_node_comes_back_with_the_fields_it_had(self):
-        csrf = self.sign_in()
-        response = self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/LinkCandidate/L1").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 303)
         node = self.graph.nodes[("LinkCandidate", "L1")]
         self.assertEqual(node["url"], "https://x.test")
         self.assertEqual(node["host"], "x.test")
 
+    def test_a_deleted_publication_can_be_restored(self):
+        from pauk.graph.overrides import record_override
+
+        self.db[feed.COLLECTION].insert_one(
+            entry(
+                entity_type="Publication",
+                entity_id="W9",
+                change_kind="deleted",
+                diff={"id": ["W9", None], "title": ["Paper", None]},
+            ),
+        )
+        record_override(
+            self.db,
+            "Publication",
+            "W9",
+            "delete",
+            actor="user:roman",
+            snapshot={"title": "Paper"},
+        )
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/Publication/W9").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Publication", "W9")]["title"], "Paper")
+
+    def test_publication_delete_and_restore_preserves_identity_and_provenance(self):
+        publication_id = "pub_source_neutral"
+        expected = {
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1","source":"manual","source_id":"work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        }
+        self.graph.nodes[("Publication", publication_id)] = {
+            "id": publication_id,
+            **expected,
+        }
+        csrf = self.sign_in()
+
+        response = self.client.post(
+            f"/nodes/Publication/delete/{publication_id}",
+            data={"csrf": csrf},
+        )
+
+        self.assertEqual(response.status_code, 303)
+        decision = self.db.graph_overrides.find_one({
+            "_id": f"node:Publication:{publication_id}",
+        })
+        self.assertEqual(decision["snapshot"], expected)
+
+        form = RenderedForms(self.client.get(f"/nodes/Publication/{publication_id}").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        restored = self.graph.nodes[("Publication", publication_id)]
+        self.assertEqual(
+            {name: restored[name] for name in expected},
+            expected,
+        )
+
     def test_restoring_withdraws_the_tombstone(self):
         # Without this the next publish would delete the node a second
         # time, and the restore would look like it silently failed.
         from pauk.graph.overrides import active_overrides
-        csrf = self.sign_in()
-        self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
+        self.sign_in()
+        form = RenderedForms(self.client.get("/nodes/LinkCandidate/L1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
         self.assertEqual(active_overrides(self.db), [])
 
     def test_creating_the_same_id_by_hand_also_withdraws_it(self):
@@ -312,9 +380,8 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
     def test_the_record_comes_back_whole(self):
         # Through the page, not straight at the route: the button itself
         # has to be reachable.
-        page = self.client.get("/nodes/Person/A1").text
-        action = re.search(r'action="([^"]*restore[^"]*)"', page).group(1)
-        self.client.post(action, data={"csrf": self.csrf})
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(form["action"], data=form["fields"]).status_code, 303)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
 
     def test_an_empty_feed_is_not_shown_as_an_empty_table(self):

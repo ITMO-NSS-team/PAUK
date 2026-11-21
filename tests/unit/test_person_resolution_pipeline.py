@@ -590,6 +590,35 @@ class ResolverCacheTest(unittest.TestCase):
 
         self.assertEqual(len(keys), 2)
 
+    def test_cache_only_reuses_hits_without_requesting_or_logging_misses(self):
+        calls = []
+
+        def chat_json(self_client, prompt, **kwargs):
+            calls.append(prompt)
+            return self.answer(7)
+
+        with patch("pauk.sources.OpenRouterClient.chat_json", chat_json, create=True):
+            stored = self.models.first_many([(7, self.evidence())])
+        logs_before = self.db["llm_logs_person_resolution"].count_documents({})
+        cache_only = ResolutionModels(self.config, self.db, "migration", cache_only=True)
+        other = PairEvidence(person_a="B1", name_a="Anna Volkova", person_b="B2", name_b="A. Volkova")
+
+        with patch(
+            "pauk.sources.OpenRouterClient.chat_json",
+            side_effect=AssertionError("cache-only resolution made an external request"),
+        ):
+            hit = cache_only.first_many([(19, self.evidence())])
+            miss = cache_only.first_many([(20, other)])
+
+        self.assertTrue(stored[7].duplicate)
+        self.assertTrue(hit[19].duplicate)
+        self.assertIsNone(miss[20])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            self.db["llm_logs_person_resolution"].count_documents({}),
+            logs_before,
+        )
+
 
 class ResolverBatchingTest(unittest.TestCase):
     """The pool is fed in blocks, so every request must still be answered

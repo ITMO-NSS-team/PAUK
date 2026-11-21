@@ -22,15 +22,17 @@ messages.
 ## `run` / `collect`
 
 ```
-pauk run     --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
-pauk collect --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
+pauk run     [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
+pauk collect [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
 ```
 
 `run` is `collect`, `normalize` and `enrich` (all stages) in one call. It
 does **not** include `publish graph`: loading into the shared Neo4j stays a
 separate manual step (`PipelineRunner.run()`). `--work`, `--works-file` and
 `--from` + `--to` are alternative ways to select works; `--name` overrides
-the generated group name.
+the generated group name. `--work` and `--works-file` remain aliases for
+`--id` and `--ids-file`. Collection is implemented only for OpenAlex in this
+release; the selector names are source-neutral for future adapters.
 
 Before collecting new works, `collect` repairs stored records whose author
 list was cut off by the OpenAlex list endpoint limit
@@ -39,13 +41,13 @@ list was cut off by the OpenAlex list endpoint limit
 ## `normalize`
 
 ```
-pauk normalize --group <group>
+pauk normalize --group <group> [--source openalex]
 ```
 
 Parses the raw MongoDB collection (`raw`, filtered by `group`) into the
-prepared collections. Re-running on the same group is safe: it keeps
-enrichment data and `_processing` already on existing rows and merges them
-with the refreshed raw content (`OpenAlexNormalizer.run()`). Entities in
+prepared collections through the adapter/identity/aggregate orchestrator.
+Re-running an unchanged record is a no-op; a changed record resets dependent
+enrichment centrally. Entities in
 MongoDB are global: if the same work id already appeared in another group,
 normalization sees its current state by id (`PreparedStore.get_models`), not
 only what this group has accumulated. See [storage.md](storage.md).
@@ -104,6 +106,31 @@ graph**, not one group. It is the only way to catch duplicates that reached
 Neo4j from different runs and never sat side by side in one group. It is not
 part of `run`; run it by hand once several groups have accumulated. See
 [pipeline/dedup.md](pipeline/dedup.md).
+
+## `versions link` / `versions report`
+
+```
+pauk versions link [--llm] [--force]
+pauk versions report [--output <path>]
+```
+
+Both find publication pairs that look like versions of one work under
+different DOIs, which `dedup` keeps as separate nodes (preprint → publication,
+original → translation, conference paper → journal article, a revision under
+its own DOI), plus look-alikes explained by their bucket (an erratum, a cover,
+a series entry). Neither merges anything.
+
+`link` takes the graph lock and writes every pair as an
+`(:Publication)-[:IS_VERSION {bucket, ...}]->(:Publication)` edge, removes
+edges the rules no longer produce, and puts mergeable pairs into the review
+queue (`/review`, "Версии публикаций"). `--llm` asks the LLM
+(the standard `PAUK_LLM_MODEL`) about MEDIUM_FUZZY pairs no earlier run asked
+about; `--force` asks again. The admin panel runs it as the `versions` job.
+
+`report` only reads the graph (MongoDB is not needed) and writes the journal
+(by default `data/cache/version_candidates_report.jsonl`, MEDIUM_FUZZY
+unrouted); `link` writes its own routed one to `data/cache/version_candidates.jsonl`.
+See [pipeline/version-candidates.md](pipeline/version-candidates.md).
 
 ## `admin`: manual graph edits
 

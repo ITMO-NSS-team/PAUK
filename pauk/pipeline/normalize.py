@@ -1,37 +1,21 @@
 from __future__ import annotations
 
 import html
-import logging
 import re
-from collections import OrderedDict
 from copy import deepcopy
-from datetime import date
 from hashlib import sha1
-from typing import TypeVar
 
-from pauk.models import Authorship, Funding, Person, Publication
+from pauk.models import Funding, Person
 from pauk.models.person import MembershipOwnerSources
 from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.membership import (
-    ITMO_ROR_ID,
     apply_membership,
-    authorship_institution_rors,
-    authorship_snapshot_is_current,
     coalesce_authorships,
-    extend_owner_sources,
-    iter_work_membership,
     merge_owner_sources,
-    reconcile_authorship_snapshot,
-    refresh_authorship_membership,
-    source_observed_at,
 )
 from pauk.storage import PreparedStore, RawStore
 
-logger = logging.getLogger(__name__)
-
-# Constrained (not bound) so a call passing Publication resolves _seed's
-# return type to list[Publication], not list[Publication | Person].
-_PreparedModel = TypeVar("_PreparedModel", Publication, Person)
+ITMO_ROR_ID = "04txgxn49"
 
 # An author slot sometimes holds a venue, a collaborator group or a contact
 # address. OpenAlex mints author entities for all of them; persons they are not.
@@ -192,7 +176,6 @@ def _merge_person(base: Person, extra: Person) -> Person:
     tracked = base.github_match is not None or extra.github_match is not None
     matches = []
     if tracked:
-        # Merge independent sources first, or one row's match could erase the other's facts later.
         matches = retract_matches(base)
         for match in retract_matches(extra):
             if match not in matches:
@@ -200,10 +183,15 @@ def _merge_person(base: Person, extra: Person) -> Person:
     base.is_itmo = base.is_itmo or extra.is_itmo
     if base.id != extra.id:
         base.merged_ids = list(dict.fromkeys([*base.merged_ids, extra.id, *extra.merged_ids]))
-    base.membership_owner_sources = merge_owner_sources(base.membership_owner_sources, extra.membership_owner_sources)
+    base.membership_owner_sources = merge_owner_sources(
+        base.membership_owner_sources,
+        extra.membership_owner_sources,
+    )
     for field in Person.model_fields:
-        if field in {"id", "openalex_id", "is_itmo", "processing", "github_match",
-                     "membership_owner_sources", "membership_status", "membership_policy"}:
+        if field in {
+            "id", "openalex_id", "is_itmo", "processing", "github_match",
+            "membership_owner_sources", "membership_status", "membership_policy",
+        }:
             continue
         current, incoming = getattr(base, field), getattr(extra, field)
         if isinstance(current, list):
@@ -220,229 +208,26 @@ def _merge_person(base: Person, extra: Person) -> Person:
     coalesce_authorships(base)
     apply_membership(base)
     if tracked:
-        apply_matches(base, matches,
-                      cleared_fields=extra.github_match.cleared_fields if extra.github_match else (),
-                      cleared_contributions=extra.github_match.cleared_contributions if extra.github_match else (),
-                      withdrawn_logins=extra.github_match.withdrawn_logins if extra.github_match else ())
+        apply_matches(
+            base,
+            matches,
+            cleared_fields=extra.github_match.cleared_fields if extra.github_match else (),
+            cleared_contributions=(
+                extra.github_match.cleared_contributions if extra.github_match else ()
+            ),
+            withdrawn_logins=extra.github_match.withdrawn_logins if extra.github_match else (),
+        )
     return base
 
 
 class OpenAlexNormalizer:
+    """Compatibility facade for the source-neutral normalization pipeline."""
+
     def __init__(self, raw: RawStore, prepared: PreparedStore) -> None:
         self.raw = raw
         self.prepared = prepared
 
-    def _seed(self, entity: str, model: type[_PreparedModel], ids: set[str]) -> list[_PreparedModel]:
-        """This group's own rows for `entity`, plus any of `ids` found in other groups.
-
-        Own rows always come first so a legacy or renamed row is
-        canonicalized on every re-run even when no fresh raw data references
-        it. The cross-group lookup is additive: a work or author already
-        enriched by an overlapping run is found by id, not re-created.
-        """
-        known = list(self.prepared.read_models(entity, model))
-        missing = ids - {row.id for row in known}
-        return [*known, *self.prepared.get_models(entity, missing, model)]
-
     def run(self) -> dict[str, int]:
-        # Materialized once: both the id pre-scan below and the main loop
-        # walk this same batch, and self.raw.read() is a one-shot cursor.
-        envelopes = list(self.raw.read("openalex_works"))
-        work_ids = {work_id for e in envelopes if (work_id := _short_id(e["payload"].get("id")))}
-        person_ids = {
-            person_id
-            for e in envelopes
-            for authorship in (e["payload"].get("authorships") or [])
-            if (person_id := _authorship_person_id(authorship.get("author") or {}))
-        }
-        # A newer work may omit an author entirely; its earlier source claim
-        # must still be reachable even when this group never contained them.
-        if work_ids:
-            person_ids.update(
-                row["id"] for row in self.prepared.db.persons.find(
-                    {"$or": [
-                        {"authored.institution_source_id": {"$in": sorted(work_ids)}},
-                        {"membership_work_sources.institution_source_id": {"$in": sorted(work_ids)}},
-                    ]}, {"id": 1},
-                ) if row.get("id")
-            )
-        publications: OrderedDict[str, Publication] = OrderedDict(
-            (row.id, row) for row in self._seed("publications", Publication, work_ids)
-        )
-        persons: OrderedDict[str, Person] = OrderedDict()
-        for row in self._seed("persons", Person, person_ids):
-            # Re-normalization applies the current non-person rule to rows an
-            # earlier, narrower filter let through.
-            if NOT_A_PERSON_NAME.search(row.name_raw or ""):
-                logger.info("normalize: dropping an author row that is not a person: %s", row.name_raw)
-                continue
-            canonical = _canonical_person_id(row)
-            row.id = canonical
-            existing = persons.get(canonical)
-            persons[canonical] = _merge_person(existing, row) if existing else row
-        # Authors previously folded by the dedup stage keep routing to their
-        # canonical person on re-normalization instead of resurfacing as a
-        # fresh duplicate row.
-        merged_alias = {merged_id: person.id for person in persons.values() for merged_id in person.merged_ids}
-        # Same for works the dedup stage folded into one publication: their
-        # raw payloads are still on disk, but they are versions of a
-        # publication that already exists, not publications of their own.
-        publication_alias = {
-            merged_id: publication.id for publication in publications.values() for merged_id in publication.merged_ids
-        }
-        source_people: dict[str, set[str]] = {}
-        for person in persons.values():
-            for authored in iter_work_membership(person):
-                if authored.institution_source_id:
-                    source_people.setdefault(authored.institution_source_id, set()).add(person.id)
-        for envelope in envelopes:
-            work = envelope["payload"]
-            work_id = _short_id(work.get("id"))
-            if not work_id:
-                continue
-            publication_id = publication_alias.get(work_id, work_id)
-            observed_at = source_observed_at(envelope.get("fetched_at"))
-            raw_authorships = work.get("authorships")
-            slots = {
-                (owner, position): authorship_institution_rors(authorship)
-                for position, authorship in enumerate(raw_authorships or [], start=1)
-                if isinstance(authorship, dict)
-                and (owner := _authorship_person_id(authorship.get("author") or {}))
-            }
-            author_count = work.get("authors_count")
-            complete = (
-                isinstance(raw_authorships, list)
-                and not work.get("is_authors_truncated")
-                and len(slots) == len(raw_authorships)
-                and (author_count is None or isinstance(author_count, int) and author_count <= len(raw_authorships))
-            )
-            current_owners = {
-                owner for owner, _ in slots
-                if (existing_person := persons.get(merged_alias.get(owner, owner))) is None
-                or authorship_snapshot_is_current(existing_person, owner, work_id, observed_at)
-            }
-            for person_id in source_people.get(work_id, ()):
-                reconcile_authorship_snapshot(persons[person_id], work_id, slots, observed_at, complete=complete)
-            if publication_id == work_id:
-                pub_date = work.get("publication_date")
-                source = (work.get("primary_location") or {}).get("source") or {}
-                normalized_publication = Publication(
-                    id=work_id,
-                    title=_clean_markup(work.get("title")) or "Untitled",
-                    type=work.get("type"),
-                    fields=_fields(work),
-                    doi=work.get("doi"),
-                    openalex_url=work.get("id"),
-                    publication_date=date.fromisoformat(pub_date) if pub_date else None,
-                    year=int(pub_date[:4]) if pub_date else None,
-                    journal=source.get("display_name"),
-                    pdf_urls=list(dict.fromkeys(
-                        url for location in [work.get("best_oa_location"), *(work.get("locations") or [])]
-                        if (url := (location or {}).get("pdf_url"))
-                    )),
-                    abstract=_abstract(work),
-                    funding=_funding(work),
-                )
-                existing_publication = publications.get(work_id)
-                if existing_publication:
-                    normalized_publication.has_code = existing_publication.has_code
-                    normalized_publication.code_url = existing_publication.code_url
-                    normalized_publication.full_text = existing_publication.full_text
-                    normalized_publication.department_ids = existing_publication.department_ids
-                    normalized_publication.mentions_links = existing_publication.mentions_links
-                    normalized_publication.versions = existing_publication.versions
-                    normalized_publication.merged_ids = existing_publication.merged_ids
-                    normalized_publication.processing = existing_publication.processing
-                    normalized_publication.pdf_urls = list(dict.fromkeys([
-                        *normalized_publication.pdf_urls, *existing_publication.pdf_urls,
-                    ]))
-                normalized_publication.processing.pop("pdf", None)
-                publications[work_id] = normalized_publication
-            external_kept = 0
-            for position, authorship in enumerate(work.get("authorships") or [], start=1):
-                author = authorship.get("author") or {}
-                name = author.get("display_name") or ""
-                if NOT_A_PERSON_NAME.search(name):
-                    logger.info("normalize: %s lists a non-person in an author slot, skipping: %s",
-                                work_id, name)
-                    continue
-                openalex_id = _short_id(author.get("id"))
-                person_id = openalex_id or _fallback_person_id(author)
-                if not person_id:
-                    continue
-                source_person_id = person_id
-                person_id = merged_alias.get(person_id, person_id)
-                institution_rors = authorship_institution_rors(authorship)
-                is_itmo = ITMO_ROR_ID in (institution_rors or [])
-                if not is_itmo:
-                    # Positions keep counting, so the kept authorships stay at
-                    # the positions the work listed them under.
-                    external_kept += 1
-                    if external_kept > EXTERNAL_AUTHORS_LIMIT:
-                        continue
-                person = persons.setdefault(
-                    person_id,
-                    Person(
-                        id=person_id,
-                        openalex_id=openalex_id,
-                        is_itmo=False,
-                        name_raw=author.get("display_name"),
-                        membership_owner_sources=[MembershipOwnerSources(
-                            source_person_id=source_person_id, work_ids=[], orcid_ids=[], observed_at=observed_at,
-                        )],
-                    ),
-                )
-                source_people.setdefault(work_id, set()).add(person_id)
-                if source_person_id not in current_owners:
-                    continue
-                person.orcid = person.orcid or _short_id(author.get("orcid"))
-                extend_owner_sources(
-                    person, source_person_id, work_id=work_id,
-                    orcid_id=_short_id(author.get("orcid")), observed_at=observed_at,
-                )
-                variants = author.get("display_name_alternatives") or []
-                person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
-                authorship_record = Authorship(
-                    publication_id=publication_id,
-                    position=position,
-                    affiliation="; ".join(authorship.get("raw_affiliation_strings") or []) or None,
-                    is_corresponding=bool(authorship.get("is_corresponding")),
-                    institution_source_person_id=source_person_id,
-                    institution_source_id=work_id,
-                )
-                # Matched on (publication, position) rather than on equality:
-                # one author legitimately appears twice on one work, but the
-                # same slot must not come back as a second record just because
-                # the persons stage filled in an affiliation the work omits.
-                existing_authorship = next(
-                    (
-                        row
-                        for row in person.authored
-                        if row.publication_id == publication_id and row.position == position
-                    ),
-                    None,
-                )
-                if existing_authorship is None:
-                    person.authored.append(authorship_record)
-                    refresh_authorship_membership(
-                        person, authorship_record, authorship, source_person_id, work_id, observed_at,
-                        snapshot_accepted=True,
-                    )
-                    continue
-                refresh_authorship_membership(
-                    person, existing_authorship, authorship, source_person_id, work_id, observed_at,
-                    snapshot_accepted=True,
-                )
-                existing_authorship.is_corresponding = (
-                    existing_authorship.is_corresponding or authorship_record.is_corresponding
-                )
-                if authorship_record.affiliation:
-                    # What the work states always wins over a filled-in value.
-                    existing_authorship.affiliation = authorship_record.affiliation
-                    existing_authorship.affiliation_source = None
-        for person in persons.values():
-            coalesce_authorships(person)
-            apply_membership(person)
-        self.prepared.write_models("publications", publications.values())
-        self.prepared.write_models("persons", persons.values())
-        return {"publications": len(publications), "persons": len(persons)}
+        from pauk.ingest.normalizer import PublicationNormalizer
+
+        return PublicationNormalizer(self.raw, self.prepared).run("openalex")

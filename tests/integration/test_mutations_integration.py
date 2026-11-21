@@ -13,6 +13,7 @@ Skipped unless testcontainers is installed and Docker is reachable:
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -27,7 +28,15 @@ from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
-from pauk.graph.mutations import NotFound, VersionConflict, merge_nodes, update_node
+from pauk.graph.mutations import (
+    NotFound,
+    VersionConflict,
+    delete_node,
+    merge_nodes,
+    restore_node,
+    snapshot_fields,
+    update_node,
+)
 from pauk.graph.unmerge import split_person
 from pauk.models import GitHubProfile, Person
 from pauk.pipeline.stages.dedup import DedupStage
@@ -56,8 +65,8 @@ def setUpModule():  # noqa: N802 - unittest's required hook name
             f"testcontainers not installed ({_IMPORT_ERROR}); "
             "run with --with 'testcontainers[neo4j]' to include these tests"
         )
-    _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
     try:
+        _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
         _container.start()
     except Exception as exc:  # Docker not running, no permission, pull failure
         raise unittest.SkipTest(f"could not start a Neo4j container: {exc}") from exc
@@ -120,6 +129,28 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_reading_a_node_that_is_not_there(self):
         self.assertIsNone(_client.fetch_node_properties("Person", "nobody"))
+
+    def test_publication_restore_preserves_read_only_provenance(self):
+        expected = {
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        }
+        _client.upsert_nodes_batch("Publication", [("pub_1", expected)])
+        snapshot = snapshot_fields(
+            "Publication",
+            _client.fetch_node_properties("Publication", "pub_1"),
+        )
+
+        self.assertEqual(delete_node(_client, "Publication", "pub_1"), 1)
+        restored = restore_node(_client, "Publication", "pub_1", snapshot)
+
+        self.assertEqual({name: restored[name] for name in expected}, expected)
 
 
 class GitHubMatchPublicationIntegrationTest(unittest.TestCase):
@@ -294,8 +325,6 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
                     self.assertTrue(self.corresponding())
 
     def test_graph_person_dedup_preserves_full_properties(self):
-        import json
-
         from pauk.graph.dedup import dedup_graph_persons
 
         for index in (1, 2, 3):
@@ -311,6 +340,57 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(survivor["other_names"], ["Alias 1", "Alias 2", "Alias 3"])
         self.assertEqual(len(json.loads(survivor["affiliations"])), 3)
         self.assertEqual(survivor["biography"], "Profile 1")
+
+    def test_publication_fold_preserves_source_identity_and_provenance(self):
+        _client.upsert_nodes_batch("Publication", [
+            ("pub_1", {
+                "sources": ["catalog"],
+                "source_keys": ["catalog:P1"],
+                "identifiers": json.dumps([
+                    {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+                ]),
+                "source_records": json.dumps([
+                    {"source": "catalog", "source_id": "P1", "key": "catalog:P1"},
+                ]),
+            }),
+            ("pub_2", {
+                "sources": ["archive"],
+                "source_keys": ["archive:A1"],
+                "identifiers": json.dumps([
+                    {"scheme": "archive", "value": "A1", "normalized_key": "archive:A1"},
+                ]),
+                "source_records": json.dumps([
+                    {"source": "archive", "source_id": "A1", "key": "archive:A1"},
+                ]),
+            }),
+        ])
+        self.assertEqual(_client.merge_publication_nodes_batch([("pub_2", "pub_1")]), 1)
+        survivor = _client.fetch_node_properties("Publication", "pub_1")
+        self.assertEqual(survivor["sources"], ["catalog", "archive"])
+        self.assertEqual(survivor["source_keys"], ["catalog:P1", "archive:A1"])
+        self.assertEqual(
+            {item["key"] for item in json.loads(survivor["source_records"])},
+            {"catalog:P1", "archive:A1"},
+        )
+
+    def test_source_neutral_publication_loads_without_openalex_fields(self):
+        load_prepared_rows(_client, {"publications.jsonl": [{
+            "id": "pub_1",
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": [
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ],
+            "source_records": [
+                {"key": "catalog:P1", "source": "catalog", "source_id": "P1"},
+            ],
+        }]})
+        publication = _client.fetch_node_properties("Publication", "pub_1")
+        self.assertNotIn("openalex_url", publication)
+        self.assertEqual(publication["source_keys"], ["catalog:P1"])
+        self.assertEqual(json.loads(publication["source_records"])[0]["key"], "catalog:P1")
 
     def test_partial_republish_keeps_graph_merge_evidence(self):
         from pauk.graph.dedup import dedup_graph_persons

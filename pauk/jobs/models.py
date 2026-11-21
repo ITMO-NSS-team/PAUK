@@ -24,6 +24,8 @@ class JobKind(StrEnum):
     MAP = "map"
     PRUNE = "prune"
     HEALTH = "health"
+    #: IS_VERSION edges between publications, `pauk versions link`.
+    VERSIONS = "versions"
     #: Collect, publish, rebuild the map: one job, since publishing needs a group.
     PIPELINE = "pipeline"
 
@@ -71,6 +73,7 @@ class CollectPayload(BaseModel):
     running the pipeline, and a path from a browser reads unrelated files."""
 
     group: str
+    source: str = "openalex"
     work_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None
@@ -92,6 +95,20 @@ class PublishPayload(BaseModel):
 
 class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
+
+
+class VersionsPayload(BaseModel):
+    """Whether to ask the LLM about MEDIUM_FUZZY pairs nobody asked about yet."""
+
+    llm: bool = False
+    members: tuple[str, str] | None = None
+
+    @field_validator("members")
+    @classmethod
+    def _pair(cls, value: tuple[str, str] | None) -> tuple[str, str] | None:
+        if value is not None and (not all(value) or value[0] == value[1]):
+            raise ValueError("a version pair needs two distinct publication IDs")
+        return value
 
 
 class HealthPayload(BaseModel):
@@ -128,6 +145,7 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.MAP: MapPayload,
     JobKind.PRUNE: PrunePayload,
     JobKind.HEALTH: HealthPayload,
+    JobKind.VERSIONS: VersionsPayload,
     JobKind.PIPELINE: PipelinePayload,
 }
 

@@ -3,7 +3,7 @@
 **What it covers:** which entities and fields exist in the prepared layer
 and what each field means.
 
-**Files:** `pauk/models/publication.py`, `person.py`, `department.py`,
+**Files:** `pauk/models/identity.py`, `publication.py`, `person.py`, `department.py`,
 `organization.py`, `repository.py`, `relations.py`, `processing.py`,
 `__init__.py`.
 
@@ -14,7 +14,12 @@ the relation-like models.
 
 ## `publication.py`
 
-- **`Publication`**: id is the OpenAlex work ID without the URL prefix.
+- **`Publication`**: `id` is an opaque PAUK identity. Existing rows keep their
+  `W…` ids; newly ingested rows use `pub_<uuid4>`.
+  - `identifiers` holds normalized external identifiers. `source_records`
+    keeps every provider-owned bibliographic record; `sources` and
+    `source_keys` are indexed projections of that ledger. `schema_version=2`
+    marks rows governed by this identity model.
   - `type` is the OpenAlex work type (`article`, `preprint`, `software`,
     `dataset`, ...); `code_links.py` uses it, for example, to detect
     archived Zenodo deposits ([pipeline/code-links.md](pipeline/code-links.md)).
@@ -28,14 +33,24 @@ the relation-like models.
     graph goes through `repo_links` (`RepoLink`/`CodeLink`); see
     [neo4j-graph.md](neo4j-graph.md).
   - `versions` and `merged_ids` are the merge ledger (below).
+  - `venue_type` is the OpenAlex source type of the primary venue
+    (`journal`, `conference`, `repository`, ...); the version rules use it
+    to tell a conference paper's journal extension from two talks.
   - `pdf_urls` are unique candidates from `best_oa_location` and `locations`,
     in load order; they are combined on re-normalization and dedup.
-- **`PublicationVersion`**: one OpenAlex record folded into this publication
-  by dedup: a preprint, a record version, or a duplicate from OpenAlex
-  reindexing. It keeps the title, DOI, journal, date, abstract and authors of
+- **`PublicationSourceRecord`** is the source-neutral replacement for the
+  OpenAlex-only version ledger. It owns its title, DOI, venue, type, dates,
+  subjects, PDFs, abstract, authors and metadata. Canonical fields are a
+  deterministic projection of all records.
+- **`PublicationVersion`**: compatibility projection of an OpenAlex record
+  folded into this publication by dedup. A preprint or translation with its
+  own DOI remains a separate `Publication` related by `IS_VERSION`
+  ([pipeline/version-candidates.md](pipeline/version-candidates.md)). It keeps
+  the title, DOI, journal, date, abstract and authors of
   **that specific record**, so merging loses no source; everything stays
   available through `versions` even if the surviving publication took other
-  field values.
+  field values. It is not enough to rebuild the record as a node (no type,
+  fields, funding or departments); the raw OpenAlex payload is.
 - **`VersionAuthor`**: an author of one version as OpenAlex listed them
   (`person_id`, `name`, `position`). It is not the publication's current
   author list, which comes from `Authorship` relations to `Person`.
@@ -48,10 +63,10 @@ the relation-like models.
   platforms (Zenodo, SSRN) often omit a coauthor's affiliation on a given
   work; `PersonsStage` then picks the affiliation for that year from the
   author's own OpenAlex/ORCID records instead of what the work says.
-- **`Person`**: id is normally the bare OpenAlex author ID. When the source
-  has no author ID, normalization uses `orcid_<orcid>` or `name_<hash>` until
-  dedup resolves the identity. ITMO and external authors share the `Person`
-  label; there is no `itmo_*`/`external_*` split.
+- **`Person`**: `id` is opaque. Existing rows keep bare OpenAlex ids; new
+  people use `per_<uuid4>`. `identifiers` owns OpenAlex/ORCID/occurrence
+  identity; `openalex_id` remains a transition compatibility field. ITMO and
+  external authors share the `Person` label.
   - `is_itmo` remains the boolean used by existing consumers. Membership
     status and source-specific evidence explain how it was calculated.
     An explicit institution ROR for this author on a collected work or an

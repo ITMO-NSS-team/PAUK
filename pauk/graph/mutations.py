@@ -9,18 +9,30 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import get_args, get_origin
+
+from pydantic import AnyHttpUrl, ValidationError
+
+from pauk.models import Department, GitHubProfile, LinkCandidate, Organization, Person, Publication, Repository
 
 from .client import Neo4jClient
 from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# Set by client.py itself on every write; not editable from outside.
-RESERVED_FIELDS = frozenset({"id", "created_at", "updated_at"})
+# Identity and provenance are owned by raw -> adapter -> resolver. Editing
+# them directly in Neo4j would bypass the global identity index and be lost
+# on the next publish. Restoration is different: it must put these fields
+# back exactly as the pipeline published them.
+RESERVED_FIELDS = frozenset({
+    "id", "created_at", "updated_at", "schema_version", "identifiers",
+    "source_records", "sources", "source_keys", "openalex_url", "versions",
+})
+SERVICE_FIELDS = frozenset({"id", "created_at", "updated_at"})
 
 
-def _build_node_fields() -> dict[str, frozenset[str]]:
-    """label -> the properties the loader publishes for it.
+def _build_node_property_fields() -> dict[str, frozenset[str]]:
+    """Label -> restorable properties the loader publishes for it.
 
     Person appears in the registry twice (ITMO and external) with the same
     base label, so the two field lists are unioned.
@@ -28,8 +40,10 @@ def _build_node_fields() -> dict[str, frozenset[str]]:
     fields: dict[str, set[str]] = {}
     for spec in NODE_REGISTRY.values():
         fields.setdefault(spec.labels.split(":")[0], set()).update(spec.prop_fields)
-    # The database owns created_at, so `admin schema` must not advertise it.
-    return {label: frozenset(names - RESERVED_FIELDS) for label, names in fields.items()}
+    return {
+        label: frozenset(names - SERVICE_FIELDS)
+        for label, names in fields.items()
+    }
 
 
 def _build_relationships() -> dict[tuple[str, str, str], str]:
@@ -46,8 +60,22 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
     return relationships
 
 
-NODE_FIELDS = _build_node_fields()
+NODE_SNAPSHOT_FIELDS = _build_node_property_fields()
+NODE_FIELDS = {
+    label: frozenset(names - RESERVED_FIELDS)
+    for label, names in NODE_SNAPSHOT_FIELDS.items()
+}
 RELATIONSHIPS = _build_relationships()
+NODE_LIST_FIELDS = {
+    model.__name__: {
+        name: get_args(field.annotation)[0]
+        for name, field in model.model_fields.items()
+        if name in NODE_FIELDS[model.__name__] and get_origin(field.annotation) is list
+    }
+    for model in (Department, Organization, Person, Publication, Repository, GitHubProfile, LinkCandidate)
+}
+# The public model keeps code_url as JSON text for compatibility with the map.
+NODE_LIST_FIELDS["Publication"]["code_url"] = str
 
 # What the search box looks at: explicit, since these go into Cypher.
 SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
@@ -126,7 +154,10 @@ def as_stored(props: dict) -> dict:
     stored = dict(props)
     for key in JSON_TEXT_FIELDS:
         if isinstance(stored.get(key), (list, dict)):
-            stored[key] = json.dumps(stored[key], ensure_ascii=False)
+            try:
+                stored[key] = json.dumps(stored[key], ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError):
+                raise MutationError(f"{key}: значение должно быть корректным JSON") from None
     return stored
 
 
@@ -152,6 +183,105 @@ def validate_fields(label: str, props: dict) -> None:
         raise UnknownEntity(
             f"{label}: unknown field(s) {', '.join(sorted(unknown))} "
             f"(known: {', '.join(sorted(NODE_FIELDS[label]))})")
+
+
+def validate_snapshot_fields(label: str, props: dict) -> None:
+    """Accept pipeline-owned properties only for restoring an existing node."""
+    validate_label(label)
+    unknown = props.keys() - NODE_SNAPSHOT_FIELDS[label]
+    if unknown:
+        raise UnknownEntity(
+            f"{label}: unknown snapshot field(s) {', '.join(sorted(unknown))}"
+        )
+
+
+def snapshot_fields(label: str, props: dict) -> dict:
+    """Keep the complete restorable node state, including provenance."""
+    validate_label(label)
+    return {
+        name: value
+        for name, value in props.items()
+        if name in NODE_SNAPSHOT_FIELDS[label] and value is not None
+    }
+
+
+def _list_value(name: str, value: object, item_type: type) -> list | None:
+    """Read model-declared lists without guessing from the current graph value."""
+    strings = item_type is str
+    message = (f"{name}: укажите одно значение или JSON-список строк" if strings
+               else f"{name}: укажите JSON-объект или список объектов")
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        if value.startswith(("[", "{", '"')):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                raise MutationError(message) from None
+    expected = str if strings else dict
+    if isinstance(value, expected):
+        value = [value]
+    if not isinstance(value, list) or any(not isinstance(item, expected) for item in value):
+        raise MutationError(message)
+    return value
+
+
+def _code_url_text(value: object) -> str | None:
+    """Accept one HTTP URL or a list, keeping the GUI's JSON-text format."""
+    value = _list_value("code_url", value, str)
+    if value is None:
+        return None
+    message = "code_url: укажите HTTP(S)-ссылку или JSON-список ссылок"
+    urls = []
+    for url in value:
+        url = url.strip()
+        try:
+            parsed = AnyHttpUrl(url)
+            valid = (not parsed.username and not parsed.password
+                     and not any(character.isspace() or character < " " or character == "\x7f"
+                                 for character in url))
+        except ValidationError:
+            valid = False
+        if not valid:
+            raise MutationError(message)
+        urls.append(url)
+    return json.dumps(urls, ensure_ascii=False)
+
+
+def normalize_fields(label: str, props: dict, *, from_snapshot: bool = False) -> dict:
+    """Validate new input; preserve stored values when restoring a snapshot."""
+    if from_snapshot:
+        validate_snapshot_fields(label, props)
+        return as_stored(props)
+    validate_fields(label, props)
+    fields = dict(props)
+    for name in fields:
+        if label == "Publication" and name == "code_url":
+            fields[name] = _code_url_text(fields[name])
+        elif name in NODE_LIST_FIELDS[label]:
+            fields[name] = _list_value(name, fields[name], NODE_LIST_FIELDS[label][name])
+    return as_stored(fields)
+
+
+def field_values_equal(name: str, before: object, after: object) -> bool:
+    """Ignore formatting changes in valid JSON-text containers."""
+    if before == after:
+        return True
+    if name not in JSON_TEXT_FIELDS and name != "code_url":
+        return False
+    if not isinstance(before, str) or not isinstance(after, str):
+        return False
+    try:
+        first, second = json.loads(before), json.loads(after)
+        if not isinstance(first, (list, dict)) or type(first) is not type(second):
+            return False
+        return (json.dumps(first, sort_keys=True, allow_nan=False)
+                == json.dumps(second, sort_keys=True, allow_nan=False))
+    except (ValueError, TypeError):
+        return False
 
 
 def validate_relationship(src_label: str, rel_type: str, tgt_label: str) -> str:
@@ -276,8 +406,25 @@ def snapshot_relationships(client: Neo4jClient, label: str, node_id: str,
     return snapshots
 
 
+def _insert_node(
+    client: Neo4jClient,
+    label: str,
+    node_id: str,
+    props: dict,
+    *,
+    restoring: bool = False,
+) -> dict:
+    """Insert a missing node after its caller has established why it is allowed."""
+    props = normalize_fields(label, props, from_snapshot=restoring)
+    if client.fetch_node_properties(label, node_id) is not None:
+        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
+    client.upsert_nodes_batch(label, [(node_id, props)])
+    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
+    return read_node(client, label, node_id)
+
+
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
-    """Add a node the pipeline does not know about.
+    """Add a new node the pipeline does not know about.
 
     Such a node survives publishing: the loader only touches ids it has
     rows for, so a hand-made id is never overwritten.
@@ -287,16 +434,25 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
         MutationError: A node with this id already exists; creating it
             again would silently turn into an update.
     """
-    validate_fields(label, props)
-    if client.fetch_node_properties(label, node_id) is not None:
-        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
-    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
-    logger.info("created %s %s with %d field(s)", label, node_id, len(props))
-    return read_node(client, label, node_id)
+    if label == "Publication":
+        raise MutationError(
+            "Publication nodes are created by raw -> adapter -> identity resolution, not in Neo4j"
+        )
+    return _insert_node(client, label, node_id, props)
+
+
+def restore_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:
+    """Restore a deleted node from an audited snapshot.
+
+    This is deliberately separate from ``create_node``: publications cannot
+    be invented in Neo4j, but an existing publication deleted in the editor
+    must remain recoverable from its tombstone.
+    """
+    return _insert_node(client, label, node_id, props, restoring=True)
 
 
 def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
-                expected_updated_at: object | None = None) -> dict:
+                expected_updated_at: object | None = None, *, from_snapshot: bool = False) -> dict:
     """Change fields on an existing node.
 
     Args:
@@ -305,6 +461,7 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         label: Node label, from the whitelist.
         node_id: Which node.
         patch: Fields to set. Only the listed ones change.
+        from_snapshot: Restore stored values without applying new input rules.
         expected_updated_at: The `updated_at` the editor saw when the form
             was opened. When given and the node has moved on since, the
             write is refused instead of overwriting someone else's edit.
@@ -317,9 +474,9 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         VersionConflict: Someone else changed the node in the meantime.
         UnknownEntity: Unknown label or field.
     """
-    validate_fields(label, patch)
+    patch = normalize_fields(label, patch, from_snapshot=from_snapshot)
     current, updated = client.update_node_properties(
-        label, node_id, as_stored(patch), expected_updated_at)
+        label, node_id, patch, expected_updated_at)
     if current is None:
         raise NotFound(f"{label} {node_id} does not exist")
     if updated is None:

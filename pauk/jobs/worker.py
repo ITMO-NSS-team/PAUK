@@ -18,6 +18,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from pydantic import BaseModel
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
@@ -50,7 +51,9 @@ def _collect(config: Settings, db: Database, payload, stop: Stop,
     check_providers(config)
     selector = (WorkSelector(payload.work_id) if payload.work_id
                 else PeriodSelector(payload.date_from, payload.date_to))
-    return PipelineRunner(config, payload.group, db).run(selector, on_stage=report)
+    return PipelineRunner(config, payload.group, db).run(
+        selector, on_stage=report, source=payload.source,
+    )
 
 
 def _publish(config: Settings, db: Database, payload, stop: Stop,
@@ -74,6 +77,16 @@ def _dedup(config: Settings, db: Database, payload, stop: Stop,
     check_providers(config)
     report("склейка дублей по всему графу")
     return run_graph_dedup(config, db)
+
+
+def _versions(config: Settings, db: Database, payload, stop: Stop,
+              report: Report) -> dict[str, int]:
+    from pauk.graph.version_link import run_version_link, run_version_pair
+    if payload.members is not None:
+        report("сверка связи версий публикаций")
+        return run_version_pair(config, db, payload.members)
+    report("связи версий публикаций по всему графу")
+    return run_version_link(config, db, llm=payload.llm)
 
 
 def _prune(config: Settings, db: Database, payload, stop: Stop,
@@ -104,6 +117,9 @@ def _health(config: Settings, db: Database, payload, stop: Stop,
         stats = collect(client.driver)
     finally:
         client.close()
+    from pauk.admin.identity_health import collect as collect_identity_health
+
+    stats["checks"].extend(collect_identity_health(db))
     health.save(db, stats)
     counted = health.verdict(stats["checks"])
     return {"checks": len(stats["checks"]),
@@ -172,6 +188,7 @@ STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dic
     JobKind.MAP: _rebuild_map,
     JobKind.PRUNE: _prune,
     JobKind.HEALTH: _health,
+    JobKind.VERSIONS: _versions,
     JobKind.PIPELINE: _pipeline,
 }
 
@@ -323,6 +340,11 @@ class Worker:
             store.cancelled(self.db, job.id)
             return True
         except Exception as error:  # the worker outlives one bad job
+            if (job.kind == JobKind.VERSIONS and payload.members is not None
+                    and isinstance(error, (ServiceUnavailable, SessionExpired))):
+                logger.info("job %s waits for Neo4j: %s", job.id, error)
+                store.requeue(self.db, job.id, delay_seconds=60)
+                return True
             logger.exception("job %s failed", job.id)
             store.fail(self.db, job.id, f"{type(error).__name__}: {error}")
             return True

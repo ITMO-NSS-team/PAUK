@@ -20,12 +20,12 @@ BOOLEAN_MERGE_FIELDS = {
 }
 LIST_MERGE_FIELDS = {
     "Person": {"name_variants", "other_names", "emails", "merged_ids"},
-    "Publication": {"fields", "merged_ids", "pdf_urls"},
+    "Publication": {"fields", "merged_ids", "pdf_urls", "sources", "source_keys"},
     "Repository": {"cited_urls", "contributors", "merged_ids"},
 }
 JSON_LIST_MERGE_FIELDS = {
-    "Person": {"affiliations"},
-    "Publication": {"funding", "versions"},
+    "Person": {"affiliations", "identifiers"},
+    "Publication": {"funding", "versions", "identifiers", "source_records"},
 }
 
 MEMBERSHIP_FIELDS = {
@@ -213,6 +213,27 @@ def _union_values(current: list, extra: list) -> list:
     return merged
 
 
+def _union_json_property(field: str, current: list, extra: list) -> list:
+    """Merge JSON ledgers, keying identity/provenance entries by identity."""
+    key_field = {"identifiers": "normalized_key", "source_records": "key"}.get(field)
+    if key_field is None:
+        return _union_values(current, extra)
+    merged = list(current)
+    known = {
+        value.get(key_field) for value in current
+        if isinstance(value, dict) and value.get(key_field)
+    }
+    for value in extra:
+        key = value.get(key_field) if isinstance(value, dict) else None
+        if key and key in known:
+            continue
+        if value not in merged:
+            merged.append(value)
+        if key:
+            known.add(key)
+    return merged
+
+
 def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) -> dict:
     """Build the property updates needed before deleting a duplicate node."""
     updates = {}
@@ -249,7 +270,7 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
                 # non-null canonical value still wins rather than being lost.
                 current = extra = None
             if isinstance(current, list) and isinstance(extra, list):
-                merged = _union_values(current, extra)
+                merged = _union_json_property(key, current, extra)
                 encoded = json.dumps(merged, ensure_ascii=False)
                 if encoded != canonical_value:
                     updates[key] = encoded
@@ -264,6 +285,17 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
         if merged and merged != canonical.get("emails"):
             updates["emails"] = merged
     return updates
+
+
+def resolve_folded_id(client, label: str, node_id: str) -> str:
+    """Resolve an individual ID without loading every fold for its label."""
+    seen = {node_id}
+    while target := client.fetch_canonical_id(label, node_id):
+        if target in seen:
+            raise ValueError(f"{label} merge cycle: {target}")
+        seen.add(target)
+        node_id = target
+    return node_id
 
 
 def _preserve_merged_person_lists(stored: dict, incoming: dict) -> dict:
@@ -568,6 +600,9 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                // An edge between the two halves of a fold would become a
+                // loop; it goes with the duplicate instead.
+                WHERE other <> canonical
                 WITH canonical, other, old, row.priority AS priority
                 ORDER BY priority, elementId(old)
                 WITH canonical, other, collect(old) AS old_edges
@@ -589,6 +624,7 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                WHERE other <> canonical
                 WITH canonical, other, old, row.priority AS priority
                 ORDER BY priority, elementId(old)
                 WITH canonical, other, collect(old) AS old_edges
@@ -699,7 +735,8 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
-    def fetch_publications_for_dedup(self) -> list[dict]:
+    def fetch_publications_for_dedup(self, ids: list[str] | None = None,
+                                     *, folded_only: bool = False) -> list[dict]:
         """Every Publication node with the fields the merge rules consume.
 
         author_count feeds the ranking (between records of one work the
@@ -707,11 +744,15 @@ class Neo4jClient:
         author list feed the version ledger a fold writes onto the
         canonical node before the duplicate disappears.
         """
-        query = """
+        query = cast(LiteralString, """
             MATCH (p:Publication)
+            """ + (" WHERE p.id IN $ids " if ids is not None else
+                   " WHERE size(p.merged_ids) > 0 " if folded_only else "") + """
             OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
-            RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
-                   p.journal AS journal, p.publication_date AS publication_date,
+            RETURN p.id AS id, p.schema_version AS schema_version,
+                   p.type AS type, p.doi AS doi, p.title AS title,
+                   p.journal AS journal, p.venue_type AS venue_type,
+                   p.publication_date AS publication_date,
                    p.year AS year, p.openalex_url AS openalex_url,
                    p.pdf_urls AS pdf_urls, p.abstract AS abstract,
                    p.versions AS versions,
@@ -719,10 +760,78 @@ class Neo4jClient:
                    collect(CASE WHEN a IS NULL THEN NULL ELSE
                        {person_id: a.id, name: a.name_raw, position: authored.position}
                    END) AS authors
-        """
+        """)
         with self.driver.session() as session:
             return session.execute_read(
-                lambda tx: [dict(record) for record in tx.run(query)])
+                lambda tx: [dict(record) for record in tx.run(query, ids=ids)])
+
+    def fetch_version_edges(self, members: tuple[str, str] | None = None
+                            ) -> dict[tuple[str, str], dict]:
+        if members is None:
+            query = "MATCH (src:Publication)-[r:IS_VERSION]->(tgt:Publication)"
+        else:
+            query = (
+                "UNWIND $members AS id MATCH (src:Publication {id: id})"
+                "-[r:IS_VERSION]->(tgt:Publication) WHERE tgt.id IN $members"
+            )
+        query = cast(LiteralString, query + " RETURN src.id AS src, tgt.id AS tgt, properties(r) AS props")
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: {
+                (row["src"], row["tgt"]): dict(row["props"])
+                for row in tx.run(query, members=members)
+            })
+
+    def fetch_legacy_publications(self, known_ids: list[str]) -> list[dict]:
+        """Publication snapshots that exist only in the graph.
+
+        These are one-time migration inputs for legacy manual/admin-created
+        nodes. Normal publication creation still goes through raw adapters.
+        """
+        query = """
+            MATCH (p:Publication)
+            WHERE NOT p.id IN $known_ids
+            OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
+            RETURN properties(p) AS properties,
+                   collect(CASE WHEN a IS NULL THEN NULL ELSE {
+                       person_id: a.id,
+                       name: coalesce(a.name_raw, a.name_en, a.name_ru),
+                       position: authored.position,
+                       affiliation: authored.affiliation,
+                       is_corresponding: coalesce(authored.is_corresponding, false)
+                   } END) AS authors
+        """
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: [
+                {
+                    "properties": dict(record["properties"]),
+                    "authors": [author for author in record["authors"] if author],
+                }
+                for record in tx.run(query, known_ids=known_ids)
+            ])
+
+    def fetch_legacy_persons(self, known_ids: list[str]) -> list[dict]:
+        """Person snapshots that exist only in the graph."""
+        query = """
+            MATCH (p:Person)
+            WHERE NOT p.id IN $known_ids
+            OPTIONAL MATCH (p)-[authored:AUTHORED]->(w:Publication)
+            RETURN properties(p) AS properties,
+                   collect(CASE WHEN w IS NULL THEN NULL ELSE {
+                       publication_id: w.id,
+                       position: authored.position,
+                       affiliation: authored.affiliation,
+                       affiliation_source: authored.affiliation_source,
+                       is_corresponding: coalesce(authored.is_corresponding, false)
+                   } END) AS authored
+        """
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: [
+                {
+                    "properties": dict(record["properties"]),
+                    "authored": [authorship for authorship in record["authored"] if authorship],
+                }
+                for record in tx.run(query, known_ids=known_ids)
+            ])
 
     def fetch_publication_fields(self) -> dict[str, set[str]]:
         """Research fields per publication, for the person merge rules."""
@@ -864,9 +973,11 @@ class Neo4jClient:
             ("PRODUCED_BY", "Department"),
             ("MENTIONS_LINK", "Repository"),
             ("MENTIONS_LINK", "LinkCandidate"),
+            ("IS_VERSION", "Publication"),
         ), incoming=(
             ("Person", "AUTHORED"),
             ("Repository", "IMPLEMENTS"),
+            ("Publication", "IS_VERSION"),
         ))
 
     def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
@@ -1147,12 +1258,14 @@ class Neo4jClient:
         The other end's properties come along because an id does not always
         address it: two of the eleven relationships are matched by `url` or
         `login`, and removing such an edge needs that value, not the id.
-        The edge's own `props` let a caller restore its data after removal.
+        The edge's properties are returned as both `props` for manual edits
+        and `relationship_props` for publication repair.
         """
         text = (
             f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
             "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
             "properties(other) AS other_props, properties(r) AS props, "
+            "properties(r) AS relationship_props, "
             "startNode(r).id = n.id AS outgoing "
             "ORDER BY type, other_id"
         )
