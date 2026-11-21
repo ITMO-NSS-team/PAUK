@@ -688,11 +688,14 @@ class Neo4jClient:
                    p.name_variants AS name_variants, p.other_names AS other_names,
                    p.surname_ru AS surname_ru, p.surname_en AS surname_en,
                    p.first_name_ru AS first_name_ru, p.first_name_en AS first_name_en,
-                   p.orcid AS orcid, p.email AS email,
+                   p.orcid AS orcid, p.email AS email, p.emails AS emails,
                    p.github AS github,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,
+                   collect(DISTINCT CASE WHEN w IS NULL THEN NULL ELSE {
+                       id: w.id, doi: w.doi, merged_ids: w.merged_ids
+                   } END) AS publication_details,
                    collect(DISTINCT d.id) AS department_ids
         """
         with self.driver.session() as session:

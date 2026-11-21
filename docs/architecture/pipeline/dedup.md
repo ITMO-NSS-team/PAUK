@@ -62,6 +62,11 @@ proposed merge group.
 When contact addresses are disjoint and the only corroboration is a shared
 department or broad field, the pair is held for review. A matching trusted
 identifier or independent coauthor evidence can still support merging.
+Both paths use the primary `email` and additional `emails` together.
+Independent coauthor evidence excludes shared works after resolving valid
+normalized DOIs and confirmed publication `merged_ids`, not just equal node IDs.
+Conflicting or cyclic publication aliases fail before person merges; titles
+alone do not establish work identity for this check.
 An uncorroborated third record with no address cannot bridge two such
 records into one merge group. If a larger group remains ambiguous, directly
 verified ORCID, staff or manual subgroups are retained for merging.
@@ -131,6 +136,10 @@ fields remain missing, and the payload marks source ownership and publication
 version families as unverified. These details inform the judge but do not
 create an automatic merge rule. The extra evidence is assembled only for
 pairs routed to the model, with no database query per pair.
+Grouped documents retain their source record IDs and each stored authorship's
+original publication ID. Graph reads validate optional context fields: invalid
+author positions become unknown and malformed affiliation years are omitted
+with a warning. This does not rewrite the stored graph data.
 
 Role alignment prefers explicit and primary readings over alphabetical order.
 Unresolved reversed names use the more frequent surname interpretation; missing

@@ -59,9 +59,10 @@ import json
 import logging
 import re
 from collections import Counter, defaultdict, deque
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import UTC, date, datetime
 from itertools import combinations
+from typing import Any
 
 from pauk.aliases import flatten_merges
 from pauk.models import (
@@ -85,6 +86,7 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
+from pauk.pipeline.publication_identity import publication_identity_map
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
@@ -242,6 +244,7 @@ def plan_person_merges(
     fields_of: dict[str, set[str]] | None = None,
     staff_ids: dict[str, str] | None = None,
     decisions: dict[frozenset[str], str] | None = None,
+    publication_details: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Decide which persons are one author and which pairs need human eyes.
 
@@ -273,26 +276,32 @@ def plan_person_merges(
     staff_ids = staff_ids or {}
     decisions = decisions or {}
 
+    work_identity = publication_identity_map(
+        (entry.publication_id for person in people for entry in person.authored), publication_details,
+    )
+    person_works = {
+        person.id: {work_identity[entry.publication_id] for entry in person.authored}
+        for person in people
+    }
     pub_authors: dict[str, set[str]] = {}
     for person in people:
-        for authorship in person.authored:
-            pub_authors.setdefault(authorship.publication_id, set()).add(person.id)
+        for work_id in person_works[person.id]:
+            pub_authors.setdefault(work_id, set()).add(person.id)
 
     coauthor_cache: dict[str, set[str]] = {}
 
     def coauthors(person: Person, *, excluding: frozenset[str] = frozenset()) -> set[str]:
         if excluding:
             found = set()
-            for authorship in person.authored:
-                if authorship.publication_id not in excluding:
-                    found |= pub_authors.get(authorship.publication_id, set())
+            for work_id in person_works[person.id] - excluding:
+                found |= pub_authors.get(work_id, set())
             found.discard(person.id)
             return found
         cached = coauthor_cache.get(person.id)
         if cached is None:
             cached = set()
-            for authorship in person.authored:
-                cached |= pub_authors.get(authorship.publication_id, set())
+            for work_id in person_works[person.id]:
+                cached |= pub_authors.get(work_id, set())
             cached.discard(person.id)
             coauthor_cache[person.id] = cached
         return cached
@@ -306,8 +315,7 @@ def plan_person_merges(
         say anything about identity.
         """
         together = frozenset(
-            {authorship.publication_id for authorship in first.authored}
-            & {authorship.publication_id for authorship in second.authored}
+            person_works[first.id] & person_works[second.id]
         )
         shared = (coauthors(first, excluding=together)
                   & coauthors(second, excluding=together))
@@ -1385,16 +1393,16 @@ class DedupStage(EnrichmentStage):
     def _dedup_persons(self) -> tuple[int, int, int]:
         people = list(self.prepared.read_models("persons", Person))
         fields_of: dict[str, set[str]] = {}
-        publication_details: dict[str, dict[str, str | int | None]] = {}
+        publication_details: dict[str, dict[str, Any]] = {}
         for publication in self.prepared.read_models("publications", Publication):
             if publication.fields:
                 fields_of[publication.id] = set(publication.fields)
-            if self.config.person_resolution_enabled:
-                publication_details[publication.id] = {
-                    "doi": publication.doi,
-                    "title": publication.title,
-                    "year": publication.year,
-                }
+            publication_details[publication.id] = {
+                "doi": publication.doi,
+                "title": publication.title,
+                "year": publication.year,
+                "merged_ids": publication.merged_ids,
+            }
         trusted_orcids = self._trusted_orcids(people)
         staff_ids = self._staff_ids(people)
         answers = review.decisions(self.prepared.db, folded_ids(people))
@@ -1428,6 +1436,7 @@ class DedupStage(EnrichmentStage):
                 trusted_orcids,
                 self._person_scope(people),
                 fields_of=fields_of,
+                publication_details=publication_details,
                 staff_ids=staff_ids,
                 decisions=answers,
             )

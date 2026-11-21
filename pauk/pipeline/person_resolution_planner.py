@@ -31,6 +31,7 @@ from pauk.graph.person_resolution_single import SingleVerdict, apply_verdict
 from pauk.models import Person
 from pauk.pipeline.person_name_blocking import NAME_RESCUE_TEAM_LIMIT
 from pauk.pipeline.person_name_facts import name_comparison_facts
+from pauk.pipeline.publication_identity import publication_identity_map
 
 SAME = "same"
 DIFFERENT = "different"
@@ -71,7 +72,24 @@ def plan_person_merges_resolved(
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
     decisions = decisions or {}
-    publication_ids = {person.id: {authorship.publication_id for authorship in person.authored} for person in people}
+    work_identity = publication_identity_map(
+        (entry.publication_id for person in people for entry in person.authored), publication_details,
+    )
+    publication_ids = {
+        person.id: {work_identity[entry.publication_id] for entry in person.authored} for person in people
+    }
+    source_work_ids: dict[str, list[str]] = defaultdict(list)
+    for source_id, identity in sorted(work_identity.items()):
+        source_work_ids[identity].append(source_id)
+    identity_details: dict[str, dict[str, Any]] = {}
+    identity_fields: dict[str, set[str]] = defaultdict(set)
+    for source_id, identity in sorted(work_identity.items()):
+        identity_fields[identity].update(fields_of.get(source_id, ()))
+        target = identity_details.setdefault(identity, {})
+        for key, value in (publication_details or {}).get(source_id, {}).items():
+            if value is not None and key not in target:
+                target[key] = value
+    fields_of = identity_fields
     publication_authors: dict[str, set[str]] = defaultdict(set)
     for person in people:
         for publication_id in publication_ids[person.id]:
@@ -307,7 +325,7 @@ def plan_person_merges_resolved(
         if person.id not in authorship_cache:
             by_work: dict[str, list[Any]] = defaultdict(list)
             for authorship in person.authored:
-                by_work[authorship.publication_id].append(authorship)
+                by_work[work_identity[authorship.publication_id]].append(authorship)
             authorship_cache[person.id] = by_work
         return authorship_cache[person.id].get(work_id, [])
 
@@ -355,11 +373,11 @@ def plan_person_merges_resolved(
         persons = {}
         for side, person in (("a", first), ("b", second)):
             years = sorted({
-                publication_details[work_id]["year"]
+                identity_details[work_id]["year"]
                 for work_id in publication_ids[person.id]
-                if work_id in publication_details
-                and type(publication_details[work_id].get("year")) is int
-                and publication_details[work_id]["year"] > 0
+                if work_id in identity_details
+                and type(identity_details[work_id].get("year")) is int
+                and identity_details[work_id]["year"] > 0
             })
             affiliations = (
                 person_affiliations.get(person.id)
@@ -386,9 +404,11 @@ def plan_person_merges_resolved(
 
         documents = []
         for work_id in sorted(selected):
-            details = publication_details.get(work_id, {})
+            details = identity_details.get(work_id, {})
             document = {
                 "id": work_id,
+                "source_record_ids": source_work_ids[work_id][:10],
+                "source_records_available": len(source_work_ids[work_id]),
                 "doi": clipped(details.get("doi"), 120),
                 "title": clipped(details.get("title"), 180),
                 "year": details.get("year") if type(details.get("year")) is int else None,
@@ -402,6 +422,7 @@ def plan_person_merges_resolved(
                 )
                 document[f"{side}_stored_authorships"] = [
                     {
+                        "publication_id": row.publication_id,
                         "position": row.position,
                         "affiliation": clipped(row.affiliation, 160),
                         "affiliation_source": clipped(row.affiliation_source, 80),
@@ -415,6 +436,7 @@ def plan_person_merges_resolved(
             "basis": f"{publication_context_source} records; source ownership and version families unverified",
             "original_source_team_completeness_verified": False,
             "publication_version_families_verified": False,
+            "work_identity_basis": "valid normalized DOI or validated merged_ids; no title matching",
             "nonshared_work_collaborator_paths": collaborators,
             "collaborators_available": len(shared_coauthors),
             "collaborators_shown": len(collaborators),

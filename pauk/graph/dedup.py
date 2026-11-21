@@ -192,47 +192,114 @@ def dedup_graph_persons(
         context_by_id = {row["person_id"]: row for row in fetch_context()}
         person_rows = [{**row, **context_by_id.get(row["id"], {})} for row in person_rows]
 
-    def stored_affiliations(value: object) -> list[dict] | None:
+    def optional_text(value: object, person_id: str, field: str) -> str | None:
+        if value is None or isinstance(value, str):
+            return value
+        logger.warning("graph dedup: ignoring invalid %s for person %s", field, person_id)
+        return None
+
+    def optional_position(value: object, person_id: str) -> int | None:
+        if value is None:
+            return None
+        if type(value) is int and value > 0:
+            return value
+        if isinstance(value, str) and value.isascii() and value.isdecimal():
+            try:
+                position = int(value)
+            except ValueError:
+                position = 0
+            if position > 0:
+                return position
+        logger.warning("graph dedup: ignoring invalid authorship position for person %s", person_id)
+        return None
+
+    def stored_affiliations(value: object, person_id: str) -> list[dict] | None:
+        if value is None:
+            return None
         if isinstance(value, str):
             try:
                 value = json.loads(value)
             except (TypeError, ValueError):
+                logger.warning("graph dedup: ignoring invalid affiliations JSON for person %s", person_id)
                 return None
-        if isinstance(value, list) and all(isinstance(item, dict) for item in value):
-            return value
-        return None
+        if not isinstance(value, list):
+            logger.warning("graph dedup: ignoring invalid affiliations for person %s", person_id)
+            return None
+        records = []
+        for item in value:
+            if not isinstance(item, dict):
+                logger.warning("graph dedup: ignoring invalid affiliation entry for person %s", person_id)
+                continue
+            record = dict(item)
+            years = record.get("years")
+            if years is not None:
+                if not isinstance(years, list):
+                    logger.warning("graph dedup: ignoring invalid affiliation years for person %s", person_id)
+                    record.pop("years", None)
+                else:
+                    record["years"] = [year for year in years if type(year) is int]
+                    if len(record["years"]) != len(years):
+                        logger.warning("graph dedup: ignoring invalid affiliation year for person %s", person_id)
+            records.append(record)
+        return records
 
-    person_affiliations = {row["id"]: stored_affiliations(row.get("affiliations")) for row in person_rows}
+    person_affiliations = {
+        row["id"]: stored_affiliations(row.get("affiliations"), row["id"]) for row in person_rows
+    }
     publication_details = {
-        authorship["publication_id"]: {
-            "doi": authorship.get("doi"),
-            "title": authorship.get("title"),
-            "year": authorship.get("year"),
-        }
+        detail["id"]: {"doi": detail.get("doi"), "merged_ids": detail.get("merged_ids")}
         for row in person_rows
-        for authorship in row.get("authorships") or ()
-        if isinstance(authorship, dict) and authorship.get("publication_id")
+        for detail in row.get("publication_details") or ()
+        if isinstance(detail, dict) and isinstance(detail.get("id"), str) and detail["id"]
     }
 
     def authored_rows(row: dict) -> list[Authorship]:
-        records = [
-            Authorship(
-                publication_id=authorship["publication_id"],
-                position=authorship.get("position"),
-                affiliation=authorship.get("affiliation"),
-                affiliation_source=authorship.get("affiliation_source"),
-                is_corresponding=bool(authorship.get("is_corresponding")),
-            )
-            for authorship in row.get("authorships") or ()
-            if isinstance(authorship, dict) and authorship.get("publication_id")
-        ]
+        records = []
+        authorships = row.get("authorships") or ()
+        if not isinstance(authorships, (list, tuple)):
+            logger.warning("graph dedup: ignoring invalid authorships for person %s", row["id"])
+            authorships = ()
+        for authorship in authorships:
+            if not isinstance(authorship, dict):
+                logger.warning("graph dedup: ignoring invalid authorship for person %s", row["id"])
+                continue
+            publication_id = authorship.get("publication_id")
+            if not isinstance(publication_id, str) or not publication_id:
+                logger.warning("graph dedup: ignoring invalid authorship publication id for person %s", row["id"])
+                continue
+            details = publication_details.setdefault(publication_id, {})
+            details.update({key: authorship.get(key) for key in ("doi", "title", "year")
+                            if authorship.get(key) is not None})
+            corresponding = authorship.get("is_corresponding")
+            if corresponding is not None and type(corresponding) is not bool:
+                logger.warning("graph dedup: ignoring invalid corresponding flag for person %s", row["id"])
+            records.append(Authorship(
+                publication_id=publication_id,
+                position=optional_position(authorship.get("position"), row["id"]),
+                affiliation=optional_text(authorship.get("affiliation"), row["id"], "authorship affiliation"),
+                affiliation_source=optional_text(
+                    authorship.get("affiliation_source"), row["id"], "authorship affiliation source"),
+                is_corresponding=corresponding is True,
+            ))
         present = {authorship.publication_id for authorship in records}
         records.extend(
             Authorship(publication_id=publication_id)
             for publication_id in row.get("publication_ids") or ()
-            if publication_id not in present
+            if isinstance(publication_id, str) and publication_id and publication_id not in present
         )
         return records
+
+    def stored_emails(row: dict) -> list[str]:
+        values = row.get("emails")
+        if values is None:
+            return []
+        if not isinstance(values, list):
+            logger.warning("graph dedup: ignoring invalid emails for person %s", row["id"])
+            return []
+        emails = [value for value in values if isinstance(value, str) and value.strip()]
+        if len(emails) != len(values):
+            logger.warning("graph dedup: ignoring invalid email entry for person %s", row["id"])
+        return emails
 
     people = [
         Person(
@@ -247,7 +314,8 @@ def dedup_graph_persons(
             first_name_ru=row.get("first_name_ru"),
             first_name_en=row.get("first_name_en"),
             orcid=row.get("orcid"),
-            email=row.get("email"),
+            email=optional_text(row.get("email"), row["id"], "email"),
+            emails=stored_emails(row),
             github=row.get("github"),
             google_scholar=row.get("google_scholar"),
             merged_ids=list(row.get("merged_ids") or []),
@@ -267,7 +335,7 @@ def dedup_graph_persons(
             "person_affiliations": person_affiliations,
         }
         if models is not None
-        else {"decisions": decisions}
+        else {"decisions": decisions, "publication_details": publication_details or None}
     )
     groups, report = planner(
         people,
