@@ -1,0 +1,7 @@
+{% if user and graph_job %}
+<p class="note bad">
+  Идёт {{ graph_job.kind|job_words }}. Граф сейчас переписывается.
+  Правки пройдут, но публикация может их перекрыть.
+  <a href="/jobs">смотреть задачу</a>
+</p>
+{% endif %}

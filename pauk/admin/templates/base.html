@@ -43,13 +43,9 @@
 </button>
 {% endif %}
 <main>
-{% if user and graph_job %}
-<p class="note bad">
-  Идёт {{ graph_job.kind|job_words }}. Граф сейчас переписывается.
-  Правки пройдут, но публикация может их перекрыть.
-  <a href="/jobs">смотреть задачу</a>
-</p>
-{% endif %}
+{% if request.url.path == "/jobs" %}<div id="jobs-graph-banner">{% endif %}
+{% include "graph_job_banner.html" %}
+{% if request.url.path == "/jobs" %}</div>{% endif %}
 {% block content %}{% endblock %}</main>
 <script>
   {

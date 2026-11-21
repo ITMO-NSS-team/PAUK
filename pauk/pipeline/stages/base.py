@@ -25,6 +25,32 @@ class PreparedSelection:
     ids: frozenset[str]
 
 
+class _ReportingBar(tqdm):
+    """A tqdm that passes its count to the stage's on_progress hook, throttled.
+
+    A disabled tqdm (stderr is a file) keeps neither its label nor its count,
+    so both are kept here.
+    """
+
+    def __init__(self, *, desc: str, total: int | None, on_progress: OnProgress | None,
+                 report_seconds: float, **kwargs) -> None:
+        self._label, self._total, self._done, self._said = desc, total or 0, 0, 0.0
+        self._on_progress, self._report_seconds = on_progress, report_seconds
+        super().__init__(desc=desc, total=total, **kwargs)
+
+    def set_description_str(self, desc: str | None = None, refresh: bool = True) -> None:
+        self._label = desc or self._label
+        super().set_description_str(desc, refresh)
+
+    def update(self, n: float | None = 1) -> bool | None:
+        shown = super().update(n)
+        self._done += int(n or 0)
+        if self._on_progress is not None and (moment := monotonic()) - self._said >= self._report_seconds:
+            self._said = moment
+            self._on_progress(self._label, self._done, self._total)
+        return shown
+
+
 class EnrichmentStage(ABC):
     name: str
     progress_label: str | None = None
@@ -95,9 +121,15 @@ class EnrichmentStage(ABC):
 
     def progress_bar(self, *, total: int | None, label: str | None = None,
                      unit: str = "item") -> tqdm:
-        """Create a throttled progress bar for work that is not iterable."""
-        return tqdm(total=total, desc=label or self.progress_label or self.name, unit=unit,
-                    dynamic_ncols=True, disable=None)
+        """Create a throttled progress bar for work that is not iterable.
+
+        Like `progress`, it also reports to the worker: tqdm turns itself off
+        when stderr is a file, and a stage driven by update() would otherwise
+        say nothing until it ends.
+        """
+        return _ReportingBar(total=total, desc=label or self.progress_label or self.name, unit=unit,
+                             dynamic_ncols=True, disable=None, on_progress=self.on_progress,
+                             report_seconds=self.REPORT_SECONDS)
 
     @abstractmethod
     def run(self) -> dict[str, int]:
