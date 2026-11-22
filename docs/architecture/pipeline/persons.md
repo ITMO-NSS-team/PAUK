@@ -21,6 +21,10 @@ OpenAlex batches up to 100 IDs and resolves merged IDs. Missing or ambiguous
 records and batches rejected with HTTP 400 get individual lookups. Duplicate
 IDs share one response and one raw entry per source.
 
+Profiles are parsed before they enter raw storage. An invalid response leaves
+the source in `FAILED` for retry. ORCID replaces earlier employments only
+when the record includes an employment list. An empty list clears them.
+
 For each `Person` that needs attention (`needs_attempt`):
 
 1. With an `openalex_id`, the author response updates `name_raw`, collects name
@@ -93,5 +97,6 @@ nothing to look up in Crossref without a DOI.
 
 Matching is by surname alone, so dedup (`pipeline/stages/dedup.py`) treats
 `Person.orcid` as not fully authoritative: if a raw OpenAlex record exists for
-the author, dedup takes the ORCID from there, overriding (including resetting
-to `None`) whatever this Crossref backfill may have set.
+the author, dedup uses its ORCID, including an explicit absence. When OpenAlex
+merges an author, both the requested ID and the surviving ID refer to the
+latest profile of the survivor.

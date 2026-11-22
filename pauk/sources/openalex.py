@@ -5,6 +5,7 @@ import threading
 from collections.abc import Iterator, Sequence
 
 from pauk.aliases import flatten_merges
+from pauk.models.identity import normalize_external_value
 from pauk.settings import OPENALEX_PUBLIC_RPS, OPENALEX_RPS
 
 from .base import HttpClient
@@ -16,7 +17,7 @@ AUTHOR_BATCH_SIZE = 100
 def normalize_author_id(author_id: str) -> str:
     if not isinstance(author_id, str):
         raise ValueError("Invalid OpenAlex author ID")
-    normalized = author_id.rstrip("/").rsplit("/", 1)[-1].upper()
+    normalized = normalize_external_value("openalex", author_id)
     if not re.fullmatch(r"A[0-9]+", normalized):
         raise ValueError("Invalid OpenAlex author ID")
     return normalized
@@ -91,10 +92,20 @@ class OpenAlexClient(HttpClient):
         if not isinstance(metadata, dict) or not isinstance(metadata.get("merged_ids", []), list):
             raise ValueError("Invalid OpenAlex author aliases")
         aliases = []
+        ambiguous: set[str] = set()
         for merge in metadata.get("merged_ids", []):
             if not isinstance(merge, dict):
-                raise ValueError("Invalid OpenAlex author alias")
-            aliases.append((normalize_author_id(merge.get("id")), normalize_author_id(merge.get("merge_into_id"))))
-        resolved = dict(flatten_merges(aliases))
-        return {identifier: records[canonical] for identifier in identifiers
-                if (canonical := resolved.get(identifier, identifier)) in records and canonical not in conflicts}
+                continue
+            try:
+                source = normalize_author_id(merge.get("id"))
+            except ValueError:
+                continue
+            try:
+                target = normalize_author_id(merge.get("merge_into_id"))
+            except ValueError:
+                ambiguous.add(source)
+            else:
+                aliases.append((source, target))
+        resolved = dict(flatten_merges(aliases, ambiguous=ambiguous))
+        return {identifier: records[canonical] for identifier in identifiers if identifier not in ambiguous
+                and (canonical := resolved.get(identifier, identifier)) in records and canonical not in conflicts}

@@ -38,7 +38,7 @@ from pauk.pipeline.stages.dedup import (
 from pauk.settings import Settings
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
-from pauk.storage.person_identity import openalex_orcid_references
+from pauk.storage.person_identity import openalex_orcid_references, person_orcid_references
 from pauk.urls import normalize_repo_url
 
 from .alias_review import record_alias_conflict, retire_alias_conflicts
@@ -218,7 +218,7 @@ def dedup_graph_persons(
         )
         for row in client.fetch_persons_for_dedup()
     ]
-    trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+    trusted_orcid = person_orcid_references(people, raw_orcids)
     planner = plan_person_merges_resolved if models is not None else plan_person_merges
     options = (
         {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}

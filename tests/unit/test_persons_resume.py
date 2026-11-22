@@ -32,7 +32,7 @@ class PersonsResumeTest(unittest.TestCase):
             Person(id="P2", openalex_id="A2", is_itmo=False),
         ])
         openalex.return_value.get_author.side_effect = [
-            {"display_name": "First"}, KeyboardInterrupt(),
+            {"id": "A1", "display_name": "First"}, KeyboardInterrupt(),
         ]
         openalex.return_value.get_authors.return_value = {}
         with self.assertRaises(KeyboardInterrupt):
@@ -79,9 +79,8 @@ class PersonsResumeTest(unittest.TestCase):
             Person(id="P1", openalex_id="A1", orcid="0000-0001-2345-6789", is_itmo=False),
             Person(id="P2", openalex_id="A2", orcid="0000-0001-2345-6790", is_itmo=False),
         ])
-        openalex.return_value.get_author.return_value = {"display_name": "Author"}
         openalex.return_value.get_authors.return_value = {
-            "A1": {"display_name": "Author"}, "A2": {"display_name": "Author"},
+            "A1": {"id": "A1", "display_name": "Author"}, "A2": {"id": "A2", "display_name": "Author"},
         }
         orcid.return_value.authorize.side_effect = OrcidAuthenticationError("ORCID rejected the credentials")
         config = replace(self.config, orcid_client_id="app", orcid_client_secret="secret")

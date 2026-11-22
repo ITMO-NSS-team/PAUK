@@ -13,12 +13,14 @@ import mongomock
 from pauk.models import Person
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
+from pauk.pipeline.stages.dedup import DedupStage
 from pauk.pipeline.stages.persons import PersonsStage
 from pauk.settings import Settings
 from pauk.sources.openalex import OpenAlexClient
 from pauk.sources.orcid import OrcidClient
 from pauk.sources.rate_limit import HostRateLimiter, RateLimit
 from pauk.storage import PreparedStore, RawStore
+from pauk.storage.person_identity import openalex_orcid_references
 from tests.unit.test_http_rate_limit import _attach
 from tests.unit.test_rate_limit import _Clock
 
@@ -175,6 +177,65 @@ class PersonsParallelTest(unittest.TestCase):
         self.assertTrue(all(person.processing["openalex_author"].status == ProcessingStatus.COMPLETED
                             for person in self.rows().values()))
 
+    def test_merged_author_without_orcid_overrides_prepared_orcid_in_dedup(self):
+        self.people(2)
+        people = self.rows()
+        people["P1"].orcid = "0000-0002-1825-0097"
+        self.prepared.upsert_models("persons", [people["P1"]])
+
+        def handler(request, _client):
+            if urlsplit(request.url).path == "/authors":
+                return 200, {}, {"results": [self.author("A3"), self.author("A2")],
+                                 "meta": {"merged_ids": [{"id": "A1", "merge_into_id": "A3"}]}}
+            return self.respond(request)
+
+        self.handler = handler
+        PersonsStage(self.prepared, self.raw, self.config).run()
+        refs = openalex_orcid_references(self.db)
+        self.assertEqual(refs, {"A1": None, "A2": None, "A3": None})
+        other = RawStore(self.db, "another group")
+        other.append("openalex_authors", self.author("A3") | {"orcid": people["P1"].orcid}, {})
+        self.assertEqual(openalex_orcid_references(self.db)["A1"], people["P1"].orcid)
+        dedup = DedupStage(self.prepared, self.raw, self.config)
+        self.assertIsNone(dedup._trusted_orcids(list(self.rows().values()))["P1"])
+
+    def test_malformed_single_author_does_not_enter_raw_or_break_dedup(self):
+        self.people(1)
+        self.handler = lambda *_: (200, {}, ["not a profile"])
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        stage.run()
+        self.assertEqual(self.rows()["P1"].processing["openalex_author"].status, ProcessingStatus.FAILED)
+        self.assertEqual(list(self.raw.read("openalex_authors")), [])
+        self.raw.append("openalex_authors", ["historical invalid record"], {"author_id": "A1"})
+        self.assertEqual(openalex_orcid_references(self.db), {})
+        self.handler = None
+        stage.run()
+        self.assertEqual(self.rows()["P1"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+
+    def test_invalid_orcid_response_preserves_employment_until_a_valid_empty_record(self):
+        self.prepared.write_models("persons", [Person(
+            id="P1", orcid="O1", is_itmo=False,
+            affiliations=[{"name": "Employer", "source": "orcid", "source_person_id": "P1", "source_id": "O1"}],
+        )])
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        for payload in ({}, {"error": "unavailable"}, {"activities-summary": []},
+                        {"activities-summary": {"employments": {"affiliation-group": [{}]}}}):
+            with self.subTest(payload=payload):
+                self.handler = mock.Mock(return_value=(200, {}, payload))
+                stage.run()
+                person = self.rows()["P1"]
+                self.assertEqual(person.processing["orcid"].status, ProcessingStatus.FAILED)
+                self.assertEqual([row.name for row in person.affiliations], ["Employer"])
+                self.assertEqual(list(self.raw.read("orcid")), [])
+        self.handler = mock.Mock(return_value=(200, {}, {"person": {}}))
+        stage.run()
+        self.assertEqual([row.name for row in self.rows()["P1"].affiliations], ["Employer"])
+        self.handler = mock.Mock(return_value=(200, {}, {"activities-summary": {"employments": {"affiliation-group": []}}}))
+        PersonsStage(self.prepared, self.raw, self.config, force=True).run()
+        person = self.rows()["P1"]
+        self.assertEqual(person.processing["orcid"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(person.affiliations, [])
+
     def test_a_deleted_id_does_not_fail_the_other_batch_members(self):
         self.people(2)
         self.omitted = {"A2"}
@@ -187,6 +248,26 @@ class PersonsParallelTest(unittest.TestCase):
         rows = self.rows()
         self.assertEqual(rows["P1"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(rows["P2"].processing["openalex_author"].status, ProcessingStatus.FAILED)
+
+    def test_only_authors_depending_on_a_bad_alias_get_individual_requests(self):
+        self.people(8)
+
+        def handler(request, _client):
+            if urlsplit(request.url).path == "/authors":
+                edges = [("A1", "A2"), ("A1", "A3"), ("A4", "A1"), ("A5", "A2"), ("A6", None), ("A8", "A6")]
+                return 200, {}, {
+                    "results": [self.author(key) for key in ("A2", "A3", "A7")],
+                    "meta": {"merged_ids": [{"id": key, "merge_into_id": target} for key, target in edges]},
+                }
+            return self.respond(request)
+
+        self.handler = handler
+        PersonsStage(self.prepared, self.raw, self.config).run()
+        self.assertCountEqual([urlsplit(req.url).path for req, _, _ in self.requests],
+                              ["/authors", "/authors/A1", "/authors/A4", "/authors/A6", "/authors/A8"])
+        rows = self.rows()
+        self.assertEqual(rows["P5"].name_raw, "Author A2")
+        self.assertTrue(all(p.processing["openalex_author"].status == ProcessingStatus.COMPLETED for p in rows.values()))
 
     def test_malformed_and_conflicting_results_leave_valid_batch_members_intact(self):
         self.people(3)

@@ -64,17 +64,16 @@ class OpenAlexAuthorsTest(unittest.TestCase):
         self.assertTrue(all(record["id"] == "https://openalex.org/A3" for record in result.values()))
         self.assertEqual(len(self.requests), 1)
 
-    def test_alias_cycles_and_conflicting_survivors_are_rejected(self):
+    def test_alias_cycles_and_conflicting_survivors_leave_independent_results(self):
         for targets in ((('A1', 'A2'), ('A2', 'A1')), (('A1', 'A2'), ('A1', 'A3'))):
             with self.subTest(targets=targets):
-                self.payload = {"results": [], "meta": {"merged_ids": [
+                self.payload = {"results": [{"id": "A1"}, {"id": "A9"}], "meta": {"merged_ids": [
                     {"id": first, "merge_into_id": second} for first, second in targets
                 ]}}
-                with self.assertRaises(ValueError):
-                    self.client.get_authors(["A1"])
+                self.assertEqual(self.client.get_authors(["A1", "A9"]), {"A9": {"id": "A9"}})
 
     def test_malformed_batch_response_is_not_treated_as_an_empty_success(self):
-        for payload in ([], {}, {"results": None}, {"results": [], "meta": {"merged_ids": [{}]}}):
+        for payload in ([], {}, {"results": None}, {"results": [], "meta": {"merged_ids": {}}}):
             with self.subTest(payload=payload):
                 self.payload = payload
                 with self.assertRaises(ValueError):
