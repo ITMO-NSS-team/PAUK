@@ -5,9 +5,11 @@ import type { NodeKind } from "../contracts/graph";
 
 export type Lang = "ru" | "en";
 
-/** Falls back to `ru` when there is no `en` variant (e.g. repo names). */
+/** Uses the other language when the preferred variant is absent or blank. */
 export function localize(ru: string, en: string | undefined, lang: Lang): string {
-  return lang === "en" && en ? en : ru;
+  const preferred = lang === "en" ? en : ru;
+  const fallback = lang === "en" ? ru : en;
+  return preferred?.trim() ? preferred : fallback?.trim() ? fallback : "";
 }
 
 export type LocaleKey =

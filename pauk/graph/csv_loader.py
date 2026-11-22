@@ -12,8 +12,24 @@ from collections import defaultdict
 from pathlib import Path
 
 from .client import CHUNK_SIZE, Neo4jClient
+from .validation import validate_repository_name
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_repository_names(csv_path: str | Path) -> None:
+    """Reject incomplete repositories before any node batches are written."""
+    with open(csv_path, encoding="utf-8") as file:
+        for line_number, row in enumerate(csv.DictReader(file), start=2):
+            labels = {label.strip() for label in row["labels"].split(":")}
+            if "Repository" not in labels:
+                continue
+            properties_str = row.get("properties", "{}")
+            properties = json.loads(properties_str) if properties_str else {}
+            try:
+                validate_repository_name(properties.get("name") if isinstance(properties, dict) else None)
+            except ValueError as exc:
+                raise ValueError(f"{csv_path}:{line_number}: {exc}") from exc
 
 
 def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CHUNK_SIZE):
@@ -25,6 +41,7 @@ def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CH
             (properties is a JSON string).
         batch_size: Maximum number of nodes per Neo4j write.
     """
+    _validate_repository_names(csv_path)
     batches_by_labels = defaultdict(list)
 
     with open(csv_path, encoding="utf-8") as file:
@@ -86,6 +103,12 @@ def discover_files(data_dir: Path, suffix: str) -> list[Path]:
     return sorted(data_dir.glob(f"*{suffix}"))
 
 
+def validate_csv_repository_names(data_dir: Path) -> None:
+    """Preflight repository names across the directory without graph access."""
+    for file_path in discover_files(data_dir, "_nodes.csv"):
+        _validate_repository_names(file_path)
+
+
 def load_csv_dir(client: Neo4jClient, data_dir: Path) -> None:
     """Load every *_nodes.csv file, then every *_rels.csv file, from a directory.
 
@@ -103,10 +126,14 @@ def load_csv_dir(client: Neo4jClient, data_dir: Path) -> None:
     rel_files = discover_files(data_dir, "_rels.csv")
     logger.info("Found %d node file(s), %d relationship file(s)", len(node_files), len(rel_files))
 
+    validate_csv_repository_names(data_dir)
+
     for file_path in node_files:
         logger.info("Loading nodes: %s", file_path.name)
         try:
             load_nodes_from_csv(client, str(file_path))
+        except ValueError:
+            raise
         except Exception:
             logger.error("Failed to load node file %s", file_path.name, exc_info=True)
 

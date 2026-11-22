@@ -247,7 +247,13 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
         if label == "Person" and key in MEMBERSHIP_FIELDS:
             continue
         canonical_value = canonical.get(key)
-        if key in bool_fields:
+        if label == "Repository" and key == "name":
+            missing = canonical_value is None or (
+                isinstance(canonical_value, str) and not canonical_value.strip()
+            )
+            if missing and isinstance(duplicate_value, str) and duplicate_value.strip():
+                updates[key] = duplicate_value
+        elif key in bool_fields:
             if canonical_value is not None or duplicate_value is not None:
                 merged = bool(canonical_value) or bool(duplicate_value)
                 if merged != canonical_value:

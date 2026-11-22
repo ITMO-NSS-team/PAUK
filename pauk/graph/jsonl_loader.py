@@ -15,6 +15,7 @@ from pauk.urls import normalize_repo_url
 from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships, person_spec
+from .validation import validate_repository_name
 
 __all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
 
@@ -48,6 +49,17 @@ def _stage_failed(row: dict, stage: str) -> bool:
 def _stage_succeeded(row: dict, stage: str) -> bool:
     state = (row.get("_processing") or {}).get(stage) or {}
     return state.get("status") in {"completed", "completed_empty"}
+
+
+def validate_prepared_repository_names(rows_by_file: dict[str, list[dict]]) -> None:
+    """Reject unnamed publishable repositories before starting graph writes."""
+    for row in rows_by_file.get("repositories.jsonl") or []:
+        if _stage_failed(row, "repositories"):
+            continue
+        try:
+            validate_repository_name(row.get("name"))
+        except ValueError as exc:
+            raise ValueError(f"Repository {row.get('id')!r}: {exc}") from None
 
 
 def _sync_github_withdrawals(client, rows, person_aliases, repository_aliases,
@@ -236,7 +248,12 @@ def load_prepared_rows(
         dropped_candidates: Manually deleted LinkCandidate ids.
         report: Progress callback; may raise to cancel between batches.
         claimed_relationships: Edges added by hand, protected from automatic cleanup.
+
+    Raises:
+        ValueError: A repository to be published has no nonblank string name.
+            All repository names are checked before any graph calls.
     """
+    validate_prepared_repository_names(rows_by_file)
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     person_nodes: list[tuple[str, dict]] = []
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)

@@ -17,6 +17,54 @@ from tests.bench.mocks import RecordingNeo4jClient
 from tests.unit.test_admin_nodes import FakePanelGraph
 
 
+class RepositoryNamePreflightTest(unittest.TestCase):
+    def test_publish_entry_point_validates_before_schema_or_entity_writes(self):
+        db = mongomock.MongoClient().db
+        db.repositories.insert_one({"_id": "R1", "id": "R1", "groups": ["test"],
+                                    "url": "https://github.com/org/repo"})
+        client = mock.Mock()
+        with (mock.patch.object(load, "audited_client", return_value=client),
+              mock.patch.object(load, "create_constraints") as constraints,
+              self.assertRaisesRegex(ValueError, "R1.*Repository.name")):
+            load._load_locked(Settings(), db, "test")
+        constraints.assert_not_called()
+        self.assertEqual(client.mock_calls, [mock.call.close()])
+
+    def test_invalid_repository_name_fails_before_any_graph_call(self):
+        for name_fields in ({}, {"name": None}, {"name": ""}, {"name": " \t\n"}, {"name": 42}):
+            with self.subTest(name_fields=name_fields):
+                client = mock.Mock(wraps=RecordingNeo4jClient())
+                rows = {
+                    "organizations.jsonl": [{"id": "O1", "name_en": "University"}],
+                    "publications.jsonl": [{"id": "W1", "title": "Paper"}],
+                    "repositories.jsonl": [
+                        {"id": "R1", "name": "valid", "url": "https://github.com/org/valid"},
+                        {"id": "R2", "url": "https://github.com/org/repo", **name_fields},
+                    ],
+                }
+                with self.assertRaisesRegex(ValueError, "R2.*Repository.name"):
+                    load_prepared_rows(client, rows)
+                self.assertEqual(client.mock_calls, [])
+
+    def test_repository_name_is_published_verbatim_and_optional_values_are_allowed(self):
+        client = RecordingNeo4jClient()
+        load_prepared_rows(client, {"repositories.jsonl": [{
+            "id": "R1", "name": "Mixed_Case.repo", "url": "https://github.com/org/repo",
+            "description": None, "stars_num": 0, "has_readme": False,
+        }]})
+        self.assertEqual(client.nodes["Repository"]["R1"]["name"], "Mixed_Case.repo")
+        self.assertEqual(client.nodes["Repository"]["R1"]["stars_num"], 0)
+        self.assertIs(client.nodes["Repository"]["R1"]["has_readme"], False)
+
+    def test_failed_repository_rows_remain_excluded_without_name_validation(self):
+        client = RecordingNeo4jClient()
+        load_prepared_rows(client, {"repositories.jsonl": [{
+            "id": "R1", "url": "https://github.com/org/repo",
+            "_processing": {"repositories": {"status": "failed"}},
+        }]})
+        self.assertNotIn("R1", client.nodes.get("Repository", {}))
+
+
 class NormalizeRepoUrlTest(unittest.TestCase):
     def test_case_and_cosmetic_suffixes_are_ignored(self):
         canonical = normalize_repo_url("https://github.com/Org/Repo")
@@ -77,7 +125,7 @@ class GitHubMatchPublicationTest(unittest.TestCase):
             login="coder42", email="account@lab.test",
             contributed_to=[Contribution(repository_id="R1", role="contributor")],
         )])
-        self.repositories = [{"id": "R1", "url": "https://github.com/lab/tool"}]
+        self.repositories = [{"id": "R1", "name": "tool", "url": "https://github.com/lab/tool"}]
 
     def rows(self, *extra):
         return {"persons.jsonl": [self.author.model_dump(mode="json", by_alias=True), *extra],
@@ -179,14 +227,14 @@ class MentionsSynchronizationTest(unittest.TestCase):
     def rows(self, links, status="completed"):
         return {
             "publications.jsonl": [{"id": "W1", "_processing": {"code_links": {"status": status}}}],
-            "repositories.jsonl": [{"id": "R1", "url": self.URL}],
+            "repositories.jsonl": [{"id": "R1", "name": "repo", "url": self.URL}],
             "repo_links.jsonl": [{"publication_id": "W1", "links": [{"url": url} for url in links]}],
         }
 
     def test_republish_removes_stale_repository_and_candidate_edges_only(self):
         client = RecordingNeo4jClient()
         rows = self.rows([self.URL, self.OLD])
-        rows["repositories.jsonl"].append({"id": "R2", "url": self.OLD})
+        rows["repositories.jsonl"].append({"id": "R2", "name": "old", "url": self.OLD})
         load_prepared_rows(client, rows)
         load_prepared_rows(client, self.rows([self.URL, "https://github.com/org/candidate"]))
         self.assertNotIn(("Publication", "MENTIONS_LINK", "Repository", "W1", self.OLD), client.edges)
