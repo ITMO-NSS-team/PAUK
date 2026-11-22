@@ -220,13 +220,8 @@ class HttpClient:
                 if consume is None:
                     response = self._send(method, url, request_kwargs, attempt)
                 else:
-                    end = time.monotonic() + deadline if deadline is not None else None
-                    if state is not None:
-                        if state.deadline is None:
-                            state.deadline = end
-                        end = state.deadline
                     response = self._send(method, url, request_kwargs, attempt, consume=consume,
-                                          end=end, max_wait=max_wait, state=state)
+                                          deadline=deadline, max_wait=max_wait, state=state)
             except HostPaused as exc:
                 raise HttpRequestError(method, safe_url, cause_type=str(exc)) from None
             except (requests.RequestException, UrllibError, OSError) as exc:
@@ -256,11 +251,14 @@ class HttpClient:
 
     def _send(self, method: str, url: str, kwargs: dict, attempt: int, *,
               consume: Callable[[requests.Response], bytes] | None = None,
-              end: float | None = None, max_wait: float | None = None,
+              deadline: float | None = None, max_wait: float | None = None,
               state: DownloadState | None = None) -> requests.Response:
         """Admit each redirect separately, using Requests' prepared next request."""
         prepared = state.prepared if state is not None else None
         history = state.history if state is not None else []
+        end = state.deadline if state is not None else None
+        if state is None and deadline is not None:
+            end = time.monotonic() + deadline
         while True:
             current_url = prepared.url if prepared is not None else url
             try:
@@ -293,6 +291,8 @@ class HttpClient:
                 if consume is not None:
                     if self._cancelled.is_set():
                         raise CancelledError
+                    if state is not None and end is None and deadline is not None:
+                        state.deadline = end = time.monotonic() + deadline
                     if end is not None:
                         remaining = end - time.monotonic()
                         if remaining <= 0:
@@ -303,7 +303,7 @@ class HttpClient:
                                                             read=min(read, remaining))
 
                     # Requests may read redirect bodies before send() returns.
-                    def registered(response, cleanup=cleanup, **_kwargs):
+                    def registered(response, cleanup=cleanup, end=end, **_kwargs):
                         cleanup.enter_context(self._stream_response(response, end))
                         return response
 

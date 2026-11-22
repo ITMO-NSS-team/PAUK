@@ -396,6 +396,43 @@ class PdfStageTest(LocalPdfTest):
                                pdf_connect_timeout=0.2, pdf_download_deadline=1, pdf_retries=0)
         self.enterContext(patch("pauk.pipeline.stages.code_links.HttpClient", side_effect=_client))
 
+    def test_only_admitted_publications_check_the_cache_and_start_the_deadline(self):
+        records = [Publication(id=f"W{i}", title="paper", pdf_urls=[self.url + "/pdf"]) for i in range(8)]
+        self.prepared.write_models("publications", records)
+        limiter = self.client.rate_limiter
+        with limiter.slot("127.0.0.1", RateLimit()):
+            limiter.pause("127.0.0.1", 0.6)
+        config = Settings(**(self.config.__dict__ | {"pdf_host_concurrency": 1, "pdf_download_deadline": 0.3}))
+        store = PdfStore(self.db, config.pdf_dir)
+        find = store.pointers.find_one
+        checked_before_first_request = set()
+
+        def find_one(query, *args, **kwargs):
+            if not self.server.counts["/pdf"]:
+                checked_before_first_request.add(query["_id"])
+            return find(query, *args, **kwargs)
+
+        with patch.object(store.pointers, "find_one", side_effect=find_one):
+            CodeLinksStage(self.prepared, self.raw, config=config).run()
+        self.assertEqual(self.server.counts["/pdf"], len(records))
+        self.assertEqual(checked_before_first_request, {"W0"})
+        for publication in self.prepared.read_models("publications", Publication):
+            self.assertEqual(publication.processing["code_links"].status, ProcessingStatus.COMPLETED)
+
+    def test_a_paused_redirect_target_can_exhaust_the_started_attempt(self):
+        target = self.url.replace("127.0.0.1", "localhost") + "/redirect-target"
+        with self.client.rate_limiter.slot("localhost", RateLimit()):
+            self.client.rate_limiter.pause("localhost", 2)
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="paper", pdf_urls=[self.url + "/redirect?to=" + quote(target, safe="")])
+        ])
+        config = Settings(**(self.config.__dict__ | {"pdf_download_deadline": 0.3}))
+        CodeLinksStage(self.prepared, self.raw, config=config).run()
+        saved = next(self.prepared.read_models("publications", Publication))
+        self.assertIn("deadline", saved.processing["code_links"].error)
+        self.assertEqual(self.server.counts["/redirect"], 1)
+        self.assertEqual(self.server.counts["/redirect-target"], 0)
+
     def _check_fallback_releases_the_previous_host(self, *, crawler):
         other = self.url.replace("127.0.0.1", "localhost")
         urls = [self.url + "/refused"] if crawler else [self.url + "/refused", other + "/held"]

@@ -26,8 +26,9 @@ class HostPaused(TimeoutError):
 
 
 class RequestDeferred(Exception):
-    def __init__(self, ready_at: float) -> None:
+    def __init__(self, ready_at: float, *, host: str | None = None) -> None:
         self.ready_at = ready_at
+        self.host = host
         super().__init__("request is not ready")
 
 
@@ -128,7 +129,7 @@ class HostRateLimiter:
                     break
                 if defer:
                     resume = ready_at if ready_at > now else now + POLL_SECONDS
-                    raise RequestDeferred(min(resume, deadline) if deadline is not None else resume)
+                    raise RequestDeferred(min(resume, deadline) if deadline is not None else resume, host=host)
                 delay = ready_at - now
                 timeout = min(delay, threading.TIMEOUT_MAX) if delay > 0 else None
                 if deadline is not None:

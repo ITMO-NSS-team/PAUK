@@ -179,7 +179,8 @@ configuration: [../deploy.md](../deploy.md).
 ## Download and cache
 
 Downloads use a sliding window: each finished task frees a slot for
-the next one. Initial publications are interleaved by their primary host.
+the next one. Publications are grouped by their primary host from metadata.
+The stage checks each publication's cache when it enters the window.
 Each source URL is queued under its own host; a failed source
 releases that host before an alternative URL or the crawler is queued.
 Sources waiting in the host queue do not occupy network workers.
@@ -196,7 +197,7 @@ Settings in `pauk/settings.py`:
 | `PAUK_PDF_HOST_CONCURRENCY` | `2` | Concurrent requests per host |
 | `PAUK_PDF_CONNECT_TIMEOUT` | `5` | Connection timeout, seconds |
 | `PAUK_PDF_READ_TIMEOUT` | `15` | Socket read timeout, seconds |
-| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds per attempt, including host admission, headers, redirects and body |
+| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds from admission of the first request through redirects and body reads |
 | `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
 | `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
 
@@ -225,12 +226,10 @@ cache is not downloaded again. Normalized page texts are joined into
 `Publication.full_text` with `"\n\n"`.
 
 After the highest-ranked source record, the stage reads already-cached files
-from the other `source_keys`, `merged_ids` and `versions[].openalex_id`, once
-per key. If no cached record is usable, it tries the remaining source records'
-own PDF URLs/DOI in rank order. Every occurrence therefore names the record
-whose PDF supplied it. If all version caches are corrupt, the normal source
-records are still tried; the cache error remains explicit and earlier
-occurrences are not lost.
+from the other `source_keys`, `merged_ids` and `versions[].openalex_id`.
+If no cached PDF is usable, it tries the source records' URLs and DOIs in
+rank order. A corrupt cached version with its own source is downloaded again
+even if another version was readable.
 
 Texts are combined in `full_text`, and every occurrence keeps its own `pdf_id`
 and local page number. Caches are read even without `pdf_urls`. Failure or
@@ -240,8 +239,8 @@ than mixed with stale evidence. URL spellings differing only by HTTP/HTTPS,
 case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
 
 During the compatibility release, `openalex:W…` and legacy `W….pdf` may resolve
-to the same file. Cached candidates are deduplicated by the resolved file path,
-so that file contributes text and occurrences only once.
+to the same file. Reading that file once replaces earlier link evidence under
+either key. Separate files keep separate evidence.
 
 ## Statuses
 

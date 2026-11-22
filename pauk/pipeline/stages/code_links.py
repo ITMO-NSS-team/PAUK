@@ -607,7 +607,6 @@ class _PdfResult:
     occurrences: list[dict[str, list[LinkOccurrence]]]
     error: str | None
     parsed_ids: set[str]
-    failed_ids: set[str]
 
 
 @dataclass(frozen=True)
@@ -674,23 +673,15 @@ class CodeLinksStage(EnrichmentStage):
             return None
         return self.http.get_bytes(task.url, state=task.state, **task.options)
 
-    def _candidate_order(self, candidates: list[Publication]) -> Iterator[Publication]:
-        """Interleave hosts so one publisher cannot fill the initial worker pool."""
+    def _group_by_primary_host(self, candidates: list[Publication]) -> dict[str, deque[Publication]]:
         groups: dict[str, deque[Publication]] = {}
         for publication in candidates:
             record = _primary_pdf_record(publication)
-            record_key = record.key if record else publication.id
-            source = ""
-            if not self.pdf_store.exists(record_key):
-                urls = record.pdf_urls if record else publication.pdf_urls
-                doi = record.doi if record else publication.doi
-                source = next(iter(urls), self.config.pdf_crawler_url if doi else "")
+            urls = record.pdf_urls if record else publication.pdf_urls
+            doi = record.doi if record else publication.doi
+            source = next(iter(urls), self.config.pdf_crawler_url if doi else "")
             groups.setdefault(_pdf_host(source), deque()).append(publication)
-        while groups:
-            for host in list(groups):
-                yield groups[host].popleft()
-                if not groups[host]:
-                    del groups[host]
+        return groups
 
     def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
         """Queue individual source URLs and parse completed PDFs on the caller thread."""
@@ -701,8 +692,8 @@ class CodeLinksStage(EnrichmentStage):
         sequence = count()
         workflows: set[_PdfWorkflow] = set()
         completed: deque[tuple[Publication, _PdfResult]] = deque()
-        publications = self._candidate_order(candidates)
-        exhausted = False
+        publications = self._group_by_primary_host(candidates)
+        host_ready_at: dict[str, float] = {}
         reserved = Counter()
         done_count = 0
         reported = 0.0
@@ -734,7 +725,6 @@ class CodeLinksStage(EnrichmentStage):
                 remaining.setdefault(task.host, deque()).append((workflow, task))
 
         def fill_window():
-            nonlocal exhausted
             while len(pending) < self.config.code_links_concurrency and heartbeat():
                 while deferred and deferred[0][0] <= monotonic():
                     _, _, workflow, task = heappop(deferred)
@@ -756,13 +746,16 @@ class CodeLinksStage(EnrichmentStage):
                     return
                 if submitted:
                     continue
-                if exhausted:
+                now = monotonic()
+                host = next((host for host in publications if not host or (
+                    reserved[host] < self.config.pdf_host_concurrency and host_ready_at.get(host, 0) <= now
+                )), None)
+                if host is None:
                     return
-                try:
-                    publication = next(publications)
-                except StopIteration:
-                    exhausted = True
-                    return
+                group = publications.pop(host)
+                publication = group.popleft()
+                if group:
+                    publications[host] = group
                 workflow = self._pdf_workflow(publication)
                 workflows.add(workflow)
                 advance(publication, workflow)
@@ -777,7 +770,7 @@ class CodeLinksStage(EnrichmentStage):
                         wait((probe,), timeout=PDF_POLL_SECONDS)
                     if stopped is None:
                         self.crawler_available = probe.result()
-                    while (pending or remaining or deferred or completed or not exhausted) and heartbeat():
+                    while (pending or remaining or deferred or completed or publications) and heartbeat():
                         fill_window()
                         while completed and stopped is None:
                             yield completed.popleft()
@@ -797,6 +790,8 @@ class CodeLinksStage(EnrichmentStage):
                             try:
                                 data = future.result()
                             except RequestDeferred as retry:
+                                if retry.host is not None:
+                                    host_ready_at[retry.host] = retry.ready_at
                                 heappush(deferred, (retry.ready_at, next(sequence), workflow, task))
                             except Exception as error:
                                 advance(task.publication, workflow, error=error)
@@ -840,7 +835,9 @@ class CodeLinksStage(EnrichmentStage):
                 occ.pdf_id for link in previous.links for occ in link.occurrences
                 if occ.pdf_id and occ.pdf_id not in fetched.parsed_ids
             } if previous else set()
-            fetched.failed_ids.update(missing_pdf_ids)
+            if missing_pdf_ids and fetched.parsed_ids:
+                parsed_files = {self.pdf_store.cache_identity(key) for key in fetched.parsed_ids}
+                missing_pdf_ids = {key for key in missing_pdf_ids if self.pdf_store.cache_identity(key) not in parsed_files}
             if missing_pdf_ids:
                 pdf_error = "; ".join(filter(None, (pdf_error, f"PDF evidence unavailable: {', '.join(sorted(missing_pdf_ids))}")))
             if pdf_pages and (not pdf_error or not pub.full_text):
@@ -852,7 +849,7 @@ class CodeLinksStage(EnrichmentStage):
             )
             if pdf_error:
                 occurrences_by_url = _preserve_pdf_occurrences(
-                    occurrences_by_url, previous, fetched.failed_ids,
+                    occurrences_by_url, previous, missing_pdf_ids,
                 )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority as code_url.
@@ -927,89 +924,63 @@ class CodeLinksStage(EnrichmentStage):
         """Collect source-record and cached-version evidence across queued I/O."""
         primary = _primary_pdf_record(pub)
         primary_id = primary.key if primary else pub.id
-        primary_cached = self.pdf_store.exists(primary_id)
         version_ids = dict.fromkeys([
+            primary_id,
             *(pub.source_keys if pub.schema_version >= 2 else []),
             *pub.merged_ids,
             *(version.openalex_id for version in pub.versions),
         ])
-        cached_versions = []
-        seen_files = {self.pdf_store.cache_identity(primary_id)} if primary_cached else set()
-        for pdf_id in version_ids:
-            if pdf_id == primary_id or not self.pdf_store.exists(pdf_id):
+        parsed = {}
+        seen_files = set()
+        errors: dict[str, str] = {}
+        for key in version_ids:
+            if not self.pdf_store.exists(key):
                 continue
-            cache_identity = self.pdf_store.cache_identity(pdf_id)
-            if cache_identity in seen_files:
+            identity = self.pdf_store.cache_identity(key)
+            if identity in seen_files:
                 continue
-            seen_files.add(cache_identity)
-            cached_versions.append(pdf_id)
-
-        if cached_versions and not primary_cached:
-            pages, occurrences, error = [], [], None
-        else:
-            pages, occurrences, error = yield from self._primary_pdf_workflow(pub, primary)
-        parsed_ids = {primary_id} if pages else set()
-        failed_ids = {primary_id} if error else set()
-        _tag_pdf_occurrences(occurrences, primary_id)
-        errors = [error] if error else []
-
-        for pdf_id in cached_versions:
+            seen_files.add(identity)
             try:
-                version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
+                parsed[key] = _extract_pdf(self.pdf_store.read(key))
             except CancelledError:
                 raise
             except Exception as exc:
-                failed_ids.add(pdf_id)
-                errors.append(f"{pdf_id}: {redact_text(exc)}")
+                errors[key] = f"{key}: {redact_text(exc)}"
+
+        download_errors = []
+        records = [record for record in pub.source_records if record.pdf_urls or record.doi]
+        for record in records or [None]:
+            key = record.key if record else pub.id
+            if parsed and key not in errors:
                 continue
-            parsed_ids.add(pdf_id)
-            _tag_pdf_occurrences(version_occurrences, pdf_id)
-            pages.extend(version_pages)
-            occurrences.extend(version_occurrences)
+            pages, occurrences, error = yield from self._download_record(pub, record)
+            if pages:
+                parsed[key] = pages, occurrences
+                errors.pop(key, None)
+            elif error:
+                if key in errors:
+                    errors[key] += f"; {error}"
+                else:
+                    download_errors.append(error)
 
-        if not pages:
-            for record in pub.source_records:
-                if record.key == primary_id or record.key in cached_versions or not (record.pdf_urls or record.doi):
-                    continue
-                fallback_pages, fallback_occurrences, fallback_error = yield from self._primary_pdf_workflow(pub, record)
-                if fallback_pages:
-                    parsed_ids.add(record.key)
-                    _tag_pdf_occurrences(fallback_occurrences, record.key)
-                    pages.extend(fallback_pages)
-                    occurrences.extend(fallback_occurrences)
-                    errors = []
-                    break
-                if fallback_error:
-                    failed_ids.add(record.key)
-                    errors.append(fallback_error)
+        pages, occurrences = [], []
+        for key in dict.fromkeys([*version_ids, *parsed]):
+            if key in parsed:
+                texts, found = parsed[key]
+                _tag_pdf_occurrences(found, key)
+                pages.extend(texts)
+                occurrences.extend(found)
+        messages = list(errors.values())
+        if not parsed:
+            messages.extend(download_errors)
+        return _PdfResult(pages, occurrences, "; ".join(messages) or None, set(parsed))
 
-        if cached_versions and not pages and not primary_cached:
-            primary_pages, primary_occurrences, primary_error = yield from self._primary_pdf_workflow(pub, primary)
-            if primary_error:
-                failed_ids.add(primary_id)
-                errors.append(primary_error)
-            if primary_pages:
-                parsed_ids.add(primary_id)
-                _tag_pdf_occurrences(primary_occurrences, primary_id)
-                pages.extend(primary_pages)
-                occurrences.extend(primary_occurrences)
-        return _PdfResult(pages, occurrences, "; ".join(errors) or None, parsed_ids, failed_ids)
-
-    def _primary_pdf_workflow(
+    def _download_record(
         self, pub: Publication, record: PublicationSourceRecord | None,
     ) -> Generator[_PdfTask, bytes | None, tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]]:
-        """Try the cache, direct sources and crawler for one source record."""
+        """Try direct sources and the crawler for one source record."""
         record_key = record.key if record else pub.id
         errors = []
-        if self.pdf_store.exists(record_key):
-            try:
-                pages, occurrences = _extract_pdf(self.pdf_store.read(record_key))
-                return pages, occurrences, None
-            except CancelledError:
-                raise
-            except Exception as exc:
-                errors.append(redact_text(exc))
-
         pdf_urls = record.pdf_urls if record else pub.pdf_urls
         doi = record.doi if record else pub.doi
         sources = [(url, {}) for url in dict.fromkeys(pdf_urls)]
