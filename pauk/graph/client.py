@@ -20,12 +20,12 @@ BOOLEAN_MERGE_FIELDS = {
 }
 LIST_MERGE_FIELDS = {
     "Person": {"name_variants", "other_names", "emails", "merged_ids"},
-    "Publication": {"fields", "merged_ids", "pdf_urls"},
+    "Publication": {"fields", "merged_ids", "pdf_urls", "sources", "source_keys"},
     "Repository": {"cited_urls", "contributors", "merged_ids"},
 }
 JSON_LIST_MERGE_FIELDS = {
-    "Person": {"affiliations"},
-    "Publication": {"funding", "versions"},
+    "Person": {"affiliations", "identifiers"},
+    "Publication": {"funding", "versions", "identifiers", "source_records"},
 }
 
 MEMBERSHIP_FIELDS = {
@@ -213,6 +213,27 @@ def _union_values(current: list, extra: list) -> list:
     return merged
 
 
+def _union_json_property(field: str, current: list, extra: list) -> list:
+    """Merge JSON ledgers, keying identity/provenance entries by identity."""
+    key_field = {"identifiers": "normalized_key", "source_records": "key"}.get(field)
+    if key_field is None:
+        return _union_values(current, extra)
+    merged = list(current)
+    known = {
+        value.get(key_field) for value in current
+        if isinstance(value, dict) and value.get(key_field)
+    }
+    for value in extra:
+        key = value.get(key_field) if isinstance(value, dict) else None
+        if key and key in known:
+            continue
+        if value not in merged:
+            merged.append(value)
+        if key:
+            known.add(key)
+    return merged
+
+
 def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) -> dict:
     """Build the property updates needed before deleting a duplicate node."""
     updates = {}
@@ -249,7 +270,7 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
                 # non-null canonical value still wins rather than being lost.
                 current = extra = None
             if isinstance(current, list) and isinstance(extra, list):
-                merged = _union_values(current, extra)
+                merged = _union_json_property(key, current, extra)
                 encoded = json.dumps(merged, ensure_ascii=False)
                 if encoded != canonical_value:
                     updates[key] = encoded
@@ -728,7 +749,8 @@ class Neo4jClient:
             """ + (" WHERE p.id IN $ids " if ids is not None else
                    " WHERE size(p.merged_ids) > 0 " if folded_only else "") + """
             OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
-            RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
+            RETURN p.id AS id, p.schema_version AS schema_version,
+                   p.type AS type, p.doi AS doi, p.title AS title,
                    p.journal AS journal, p.venue_type AS venue_type,
                    p.publication_date AS publication_date,
                    p.year AS year, p.openalex_url AS openalex_url,
@@ -758,6 +780,58 @@ class Neo4jClient:
                 (row["src"], row["tgt"]): dict(row["props"])
                 for row in tx.run(query, members=members)
             })
+
+    def fetch_legacy_publications(self, known_ids: list[str]) -> list[dict]:
+        """Publication snapshots that exist only in the graph.
+
+        These are one-time migration inputs for legacy manual/admin-created
+        nodes. Normal publication creation still goes through raw adapters.
+        """
+        query = """
+            MATCH (p:Publication)
+            WHERE NOT p.id IN $known_ids
+            OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
+            RETURN properties(p) AS properties,
+                   collect(CASE WHEN a IS NULL THEN NULL ELSE {
+                       person_id: a.id,
+                       name: coalesce(a.name_raw, a.name_en, a.name_ru),
+                       position: authored.position,
+                       affiliation: authored.affiliation,
+                       is_corresponding: coalesce(authored.is_corresponding, false)
+                   } END) AS authors
+        """
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: [
+                {
+                    "properties": dict(record["properties"]),
+                    "authors": [author for author in record["authors"] if author],
+                }
+                for record in tx.run(query, known_ids=known_ids)
+            ])
+
+    def fetch_legacy_persons(self, known_ids: list[str]) -> list[dict]:
+        """Person snapshots that exist only in the graph."""
+        query = """
+            MATCH (p:Person)
+            WHERE NOT p.id IN $known_ids
+            OPTIONAL MATCH (p)-[authored:AUTHORED]->(w:Publication)
+            RETURN properties(p) AS properties,
+                   collect(CASE WHEN w IS NULL THEN NULL ELSE {
+                       publication_id: w.id,
+                       position: authored.position,
+                       affiliation: authored.affiliation,
+                       affiliation_source: authored.affiliation_source,
+                       is_corresponding: coalesce(authored.is_corresponding, false)
+                   } END) AS authored
+        """
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: [
+                {
+                    "properties": dict(record["properties"]),
+                    "authored": [authorship for authorship in record["authored"] if authorship],
+                }
+                for record in tx.run(query, known_ids=known_ids)
+            ])
 
     def fetch_publication_fields(self) -> dict[str, set[str]]:
         """Research fields per publication, for the person merge rules."""

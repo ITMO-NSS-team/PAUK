@@ -22,15 +22,17 @@ messages.
 ## `run` / `collect`
 
 ```
-pauk run     --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
-pauk collect --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
+pauk run     [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
+pauk collect [--source openalex] --id <id> | --ids-file <file> | --from <date> --to <date>  [--name <name>]
 ```
 
 `run` is `collect`, `normalize` and `enrich` (all stages) in one call. It
 does **not** include `publish graph`: loading into the shared Neo4j stays a
 separate manual step (`PipelineRunner.run()`). `--work`, `--works-file` and
 `--from` + `--to` are alternative ways to select works; `--name` overrides
-the generated group name.
+the generated group name. `--work` and `--works-file` remain aliases for
+`--id` and `--ids-file`. Collection is implemented only for OpenAlex in this
+release; the selector names are source-neutral for future adapters.
 
 Before collecting new works, `collect` repairs stored records whose author
 list was cut off by the OpenAlex list endpoint limit
@@ -39,13 +41,13 @@ list was cut off by the OpenAlex list endpoint limit
 ## `normalize`
 
 ```
-pauk normalize --group <group>
+pauk normalize --group <group> [--source openalex]
 ```
 
 Parses the raw MongoDB collection (`raw`, filtered by `group`) into the
-prepared collections. Re-running on the same group is safe: it keeps
-enrichment data and `_processing` already on existing rows and merges them
-with the refreshed raw content (`OpenAlexNormalizer.run()`). Entities in
+prepared collections through the adapter/identity/aggregate orchestrator.
+Re-running an unchanged record is a no-op; a changed record resets dependent
+enrichment centrally. Entities in
 MongoDB are global: if the same work id already appeared in another group,
 normalization sees its current state by id (`PreparedStore.get_models`), not
 only what this group has accumulated. See [storage.md](storage.md).

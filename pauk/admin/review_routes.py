@@ -142,7 +142,7 @@ def _asks(row: dict) -> str:
         return "аккаунт GitHub"
     if kind == review.STAFF:
         return "запись каталога"
-    if kind == review.PUB_VERSION:
+    if kind in {review.PUB_VERSION, review.PUBLICATION}:
         return "две публикации"
     return "две записи"
 
@@ -165,7 +165,7 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
         name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
-        publication = row["kind"] == review.PUB_VERSION
+        publication = row["kind"] in {review.PUB_VERSION, review.PUBLICATION}
         label = "Publication" if publication else "Person"
         shown.append({
             "id": member,
@@ -196,6 +196,9 @@ def _shown(row: dict, back: str = "") -> dict:
     if row["kind"] == review.GITHUB and row.get("login") and not evidence.get("login"):
         # A choice can be recorded before a run supplies any evidence.
         evidence = {**evidence, "login": row["login"]}
+    shared_coauthors = evidence.get("shared_coauthors")
+    if shared_coauthors is None and "shared_authors" in evidence:
+        shared_coauthors = len(evidence["shared_authors"])
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.
@@ -211,6 +214,7 @@ def _shown(row: dict, back: str = "") -> dict:
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
         "is_version": row["kind"] == review.PUB_VERSION,
+        "is_publication": row["kind"] == review.PUBLICATION,
         "bucket": BUCKETS.get(evidence.get("bucket"), evidence.get("bucket")),
         # By position, like `members`: a missing venue must not shift the other one.
         "venues": [evidence.get("venue_a"), evidence.get("venue_b")],
@@ -230,8 +234,15 @@ def _shown(row: dict, back: str = "") -> dict:
         # A degree is what tells two namesakes apart.
         "degrees": dict(zip(evidence.get("records") or [],
                             evidence.get("record_degrees") or [], strict=False)),
-        "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
-        "shared_coauthors": evidence.get("shared_coauthors"),
+        "reasons": [
+            _reason_words(reason)
+            for reason in (
+                [evidence.get("held_because")]
+                if isinstance(evidence.get("held_because"), str)
+                else evidence.get("held_because") or []
+            )
+        ],
+        "shared_coauthors": shared_coauthors,
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
         "input_route": evidence.get("input_route"),

@@ -16,7 +16,7 @@ from pauk.pipeline.membership import ITMO_ROR_ID, normalize_ror, source_observed
 # they are stored as JSON text.
 JSON_TEXT_FIELDS = (
     "funding", "versions", "counts_by_year", "affiliations", "membership_evidence", "membership_source_coverage",
-    "membership_owner_sources",
+    "membership_owner_sources", "identifiers", "source_records",
 )
 
 
@@ -104,8 +104,6 @@ def _membership_source_coverage(row: dict) -> list[dict]:
         })
         represented_orcids.add((owner, identifier))
     return coverage
-
-
 @dataclass(frozen=True)
 class RelSpec:
     """Describes one relationship embedded in a prepared-JSONL row.
@@ -195,6 +193,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "membership_source_coverage",
             "membership_owner_sources",
             "openalex_id",
+            "schema_version",
+            "identifiers",
             "orcid",
             "name_raw",
             "name_variants",
@@ -263,6 +263,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "membership_source_coverage",
             "membership_owner_sources",
             "openalex_id",
+            "schema_version",
+            "identifiers",
             "orcid",
             "name_raw",
             "name_variants",
@@ -316,6 +318,11 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Publication",
         prop_fields=(
             "title",
+            "schema_version",
+            "identifiers",
+            "source_records",
+            "sources",
+            "source_keys",
             "type",
             "fields",
             "journal",

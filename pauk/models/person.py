@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .identity import ExternalIdentifier
 from .processing import ProcessingState
 from .relations import Authorship, Contribution
 
@@ -87,6 +88,8 @@ class Person(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
+    schema_version: int = 1
+    identifiers: list[ExternalIdentifier] = Field(default_factory=list)
     openalex_id: str | None = None
     orcid: str | None = None
     is_itmo: bool

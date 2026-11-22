@@ -1040,6 +1040,59 @@ class GraphDedupTest(unittest.TestCase):
         self.assertIn("W1", client.nodes["Publication"])
         self.assertNotIn("W2", client.nodes["Publication"])
 
+    def test_graph_doi_merge_keeps_an_existing_canonical_owner(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("W1", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-01-01", "merged_ids": ["W2"],
+            }),
+            ("W2", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-12-01", "merged_ids": [],
+            }),
+        ])
+        removed, _report = dedup_graph_publications(client)
+        self.assertEqual(removed, 1)
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertNotIn("W2", client.nodes["Publication"])
+
+    def test_graph_publication_review_answer_is_applied(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("pub_1", {"title": "Same work", "schema_version": 2}),
+            ("pub_2", {"title": "Same work", "schema_version": 2}),
+        ])
+        removed, report = dedup_graph_publications(
+            client,
+            decisions={frozenset(("pub_1", "pub_2")): review.SAME},
+        )
+        self.assertEqual(removed, 1)
+        self.assertEqual(report[0]["rules"], ["manual"])
+
+    def test_graph_publication_negative_answer_blocks_a_manual_chain(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("pub_1", {"title": "First", "schema_version": 2}),
+            ("pub_2", {"title": "Second", "schema_version": 2}),
+            ("pub_3", {"title": "Third", "schema_version": 2}),
+        ])
+
+        removed, _report = dedup_graph_publications(
+            client,
+            decisions={
+                frozenset(("pub_1", "pub_2")): review.SAME,
+                frozenset(("pub_2", "pub_3")): review.SAME,
+                frozenset(("pub_1", "pub_3")): review.DIFFERENT,
+            },
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertIn("pub_1", client.nodes["Publication"])
+        self.assertNotIn("pub_2", client.nodes["Publication"])
+        self.assertIn("pub_3", client.nodes["Publication"])
+        self.assertEqual(client.nodes["Publication"]["pub_1"]["merged_ids"], ["pub_2"])
+
     def test_graph_fold_writes_the_folded_records_version_entry(self):
         # A cross-group fold deletes the duplicate node; its venue, abstract
         # and author list must land in the canonical's version ledger first.
@@ -1552,6 +1605,35 @@ class GraphPassReviewTest(unittest.TestCase):
         (question,) = review.questions(self.db)
         self.assertEqual(question["members"], ["A1", "A2"])
         self.assertEqual(question["source"], review.GRAPH)
+
+    def test_the_migration_can_limit_resolution_to_cached_model_verdicts(self):
+        self.publish(self.namesakes())
+        config = Settings(data_dir=self.config.data_dir, person_resolution_enabled=True)
+        models = object()
+        logistic = object()
+        with (
+            patch.object(graph_dedup, "audited_client", return_value=self.client),
+            patch.object(graph_dedup, "ResolutionModels", return_value=models) as factory,
+            patch.object(graph_dedup, "load_logistic_model", return_value=logistic),
+            patch.object(graph_dedup, "dedup_graph_persons", return_value=(0, [])) as persons,
+            patch.object(graph_dedup, "dedup_graph_publications", return_value=(0, [])),
+            patch.object(graph_dedup, "dedup_graph_repositories", return_value=(0, [])),
+            patch.object(graph_dedup, "apply_overrides", return_value={}),
+        ):
+            graph_dedup.run_graph_dedup(
+                config,
+                self.db,
+                resolution_cache_only=True,
+            )
+
+        factory.assert_called_once_with(
+            config,
+            self.db,
+            "__graph__",
+            cache_only=True,
+        )
+        self.assertIs(persons.call_args.kwargs["models"], models)
+        self.assertIs(persons.call_args.kwargs["logreg_model"], logistic)
 
     def test_the_whole_pass_reads_the_answers_back(self):
         self.publish(self.namesakes())

@@ -28,7 +28,8 @@ from pauk.storage.mongo import get_mongo_client
 # What the harvest writes, plus what the stand reads: without publications,
 # departments and organizations a rehearsal creates every author fresh.
 DEFAULT = ("publications", "persons", "departments", "organizations",
-           "repositories", "repo_links", "github_profiles")
+           "repositories", "repo_links", "github_profiles", "identity_keys",
+           "pdfs", "review_pairs", "graph_overrides", "migration_state")
 
 
 def dump(db, name: str, out: Path, compress: bool) -> dict:
