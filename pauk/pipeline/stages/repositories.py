@@ -175,11 +175,11 @@ class RepositoriesStage(EnrichmentStage):
             status = "not_found" if isinstance(exc, HttpRequestError) and exc.status_code == 404 else "failed"
             return status, redact_text(exc)
 
-    def _pending_repository_ids(
+    def _pending_repository_urls(
         self, rows: list[RepoLink], repositories: dict[str, Repository],
         unlinked: dict[str, list[Repository]],
-    ) -> set[str]:
-        pending: set[str] = set()
+    ) -> dict[str, str]:
+        pending: dict[str, str] = {}
         for row in rows:
             if not self._row_in_scope(row):
                 continue
@@ -189,8 +189,9 @@ class RepositoriesStage(EnrichmentStage):
                     continue
                 repo = repositories.get(repo_id)
                 if repo is None or self.needs_attempt(repo.processing.get(self.name)):
-                    pending.add(repo_id)
-        pending |= set(unlinked)
+                    pending.setdefault(repo_id, link.url)
+        for url_id, group in unlinked.items():
+            pending.setdefault(url_id, group[0].url)
         return pending
 
     def _unlinked_repositories(
@@ -298,9 +299,9 @@ class RepositoriesStage(EnrichmentStage):
                         for publication_id in repo.publication_ids
                         if publication_id != row.publication_id
                     ]
-        progress = self.progress_bar(
-            total=len(self._pending_repository_ids(rows, repositories, unlinked)),
-            unit="repository")
+        pending = self._pending_repository_urls(rows, repositories, unlinked)
+        client.prefetch_repositories(pair for url in pending.values() if (pair := _github_owner_name(url)))
+        progress = self.progress_bar(total=len(pending), unit="repository")
         for row in rows:
             if not self._row_in_scope(row):
                 continue

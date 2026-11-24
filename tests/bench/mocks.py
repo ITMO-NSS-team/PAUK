@@ -79,6 +79,9 @@ class MockGitHubClient:
         self.renamed = universe["renamed"]
         self.calls: list[tuple[str, str]] = []
 
+    def prefetch_repositories(self, pairs) -> None:
+        pass
+
     def get_repository(self, owner: str, name: str) -> dict:
         self.calls.append((owner, name))
         key = (owner.lower(), name.lower())

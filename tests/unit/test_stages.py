@@ -1776,6 +1776,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         selection = PreparedSelection(entity="repositories", ids={"github_org_curated"})
         RepositoriesStage(self.prepared, self.raw, selection=selection).run()
         self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+        self.assertEqual(list(github_client.return_value.prefetch_repositories.call_args.args[0]), [("org", "curated")])
 
 
 class RepoPeopleStageTest(unittest.TestCase):

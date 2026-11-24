@@ -179,5 +179,52 @@ class WaitLogTest(unittest.TestCase):
         sleep.assert_called_once_with(1.0)
 
 
+class GitHubBatchTest(unittest.TestCase):
+    def setUp(self):
+        self.client = GitHubClient(timeout=5, token="test")
+        self.addCleanup(self.client.session.close)
+
+    @staticmethod
+    def repository():
+        return {
+            "fullDatabaseId": "3000000000", "name": "new", "url": "https://github.com/org/new",
+            "owner": {"login": "org", "url": "https://github.com/org", "__typename": "Organization"},
+            "stargazerCount": 0, "forkCount": 0, "isArchived": False, "isFork": False,
+            "repositoryTopics": {"nodes": []}, "readme0": {"id": "blob"},
+        }
+
+    def test_repository_batches_deduplicate_keys_and_keep_canonical_metadata(self):
+        data = {"item" + str(i): self.repository() for i in range(25)}
+        replies = [{"data": data}, {"data": {"item0": self.repository()}}]
+        pairs = [("org", f"repo{i}") for i in range(26)] + [("ORG", "REPO0")]
+        with mock.patch.object(self.client, "request_json", side_effect=replies) as request:
+            self.client.prefetch_repositories(pairs)
+            repo = self.client.get_repository("Org", "Repo0")
+            self.assertTrue(self.client.has_readme("ORG", "REPO25"))
+            self.assertEqual(request.call_count, 2)
+            queries = [call.kwargs["json"]["query"] for call in request.call_args_list]
+            self.assertEqual([query.count("repository(owner:") for query in queries], [25, 1])
+        self.assertEqual(repo["id"], 3_000_000_000)
+        self.assertEqual(repo["html_url"], "https://github.com/org/new")
+
+    def test_repository_errors_do_not_become_not_found_and_readme_misses_use_rest(self):
+        repo = self.repository() | {"readme0": {}}
+        graphql = {"data": {"item0": repo, "item1": None, "item2": None}, "errors": [
+            {"path": ["item0", "readme0"], "type": "NOT_FOUND"},
+            {"path": ["item1"], "type": "INTERNAL"},
+            {"path": ["item2"], "type": "NOT_FOUND"},
+        ]}
+        with mock.patch.object(self.client, "request_json", side_effect=[
+            graphql, {}, {"html_url": "https://github.com/org/renamed"},
+        ]) as request:
+            self.client.prefetch_repositories([("org", name) for name in ("good", "failed", "old")])
+            self.assertTrue(self.client.has_readme("org", "good"))
+            self.assertEqual(request.call_args.args[1], "https://api.github.com/repos/org/good/readme")
+            with self.assertRaises(HttpRequestError) as error:
+                self.client.get_repository("org", "failed")
+            self.assertIsNone(error.exception.status_code)
+            self.assertEqual(self.client.get_repository("org", "old")["html_url"], "https://github.com/org/renamed")
+            self.assertEqual(request.call_count, 3)
+
 if __name__ == "__main__":
     unittest.main()

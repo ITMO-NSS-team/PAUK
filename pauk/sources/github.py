@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import requests
 
@@ -10,12 +11,22 @@ from .base import HttpClient, HttpRequestError
 
 class GitHubClient(HttpClient):
     API_URL = "https://api.github.com"
+    GRAPHQL_URL = f"{API_URL}/graphql"
+    REPOSITORIES_PER_QUERY = 25
+    REPOSITORY_TOPIC_LIMIT = 20
+    README_NAMES = (
+        "README.md", "README.rst", "README.txt", "README", "readme.md", "Readme.md",
+        "README.markdown", "readme.rst", "README.MD",
+    )
 
     def __init__(self, timeout: int, token: str = "") -> None:
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         super().__init__(timeout, headers)
+        self._has_token = bool(token)
+        self._graphql_blocked: HttpRequestError | None = None
+        self._prefetched_repositories: dict[tuple[str, str], tuple[dict, bool] | HttpRequestError] = {}
 
     @staticmethod
     def _error_message(response: requests.Response) -> str:
@@ -66,14 +77,142 @@ class GitHubClient(HttpClient):
             return self._backoff_delay(attempt)
         return None
 
+    def _graphql_error(self, kind: str | None) -> HttpRequestError:
+        status = {"FORBIDDEN": 403, "RATE_LIMITED": 429}.get(kind)
+        return HttpRequestError("POST", self.GRAPHQL_URL, status_code=status, cause_type="GraphQL error")
+
+    def _graphql_nodes(self, fields: Iterable[str]) -> list[dict | HttpRequestError | None]:
+        """Return the result of each aliased field in request order."""
+        if self._graphql_blocked is not None:
+            raise self._graphql_blocked.with_traceback(None)
+        selections = [f"item{i}: {field}" for i, field in enumerate(fields)]
+        try:
+            payload = self.request_json("POST", self.GRAPHQL_URL, json={"query": "query { " + " ".join(selections) + " }"})
+        except HttpRequestError as error:
+            if error.status_code in {401, 403, 429}:
+                self._graphql_blocked = error
+            raise
+        except ValueError:
+            raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL JSON") from None
+        if not isinstance(payload, dict):
+            raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL response")
+        data = payload.get("data")
+        errors = payload.get("errors") or []
+        if (data is not None and not isinstance(data, dict)) or not isinstance(errors, list):
+            raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL response")
+        data = data or {}
+        field_errors: dict[str, HttpRequestError | None] = {}
+        global_error = None
+        for error in errors:
+            if not isinstance(error, dict):
+                raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL error")
+            extensions = error.get("extensions")
+            kind = error.get("type") or (extensions.get("type") if isinstance(extensions, dict) else None)
+            path = error.get("path")
+            if isinstance(path, list) and path and isinstance(path[0], str):
+                if kind == "NOT_FOUND" and len(path) == 1:
+                    # Confirm missing objects over REST, which can also resolve old URLs.
+                    field_errors.setdefault(path[0], None)
+                elif kind != "NOT_FOUND" or len(path) != 2 or not str(path[1]).startswith("readme"):
+                    field_errors[path[0]] = self._graphql_error(kind)
+            else:
+                failure = self._graphql_error(kind)
+                if global_error is None or failure.status_code is not None:
+                    global_error = failure
+        if global_error is not None:
+            if global_error.status_code in {403, 429}:
+                self._graphql_blocked = global_error
+            if not data:
+                raise global_error
+        results: list[dict | HttpRequestError | None] = []
+        for i in range(len(selections)):
+            alias = f"item{i}"
+            node = data.get(alias)
+            if alias in field_errors:
+                results.append(field_errors[alias] or global_error)
+            elif isinstance(node, dict) and node:
+                results.append(node)
+            elif global_error is not None:
+                results.append(global_error)
+            elif alias in data and node is None:
+                results.append(None)
+            else:
+                results.append(HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Missing GraphQL result"))
+        return results
+
+    def prefetch_repositories(self, pairs: Iterable[tuple[str, str]]) -> None:
+        """Fetch metadata and common README paths for repositories in scope."""
+        if not self._has_token:
+            return
+        unique_pairs = dict.fromkeys((owner.lower(), name.lower()) for owner, name in pairs)
+        pending = [pair for pair in unique_pairs if pair not in self._prefetched_repositories]
+        readme_fields = " ".join(
+            f"readme{i}: object(expression: {json.dumps('HEAD:' + name)}) {{ ... on Blob {{ id }} }}"
+            for i, name in enumerate(self.README_NAMES)
+        )
+        for start in range(0, len(pending), self.REPOSITORIES_PER_QUERY):
+            chunk = pending[start:start + self.REPOSITORIES_PER_QUERY]
+            fields = (
+                f"repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{"
+                " fullDatabaseId url name description stargazerCount forkCount isArchived isFork pushedAt"
+                " primaryLanguage { name } licenseInfo { spdxId }"
+                f" repositoryTopics(first: {self.REPOSITORY_TOPIC_LIMIT}) {{ nodes {{ topic {{ name }} }} }}"
+                f" owner {{ __typename login url }} {readme_fields} }}"
+                for owner, name in chunk
+            )
+            try:
+                nodes = self._graphql_nodes(fields)
+            except HttpRequestError as error:
+                self._prefetched_repositories.update(dict.fromkeys(pending[start:], error))
+                break
+            for pair, node in zip(chunk, nodes, strict=True):
+                if isinstance(node, HttpRequestError):
+                    self._prefetched_repositories[pair] = node
+                elif node is not None and node.get("fullDatabaseId") is not None:
+                    try:
+                        payload = self._repository_payload(node)
+                    except (KeyError, TypeError, ValueError):
+                        self._prefetched_repositories[pair] = HttpRequestError(
+                            "POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL repository",
+                        )
+                        continue
+                    has_readme = any(file.get("id") for key, file in node.items()
+                                     if key.startswith("readme") and isinstance(file, dict))
+                    self._prefetched_repositories[pair] = (payload, has_readme)
+
+    @staticmethod
+    def _repository_payload(node: dict) -> dict:
+        owner = node["owner"]
+        license_info = node.get("licenseInfo")
+        return {
+            "id": int(node["fullDatabaseId"]),
+            "html_url": node["url"],
+            "name": node["name"],
+            "description": node.get("description"),
+            "stargazers_count": node["stargazerCount"],
+            "forks_count": node["forkCount"],
+            "archived": node["isArchived"],
+            "fork": node["isFork"],
+            "pushed_at": node.get("pushedAt"),
+            "language": (node.get("primaryLanguage") or {}).get("name"),
+            "license": {"spdx_id": license_info.get("spdxId")} if license_info else None,
+            "topics": sorted(item["topic"]["name"] for item in node["repositoryTopics"]["nodes"] if item),
+            "owner": {"login": owner["login"], "type": owner["__typename"], "html_url": owner["url"]},
+        }
+
     def get_repository(self, owner: str, name: str) -> dict:
+        prefetched = self._prefetched_repositories.get((owner.lower(), name.lower()))
+        if isinstance(prefetched, HttpRequestError):
+            raise prefetched.with_traceback(None)
+        if prefetched is not None:
+            return prefetched[0]
         return self.get_json(f"{self.API_URL}/repos/{owner}/{name}")
 
     def has_readme(self, owner: str, name: str) -> bool:
-        """Check for a README via GET .../readme (200 = yes, 404 = no).
-
-        Not exposed by the repository payload itself, needs its own call.
-        """
+        """Use a prefetched file or ask GitHub for the preferred README."""
+        prefetched = self._prefetched_repositories.get((owner.lower(), name.lower()))
+        if isinstance(prefetched, tuple) and prefetched[1]:
+            return True
         try:
             self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
         except HttpRequestError as exc:
