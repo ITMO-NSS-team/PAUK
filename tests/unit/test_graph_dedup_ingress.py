@@ -24,6 +24,7 @@ class GraphDedupIngressTest(unittest.TestCase):
         self.assertIn("p.emails AS emails", query)
         self.assertIn("doi: w.doi", query)
         self.assertIn("merged_ids: w.merged_ids", query)
+        self.assertIn("versions: w.versions", query)
 
     def test_secondary_email_overlap_has_the_same_result_as_prepared(self):
         rows = [

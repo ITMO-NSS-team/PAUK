@@ -86,7 +86,11 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
-from pauk.pipeline.publication_identity import normalize_publication_doi, publication_identity_map
+from pauk.pipeline.publication_identity import (
+    normalize_publication_doi,
+    publication_details_with_versions,
+    publication_identity_map,
+)
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
@@ -1411,43 +1415,10 @@ class DedupStage(EnrichmentStage):
                 "year": publication.year,
                 "merged_ids": publication.merged_ids,
             }
-        version_candidates: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for publication in publications.values():
-            if publication.merged_ids or publication.versions:
-                publication_details[publication.id]["source_person_ids"] = []
-            for version in publication.versions:
-                source_id = version.openalex_id
-                if source_id not in {publication.id, *publication.merged_ids}:
-                    continue
-                if source_id in publications and source_id != publication.id:
-                    continue
-                version_candidates[source_id].append({
-                    "doi": version.doi,
-                    "title": version.title,
-                    "year": version.year,
-                    "merged_ids": [],
-                    "source_person_ids": sorted({author.person_id for author in version.authors}),
-                })
-        for source_id, candidates in version_candidates.items():
-            identities = {(row["year"], tuple(row["source_person_ids"])) for row in candidates}
-            confirmed_dois = {
-                doi for row in candidates
-                if (doi := normalize_publication_doi(row["doi"])) and re.fullmatch(r"10\.\d{4,9}/\S+", doi)
-            }
-            if len(identities) > 1 or len(confirmed_dois) > 1:
-                details = publication_details.setdefault(source_id, {"doi": None, "title": None, "merged_ids": []})
-                details.update(year=None, source_person_ids=[], source_record_conflict=True)
-            else:
-                candidate = min(candidates, key=lambda row: (
-                    normalize_publication_doi(row["doi"]) not in confirmed_dois,
-                    json.dumps(row, sort_keys=True),
-                ))
-                if source_id in publications:
-                    publication_details[source_id].update(
-                        year=candidate["year"], source_person_ids=candidate["source_person_ids"],
-                    )
-                else:
-                    publication_details[source_id] = candidate
+        publication_details = publication_details_with_versions(
+            publication_details,
+            {publication.id: publication.versions for publication in publications.values()},
+        )
         trusted_orcids = self._trusted_orcids(people)
         staff_ids = self._staff_ids(people)
         answers = review.decisions(self.prepared.db, folded_ids(people))

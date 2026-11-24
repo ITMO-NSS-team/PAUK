@@ -18,10 +18,11 @@ from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, Resolve
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
-from pauk.models import Authorship, Person
+from pauk.models import Authorship, Person, PublicationVersion
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
+from pauk.pipeline.publication_identity import publication_details_with_versions
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
@@ -246,12 +247,57 @@ def dedup_graph_persons(
     person_affiliations = {
         row["id"]: stored_affiliations(row.get("affiliations"), row["id"]) for row in person_rows
     }
-    publication_details = {
-        detail["id"]: {"doi": detail.get("doi"), "merged_ids": detail.get("merged_ids")}
+    stored_publications = {
+        detail["id"]: detail
         for row in person_rows
         for detail in row.get("publication_details") or ()
         if isinstance(detail, dict) and isinstance(detail.get("id"), str) and detail["id"]
     }
+    publication_details = {
+        work_id: {"doi": detail.get("doi"), "merged_ids": detail.get("merged_ids")}
+        for work_id, detail in stored_publications.items()
+    }
+    publication_versions: dict[str, list[PublicationVersion]] = {}
+    for work_id, detail in stored_publications.items():
+        value = detail.get("versions")
+        if value is None:
+            continue
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                logger.warning("graph dedup: ignoring invalid versions JSON for publication %s", work_id)
+                continue
+        if not isinstance(value, list):
+            logger.warning("graph dedup: ignoring invalid versions for publication %s", work_id)
+            continue
+        versions = publication_versions.setdefault(work_id, [])
+        for version in value:
+            if (not isinstance(version, dict) or not isinstance(version.get("openalex_id"), str)
+                    or not version["openalex_id"].strip()):
+                logger.warning("graph dedup: ignoring invalid version for publication %s", work_id)
+                continue
+            source = {"openalex_id": version["openalex_id"]}
+            for field in ("doi", "title"):
+                entry = version.get(field)
+                if entry is None or isinstance(entry, str):
+                    source[field] = entry
+                else:
+                    logger.warning("graph dedup: ignoring invalid version %s for publication %s", field, work_id)
+            year = version.get("year")
+            if type(year) is int and year > 0:
+                source["year"] = year
+            elif year is not None:
+                logger.warning("graph dedup: ignoring invalid version year for publication %s", work_id)
+            authors = version.get("authors", [])
+            if isinstance(authors, list) and all(
+                isinstance(author, dict) and isinstance(author.get("person_id"), str)
+                and author["person_id"].strip() for author in authors
+            ):
+                source["authors"] = [{"person_id": author["person_id"]} for author in authors]
+            else:
+                logger.warning("graph dedup: ignoring invalid version authors for publication %s", work_id)
+            versions.append(PublicationVersion(**source))
 
     def authored_rows(row: dict) -> list[Authorship]:
         records = []
@@ -324,6 +370,7 @@ def dedup_graph_persons(
         )
         for row in person_rows
     ]
+    publication_details = publication_details_with_versions(publication_details, publication_versions)
     trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
     planner = plan_person_merges_resolved if models is not None else plan_person_merges
     options = (

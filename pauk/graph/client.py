@@ -694,7 +694,7 @@ class Neo4jClient:
                    coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,
                    collect(DISTINCT CASE WHEN w IS NULL THEN NULL ELSE {
-                       id: w.id, doi: w.doi, merged_ids: w.merged_ids
+                       id: w.id, doi: w.doi, merged_ids: w.merged_ids, versions: w.versions
                    } END) AS publication_details,
                    collect(DISTINCT d.id) AS department_ids
         """

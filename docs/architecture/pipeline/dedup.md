@@ -148,9 +148,16 @@ Conflicting historical records cannot supply a year and an author from different
 versions; their provenance remains unknown and is flagged in the model context.
 Documents expose source years and conflict flags instead of assigning the first
 record's year to both people.
-Missing historical years remain unknown. Graph reads validate optional context
-fields: invalid author positions become unknown and malformed affiliation years are omitted
-with a warning. This does not rewrite the stored graph data.
+Missing historical years remain unknown. Graph reads include the stored
+publication version ledger in both rule-only and model passes. Both paths
+expand source records through the same helper: only the
+publication's own ID or a recorded merged ID can contribute a historical DOI.
+Live source records take precedence over copied ledger entries, and conflicting
+historical candidates cannot establish a DOI match. Malformed ledger entries
+without a source ID are omitted with a warning. Invalid optional metadata does
+not discard a valid historical DOI or source author ID. Invalid author positions
+become unknown and malformed affiliation years are omitted with a warning.
+This does not rewrite the stored graph data.
 
 Role alignment prefers explicit and primary readings over alphabetical order.
 Unresolved reversed names use the more frequent surname interpretation; missing
