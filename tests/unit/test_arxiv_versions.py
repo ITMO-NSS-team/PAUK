@@ -1,13 +1,15 @@
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-import fitz
 import mongomock
+import pymupdf as fitz
 
-from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
+from pauk.ingest.aggregate import build_publication
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, PublicationSourceRecord, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.models.publication import ArxivSource
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -471,7 +473,9 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
                               classification_status=ClassificationStatus.CLASSIFIED)
         manual = CodeLink(url="https://github.com/org/manual", is_relevant=True,
                           classification_status=ClassificationStatus.CLASSIFIED)
-        same = irrelevant.model_copy(update={"url": "http://www.github.com/Org/Shared.git", "availability": "available"})
+        same = irrelevant.model_copy(
+            update={"url": "http://www.github.com/Org/Shared.git", "availability": "available"},
+        )
         self.prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[irrelevant, manual, same])])
         source = self._discover()
         http.return_value.get_bytes_with_url.return_value = (
@@ -528,7 +532,9 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
                 provenance = None if case == "unknown legacy provenance" else expected
                 store.save("W2", _pdf("https://github.com/org/not-the-source"), source_url=provenance)
                 http.reset_mock()
-                http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/true-source"), expected)
+                http.return_value.get_bytes_with_url.return_value = (
+                    _pdf("https://github.com/org/true-source"), expected,
+                )
                 self._discover(identifier + "v2")
 
                 self._extract()
@@ -658,7 +664,9 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
 
     @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
     @mock.patch(STAGE_CLIENT)
-    def test_native_arxiv_doi_recovers_without_lookup_or_duplicate_download(self, s2: mock.Mock, http: mock.Mock) -> None:
+    def test_native_arxiv_doi_recovers_without_lookup_or_duplicate_download(
+        self, s2: mock.Mock, http: mock.Mock,
+    ) -> None:
         self.prepared.write_models("publications", [Publication(
             id="W1", title="Preprint", doi="https://doi.org/10.48550/arXiv.2201.06114",
             processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
@@ -721,6 +729,190 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertEqual([now[link.url] for link in (manual, kept, unread)], [manual, kept, unread])
         self.assertNotIn("link_relevance", self._work().processing)
         self.assertEqual(self._source_state(unavailable).status, ProcessingStatus.FAILED)
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_force_primary_pdf_updates_full_text_previously_filled_by_preprint(self, http: mock.Mock) -> None:
+        publisher = "https://publisher.example/paper.pdf"
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="Journal", doi="10.1/journal", pdf_urls=[publisher]),
+        ])
+        arxiv_url = self._discover()
+        http.return_value.get_bytes.side_effect = HttpRequestError("GET", publisher, status_code=403)
+        http.return_value.get_bytes_with_url.return_value = (
+            _pdf("Preprint full text\nhttps://github.com/org/preprint"), arxiv_url,
+        )
+        self._extract()
+        self.assertIn("Preprint full text", self._work().full_text)
+
+        http.return_value.get_bytes.side_effect = None
+        http.return_value.get_bytes.return_value = _pdf("Publisher full text\nhttps://github.com/org/publisher")
+        self._extract(force=True)
+        self.assertEqual(self._work().full_text.strip(), "Publisher full text\nhttps://github.com/org/publisher")
+
+        work = self._work()
+        work.arxiv_sources.append(ArxivSource(url="https://arxiv.org/pdf/2201.06115"))
+        self.prepared.upsert_models("publications", [work])
+        http.return_value.get_bytes_with_url.return_value = (
+            _pdf("Second preprint"), "https://arxiv.org/pdf/2201.06115",
+        )
+        self._extract()
+        self.assertEqual(self._work().full_text.strip(), "Publisher full text\nhttps://github.com/org/publisher")
+
+    def test_merge_publication_keeps_failed_arxiv_state_over_not_started(self) -> None:
+        url = "https://arxiv.org/pdf/2401.01234"
+        t1 = datetime(2026, 11, 20, 10, 0, tzinfo=UTC)
+        t2 = datetime(2026, 11, 20, 11, 0, tzinfo=UTC)
+        not_started = ArxivSource(url=url)
+        failed_one = ArxivSource(url=url, state=ProcessingState(
+            status=ProcessingStatus.FAILED, attempts=1, finished_at=t1, error="HTTP 429",
+        ))
+        failed_two = ArxivSource(url=url, state=ProcessingState(
+            status=ProcessingStatus.FAILED, attempts=2, finished_at=t2, error="HTTP 503",
+        ))
+        completed = ArxivSource(url=url, state=ProcessingState(
+            status=ProcessingStatus.COMPLETED, attempts=3, finished_at=t2, result_count=1,
+        ))
+
+        kept = _merge_publication(
+            Publication(id="W1", title="Paper", arxiv_sources=[failed_two]),
+            Publication(id="W2", title="Paper", arxiv_sources=[not_started]),
+        )
+        self.assertEqual(kept.arxiv_sources, [failed_two])
+
+        promoted = _merge_publication(
+            Publication(id="W1", title="Paper", arxiv_sources=[not_started]),
+            Publication(id="W2", title="Paper", arxiv_sources=[failed_two]),
+        )
+        self.assertEqual(promoted.arxiv_sources, [failed_two])
+
+        newer_fail = _merge_publication(
+            Publication(id="W1", title="Paper", arxiv_sources=[failed_one]),
+            Publication(id="W2", title="Paper", arxiv_sources=[failed_two]),
+        )
+        self.assertEqual(newer_fail.arxiv_sources, [failed_two])
+
+        finished = _merge_publication(
+            Publication(id="W1", title="Paper", arxiv_sources=[failed_two]),
+            Publication(id="W2", title="Paper", arxiv_sources=[completed]),
+        )
+        self.assertEqual(finished.arxiv_sources, [completed])
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_v2_preprint_cache_under_source_record_key_is_reused_despite_versions(self, http: mock.Mock) -> None:
+        preprint_url = "https://arxiv.org/pdf/2401.01234"
+        resolved_url = "https://arxiv.org/pdf/2401.01234v2"
+        record = PublicationSourceRecord(
+            key="openalex:W2",
+            source="openalex",
+            source_id="W2",
+            title="Preprint",
+            type="preprint",
+            doi="https://doi.org/10.48550/arXiv.2401.01234",
+            pdf_urls=[preprint_url],
+        )
+        preprint = Publication(id="pub_123", title="Preprint", schema_version=2, source_records=[record])
+        self.assertEqual(len(preprint.versions), 1)
+        journal = Publication(id="W1", title="Journal", doi="10.1/journal")
+        self.prepared.write_models("publications", [journal, preprint])
+        store = PdfStore(self.db, self.config.pdf_dir)
+        store.save("openalex:W2", _pdf("https://github.com/org/v2-preprint"), source_url=resolved_url)
+        self._discover("2401.01234")
+
+        self._extract()
+
+        http.return_value.get_bytes_with_url.assert_not_called()
+        link, = self._links().values()
+        self.assertEqual(link.url, "https://github.com/org/v2-preprint")
+        self.assertEqual(link.occurrences[0].pdf_id, "openalex:W2")
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_v2_uncached_preprint_saves_under_source_record_key_and_avoids_redownload(self, http: mock.Mock) -> None:
+        preprint_url = "https://arxiv.org/pdf/2401.01234"
+        record = PublicationSourceRecord(
+            key="openalex:W2",
+            source="openalex",
+            source_id="W2",
+            title="Preprint",
+            type="preprint",
+            doi="https://doi.org/10.48550/arXiv.2401.01234",
+            pdf_urls=[preprint_url],
+        )
+        preprint = Publication(id="pub_123", title="Preprint", schema_version=2, source_records=[record])
+        journal = Publication(id="W1", title="Journal", doi="10.1/journal")
+        self.prepared.write_models("publications", [journal, preprint])
+        self._discover("2401.01234")
+        http.return_value.get_bytes_with_url.return_value = (
+            _pdf("https://github.com/org/shared-v2"), "https://arxiv.org/pdf/2401.01234v1",
+        )
+
+        self._extract()
+        CodeLinksStage(
+            self.prepared,
+            self.raw,
+            config=self.config,
+            selection=PreparedSelection("publications", frozenset({"pub_123"})),
+        ).run()
+
+        http.return_value.get_bytes_with_url.assert_called_once_with(preprint_url)
+        store = PdfStore(self.db, self.config.pdf_dir)
+        self.assertTrue(store.exists("openalex:W2"))
+        self.assertFalse(store.exists("pub_123"))
+        self.assertEqual(self._links()["https://github.com/org/shared-v2"].occurrences[0].pdf_id, "openalex:W2")
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_merged_v2_preprint_with_multiple_versions_reuses_cached_source_record(self, http: mock.Mock) -> None:
+        url = "https://arxiv.org/pdf/2401.01234"
+        r1 = PublicationSourceRecord(
+            key="openalex:W2", source="openalex", source_id="W2",
+            title="Preprint", type="preprint", doi="10.48550/arXiv.2401.01234", pdf_urls=[url],
+        )
+        r2 = PublicationSourceRecord(
+            key="openalex:W3", source="openalex", source_id="W3",
+            title="Preprint", type="preprint", doi="10.48550/arXiv.2401.01234", pdf_urls=[url],
+        )
+        preprint = Publication(
+            id="pub_merged", title="Preprint", schema_version=2,
+            merged_ids=["W3"], source_records=[r1, r2],
+        )
+        self.assertEqual(len(preprint.versions), 2)
+        journal = Publication(id="W1", title="Journal", doi="10.1/journal")
+        self.prepared.write_models("publications", [journal, preprint])
+        PdfStore(self.db, self.config.pdf_dir).save(
+            "openalex:W2",
+            _pdf("https://github.com/org/merged-preprint"),
+            source_url="https://arxiv.org/pdf/2401.01234v2",
+        )
+        self._discover("2401.01234")
+
+        self._extract()
+
+        http.return_value.get_bytes_with_url.assert_not_called()
+        link, = self._links().values()
+        self.assertEqual(link.occurrences[0].pdf_id, "openalex:W2")
+
+    def test_build_publication_preserves_and_resets_arxiv_sources_with_enrichment(self) -> None:
+        record = PublicationSourceRecord(
+            key="openalex:W1", source="openalex", source_id="W1", title="Paper", doi="10.1/a",
+        )
+        updated_record = record.model_copy(update={"title": "Revised Paper"})
+        url = "https://arxiv.org/pdf/2401.01234"
+        done = ArxivSource(url=url, state=ProcessingState(status=ProcessingStatus.COMPLETED, result_count=1))
+        existing = Publication(
+            id="pub_1", title="Paper", schema_version=2, doi="10.1/a",
+            pdf_urls=[url], arxiv_sources=[done], source_records=[record],
+        )
+
+        kept = build_publication("pub_1", [record], existing, reset_enrichment=False)
+        self.assertEqual(kept.arxiv_sources, [done])
+        self.assertIn(url, kept.pdf_urls)
+
+        unchanged = build_publication("pub_1", [record], existing, reset_enrichment=True)
+        self.assertEqual(unchanged.arxiv_sources, [done])
+        self.assertIn(url, unchanged.pdf_urls)
+
+        reset = build_publication("pub_1", [updated_record], existing, reset_enrichment=True)
+        self.assertEqual(reset.arxiv_sources, [])
+        self.assertNotIn(url, reset.pdf_urls)
 
 
 if __name__ == "__main__":

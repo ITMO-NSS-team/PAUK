@@ -27,18 +27,28 @@ REPO_FIELDS = ("key", "kind", "dept", "group", "label", "stars", "rank", "gx", "
 PUB_FIELDS = ("key", "kind", "dept", "depts", "year", "n_authors", "rank", "gx", "gy")
 AUTHOR_DETAIL_FIELDS = ("key", "pub_roles")
 REPO_DETAIL_FIELDS = ("key", "description", "url", "has_readme", "license", "contributors", "owner_type")
-# `versions` is left out: the site never reads it, and it repeats the pipeline's
-# merge of duplicate records rather than anything a reader needs.
+
+
 PUB_DETAIL_FIELDS = (
-    "key", "label", "journal", "doi", "has_code", "code_url", "type", "fields", "funding", "openalex_url", "abstract",
+    "key",
+    "label",
+    "journal",
+    "doi",
+    "has_code",
+    "code_url",
+    "type",
+    "fields",
+    "funding",
+    "openalex_url",
+    "abstract",
 )
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-# Some abstracts were scraped from publisher pages together with the author
-# block ("More by <name>https://orcid.org/..."); those are not abstracts at all.
+
+
 SCRAPED_AUTHOR_BLOCK = re.compile(r"orcid\.org/|More by ", re.IGNORECASE)
 
-# Which end of each edge list is an author key.
+
 AUTHOR_EDGE_ENDS = {"coauth_edges": ("s", "t"), "repo_author_edges": ("t",), "all_edges": ("s",)}
 
 
@@ -79,9 +89,7 @@ def public_abstract(text: str) -> str:
     return EMAIL.sub("", text)
 
 
-def to_public(
-    summary: dict, detail: dict[str, list[dict]], persons: list[dict]
-) -> tuple[dict, dict[str, list[dict]]]:
+def to_public(summary: dict, detail: dict[str, list[dict]], persons: list[dict]) -> tuple[dict, dict[str, list[dict]]]:
     """Rewrites the private `(summary, detail)` of `GraphDataBuilder.build()` for publishing.
 
     Args:
@@ -98,7 +106,9 @@ def to_public(
     authors = []
     for author in summary["authors"]:
         label, label_en = public_author_labels(person_by_id.get(author["key"], {}))
-        authors.append({**_pick(author, AUTHOR_FIELDS), "key": new_key[author["key"]], "label": label, "label_en": label_en})
+        authors.append(
+            {**_pick(author, AUTHOR_FIELDS), "key": new_key[author["key"]], "label": label, "label_en": label_en}
+        )
 
     public_summary = {
         **summary,

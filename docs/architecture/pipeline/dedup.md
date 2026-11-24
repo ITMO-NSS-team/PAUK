@@ -4,7 +4,8 @@
 repositories, and how dedup within a group differs from dedup across the whole
 graph.
 
-**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`.
+**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`,
+`pauk/pipeline/publication_components.py`.
 
 Collapses prepared-layer records that describe the same real entity: a person,
 a publication or a repository. It runs after every stage that loads anything,
@@ -94,6 +95,17 @@ pairs and 360 synthetic training examples. Replace the trusted data-only pickle
 through `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`; code and feature contract
 must match the artifact.
 
+Offline reproduction uses `scripts/person_resolution_model.py`. Supply JSON
+with `surname_counts` and `rows` containing `evidence` (PairEvidence fields),
+binary `label`, and `origin` (`annotated` or `synthetic`). Run
+`python scripts/person_resolution_model.py dataset.json --report replay.json`
+to replay an artifact, or add `--fit-output candidate.pkl` to fit a new file
+with scikit-learn installed. Fitting uses the production features, StandardScaler
+and liblinear LogReg (`C=0.03`, equal class weights, seed 20260921). Inputs and
+artifacts are hashed; existing output files are not overwritten. Synthetic rows
+are training-only. Replay is not an independent accuracy estimate and does not
+call Qwen. Production artifacts and thresholds are never replaced automatically.
+
 The features combine role-aligned surname/given-name compatibility, token and
 transliteration similarity, identifiers, catalog status, publications,
 collaborators and institutional context. The single Qwen request includes
@@ -123,6 +135,10 @@ Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
 `pauk/settings.py`, the threshold defaults are in
 `pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
 not an additional merge threshold. Missing/invalid responses go to review.
+Compact prompt features use the same configured artifact's surname counts as
+LogReg. Complete short Latin surnames such as Yi/Ji are preserved for blocking
+without changing the fitted feature normalization. Explicit conflicting ORCID
+or staff IDs take precedence over the multiple-person-name review guard.
 Cache keys include the model, prompt and evidence, but not the transient pair
 number. Retries are reserved for failed or invalid responses.
 
@@ -142,20 +158,39 @@ Held pairs are stored in `review_pairs` with their input route and model verdict
 for the admin panel. Automatically separated pairs retire obsolete unanswered
 questions. Existing operator decisions remain authoritative.
 
+Merge journal rows retain model reason, confidence, input route and verdicts.
+`merge_evidence` identifies the actual accepted pair decisions within the final
+component, so a transitive fold is not presented as a direct model judgment.
+Competing historical alias targets still fail validation before publication;
+they must not be resolved by silently selecting one survivor. Publish and graph
+dedup record the conflicting person component as a separate read-only alias
+diagnostic in admin review, with its edges and the failing operation. Historical
+aliases need repair before retrying; ordinary identity answers cannot dismiss or
+repair this diagnostic.
+
 Before prepared-person merges, complete source rows are preserved in
 `person_merge_sources`. Failure to preserve any participant aborts before the
 merge writes. Unmerge uses these durable copies when live rows were removed or
-already aggregate the returning person, and restores prepared rows as well as
-the graph so the next publish keeps the split.
+already aggregate the returning person. It restores the prepared rows before
+changing the graph, gives exclusive `identity_keys` back to the returning
+person and repairs `person_id` in publication source/version author ledgers.
+The next normalize or publish therefore keeps the split instead of immediately
+folding the person back into the survivor. Graph restoration keeps the folded
+id on the survivor until the returning node, its edges and manual overrides
+are restored; that final marker write makes an interrupted split resumable.
 
 ## Publications
 
-One work reaches OpenAlex by several routes: a preprint and a version of
-record, a dataset or software deposit, a re-indexed duplicate of one DOI. Rows
-sharing a DOI or a title are one publication. The merge is lossless: each
-record is folded into `versions` (`PublicationVersion`: the title, DOI,
-journal, date, abstract and authors of that particular record), so every place
-the work appeared stays available on the surviving row.
+One work can reach PAUK through several source records: a preprint and a
+version of record, a dataset or software deposit, or a re-indexed duplicate.
+Rows sharing a normalized DOI are merged automatically. Title matching is an
+automatic rule only for legacy schema-v1 rows; schema-v2 rows with the same
+title and a shared author are written to `review_pairs` and remain separate.
+The source-neutral ledger is `source_records`; OpenAlex entries are also
+dual-written to legacy `versions` for the transition release.
+Records with different DOI values remain separate even when their titles are
+similar; `pauk versions link` can relate them with `IS_VERSION`
+([version-candidates.md](version-candidates.md)).
 
 The representative of the surviving row: `article` > other types (including a
 missing type) > `preprint`; on a tie, the newer date, then more authors, then
@@ -177,6 +212,24 @@ combined `CodeLink` to `pending` and clear the publication's `link_relevance`
 processing state so the next run judges all contexts together. The last fully
 calculated `code_url` and `Repository.publication_ids` are kept until the
 retry succeeds, as they are on a transient LLM failure.
+
+### Versions under their own DOI
+
+Two records of one work with different DOIs stay separate publications,
+whether the title is the same or edited (a preprint whose title was polished
+for the journal, a translation into another language, a revision under its
+own DOI). The heuristic search that relates them is a separate graph-level
+command; see [version-candidates.md](version-candidates.md). Records the
+older title rule had folded are taken apart by
+`scripts/split_publication_versions.py`.
+
+### Manual publication decisions
+
+Manual publication answers are folded with their negative constraints. If
+`A=B` and `B=C` but `A!=C`, the second positive edge is not allowed to create
+an `A-B-C` component. After any person fold, both global `identity_keys` and
+person ids embedded in publication source/version author ledgers are repointed
+to the survivor.
 
 ## Repositories
 

@@ -19,8 +19,8 @@ One Python package, `pauk/`. Full architecture starts at
   subpackage/stage. Start with `overview.md`; `scripts.md` indexes everything
   in `scripts/` and says which of them write to a database.
 - **`docs/diagrams/`** - schemas as markdown+Mermaid, not images. Don't
-  create PNG/SVG for new diagrams - models can't read them, and text
-  Mermaid renders natively on GitHub and reads like plain text.
+  create PNG/SVG for new diagrams: text Mermaid is easier to search, review
+  and edit, and GitHub renders it natively.
 - **`README.md`** - quick start and a short DB schema for someone who
   hasn't read anything else.
 
@@ -31,32 +31,31 @@ changing code.
 
 The same applies before running anything on the lab server, and before
 reasoning about which rows a stage can see: `deploy.md` names the host, the
-account and the shell the server needs, `storage.md` explains that every
-`PreparedStore` read is filtered by group - so a stage is blind to rows some
-other group wrote. Both are routinely guessed at from the environment and
-both are routinely guessed wrong, at the cost of a wasted run or a confident
-wrong conclusion. Read them.
+account and the shell the server needs; `storage.md` explains that in
+`PreparedStore`, `read_rows` and `read_models` filter by group, while
+`get_rows` and `get_models` look up specific IDs across groups. Both are
+routinely guessed at from the environment and both are routinely guessed
+wrong, at the cost of a wasted run or a confident wrong conclusion. Read them.
 
 ## Repository rules
 
-- **Tests use `unittest.TestCase`, not pytest style** (fixtures,
-  `@pytest.mark`, bare `assert`). CI runs them through
-  `uv run --with pytest pytest tests/ -q` (pytest as a runner can execute
-  unittest tests), but they're always written as `unittest.TestCase`.
+- **New unit and integration tests use `unittest.TestCase`, not pytest
+  style** (fixtures, `@pytest.mark`, bare `assert`). Benchmark tests in
+  `tests/bench/` are an exception and may use pytest fixtures and style.
+  CI runs tests through `uv run --with pytest pytest tests/ -q` (pytest as
+  a runner can execute unittest tests).
   Run locally: `uv run python -m unittest discover -s tests/unit`.
-  `tests/bench/` is separate, needs `pytest` in the environment, and isn't
-  part of the normal run. `tests/integration/` is also separate: needs
-  Docker and `testcontainers` (neither is a project dependency), skips
-  itself cleanly via `setUpModule` when either is missing so the plain CI
-  command above still passes untouched. Run explicitly: `uv run --with
-  pytest --with 'testcontainers[neo4j]' python -m pytest tests/integration
-  -q`.
+  CI's `tests/` run includes `tests/bench/`. CI also runs integration tests
+  in a separate step with Docker, `pytest`, `mongomock`, and `testcontainers`:
+  `uv run --with pytest --with mongomock --with 'testcontainers[neo4j]'
+  pytest tests/integration -q`.
 - **Linter is `ruff`**, config in `pyproject.toml`. Before calling a change
   done: `uv run ruff check <changed files>`.
 - **Code comments in English.**
-- **A comment explains "why", not "what".** If the code already makes
-  clear what a line does, skip the comment. Comments don't attribute a
-  person or PR number - that belongs in the commit message, not the code.
+- **Prefer docstrings to inline comments.** Avoid unnecessary inline
+  comments; when needed, explain "why", not "what". Keep required tool
+  directives. Comments don't attribute a person or PR number - that belongs
+  in the commit message, not the code.
 - **Commit messages follow Conventional Commits**: `type(scope): short
   description`, type by meaning (`feat`/`fix`/`refactor`/`chore`/`docs`) -
   see `git log` for this repo's actual style.
@@ -70,13 +69,11 @@ wrong conclusion. Read them.
   replaced with a sentinel at the graph boundary (example -
   `page_number=0` instead of `None` for the abstract, see
   `docs/architecture/pipeline/code-links.md`).
-- **No git operations without explicit user approval.** Editing files and
-  running tests in the working tree is free to do; `git commit`, `push`
-  (especially `--force`), creating/switching branches, and merging a PR
-  each need an explicit go-ahead from the user for that specific action -
-  approval for one doesn't carry over to the next. A branch whose history
-  is already published isn't rewritten without a warning about the
-  consequences.
+- **Git operations follow the global rules.** Local operations, including
+  fetch and pull, are allowed; warn the user before local operations that
+  change state and preserve their changes. Read-only checks need no separate
+  approval. Changes to GitHub or another cloud repository require explicit
+  permission, as do publishing and irreversible actions.
 
 ## Before saying "done"
 

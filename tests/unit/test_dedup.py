@@ -20,6 +20,7 @@ from pauk.models import (
     Affiliation,
     ClassificationStatus,
     CodeLink,
+    GitHubMatchResult,
     LinkOccurrence,
     Person,
     Publication,
@@ -29,6 +30,7 @@ from pauk.models import (
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.models.relations import Contribution
+from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -97,8 +99,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_same_orcid_merges_even_without_name_or_itmo_evidence(self):
         result, people = self.run_stage([
-            person("A1", "Maria Petrova", ["W1", "W2"], itmo=False, orcid="0000-0001"),
-            person("A2", "Maria Sidorova", ["W3"], itmo=False, orcid="0000-0001"),
+            person("A1", "Maria Petrova", ["W1", "W2"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Maria Sidorova", ["W3"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         self.assertEqual(result["dedup_merged"], 1)
         self.assertEqual(set(people), {"A1"})
@@ -111,7 +113,7 @@ class DedupStageTest(unittest.TestCase):
     def test_name_variant_with_shared_coauthor_merges(self):
         result, people = self.run_stage([
             person("A1", "Nikolay O. Nikitin", ["W1", "W2"],
-                   variants=["Nikolay Nikitin", "N.O. Nikitin"], orcid="0000-0002"),
+                   variants=["Nikolay Nikitin", "N.O. Nikitin"], orcid="0000-0001-5109-3700"),
             person("A2", "Nikolay Nikitin", ["W3"]),
             person("A3", "Ilia Revin", ["W1", "W3"]),
         ])
@@ -287,8 +289,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_same_name_with_different_orcids_stays_separate(self):
         result, people = self.run_stage([
-            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0001"),
-            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0002"),
+            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0002-1825-0097"),
+            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0001-5109-3700"),
         ])
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
         self.assertEqual(len(people), 2)
@@ -321,8 +323,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_conflicting_orcids_block_merge_and_candidates(self):
         result, people = self.run_stage([
-            person("A1", "Nikolay O. Nikitin", ["W1"], variants=["Nikolay Nikitin"], orcid="0000-0002"),
-            person("A2", "Nikolay Nikitin", ["W3"], orcid="0000-0003"),
+            person("A1", "Nikolay O. Nikitin", ["W1"], variants=["Nikolay Nikitin"], orcid="0000-0001-5109-3700"),
+            person("A2", "Nikolay Nikitin", ["W3"], orcid="0000-0002-1694-233X"),
             person("A3", "Ilia Revin", ["W1", "W3"]),
         ])
         self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
@@ -339,9 +341,9 @@ class DedupStageTest(unittest.TestCase):
 
     def test_transitive_orcid_group_folds_into_most_published(self):
         result, people = self.run_stage([
-            person("A1", "Name One", ["W1"], orcid="0000-0004"),
-            person("A2", "Name Two", ["W2", "W3"], orcid="0000-0004"),
-            person("A3", "Name Three", ["W4"], orcid="0000-0004"),
+            person("A1", "Name One", ["W1"], orcid="0000-0002-9079-593X"),
+            person("A2", "Name Two", ["W2", "W3"], orcid="0000-0002-9079-593X"),
+            person("A3", "Name Three", ["W4"], orcid="0000-0002-9079-593X"),
         ])
         self.assertEqual(result["dedup_merged"], 2)
         self.assertEqual(set(people), {"A2"})
@@ -353,8 +355,8 @@ class DedupStageTest(unittest.TestCase):
         # The crossref backfill can stamp a namesake's ORCID onto the wrong
         # person; the raw OpenAlex author record is the trusted source.
         result, people = self.run_stage([
-            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
-            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
+            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         # Without raw records prepared orcids are trusted - they merge...
         self.assertEqual(result["dedup_merged"], 1)
@@ -365,14 +367,14 @@ class DedupStageTest(unittest.TestCase):
         prepared = PreparedStore(db2, "sample")
         raw = RawStore(db2, "sample")
         prepared.write_models("persons", [
-            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
-            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
+            person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0002-1825-0097"),
+            person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0002-1825-0097"),
         ])
         raw.append("openalex_authors",
-                   {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0001"},
+                   {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0002-1825-0097"},
                    {"author_id": "A1"})
         raw.append("openalex_authors",
-                   {"id": "https://openalex.org/A2", "orcid": "https://orcid.org/0000-0002"},
+                   {"id": "https://openalex.org/A2", "orcid": "https://orcid.org/0000-0001-5109-3700"},
                    {"author_id": "A2"})
         result = DedupStage(prepared, raw, self.config).run()
         self.assertEqual(result["dedup_merged"], 0)
@@ -382,10 +384,10 @@ class DedupStageTest(unittest.TestCase):
         # A and B each legitimately pair with the no-ORCID bridge M, but the
         # resulting group would span two distinct ORCIDs - refuse it whole.
         result, people = self.run_stage([
-            person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0001",
+            person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0002-1825-0097",
                    variants=["A. Ivanova"]),
             person("A2", "A. Ivanova", ["W3"], variants=["Anna Ivanova", "Anna B. Ivanova"]),
-            person("A3", "Anna B. Ivanova", ["W4"], orcid="0000-0002"),
+            person("A3", "Anna B. Ivanova", ["W4"], orcid="0000-0001-5109-3700"),
             person("A4", "Shared Coauthor", ["W1", "W3", "W4"]),
         ])
         self.assertEqual(result["dedup_merged"], 0)
@@ -397,8 +399,8 @@ class DedupStageTest(unittest.TestCase):
 
     def test_second_run_is_a_no_op(self):
         _, people = self.run_stage([
-            person("A1", "Maria Petrova", ["W1", "W2"], orcid="0000-0001"),
-            person("A2", "Maria Sidorova", ["W3"], orcid="0000-0001"),
+            person("A1", "Maria Petrova", ["W1", "W2"], orcid="0000-0002-1825-0097"),
+            person("A2", "Maria Sidorova", ["W3"], orcid="0000-0002-1825-0097"),
         ])
         again = DedupStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["dedup_merged"], 0)
@@ -439,25 +441,45 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual(publications["W1"].merged_ids, ["W2"])
         self.assertEqual({v.openalex_id for v in publications["W1"].versions}, {"W1", "W2"})
 
-    def test_preprint_and_version_of_record_keep_both_venues(self):
+    def test_one_title_under_two_dois_stays_two_publications(self):
+        # A preprint and its version of record are versions, not duplicates:
+        # each keeps its node, and `pauk versions link` relates them.
         result, publications = self.run_stage([
             publication("W1", "Deep nets for spiders", doi="10.2/preprint",
                         journal="SSRN Electronic Journal", day="2025-06-01"),
             publication("W2", "Deep nets for spiders", doi="10.3/vor",
                         journal="Sensors", day="2026-03-13"),
         ])
+        self.assertEqual(result["dedup_publications_merged"], 0)
+        self.assertEqual(set(publications), {"W1", "W2"})
+        self.assertEqual(publications["W2"].versions, [])
+
+    def test_a_record_without_doi_folds_into_the_one_doi_its_title_carries(self):
+        result, publications = self.run_stage([
+            publication("W1", "Deep nets for spiders", doi="10.3/vor", journal="Sensors"),
+            publication("W2", "Deep nets for spiders", journal="Sensors"),
+        ])
         self.assertEqual(result["dedup_publications_merged"], 1)
-        # The later record is the version of record and survives.
-        self.assertEqual(set(publications), {"W2"})
-        survivor = publications["W2"]
-        self.assertEqual(survivor.journal, "Sensors")
-        self.assertEqual({(v.journal, v.doi) for v in survivor.versions},
-                         {("Sensors", "10.3/vor"), ("SSRN Electronic Journal", "10.2/preprint")})
+        self.assertEqual(len(publications), 1)
+
+    def test_a_record_without_doi_never_joins_two_dois(self):
+        # Union-find through the DOI-less record would otherwise fold the
+        # preprint into the article: nothing says which one it belongs to.
+        _, publications = self.run_stage([
+            publication("W1", "Deep nets for spiders", doi="10.2/preprint"),
+            publication("W2", "Deep nets for spiders"),
+            publication("W3", "Deep nets for spiders", doi="10.3/vor"),
+            publication("W4", "Deep nets for spiders"),
+        ])
+        self.assertEqual(len(publications), 3)
+        self.assertIn("W1", publications)
+        self.assertIn("W3", publications)
 
     def test_versions_keep_each_records_own_authors_and_abstract(self):
         # The ledger must answer "who was on the preprint" even after every
-        # authorship is repointed to the surviving record.
-        preprint = publication("W1", "One work", doi="10.2/preprint", day="2025-06-01")
+        # authorship is repointed to the surviving record. No DOI on the
+        # preprint: with two DOIs the records stay apart (versions link them).
+        preprint = publication("W1", "One work", day="2025-06-01")
         preprint.abstract = "Preprint abstract"
         vor = publication("W2", "One work", doi="10.3/vor", day="2026-03-13")
         vor.abstract = "Version-of-record abstract"
@@ -528,7 +550,7 @@ class PublicationDedupTest(unittest.TestCase):
     def test_a_fresher_record_becomes_the_face_before_author_count(self):
         _, publications = self.run_stage(
             [
-                publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
+                publication("W1", "One work", day="2026-01-01"),
                 publication("W2", "One work", doi="10.1/broken", day="2026-02-01"),
             ],
             people=[
@@ -538,13 +560,13 @@ class PublicationDedupTest(unittest.TestCase):
         )
         self.assertEqual(set(publications), {"W2"})
         self.assertEqual(publications["W2"].doi, "10.1/broken")
-        self.assertEqual({v.doi for v in publications["W2"].versions}, {"10.1/x", "10.1/broken"})
+        self.assertEqual({v.doi for v in publications["W2"].versions}, {None, "10.1/broken"})
 
     def test_article_beats_newer_preprint_before_date_and_author_count(self):
         _, publications = self.run_stage(
             [
                 publication("W1", "One work", doi="10.1/x", type="article", day="2026-01-01"),
-                publication("W2", "One work", doi="10.1/y", type="preprint", day="2026-12-01"),
+                publication("W2", "One work", type="preprint", day="2026-12-01"),
             ],
             people=[
                 person("A1", "Author One", ["W1", "W2"]),
@@ -735,7 +757,9 @@ class RepositoryDedupTest(unittest.TestCase):
         newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
                            github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
         author = person("A1", "Author One", ["W1"])
-        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        apply_matches(author, [GitHubMatchResult(
+            login="contributor", contributed_to=[Contribution(repository_id=older.id, role="contributor")],
+        )])
         prepared.write_models("persons", [author])
         prepared.write_models("publications", [publication("W1", "One work")])
         prepared.write_models("repositories", [older, newer])
@@ -757,6 +781,10 @@ class RepositoryDedupTest(unittest.TestCase):
         self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
         saved_author, = prepared.read_models("persons", Person)
         self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(saved_author.github_match.matches[0].contributed_to[0].repository_id, newer.id)
+        retract_matches(saved_author)
+        self.assertEqual(saved_author.contributed_to, [])
         self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
 
         for _ in range(2):
@@ -777,6 +805,37 @@ class RepositoryDedupTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_repositories_merged"], 0)
         self.assertEqual(len(repositories), 2)
+
+    def test_withdrawing_a_match_after_repository_dedup_keeps_the_independent_contribution(self):
+        for independent_canonical in (False, True):
+            for source_role in ("contributor", "owner"):
+                with self.subTest(independent_canonical=independent_canonical, source_role=source_role):
+                    prepared = PreparedStore(self.db, "sample")
+                    canonical = repository("R1", "current", "https://github.com/lab/current",
+                                           github_id=42, day="2026-06-01")
+                    duplicate = repository("R2", "old", "https://github.com/lab/old",
+                                           github_id=42, day="2026-01-01")
+                    original_id, added_id = ((canonical.id, duplicate.id) if independent_canonical
+                                            else (duplicate.id, canonical.id))
+                    author = person("A1", "Ivan Petrov", [])
+                    author.contributed_to = [Contribution(repository_id=original_id, role=source_role)]
+                    apply_matches(author, [GitHubMatchResult(
+                        login="coder42", email="account@lab.test",
+                        contributed_to=[Contribution(repository_id=added_id, role="contributor")],
+                    )])
+                    prepared.write_models("persons", [author])
+                    prepared.write_models("repositories", [canonical, duplicate])
+                    stage = DedupStage(prepared, RawStore(self.db, "sample"), self.config)
+
+                    self.assertEqual(stage._dedup_repositories(), {duplicate.id: canonical.id})
+                    self.assertEqual(stage._dedup_repositories(), {})
+                    saved, = prepared.read_models("persons", Person)
+                    matches = retract_matches(saved)
+                    expected = [Contribution(repository_id=canonical.id, role=source_role)]
+                    self.assertEqual(saved.contributed_to, expected)
+                    apply_matches(saved, matches)
+                    retract_matches(saved)
+                    self.assertEqual(saved.contributed_to, expected)
 
 
 class LoaderPublicationMergeTest(unittest.TestCase):
@@ -856,7 +915,7 @@ class GraphDedupTest(unittest.TestCase):
         self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
                             [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
-                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0000-0002-1825-0097")])
         removed, report = dedup_graph_persons(client, {})
         self.assertEqual(removed, 1)
         # The record carrying an ORCID wins the canonical spot.
@@ -925,7 +984,7 @@ class GraphDedupTest(unittest.TestCase):
                             [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
                             [person("Y1", "Julia Borisova", ["W2"])])
-        removed, _report = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
+        removed, _report = dedup_graph_persons(client, {"X1": "0000-0002-1825-0097", "Y1": "0000-0001-5109-3700"})
         self.assertEqual(removed, 0)
         self.assertIn("X1", client.nodes["Person"])
         self.assertIn("Y1", client.nodes["Person"])
@@ -951,6 +1010,20 @@ class GraphDedupTest(unittest.TestCase):
                          ("publication", "W1", "W2"))
         self.assertEqual(applied["rules"], ["doi"])
 
+    def test_graph_keeps_one_title_under_two_dois_apart(self):
+        client = RecordingNeo4jClient()
+        self.load_new_group(client, "q1", [
+            publication("W1", "Same work", doi="10.2/preprint", day="2026-01-01"),
+        ], [person("X1", "Author One", ["W1"])])
+        self.load_new_group(client, "y2026", [
+            publication("W2", "Same work", doi="10.3/vor", day="2026-05-01"),
+        ], [person("X1", "Author One", ["W2"])])
+        removed, report = dedup_graph_publications(client)
+        self.assertEqual(removed, 0)
+        self.assertEqual(report, [])
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertIn("W2", client.nodes["Publication"])
+
     def test_graph_article_beats_newer_preprint_before_author_count(self):
         client = RecordingNeo4jClient()
         self.load_new_group(client, "q1", [
@@ -966,6 +1039,59 @@ class GraphDedupTest(unittest.TestCase):
         self.assertEqual(removed, 1)
         self.assertIn("W1", client.nodes["Publication"])
         self.assertNotIn("W2", client.nodes["Publication"])
+
+    def test_graph_doi_merge_keeps_an_existing_canonical_owner(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("W1", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-01-01", "merged_ids": ["W2"],
+            }),
+            ("W2", {
+                "title": "Same work", "doi": "10.1/x",
+                "publication_date": "2026-12-01", "merged_ids": [],
+            }),
+        ])
+        removed, _report = dedup_graph_publications(client)
+        self.assertEqual(removed, 1)
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertNotIn("W2", client.nodes["Publication"])
+
+    def test_graph_publication_review_answer_is_applied(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("pub_1", {"title": "Same work", "schema_version": 2}),
+            ("pub_2", {"title": "Same work", "schema_version": 2}),
+        ])
+        removed, report = dedup_graph_publications(
+            client,
+            decisions={frozenset(("pub_1", "pub_2")): review.SAME},
+        )
+        self.assertEqual(removed, 1)
+        self.assertEqual(report[0]["rules"], ["manual"])
+
+    def test_graph_publication_negative_answer_blocks_a_manual_chain(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("pub_1", {"title": "First", "schema_version": 2}),
+            ("pub_2", {"title": "Second", "schema_version": 2}),
+            ("pub_3", {"title": "Third", "schema_version": 2}),
+        ])
+
+        removed, _report = dedup_graph_publications(
+            client,
+            decisions={
+                frozenset(("pub_1", "pub_2")): review.SAME,
+                frozenset(("pub_2", "pub_3")): review.SAME,
+                frozenset(("pub_1", "pub_3")): review.DIFFERENT,
+            },
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertIn("pub_1", client.nodes["Publication"])
+        self.assertNotIn("pub_2", client.nodes["Publication"])
+        self.assertIn("pub_3", client.nodes["Publication"])
+        self.assertEqual(client.nodes["Publication"]["pub_1"]["merged_ids"], ["pub_2"])
 
     def test_graph_fold_writes_the_folded_records_version_entry(self):
         # A cross-group fold deletes the duplicate node; its venue, abstract
@@ -1027,7 +1153,7 @@ class GraphDedupTest(unittest.TestCase):
         old_group = self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
                                         [person("X1", "Julia Borisova", ["W1"])])
         self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
-                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0000-0002-1825-0097")])
         dedup_graph_persons(client, {})
         # The old group's prepared rows still carry X1: republishing them
         # must fold it right back instead of splitting the person again.
@@ -1273,8 +1399,8 @@ class BlockingTest(unittest.TestCase):
 
     def test_a_shared_orcid_pairs_names_with_nothing_in_common(self):
         people = [
-            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0001"),
-            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0001"),
+            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0002-1825-0097"),
+            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0002-1825-0097"),
         ]
         self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
 
@@ -1409,9 +1535,9 @@ class ReviewDecisionsTest(unittest.TestCase):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
         review.record_verdict(self.db, review.PAIR, ["A2", "A3"], review.SAME)
         result, people = self.run_stage([
-            person("A1", "Ivan Smirnov", ["W1"], orcid="0000-0001"),
+            person("A1", "Ivan Smirnov", ["W1"], orcid="0000-0002-1825-0097"),
             person("A2", "Ivan Smirnov", ["W2"]),
-            person("A3", "Ivan Smirnov", ["W3"], orcid="0000-0002"),
+            person("A3", "Ivan Smirnov", ["W3"], orcid="0000-0001-5109-3700"),
         ])
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(set(people), {"A1", "A2", "A3"})
@@ -1480,6 +1606,35 @@ class GraphPassReviewTest(unittest.TestCase):
         self.assertEqual(question["members"], ["A1", "A2"])
         self.assertEqual(question["source"], review.GRAPH)
 
+    def test_the_migration_can_limit_resolution_to_cached_model_verdicts(self):
+        self.publish(self.namesakes())
+        config = Settings(data_dir=self.config.data_dir, person_resolution_enabled=True)
+        models = object()
+        logistic = object()
+        with (
+            patch.object(graph_dedup, "audited_client", return_value=self.client),
+            patch.object(graph_dedup, "ResolutionModels", return_value=models) as factory,
+            patch.object(graph_dedup, "load_logistic_model", return_value=logistic),
+            patch.object(graph_dedup, "dedup_graph_persons", return_value=(0, [])) as persons,
+            patch.object(graph_dedup, "dedup_graph_publications", return_value=(0, [])),
+            patch.object(graph_dedup, "dedup_graph_repositories", return_value=(0, [])),
+            patch.object(graph_dedup, "apply_overrides", return_value={}),
+        ):
+            graph_dedup.run_graph_dedup(
+                config,
+                self.db,
+                resolution_cache_only=True,
+            )
+
+        factory.assert_called_once_with(
+            config,
+            self.db,
+            "__graph__",
+            cache_only=True,
+        )
+        self.assertIs(persons.call_args.kwargs["models"], models)
+        self.assertIs(persons.call_args.kwargs["logreg_model"], logistic)
+
     def test_the_whole_pass_reads_the_answers_back(self):
         self.publish(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
@@ -1488,6 +1643,18 @@ class GraphPassReviewTest(unittest.TestCase):
             result = graph_dedup.run_graph_dedup(self.config, self.db)
         self.assertEqual(result["graph_persons_merged"], 1)
         self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
+
+    def test_the_whole_pass_disputes_the_original_refusal_after_a_merge(self):
+        self.publish([person("A2", "Ivan Smirnov", ["W1"], orcid="0000-0002-1825-0097", merged=("A1",)),
+                      person("B1", "Ivan Smirnov", ["W2"], orcid="0000-0002-1825-0097")])
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            result = graph_dedup.run_graph_dedup(self.config, self.db)
+
+        self.assertEqual(result["graph_persons_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
 
     def test_and_writes_down_that_it_carried_them_out(self):
         # This pass leaves the prepared rows alone, so the pair it folds can
@@ -1550,6 +1717,16 @@ class DisputedAnswerTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 0)
         remaining = {p.id for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(remaining, {"A1", "A2", "A3"})
+
+    def test_a_prepared_pass_disputes_the_original_refusal_after_a_merge(self):
+        answer = review.record_verdict(self.db, review.PAIR, ["A1", "B1"], review.DIFFERENT)
+
+        result = self.run_stage([person("A2", "Ivan Smirnov", [], orcid="0000-0002-1825-0097", merged=("A1",)),
+                                 person("B1", "Ivan Smirnov", [], orcid="0000-0002-1825-0097")])
+
+        self.assertEqual(result["dedup_merged"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["_id"], answer["_id"])
 
     def test_an_answered_pair_is_not_asked_again(self):
         self.run_stage(self.apart())

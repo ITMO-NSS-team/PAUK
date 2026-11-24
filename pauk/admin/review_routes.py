@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from neo4j.exceptions import AuthError, ServiceUnavailable
+from neo4j.exceptions import AuthError, ServiceUnavailable, SessionExpired
 
 from pauk.admin.deps import (
     CsrfChecked,
@@ -35,6 +35,10 @@ from pauk.graph.mutations import (
     read_node,
 )
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
+from pauk.graph.version_link import reconcile_version_pair
+from pauk.jobs import store
+from pauk.jobs.locks import Busy, held
+from pauk.jobs.models import GRAPH, JobKind, JobState
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
@@ -51,14 +55,28 @@ TABS = {
     "disputed": {"disputed": True},
     "skipped": {"skipped": True, "answered": False},
     "answered": {"answered": True},
+    "versions": {"kind": review.PUB_VERSION, "answered": False, "skipped": False},
+}
+
+#: Version buckets in the words the page uses.
+BUCKETS = {
+    "MISSED_BY_NORM": "одинаковый заголовок, разные DOI",
+    "DOI_SIBLING": "DOI отличается суффиксом версии",
+    "PREPRINT_PUBLISHED": "препринт и публикация",
+    "RU_EN_TRANSLATION": "перевод",
+    "STRONG_FUZZY": "очень похожий заголовок, общие авторы",
+    "MEDIUM_FUZZY": "похожий заголовок, LLM не спрашивали",
+    "MEDIUM_FUZZY_STRONG": "похожий заголовок и аннотация или препринт",
+    "MEDIUM_FUZZY_LLM_SAME": "похожий заголовок, LLM: одна работа",
+    "MEDIUM_FUZZY_CONF_JOURNAL": "доклад и журнальная статья, LLM: разные",
 }
 
 #: Rules in the words the page uses.
 RULES = {
     "orcid": "совпал ORCID",
     "staff_catalog": "одна запись в каталоге сотрудников",
-    "name_variant": "имя одного значится вариантом имени другого",
-    "same_name": "одинаковое имя, и есть чем подтвердить",
+    "name_variant": "имя одного есть среди вариантов имени другого",
+    "same_name": "одинаковое имя и есть подтверждение",
     "manual": "решение человека",
 }
 
@@ -66,14 +84,17 @@ WORDS = {
     "only one person is ITMO-affiliated": "только один из двоих в ИТМО",
     "no shared coauthors": "нет общих соавторов",
     "single-token display name": "имя из одного слова",
-    "name is given as initials": "имя дано инициалами",
+    "name is given as initials": "имя указано инициалами",
     "identical name with nothing corroborating it": "одинаковое имя, ничем не подтверждено",
-    "the name matches exactly and nothing else backs it":
-        "имя совпадает целиком, больше ничего не подтверждает",
+    # Beside the signals column, which already says the name matched.
+    "the name matches exactly and nothing else backs it": "кроме имени, подтверждений нет",
     "a similar name and a shared publication, nothing more":
-        "похожее имя и общая публикация, больше ничего",
+        "кроме похожего имени и общей статьи, подтверждений нет",
+    "several authors fit this account equally well": "одинаково подходят несколько авторов",
+    "answered before, but the question did not name every author that fits":
+        "уже отвечали, но тогда в вопросе были не все подходящие авторы",
     "the catalog holds several people under this name":
-        "каталог знает нескольких человек с таким именем",
+        "каталог имеет нескольких человек с таким именем",
 }
 
 
@@ -98,13 +119,14 @@ def _reason_words(reason: str) -> str:
 
 #: What each github signal says, for the column that explains a match.
 SIGNALS = {
-    "email_exact": "тот же адрес",
+    "email_exact": "совпала почта",
     "name_exact": "имя совпадает целиком",
+    "name_alternative": "имя совпадает с вариантом из OpenAlex",
     "name_fuzzy": "имя похоже",
-    "itmo_email": "адрес в домене ИТМО",
+    "itmo_email": "почта на itmo.ru",
     "login_surname": "фамилия в логине",
     "owner": "владелец репозитория",
-    "org_itmo": "состоит в организации ИТМО",
+    "org_itmo": "репозиторий организации ИТМО",
     "itmo_profile": "ИТМО указан в профиле",
 }
 
@@ -112,12 +134,16 @@ SIGNALS = {
 def _asks(row: dict) -> str:
     """What this row is a question about, in two or three words."""
     kind = row["kind"]
+    if kind == review.ALIAS:
+        return "конфликт алиасов"
     if kind == review.GROUP:
         return f"группа из {len(row['members'])}"
     if kind == review.GITHUB:
         return "аккаунт GitHub"
     if kind == review.STAFF:
         return "запись каталога"
+    if kind in {review.PUB_VERSION, review.PUBLICATION}:
+        return "две публикации"
     return "две записи"
 
 
@@ -130,28 +156,49 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     login = evidence.get("login")
     # In a staff question only the person has a card to open.
     person = row.get("person") or evidence.get("person")
+    # Several authors fit one account, each for reasons of their own.
+    signals = {candidate["person"]: candidate.get("signals") or []
+               for candidate in evidence.get("candidates") or []} if _is_choice(row) else {}
     shown = []
     for index, member in enumerate(row["members"]):
         # An answer given before the question has no names to pair with.
         name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
+        publication = row["kind"] in {review.PUB_VERSION, review.PUBLICATION}
+        label = "Publication" if publication else "Person"
         shown.append({
             "id": member,
             "name": name or member,
             # The card carries the way back; the search is the only other exit.
             "href": None if record else
                     (evidence.get("url") if account
-                     else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
+                     else f"/nodes/{label}/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
+            "publication": publication,
+            # A person's facts come from the graph; an account's from its profile.
+            "facts": (evidence.get("profile") or {}) if account else {},
+            "signals": [SIGNALS.get(name, name) for name in signals.get(member, [])],
         })
-    return shown
+    # The account on top: sorted ids can put it between two people.
+    return sorted(shown, key=lambda who: not who["account"])
+
+
+def _is_choice(row: dict) -> bool:
+    """Whether an account question names several authors to choose from."""
+    return row["kind"] == review.GITHUB and len(row["members"]) > 2
 
 
 def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
+    if row["kind"] == review.GITHUB and row.get("login") and not evidence.get("login"):
+        # A choice can be recorded before a run supplies any evidence.
+        evidence = {**evidence, "login": row["login"]}
+    shared_coauthors = evidence.get("shared_coauthors")
+    if shared_coauthors is None and "shared_authors" in evidence:
+        shared_coauthors = len(evidence["shared_authors"])
     return {
         "id": row["_id"],
         # Colons do not belong in a fragment, and a question id is built of them.
@@ -161,9 +208,22 @@ def _shown(row: dict, back: str = "") -> dict:
         "asks": _asks(row),
         # A flag rather than a literal in the template.
         "is_group": row["kind"] == review.GROUP,
+        "is_alias": row["kind"] == review.ALIAS,
+        "alias_edges": evidence.get("alias_edges") or [],
+        "operation": evidence.get("operation"),
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
+        "is_version": row["kind"] == review.PUB_VERSION,
+        "is_publication": row["kind"] == review.PUBLICATION,
+        "bucket": BUCKETS.get(evidence.get("bucket"), evidence.get("bucket")),
+        # By position, like `members`: a missing venue must not shift the other one.
+        "venues": [evidence.get("venue_a"), evidence.get("venue_b")],
+        "title_sim": evidence.get("title_sim"),
+        "abstract_sim": evidence.get("abstract_sim"),
+        "llm_reason": evidence.get("llm_reason"),
+        "is_choice": _is_choice(row),
         "chosen": row.get("chosen"),
+        "login": evidence.get("login"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
         "people": _people(row, evidence,
@@ -174,8 +234,15 @@ def _shown(row: dict, back: str = "") -> dict:
         # A degree is what tells two namesakes apart.
         "degrees": dict(zip(evidence.get("records") or [],
                             evidence.get("record_degrees") or [], strict=False)),
-        "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
-        "shared_coauthors": evidence.get("shared_coauthors"),
+        "reasons": [
+            _reason_words(reason)
+            for reason in (
+                [evidence.get("held_because")]
+                if isinstance(evidence.get("held_because"), str)
+                else evidence.get("held_because") or []
+            )
+        ],
+        "shared_coauthors": shared_coauthors,
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
         "input_route": evidence.get("input_route"),
@@ -188,6 +255,7 @@ def _shown(row: dict, back: str = "") -> dict:
         "skipped_by": row.get("skipped_by"),
         "applied_at": row.get("applied_at"),
         "disputed_at": row.get("disputed_at"),
+        "disputed_token": row.get("disputed_token"),
         "disputed_rule": RULES.get(row.get("disputed_rule"), row.get("disputed_rule")),
     }
 
@@ -227,7 +295,7 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
     if graph is None:
         return rows
     wanted = sorted({person["id"] for row in rows for person in row["people"]
-                     if not person["account"] and not person["record"]})
+                     if not person["account"] and not person["record"] and not person["publication"]})
     try:
         facts = person_facts(graph, wanted)
     except (ServiceUnavailable, AuthError) as error:
@@ -235,7 +303,8 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
         return rows
     for row in rows:
         for person in row["people"]:
-            person["facts"] = facts.get(person["id"], {})
+            if not person["account"] and not person["record"]:
+                person["facts"] = facts.get(person["id"], {})
     return rows
 
 
@@ -259,12 +328,25 @@ def _fold_now(graph, db, members: list[str], actor: str) -> str:
     so the answer simply waits. A pair held by the graph-wide pass names two
     live nodes and is merged now.
 
+    Under the graph lock, so the fold does not land in the middle of a
+    publish or a graph-wide dedup that read both nodes before it.
+
     Returns:
-        "merged", or "waiting" when the graph cannot do it now. Either way
-        the decision is already stored and the next run applies it.
+        "merged", or "waiting" when the graph cannot do it now or is held.
+        Either way the decision is already stored and the next run applies
+        it.
     """
     if graph is None:
         return "waiting"
+    try:
+        with held(db, GRAPH):
+            return _fold_held(graph, db, members, actor)
+    except Busy as error:
+        logger.info("fold of %s waits for the graph: %s", members, error)
+        return "waiting"
+
+
+def _fold_held(graph, db, members: list[str], actor: str) -> str:
     try:
         rows = {node_id: read_node(graph, "Person", node_id) for node_id in members}
     except NotFound:
@@ -285,6 +367,30 @@ def _fold_now(graph, db, members: list[str], actor: str) -> str:
     return "merged"
 
 
+def _version_answer_to_graph(graph, db, members: list[str], actor: str) -> str:
+    if graph is not None:
+        try:
+            with held(db, GRAPH):
+                done, _, _ = reconcile_version_pair(graph, db, members, reopen=True)
+            return done
+        except Busy:
+            _queue_version_pair(db, members, actor)
+            return "version_busy"
+        except (ServiceUnavailable, SessionExpired, AuthError) as error:
+            logger.warning("version answer for %s stored, the graph did not answer: %s", members, error)
+    _queue_version_pair(db, members, actor)
+    return "version_waiting"
+
+
+def _queue_version_pair(db, members: list[str], actor: str) -> None:
+    members = sorted(members)
+    queued = db[store.COLLECTION].find_one({
+        "kind": str(JobKind.VERSIONS), "state": str(JobState.QUEUED), "payload.members": members,
+    }, {"_id": 1})
+    if queued is None:
+        store.enqueue(db, JobKind.VERSIONS, {"members": members}, actor=actor)
+
+
 @router.post("/review/answer")
 async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                  _: CsrfChecked, __: StoresReady):
@@ -299,6 +405,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     verdict = str(form.get("verdict", ""))
     tab = _tab(form.get("tab"), "pressing")
     note = str(form.get("note", "")).strip()
+    dispute_token = str(form.get("dispute_token", ""))
 
     def back(problem: str = "", done: str = ""):
         """To the queue, with a word about what happened.
@@ -313,9 +420,22 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
+        review.require_answerable(db, kind, members)
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
+        elif verdict == "choose" and kind == review.GITHUB:
+            # The answer names an author; "none of them" comes as "different".
+            login = str(form.get("login", ""))
+            if login not in members:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "не указано, о каком аккаунте вопрос")
+            chosen = str(form.get("chosen", "")).strip()
+            if not chosen:
+                return back("Отметьте, чей это аккаунт.")
+            review.record_account_choice(db, login,
+                                         [member for member in members if member != login],
+                                         chosen, actor=user.actor, note=note, dispute_token=dispute_token)
         elif verdict == "choose":
             # Not a yes or no: the answer names a record. Empty means none fits.
             person = str(form.get("person", ""))
@@ -340,13 +460,16 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             review.record_split(db, members, same, actor=user.actor, note=note)
             return back(done="split")
         else:
-            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note)
+            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note,
+                                  dispute_token=dispute_token)
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s answered %s %s: %s", user.actor, kind, members, verdict)
     done = ""
     if verdict == review.SAME and kind == review.PAIR:
         done = _fold_now(graph, db, members, user.actor)
+    elif verdict in review.VERDICTS and kind == review.PUB_VERSION:
+        done = _version_answer_to_graph(graph, db, members, user.actor)
     return RedirectResponse(f"/review?tab={tab}&done={done}" if done else f"/review?tab={tab}",
                             status_code=status.HTTP_303_SEE_OTHER)
 
@@ -404,10 +527,12 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 
 
 @router.post("/review/withdraw")
-async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: StoresReady):
+async def withdraw(request: Request, user: Editor, db: Db, graph: MaybeGraph,
+                   _: CsrfChecked, __: StoresReady):
     """Take an answer back, leaving the question in the queue.
 
-    The question stays because a real run asked it.
+    The question stays because a real run asked it. A version answer has
+    already reached its edge, so the edge is taken back with it.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -419,5 +544,9 @@ async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: S
     if not dropped:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
     logger.info("%s withdrew the answer about %s %s", user.actor, kind, members)
-    return RedirectResponse(f"/review?tab={_tab(form.get('tab'), 'answered')}",
-                            status_code=status.HTTP_303_SEE_OTHER)
+    tab = _tab(form.get("tab"), "answered")
+    if kind == review.PUB_VERSION:
+        done = _version_answer_to_graph(graph, db, members, user.actor)
+        return RedirectResponse(f"/review?tab={tab}&done={done}",
+                                status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(f"/review?tab={tab}", status_code=status.HTTP_303_SEE_OTHER)

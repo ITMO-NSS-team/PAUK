@@ -78,7 +78,7 @@ class PersonIdentityFactsTest(unittest.TestCase):
         self.assertEqual(logistic_probability(pair), logistic_probability(enriched))
 
     def test_identifier_relations_are_normalized_in_shared_facts(self):
-        pair = PairEvidence("A1", "Name", "A2", "Name", orcid_a="https://orcid.org/0000-0001", orcid_b="0000-0001")
+        pair = PairEvidence("A1", "Name", "A2", "Name", orcid_a="https://orcid.org/0000-0002-1825-0097", orcid_b="0000-0002-1825-0097")
         self.assertEqual(shared_identity_facts(pair)["orcid_relation"], "same")
 
     def test_pipeline_sends_identical_facts_to_both_views(self):

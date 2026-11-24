@@ -139,6 +139,26 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(pub_detail["funding"], [])  # "[]" -> [], not a string
         self.assertEqual(pub_detail["abstract"], "Абстракт")
 
+    def test_pub_detail_prefers_source_links_and_keeps_legacy_fallback(self):
+        db = self._sample_db()
+        db["publications"][0]["sources"] = ["catalog", "archive"]
+        db["publications"][0]["source_keys"] = ["catalog:P1", "archive:A1"]
+        db["publications"][0]["source_records"] = json.dumps([
+            {
+                "key": "catalog:P1", "source": "catalog", "source_id": "P1",
+                "source_url": "https://catalog.example/P1",
+            },
+            {"key": "archive:A1", "source": "archive", "source_id": "A1"},
+        ])
+        _summary, detail = GraphDataBuilder(db, seed=1).build()
+        publication = detail["pubs"][0]
+        self.assertEqual(publication["sources"], ["catalog", "archive"])
+        self.assertEqual(publication["source_links"], [{
+            "source": "catalog",
+            "key": "catalog:P1",
+            "url": "https://catalog.example/P1",
+        }])
+
     def test_repo_pub_and_author_edges_are_present(self):
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         self.assertEqual(summary["repo_pub_edges"], [{"s": "R1", "t": "P1"}])

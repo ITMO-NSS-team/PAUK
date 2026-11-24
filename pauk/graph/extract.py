@@ -1,12 +1,7 @@
-"""Declarative mapping from prepared JSONL rows (plain dicts) to Neo4j
-nodes/relationships.
+"""Map flat prepared rows to Neo4j nodes and relationships.
 
-Works on plain dicts, not pydantic instances. extract_node copies only the
-whitelisted NodeSpec.prop_fields, so fields like `_processing` (not a
-Neo4j-safe primitive) are never copied into node properties.
-
-Assumes the flat, per-entity prepared layout (persons, departments,
-publications, ...); a nested/aggregate format is not handled.
+NodeSpec whitelists properties so internal fields such as _processing cannot
+be copied into the graph. Extractors accept plain dicts, not model instances.
 """
 
 from __future__ import annotations
@@ -15,11 +10,100 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from pauk.pipeline.membership import ITMO_ROR_ID, normalize_ror, source_observed_at
+
 # Row fields holding nested maps: Neo4j has no nested-map property type, so
 # they are stored as JSON text.
-JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year", "affiliations")
+JSON_TEXT_FIELDS = (
+    "funding", "versions", "counts_by_year", "affiliations", "membership_evidence", "membership_source_coverage",
+    "membership_owner_sources", "identifiers", "source_records",
+)
 
 
+def _membership_source_coverage(row: dict) -> list[dict]:
+    """Only complete original-source snapshots may retire earlier claims."""
+    works: dict[tuple[str, str], list[dict]] = {}
+    source_rows = list(row.get("membership_work_sources") or [])
+    represented = {
+        (source.get("institution_source_person_id"), source.get("institution_source_id"))
+        for source in source_rows
+    }
+    source_rows.extend(
+        authored for authored in row.get("authored") or []
+        if (authored.get("institution_source_person_id"), authored.get("institution_source_id")) not in represented
+    )
+    for authored in source_rows:
+        owner, work = authored.get("institution_source_person_id"), authored.get("institution_source_id")
+        if owner and work:
+            works.setdefault((owner, work), []).append(authored)
+    coverage = []
+    for (owner, work), records in works.items():
+        if any(item.get("institution_rors") is None for item in records):
+            continue
+        timestamps = [source_observed_at(item.get("institution_observed_at")) for item in records]
+        observed = min(timestamps).isoformat() if all(stamp is not None for stamp in timestamps) else None
+        coverage.append({"source": "openalex_work", "source_person_id": owner, "source_id": work,
+                         "observed_at": observed,
+                         "supports_itmo": any(normalize_ror(ror) == ITMO_ROR_ID
+                                              for item in records for ror in item["institution_rors"])})
+    state = (row.get("_processing") or row.get("processing") or {}).get("orcid") or {}
+    orcid = row.get("orcid")
+    if orcid and state.get("request_key") == orcid and state.get("status") in {"completed", "completed_empty"}:
+        source_states = [
+            item for item in row.get("membership_orcid_sources") or [] if item.get("source_id") == orcid
+        ]
+        owners = {
+            item.get("source_person_id") for item in [*(row.get("affiliations") or []),
+                                                       *(row.get("membership_evidence") or [])]
+            if item.get("source") == "orcid" and item.get("source_id") == orcid
+            and item.get("source_person_id") in {row["id"], *(row.get("merged_ids") or [])}
+        }
+        owners.update(item["source_person_id"] for item in source_states
+                      if item.get("source_person_id") in {row["id"], *(row.get("merged_ids") or [])})
+        owner = row["id"] if not row.get("merged_ids") else next(iter(owners)) if len(owners) == 1 else None
+        if owner:
+            observed_times = [source_observed_at(item.get("observed_at")) for item in source_states
+                              if item.get("source_person_id") == owner]
+            observed = max((stamp for stamp in observed_times if stamp is not None), default=None)
+            if observed is None:
+                observed = source_observed_at(state.get("finished_at"))
+            coverage.append({"source": "orcid", "source_person_id": owner, "source_id": orcid,
+                             "observed_at": observed.isoformat() if observed else None,
+                             "supports_itmo": any(
+                                 item.get("source") == "orcid" and item.get("source_id") == orcid
+                                 and item.get("source_person_id") == owner
+                                 and normalize_ror(item.get("ror")) == ITMO_ROR_ID
+                                 for item in [*(row.get("affiliations") or []),
+                                              *(row.get("membership_evidence") or [])]
+                             )})
+    represented_orcids = {(item["source_person_id"], item["source_id"])
+                         for item in coverage if item["source"] == "orcid"}
+    manifests = row.get("membership_owner_sources") or []
+    if isinstance(manifests, str):
+        try:
+            manifests = json.loads(manifests)
+        except (ValueError, TypeError):
+            manifests = []
+    expected_orcids = {(item.get("source_person_id"), identifier)
+                       for item in manifests if isinstance(item, dict)
+                       for identifier in item.get("orcid_ids") or []}
+    for source in row.get("membership_orcid_sources") or []:
+        owner, identifier = source.get("source_person_id"), source.get("source_id")
+        if (not owner or not identifier or (owner, identifier) in represented_orcids
+                or (owner, identifier) not in expected_orcids):
+            continue
+        observed = source_observed_at(source.get("observed_at"))
+        coverage.append({
+            "source": "orcid", "source_person_id": owner, "source_id": identifier,
+            "observed_at": observed.isoformat() if observed else None,
+            "supports_itmo": any(
+                item.get("source") == "orcid" and item.get("source_id") == identifier
+                and item.get("source_person_id") == owner and normalize_ror(item.get("ror")) == ITMO_ROR_ID
+                for item in [*(row.get("affiliations") or []), *(row.get("membership_evidence") or [])]
+            ),
+        })
+        represented_orcids.add((owner, identifier))
+    return coverage
 @dataclass(frozen=True)
 class RelSpec:
     """Describes one relationship embedded in a prepared-JSONL row.
@@ -49,6 +133,12 @@ class RelSpec:
     tgt_match_field: str = "id"
     scalar: bool = False
     guard: Callable[[dict], bool] | None = None
+
+
+# Relationships a graph-level command derives from the graph itself rather
+# than a publish from prepared rows. A loader replay never asks for them, so
+# `pauk admin prune` must not read their absence there as staleness.
+GRAPH_OWNED_RELATIONSHIPS = frozenset({("Publication", "IS_VERSION", "Publication")})
 
 
 @dataclass(frozen=True)
@@ -97,7 +187,14 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Person",
         prop_fields=(
             "is_itmo",
+            "membership_status",
+            "membership_policy",
+            "membership_evidence",
+            "membership_source_coverage",
+            "membership_owner_sources",
             "openalex_id",
+            "schema_version",
+            "identifiers",
             "orcid",
             "name_raw",
             "name_variants",
@@ -144,7 +241,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "affiliation_source", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding",
+                 "institution_rors", "institution_source_person_id", "institution_source_id"),
             ),
             RelSpec(
                 "contributed_to",
@@ -159,7 +257,14 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Person",
         prop_fields=(
             "is_itmo",
+            "membership_status",
+            "membership_policy",
+            "membership_evidence",
+            "membership_source_coverage",
+            "membership_owner_sources",
             "openalex_id",
+            "schema_version",
+            "identifiers",
             "orcid",
             "name_raw",
             "name_variants",
@@ -204,7 +309,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "affiliation_source", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding",
+                 "institution_rors", "institution_source_person_id", "institution_source_id"),
             ),
         ),
     ),
@@ -212,9 +318,15 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Publication",
         prop_fields=(
             "title",
+            "schema_version",
+            "identifiers",
+            "source_records",
+            "sources",
+            "source_keys",
             "type",
             "fields",
             "journal",
+            "venue_type",
             "doi",
             "publication_date",
             "year",
@@ -245,6 +357,17 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 ),
                 tgt_match_field="url",
                 guard=lambda item: item.get("target_kind") == "repository",
+            ),
+            # Written by `pauk versions link`, never by a publish: no prepared
+            # row has a `version_of` field. Registered so the admin pages,
+            # overrides and schema checks know the triple; see
+            # GRAPH_OWNED_RELATIONSHIPS for why prune leaves it alone.
+            RelSpec(
+                "version_of",
+                "IS_VERSION",
+                "Publication",
+                "publication_id",
+                ("bucket", "mergeable", "status", "title_sim", "llm_verdict", "llm_reason"),
             ),
             RelSpec(
                 "mentions_links",
@@ -309,12 +432,10 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
 
 
 def person_spec(row: dict) -> NodeSpec:
-    """Which of the two person specs describes this row.
+    """Choose the Person relationship whitelist by is_itmo.
 
-    Persons share one file and one label; `is_itmo` picks the relationship
-    whitelist, because an external person never gets BELONGS_TO or
-    CONTRIBUTED_TO. Kept here rather than at the call site: a publish and
-    an undone merge have to read the same row the same way.
+    External people omit BELONGS_TO and CONTRIBUTED_TO. Publishing and unmerge
+    must use the same spec.
     """
     return NODE_REGISTRY["itmo_person" if row.get("is_itmo") else "external_person"]
 
@@ -332,6 +453,8 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     """
     node_id = row[spec.id_field]
     props = {k: row[k] for k in spec.prop_fields if row.get(k) is not None}
+    if spec.labels == "Person" and "authored" in row:
+        props["membership_source_coverage"] = _membership_source_coverage(row)
     for key in JSON_TEXT_FIELDS:
         if isinstance(props.get(key), (list, dict)):
             props[key] = json.dumps(props[key], ensure_ascii=False)

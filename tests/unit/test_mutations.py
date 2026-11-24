@@ -1,6 +1,13 @@
+import json
 import unittest
+from datetime import datetime, timedelta
 
-from pauk.graph.client import _merge_duplicate_properties
+from pauk.graph.client import (
+    MEMBERSHIP_FIELDS,
+    _merge_duplicate_properties,
+    _person_membership_update,
+    _preserve_merged_person_lists,
+)
 from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -13,12 +20,33 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    field_values_equal,
     merge_nodes,
     read_node,
+    restore_node,
+    snapshot_fields,
     update_node,
     validate_fields,
     validate_relationship,
 )
+
+
+class FieldComparisonTest(unittest.TestCase):
+    def test_only_json_formatting_is_ignored(self):
+        cases = (
+            ("funding", '[{"funder":"Фонд","grant_id":"42"}]',
+             '[\n {"grant_id":"42", "funder":"Фонд"}\n]', True),
+            ("funding", '[{"amount":true}]', '[{"amount":1}]', False),
+            ("funding", '[{"grant_id":"42"}]', '[{"grant_id":"99"}]', False),
+            ("funding", '[{"grant_id":"42"},{"grant_id":"99"}]',
+             '[{"grant_id":"99"},{"grant_id":"42"}]', False),
+            ("title", '["one","two"]', '["one", "two"]', False),
+            ("emails", ["a@example.org"], '["a@example.org"]', False),
+            ("code_url", "https://example.org/repo", '["https://example.org/repo"]', False),
+        )
+        for field, before, after, expected in cases:
+            with self.subTest(field=field, before=before, after=after):
+                self.assertEqual(field_values_equal(field, before, after), expected)
 
 
 class FakeGraph:
@@ -38,7 +66,7 @@ class FakeGraph:
 
     def _tick(self) -> str:
         self.clock += 1
-        return f"2026-08-14T10:00:{self.clock:02d}"
+        return (datetime(2026, 8, 14, 10) + timedelta(seconds=self.clock)).isoformat()
 
     def add(self, label: str, node_id: str, **props):
         self.nodes[(label, node_id)] = {"id": node_id, "updated_at": self._tick(), **props}
@@ -56,13 +84,29 @@ class FakeGraph:
                         if k not in ("id", "created_at", "updated_at")})
             row["updated_at"] = self._tick()
 
+    def update_node_properties(self, label, node_id, properties, expected_updated_at=None):
+        row = self.nodes.get((label, node_id))
+        if row is None:
+            return None, None
+        before = dict(row)
+        if expected_updated_at is not None and str(before.get("updated_at")) != str(expected_updated_at):
+            return before, None
+        self.upsert_nodes_batch(label, [(node_id, properties)])
+        return before, dict(self.nodes[label, node_id])
+
     def delete_nodes_batch(self, label, ids, detach=True):
         self.calls.append("delete_nodes_batch")
         removed = 0
         for node_id in ids:
-            attached = [key for key in self.relationships
-                        if (key[0] == label and key[3] == node_id)
-                        or (key[2] == label and key[4] == node_id)]
+            props = self.nodes.get((label, node_id), {})
+            attached = []
+            for key in self.relationships:
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
+                target = node_id if match_prop == "id" else props.get(match_prop)
+                if ((src_label == label and src_id == node_id)
+                        or (tgt_label == label and tgt_id == target)):
+                    attached.append(key)
             if attached and not detach:
                 continue
             if self.nodes.pop((label, node_id), None) is not None:
@@ -75,14 +119,44 @@ class FakeGraph:
                                    tgt_match_prop="id"):
         self.calls.append("upsert_relationships_batch")
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             target_exists = any(
                 key[0] == tgt_label and value.get(tgt_match_prop) == tgt_id
                 for key, value in self.nodes.items())
             if (src_label, src_id) not in self.nodes or not target_exists:
                 continue
-            self.relationships[(src_label, rel_type, tgt_label, src_id, tgt_id)] = dict(props)
-            matched += 1
+            key = (src_label, rel_type, tgt_label, src_id, tgt_id)
+            edge = self.relationships.setdefault(key, {})
+            previous = edge.get("is_corresponding")
+            preserve = bool(
+                self.nodes[(src_label, src_id)].get("merged_ids")
+                or self.nodes.get((tgt_label, tgt_id), {}).get("merged_ids")
+            )
+            for field, value in props.items():
+                if value is None:
+                    edge.pop(field, None)
+                else:
+                    edge[field] = value
+            if rel_type == "AUTHORED" and preserve and (previous is not None or props.get("is_corresponding") is not None):
+                edge["is_corresponding"] = bool(previous or props.get("is_corresponding"))
+            matched += input_count
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -121,6 +195,10 @@ class FakeGraph:
             canonical = self.nodes.get(("Person", canonical_id))
             if duplicate is not None and canonical is not None:
                 canonical.update(_merge_duplicate_properties("Person", canonical, duplicate))
+                canonical["merged_ids"] = list(dict.fromkeys(
+                    alias for alias in [*(canonical.get("merged_ids") or []), duplicate_id]
+                    if alias != canonical_id
+                ))
             if self.nodes.pop(("Person", duplicate_id), None) is None:
                 continue
             removed += 1
@@ -140,19 +218,15 @@ class FakeGraph:
     # against this fake end to end.
 
     def upsert_person_nodes_batch(self, nodes):
-        """Persons carry the sticky is_itmo rule of the real client.
-
-        A row arriving with is_itmo=False never downgrades a node that is
-        already ITMO.
-        """
+        """Apply the client's evidence-aware membership and merged-list rules."""
         self.calls.append("upsert_person_nodes_batch")
-        nodes = list(nodes)
-        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_itmo"))
-                  or bool(props.get("is_itmo"))
-                  for node_id, props in nodes}
-        self.upsert_nodes_batch("Person", nodes)
-        for node_id, is_itmo in sticky.items():
-            self.nodes[("Person", node_id)]["is_itmo"] = is_itmo
+        for node_id, props in nodes:
+            existing = self.nodes.get(("Person", node_id), {})
+            membership = _person_membership_update(existing, props, node_id)
+            clean = _preserve_merged_person_lists(existing, props)
+            clean = {key: value for key, value in clean.items() if key not in MEMBERSHIP_FIELDS}
+            clean.update(membership)
+            self.upsert_nodes_batch("Person", [(node_id, clean)])
 
     def merge_publication_nodes_batch(self, merges):
         self.calls.append("merge_publication_nodes_batch")
@@ -289,6 +363,7 @@ class WhitelistTest(unittest.TestCase):
     def test_every_relationship_in_the_registry_is_offered(self):
         self.assertIn(("Person", "CONTRIBUTED_TO", "Repository"), RELATIONSHIPS)
         self.assertIn(("Publication", "MENTIONS_LINK", "Repository"), RELATIONSHIPS)
+        self.assertIn(("Publication", "IS_VERSION", "Publication"), RELATIONSHIPS)
 
 
 class NodeEditTest(unittest.TestCase):
@@ -308,6 +383,52 @@ class NodeEditTest(unittest.TestCase):
         # Otherwise "create" would quietly become "overwrite".
         with self.assertRaises(MutationError):
             create_node(self.graph, "Person", "A1", {"name_en": "Someone else"})
+
+    def test_a_deleted_publication_can_be_restored_but_not_invented(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "W9", {"title": "Paper"})
+        restored = restore_node(
+            self.graph,
+            "Publication",
+            "W9",
+            {
+                "title": "Paper",
+                "schema_version": 2,
+                "identifiers": [{"scheme": "manual", "value": "work-1"}],
+                "source_records": [{
+                    "key": "manual:work-1",
+                    "source": "manual",
+                    "source_id": "work-1",
+                }],
+                "sources": ["manual"],
+                "source_keys": ["manual:work-1"],
+                "openalex_url": "",
+                "versions": [],
+            },
+        )
+        self.assertEqual(restored["title"], "Paper")
+        self.assertEqual(restored["schema_version"], 2)
+        self.assertIn("manual:work-1", restored["source_records"])
+
+    def test_publication_snapshot_keeps_read_only_provenance(self):
+        snapshot = snapshot_fields("Publication", {
+            "id": "pub_source_neutral",
+            "updated_at": "2026-11-03T10:00:00",
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        })
+
+        self.assertNotIn("id", snapshot)
+        self.assertNotIn("updated_at", snapshot)
+        self.assertEqual(snapshot["schema_version"], 2)
+        self.assertEqual(snapshot["source_keys"], ["manual:work-1"])
+        self.assertIn("manual:work-1", snapshot["source_records"])
 
     def test_updating_changes_only_the_fields_given(self):
         updated = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
@@ -422,6 +543,20 @@ class StoredShapeTest(unittest.TestCase):
         self.graph = FakeGraph()
         self.graph.add("Person", "A1", name_en="Ivan Petrov")
 
+    def test_snapshot_restoration_keeps_the_field_whitelist_and_version_check(self):
+        for patch in ({"id": "other"}, {"updated_at": "old"}, {"unknown": "value"}):
+            with self.subTest(patch=patch), self.assertRaises(UnknownEntity):
+                update_node(self.graph, "Person", "A1", patch, from_snapshot=True)
+            with self.subTest(create=patch), self.assertRaises(UnknownEntity):
+                restore_node(self.graph, "Person", "A2", patch)
+        seen = self.graph.nodes["Person", "A1"]["updated_at"]
+        update_node(self.graph, "Person", "A1", {"name_en": "New name"})
+        with self.assertRaises(VersionConflict):
+            update_node(self.graph, "Person", "A1", {"emails": False},
+                        expected_updated_at=seen, from_snapshot=True)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_en"], "New name")
+        self.assertNotIn("emails", self.graph.nodes["Person", "A1"])
+
     def test_a_nested_field_is_stored_the_way_the_loader_stores_it(self):
         node = update_node(self.graph, "Person", "A1",
                            {"affiliations": [{"name": "ITMO", "years": [2026]}]})
@@ -439,9 +574,48 @@ class StoredShapeTest(unittest.TestCase):
         self.assertEqual(node["name_variants"], ["I. Petrov"])
 
     def test_creating_a_node_encodes_the_same_fields(self):
-        created = create_node(self.graph, "Publication", "W9",
-                              {"title": "paper", "funding": [{"funder": "RSF"}]})
-        self.assertIsInstance(created["funding"], str)
+        created = create_node(self.graph, "Person", "P9",
+                              {"name_raw": "Researcher", "affiliations": [{"name": "ITMO"}]})
+        self.assertIsInstance(created["affiliations"], str)
+
+    def test_publication_must_be_created_through_ingestion(self):
+        with self.assertRaisesRegex(MutationError, "raw -> adapter"):
+            create_node(self.graph, "Publication", "pub_manual", {"title": "paper"})
+
+
+class SourceProvenanceMergeTest(unittest.TestCase):
+    def test_graph_fold_unions_source_provenance_by_stable_key(self):
+        canonical = {
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": json.dumps([
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "catalog", "source_id": "P1", "key": "catalog:P1"},
+            ]),
+        }
+        duplicate = {
+            "sources": ["archive"],
+            "source_keys": ["archive:A1"],
+            "identifiers": json.dumps([
+                {"scheme": "archive", "value": "A1", "normalized_key": "archive:A1"},
+            ]),
+            "source_records": json.dumps([
+                {"source": "archive", "source_id": "A1", "key": "archive:A1"},
+            ]),
+        }
+        merged = _merge_duplicate_properties("Publication", canonical, duplicate)
+        self.assertEqual(merged["sources"], ["catalog", "archive"])
+        self.assertEqual(merged["source_keys"], ["catalog:P1", "archive:A1"])
+        self.assertEqual(
+            {item["normalized_key"] for item in json.loads(merged["identifiers"])},
+            {"catalog:P1", "archive:A1"},
+        )
+        self.assertEqual(
+            {item["key"] for item in json.loads(merged["source_records"])},
+            {"catalog:P1", "archive:A1"},
+        )
 
 
 class MergeChainTest(unittest.TestCase):

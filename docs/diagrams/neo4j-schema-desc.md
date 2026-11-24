@@ -19,9 +19,11 @@ graph even if the pydantic model has them (see
 > A researcher or author, from ITMO or external, told apart by the `is_itmo`
 > property, not by the label.
 
-* **`id`** (`ID`, *Unique*): author identifier (the bare OpenAlex author ID).
-* **`is_itmo`** (`Boolean`): ITMO membership. A "sticky" property: once set to
-  `true`, a later external row for the same person never lowers it to `false`.
+* **`id`** (`ID`, *Unique*): bare OpenAlex author ID, or `orcid_<orcid>` /
+  `name_<hash>` when the source has no author ID.
+* **`is_itmo`** (`Boolean`): ITMO membership backed by authorship ROR or ORCID
+  evidence. A complete current assessment of every original owner's sources
+  can clear `true`; partial or older observations cannot.
 * **`openalex_id`** (`String`): OpenAlex identifier.
 * **`orcid`** (`String`): ORCID identifier.
 * **`name_raw`** (`String`): the name as OpenAlex gave it.
@@ -75,6 +77,7 @@ graph even if the pydantic model has them (see
 * **`type`** (`String`): work type.
 * **`fields`** (`List[String]`): fields of knowledge.
 * **`journal`** (`String`): publication venue.
+* **`venue_type`** (`String`): OpenAlex source type of the venue (`journal`, `conference`, `repository`, ...).
 * **`doi`** (`String`): DOI.
 * **`publication_date`** (`Date`): publication date.
 * **`year`** (`Integer`): publication year.
@@ -85,7 +88,7 @@ graph even if the pydantic model has them (see
 * **`pdf_urls`** (`List[String]`): ordered unique PDF links.
 * **`abstract`** (`String`): abstract.
 * **`full_text`** (`String`): full text (if extracted from a PDF).
-* **`versions`** (`JSON`): publication versions.
+* **`versions`** (`JSON`): the records folded into this one (same DOI, or a title with no DOI on one side).
 * **`merged_ids`** (`List[String]`): ids folded in by dedup.
 
 ---
@@ -231,6 +234,11 @@ edge up the hierarchy.
 * **`context`** (`List[String]`): text fragments around the link.
 * **`page_number`** (`List[Integer]`): pages (`0` = abstract; Neo4j does not
   store `null` in an array property, so the sentinel is not `None`).
+* **`pdf_id`** (`List[String]`): source PDF ids, parallel to contexts; empty
+  strings represent missing ids.
+* **`context_source`** (`List[String]`): occurrence sources, parallel to contexts.
+* **`reference_label`** (`List[String]`): footnote or bibliography labels; empty
+  strings represent missing labels.
 * **`classification_status`** (`String`): `pending`, `classified` or `failed`.
 * **`is_relevant`** (`Boolean`): relevance verdict.
 * **`llm_confidence`** (`Float`): LLM confidence.
@@ -259,3 +267,18 @@ edge up the hierarchy.
 ### 9. `OWNED_BY`
 
 > **Connects:** `Repository` -> `GitHubProfile`. The repository's owner. No properties.
+
+---
+
+### 10. `IS_VERSION`
+
+> **Connects:** `Publication` -> `Publication`. The source is a version of the
+> target (a preprint, a translation, a conference paper extended into a journal
+> article), or a look-alike explained by its bucket (an erratum, a cover, a
+> series entry). Written by `pauk versions link`, never by a publish.
+
+* **`bucket`** (`String`): the rule that paired them (`PREPRINT_PUBLISHED`, `RU_EN_TRANSLATION`, `MEDIUM_FUZZY_LLM_SAME`, `ERRATUM`, `COVER`, ...).
+* **`mergeable`** (`Boolean`): whether the bucket means one work (as opposed to a look-alike).
+* **`status`** (`String`): `held` (waits for a person), `same` (confirmed); absent for a look-alike.
+* **`title_sim`** (`Float`): title similarity.
+* **`llm_verdict`** (`Boolean`), **`llm_reason`** (`String`): the LLM verdict for a MEDIUM_FUZZY pair.

@@ -1,26 +1,32 @@
+import json
 import re
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 from urllib.parse import quote
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.time import DateTime
 from pymongo.errors import AutoReconnect
 
 from pauk.admin import deps, nodes
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
-from pauk.graph.mutations import RELATIONSHIPS, MutationError
+from pauk.graph.mutations import NODE_LIST_FIELDS, RELATIONSHIPS, MutationError
 from pauk.graph.overrides import (
     COLLECTION,
     CREATE,
     LINK,
+    SET,
+    DecisionWriteConflict,
     active_overrides,
     apply_overrides,
     record_override,
     tombstoned_relationships,
 )
 from pauk.settings import Settings
+from tests.unit.admin_forms import RenderedForms
 from tests.unit.test_mutations import FakeGraph
 
 
@@ -43,6 +49,16 @@ class FakePanelGraph(FakeGraph):
                 found.append(row)
         found.sort(key=lambda row: (not row["exact"], row["id"]))
         return found[skip:skip + limit]
+
+    def fetch_publications_for_dedup(self, ids):
+        return [{"id": work_id, **props} for (label, work_id), props in self.nodes.items()
+                if label == "Publication" and work_id in ids]
+
+    def fetch_version_edges(self, members):
+        return {(src, tgt): props.copy()
+                for (sl, rel, tl, src, tgt), props in self.relationships.items()
+                if (sl, rel, tl) == ("Publication", "IS_VERSION", "Publication")
+                and src in members and tgt in members}
 
     def close(self):
         """The panel closes its client per request; the real one has this."""
@@ -75,11 +91,11 @@ class FakePanelGraph(FakeGraph):
 
     def fetch_node_relationships(self, label, node_id):
         found = []
-        for src_label, rel_type, tgt_label, src_id, tgt_id in self.relationships:
+        for (src_label, rel_type, tgt_label, src_id, tgt_id), edge_props in self.relationships.items():
             if src_label == label and src_id == node_id:
                 other_id, props = self._by_match(tgt_label, tgt_id)
                 found.append({"type": rel_type, "labels": [tgt_label], "other_id": other_id,
-                              "other_props": props, "outgoing": True})
+                              "other_props": props, "props": dict(edge_props), "outgoing": True})
             elif tgt_label == label:
                 # Which property the edge is stored against, the way the
                 # loader decides it. Comparing against every value of the
@@ -91,7 +107,7 @@ class FakePanelGraph(FakeGraph):
                     continue
                 other_props = self.nodes.get((src_label, src_id), {})
                 found.append({"type": rel_type, "labels": [src_label], "other_id": src_id,
-                              "other_props": other_props, "outgoing": False})
+                              "other_props": other_props, "props": dict(edge_props), "outgoing": False})
         return sorted(found, key=lambda row: (row["type"], row["other_id"]))
 
 
@@ -520,6 +536,106 @@ class RelationshipScreenTest(unittest.TestCase):
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
 
 
+class RelationshipDirectionTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Department", "D1", name_en="Child")
+        self.graph.add("Department", "D2", name_en="Parent")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.forward = ("Department", "PART_OF", "Department", "D1", "D2")
+        self.reverse = ("Department", "PART_OF", "Department", "D2", "D1")
+
+    def link_form(self, node_id, words, other_id):
+        body = self.client.get(f"/nodes/Department/{node_id}").text
+        form = RenderedForms(body).with_button("Связать")
+        option = next(option for option in form["selects"]["triple"]
+                      if option["text"].strip().startswith(words))
+        form["fields"].update(triple=option["value"], other_id=other_id)
+        return form
+
+    def unlink_form(self, words):
+        body = self.client.get("/nodes/Department/D2").text
+        row = next(block.split("</tr>", 1)[0] for block in body.split("<tr>")
+                   if f"<b>{words}</b>" in block)
+        return RenderedForms(row).with_button("отвязать")
+
+    def test_incoming_and_outgoing_department_options_have_distinct_values(self):
+        incoming = self.link_form("D2", "включает подразделение", "D1")
+        outgoing = self.link_form("D2", "входит в подразделение", "D1")
+
+        self.assertNotEqual(incoming["fields"]["triple"], outgoing["fields"]["triple"])
+
+    def test_linking_from_the_parent_card_places_the_child_at_the_source(self):
+        form = self.link_form("D2", "включает подразделение", "D1")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(self.forward, self.graph.relationships)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+        (claim,) = active_overrides(self.db)
+        self.assertEqual((claim["src_id"], claim["target_id"]), ("D1", "D2"))
+
+    def test_linking_from_the_child_card_places_the_parent_at_the_target(self):
+        form = self.link_form("D1", "входит в подразделение", "D2")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(self.forward, self.graph.relationships)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+
+    def test_unlinking_an_incoming_edge_preserves_the_outgoing_edge(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.unlink_form("включает подразделение")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(self.forward, self.graph.relationships)
+        self.assertIn(self.reverse, self.graph.relationships)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual((decision["src_id"], decision["target_id"]), ("D1", "D2"))
+
+    def test_unlinking_an_outgoing_edge_preserves_the_incoming_edge(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.unlink_form("входит в подразделение")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(self.reverse, self.graph.relationships)
+        self.assertIn(self.forward, self.graph.relationships)
+
+    def test_a_legacy_ambiguous_form_is_refused_without_changing_the_graph(self):
+        self.graph.relationships.update({self.forward: {}, self.reverse: {}})
+        form = self.link_form("D2", "включает подразделение", "D1")
+        form["fields"]["triple"] = "Department|PART_OF|Department"
+        for action in ("add", "delete"):
+            with self.subTest(action=action):
+                response = self.client.post(f"/nodes/Department/rel/{action}/D2", data=form["fields"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("заново", response.json()["detail"])
+                self.assertEqual(set(self.graph.relationships), {self.forward, self.reverse})
+                self.assertEqual(active_overrides(self.db), [])
+
+    def test_a_direction_that_does_not_belong_to_the_card_is_refused(self):
+        form = self.link_form("D2", "включает подразделение", "D1")
+        for triple in ("outgoing|Person|AUTHORED|Publication",
+                       "incoming|Department|PART_OF|Organization"):
+            with self.subTest(triple=triple):
+                response = self.client.post(form["action"], data={**form["fields"], "triple": triple})
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.graph.relationships, {})
+
+
 class CreateNodeTest(unittest.TestCase):
     """Adding a node the pipeline does not know about."""
 
@@ -812,13 +928,178 @@ class ConcurrentEditTest(unittest.TestCase):
 
     def open_form(self, login):
         """Sign in and read the page, as a person would before editing."""
-        import re
         client = TestClient(self.app, follow_redirects=False)
         client.post("/login", data={"login": login, "password": "hunter2"})
         page = client.get("/nodes/Person/A1").text
-        return client, {
-            "csrf": re.search(r'name="csrf" value="([^"]+)"', page).group(1),
-            "seen_at": re.search(r'name="seen_at" value="([^"]*)"', page).group(1)}
+        return client, RenderedForms(page).with_button("Сохранить")["fields"]
+
+    def delayed_decision(self, first_changes, second_changes, after_second=None):
+        first, form = self.open_form("roman")
+        original = nodes.record_override
+        interleaved = False
+
+        def save_second_before_recording_first(*args, **kwargs):
+            nonlocal interleaved
+            if not interleaved:
+                interleaved = True
+                second, fresh = self.open_form("petrov")
+                response = second.post("/nodes/Person/A1", data={**fresh, **second_changes})
+                self.assertIn("saved=1", response.headers["location"])
+                if after_second is not None:
+                    after_second(second)
+            return original(*args, **kwargs)
+
+        with patch.object(nodes, "record_override", save_second_before_recording_first):
+            response = first.post("/nodes/Person/A1", data={**form, **first_changes})
+        self.assertTrue(interleaved)
+        return response
+
+    def test_delayed_decision_preserves_the_latest_field_after_reapply(self):
+        response = self.delayed_decision(
+            {"name_ru": "Пётр", "note": "first"}, {"name_ru": "Иоанн", "note": "second"})
+
+        self.assertEqual(response.status_code, 303)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["fields"]["name_ru"], "Иоанн")
+        self.assertEqual(decision["actor"], "user:petrov")
+        self.assertEqual(decision["note"], "second")
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иоанн")
+
+    def test_delayed_decision_preserves_independent_fields(self):
+        response = self.delayed_decision({"name_ru": "Пётр"}, {"email": "new@example.org"})
+
+        self.assertEqual(response.status_code, 303)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["fields"], {"name_ru": "Пётр", "email": "new@example.org"})
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр")
+        self.assertEqual(self.graph.nodes["Person", "A1"]["email"], "new@example.org")
+
+    def test_delayed_decision_keeps_the_original_value_for_undo(self):
+        self.delayed_decision({"name_ru": "Пётр"}, {"name_ru": "Иоанн"})
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["auto_value"]["name_ru"], "Иван")
+        client, _ = self.open_form("roman")
+        form = RenderedForms(client.get("/overrides").text).with_button("отменить")
+
+        response = client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иван")
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_a_delayed_decision_cannot_reactivate_an_undone_edit(self):
+        def undo(second):
+            form = RenderedForms(second.get("/overrides").text).with_button("отменить")
+            self.assertEqual(second.post(form["action"], data=form["fields"]).status_code, 303)
+
+        response = self.delayed_decision({"name_ru": "Пётр"}, {"name_ru": "Иоанн"}, undo)
+
+        self.assertIn(response.status_code, (409, 503))
+        self.assertEqual(active_overrides(self.db), [])
+        before = dict(self.graph.nodes["Person", "A1"])
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes["Person", "A1"], before)
+
+    def test_a_delayed_decision_cannot_replace_a_deletion(self):
+        def delete(second):
+            form = RenderedForms(second.get("/nodes/Person/A1").text).with_button("Удалить")
+            self.assertEqual(second.post(form["action"], data=form["fields"]).status_code, 303)
+
+        response = self.delayed_decision({"name_ru": "Пётр"}, {"name_ru": "Иоанн"}, delete)
+
+        self.assertIn(response.status_code, (409, 503))
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["op"], "delete")
+        self.assertNotIn(("Person", "A1"), self.graph.nodes)
+
+    def test_a_new_edit_after_undo_does_not_reapply_the_cancelled_field(self):
+        first, form = self.open_form("roman")
+        first.post("/nodes/Person/A1", data={**form, "name_ru": "Пётр"})
+        undo = RenderedForms(first.get("/overrides").text).with_button("отменить")
+        self.assertEqual(first.post(undo["action"], data=undo["fields"]).status_code, 303)
+        second, fresh = self.open_form("petrov")
+
+        response = second.post("/nodes/Person/A1", data={**fresh, "email": "new@example.org"})
+
+        self.assertEqual(response.status_code, 303)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["fields"], {"email": "new@example.org"})
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иван")
+
+    def test_another_save_between_the_read_and_write_is_detected(self):
+        first, form_first = self.open_form("roman")
+        second, form_second = self.open_form("petrov")
+        interleaved = False
+
+        def save_other_first(original):
+            def call(*args, **kwargs):
+                nonlocal interleaved
+                if not interleaved:
+                    interleaved = True
+                    response = second.post("/nodes/Person/A1",
+                                           data={**form_second, "name_ru": "Иоанн"})
+                    self.assertIn("saved=1", response.headers["location"])
+                return original(*args, **kwargs)
+            return call
+
+        with patch.object(self.graph, "upsert_nodes_batch",
+                          save_other_first(self.graph.upsert_nodes_batch)), \
+                patch.object(self.graph, "update_node_properties", save_other_first(
+                    getattr(self.graph, "update_node_properties", None)), create=True):
+            response = first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
+
+        self.assertTrue(interleaved)
+        self.assertIn("stale=1", response.headers["location"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иоанн")
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["fields"]["name_ru"], "Иоанн")
+
+    def test_a_node_deleted_between_read_and_write_is_not_recreated(self):
+        client, form = self.open_form("roman")
+
+        def delete_before_update(original):
+            def call(*args, **kwargs):
+                self.graph.nodes.pop(("Person", "A1"), None)
+                return original(*args, **kwargs)
+            return call
+
+        with patch.object(self.graph, "upsert_nodes_batch",
+                          delete_before_update(self.graph.upsert_nodes_batch)), \
+                patch.object(self.graph, "update_node_properties", delete_before_update(
+                    getattr(self.graph, "update_node_properties", None)), create=True):
+            response = client.post("/nodes/Person/A1", data={**form, "name_ru": "Пётр"})
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn("saved=1", response.headers["location"])
+        self.assertNotIn(("Person", "A1"), self.graph.nodes)
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_failed_recording_cannot_roll_back_a_later_successful_edit(self):
+        first, form_first = self.open_form("roman")
+        original = nodes.record_override
+        interleaved = False
+
+        def save_other_then_fail(*args, **kwargs):
+            nonlocal interleaved
+            if interleaved:
+                return original(*args, **kwargs)
+            interleaved = True
+            second, fresh_form = self.open_form("petrov")
+            response = second.post("/nodes/Person/A1", data={**fresh_form, "name_ru": "Иоанн"})
+            self.assertIn("saved=1", response.headers["location"])
+            raise AutoReconnect("first decision was not written")
+
+        with patch.object(nodes, "record_override", save_other_then_fail):
+            response = first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не откатилась", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иоанн")
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["fields"]["name_ru"], "Иоанн")
 
     def test_the_second_save_is_refused_rather_than_silently_winning(self):
         # Both open the same record; the first saves, then the second.
@@ -898,12 +1179,10 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         links, and the first form on the page is not necessarily the one
         under test.
         """
-        import re
         body = self.client.get(page).text
-        for block in body.split("/rel/delete")[1:]:
-            if f'name="triple"\n                 value="{triple}"' in block or \
-               f'value="{triple}"' in block:
-                return re.search(r'name="other_id" value="([^"]*)"', block).group(1)
+        for form in RenderedForms(body).forms:
+            if "/rel/delete/" in form["action"] and form["fields"].get("triple", "").split("|", 1)[-1] == triple:
+                return form["fields"]["other_id"]
         raise AssertionError(f"на странице нет формы отвязки для {triple}")
 
     def test_the_page_offers_the_value_the_edge_is_matched_by(self):
@@ -948,6 +1227,313 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
             self.form_value("/nodes/Person/A1", "Person|AUTHORED|Publication"), "W1")
 
 
+class FieldNormalizationTest(unittest.TestCase):
+    LEGACY_FIELDS = (
+        ("Publication", "W9", "code_url", "N/A", "https://github.com/org/repo"),
+        ("Person", "A9", "emails", False, '["author@example.org"]'),
+        ("Publication", "W10", "funding", "unknown", '[{"funder":"RSF"}]'),
+    )
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Publication", "W1", title="Paper", code_url=None, has_code=True)
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def submit(self, path="/nodes/Publication/W1", caption="Сохранить", **values):
+        form = RenderedForms(self.client.get(path).text).with_button(caption)
+        form["fields"].update(values)
+        return self.client.post(form["action"], data=form["fields"])
+
+    def test_undo_restores_legacy_field_values_exactly(self):
+        for label, node_id, field, legacy, replacement in self.LEGACY_FIELDS:
+            with self.subTest(label=label, field=field):
+                self.graph.add(label, node_id, **{field: legacy})
+                self.assertEqual(self.submit(f"/nodes/{label}/{node_id}", **{field: replacement}).status_code, 303)
+                form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+                response = self.client.post(form["action"], data=form["fields"])
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertFalse(self.db[COLLECTION].find_one({"target_id": node_id})["active"])
+
+    def test_failed_decision_write_restores_legacy_field_values_exactly(self):
+        for label, node_id, field, legacy, replacement in self.LEGACY_FIELDS:
+            with self.subTest(label=label, field=field):
+                self.graph.add(label, node_id, **{field: legacy})
+                with patch.object(nodes, "record_override", side_effect=AutoReconnect("failed before commit")):
+                    response = self.submit(f"/nodes/{label}/{node_id}", **{field: replacement})
+                self.assertEqual(response.status_code, 503)
+                self.assertIn("граф возвращён как был", response.json()["detail"])
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertIsNone(self.db[COLLECTION].find_one({"target_id": node_id}))
+
+    def test_failed_delete_restores_legacy_fields_and_relationships(self):
+        self.graph.nodes["Publication", "W1"]["code_url"] = "N/A"
+        self.graph.add("Person", "A1")
+        edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        self.graph.relationships[edge] = {"is_corresponding": True}
+        with patch.object(nodes, "record_override", side_effect=AutoReconnect("failed before commit")):
+            response = self.submit(caption="Удалить", cascade="1")
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("граф возвращён как был", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+        self.assertEqual(self.graph.relationships[edge], {"is_corresponding": True})
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_deleted_legacy_node_can_be_restored_from_either_page(self):
+        for caption in ("Восстановить", "отменить"):
+            with self.subTest(caption=caption):
+                self.graph.nodes["Publication", "W1"]["code_url"] = "N/A"
+                self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+                path = "/nodes/Publication/W1" if caption == "Восстановить" else "/overrides"
+                response = self.submit(path, caption)
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+                self.assertFalse(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+
+    def test_a_saved_legacy_decision_is_reapplied_without_new_input_validation(self):
+        record_override(self.db, "Publication", "W1", "set", {"code_url": "https://github.com/org/repo"})
+        self.db[COLLECTION].update_one({"target_id": "W1"}, {"$set": {"fields.code_url": "N/A"}})
+        result = apply_overrides(self.graph, self.db)
+        self.assertEqual(result["overrides_applied"], 1)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["code_url"], "N/A")
+        version = self.graph.nodes["Publication", "W1"]["updated_at"]
+        self.assertEqual(apply_overrides(self.graph, self.db)["overrides_unchanged"], 1)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["updated_at"], version)
+
+    def test_invalid_snapshot_fields_do_not_withdraw_the_decision(self):
+        record_override(self.db, "Publication", "W1", "set", {"title": "Manual title"})
+        self.db[COLLECTION].update_one({"target_id": "W1"}, {"$set": {
+            "fields": {"removed_field": "manual"}, "auto_value": {"removed_field": "original"}}})
+        before = dict(self.graph.nodes["Publication", "W1"])
+        form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        response = self.client.post(form["action"], data=form["fields"])
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+        self.assertEqual(self.graph.nodes["Publication", "W1"], before)
+
+    def test_a_form_cannot_bypass_new_input_validation(self):
+        response = self.submit(code_url="N/A", from_snapshot="1")
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(self.graph.nodes["Publication", "W1"]["code_url"])
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_unchanged_invalid_fields_do_not_block_editing_other_fields(self):
+        cases = self.LEGACY_FIELDS + (
+            ("Person", "A10", "emails", {"old": True}, '["new@example.org"]'),
+            ("Repository", "R10", "topics", [False], '["science"]'),
+        )
+        for label, node_id, field, legacy, _ in cases:
+            with self.subTest(label=label, field=field, legacy=legacy):
+                self.graph.add(label, node_id, **{field: legacy})
+                changed = "name_ru" if label == "Person" else "title" if label == "Publication" else "name"
+                response = self.submit(f"/nodes/{label}/{node_id}", **{changed: "Edited"})
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes[label, node_id][field], legacy)
+                self.assertEqual(self.db[COLLECTION].find_one({"target_id": node_id})["fields"], {changed: "Edited"})
+                version = self.graph.nodes[label, node_id]["updated_at"]
+                self.assertIn("unchanged=1", self.submit(f"/nodes/{label}/{node_id}").headers["location"])
+                self.assertEqual(self.graph.nodes[label, node_id]["updated_at"], version)
+
+    def test_a_stale_restore_form_cannot_withdraw_a_new_deletion(self):
+        self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+        old = RenderedForms(self.client.get("/nodes/Publication/W1").text).with_button("Восстановить")
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 303)
+        self.assertEqual(self.submit(title="New deletion").status_code, 303)
+        self.assertEqual(self.submit(caption="Удалить").status_code, 303)
+        response = self.client.post(old["action"], data=old["fields"])
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn(("Publication", "W1"), self.graph.nodes)
+        row = self.db[COLLECTION].find_one({"target_id": "W1"})
+        self.assertTrue(row["active"])
+        self.assertEqual(row["snapshot"]["title"], "New deletion")
+
+    def test_undo_then_edit_again_does_not_make_the_old_undo_form_current(self):
+        self.assertEqual(self.submit(code_url="https://github.com/org/first").status_code, 303)
+        old = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 303)
+        self.assertEqual(self.submit(code_url="https://github.com/org/second").status_code, 303)
+        self.assertEqual(self.client.post(old["action"], data=old["fields"]).status_code, 409)
+        self.assertEqual(json.loads(self.graph.nodes["Publication", "W1"]["code_url"]), ["https://github.com/org/second"])
+        self.assertTrue(self.db[COLLECTION].find_one({"target_id": "W1"})["active"])
+
+    def test_every_declared_list_field_round_trips_and_rejects_wrong_item_types(self):
+        for label, fields in NODE_LIST_FIELDS.items():
+            for name, item_type in fields.items():
+                with self.subTest(label=label, field=name):
+                    node_id = f"list-{label}-{name}"
+                    value = ["https://example.org/repo"] if name == "code_url" else ["value"] if item_type is str else [{}]
+                    if label == "Publication":
+                        self.graph.add(label, node_id, title="Existing publication")
+                        response = self.submit(f"/nodes/{label}/{node_id}", **{name: json.dumps(value)})
+                    else:
+                        response = self.submit(
+                            f"/nodes/{label}/new", "Создать", id=node_id,
+                            **{name: json.dumps(value)},
+                        )
+                    self.assertEqual(response.status_code, 303)
+                    node = self.graph.nodes[label, node_id]
+                    actual = json.loads(node[name]) if isinstance(node[name], str) else node[name]
+                    self.assertEqual(actual, value)
+                    before = dict(node)
+                    invalid = "[false]" if item_type is str else '["not an object"]'
+                    response = self.submit(f"/nodes/{label}/{node_id}", **{name: invalid})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(self.graph.nodes[label, node_id], before)
+
+    def test_a_publication_cannot_be_created_manually(self):
+        response = self.submit(
+            "/nodes/Publication/new", "Создать", id="W9", title="New paper",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(("Publication", "W9"), self.graph.nodes)
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_a_plain_url_survives_editing_and_republishing(self):
+        url = "https://github.com/be2rlab/QUORUM"
+        response = self.submit(code_url=url)
+        self.assertEqual(response.status_code, 303)
+        node = self.graph.nodes["Publication", "W1"]
+        self.assertIsInstance(node["code_url"], str)
+        self.assertEqual(json.loads(node["code_url"]), [url])
+
+        response = self.submit(title="Renamed paper")
+        self.assertEqual(response.status_code, 303)
+        decision = self.db[COLLECTION].find_one({"target_id": "W1"})
+        self.assertEqual(decision["op"], SET)
+        self.assertEqual(decision["fields"]["code_url"], node["code_url"])
+        self.graph.nodes["Publication", "W1"]["code_url"] = None
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(json.loads(self.graph.nodes["Publication", "W1"]["code_url"]), [url])
+
+    def test_editing_accepts_one_url_or_a_json_list(self):
+        for value, expected in (
+            ("https://github.com/a/b", ["https://github.com/a/b"]),
+            ('["https://github.com/a/b", "https://gitlab.com/c/d"]',
+             ["https://github.com/a/b", "https://gitlab.com/c/d"]),
+        ):
+            with self.subTest(value=value):
+                response = self.submit(code_url=value)
+                self.assertEqual(response.status_code, 303)
+                stored = self.graph.nodes["Publication", "W1"]["code_url"]
+                self.assertIsInstance(stored, str)
+                self.assertEqual(json.loads(stored), expected)
+                self.assertEqual(self.db[COLLECTION].find_one()["fields"]["code_url"], stored)
+
+    def test_clearing_the_field_and_resubmitting_the_form_are_safe(self):
+        self.assertEqual(self.submit(code_url="https://github.com/a/b").status_code, 303)
+        self.assertEqual(self.submit(code_url="").status_code, 303)
+        self.assertIsNone(self.graph.nodes["Publication", "W1"]["code_url"])
+        response = self.submit()
+        self.assertIn("unchanged=1", response.headers["location"])
+
+    def test_a_differently_formatted_list_is_not_a_new_edit(self):
+        self.submit(code_url="https://github.com/a/b")
+        version = self.graph.nodes["Publication", "W1"]["updated_at"]
+        response = self.submit(code_url='[  "https://github.com/a/b"  ]')
+        self.assertIn("unchanged=1", response.headers["location"])
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["updated_at"], version)
+
+    def test_invalid_input_rejects_the_whole_edit_before_writing(self):
+        before = dict(self.graph.nodes["Publication", "W1"])
+        for value in ('["https://github.com/a/b", null]', '{"url":"https://github.com/a/b"}',
+                      "javascript:alert(1)", "not a URL", '42', '["https://github.com/a/b"',
+                      "https://github.com:abc/repo", "https://github.com:99999/repo"):
+            with self.subTest(value=value):
+                response = self.submit(code_url=value, title="Do not save")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("code_url", response.text)
+                self.assertEqual(self.graph.nodes["Publication", "W1"], before)
+                self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_other_nodes_keep_scalar_url_fields(self):
+        for label, field in (("Person", "github"), ("Repository", "url"),
+                             ("GitHubProfile", "html_url"), ("LinkCandidate", "url")):
+            with self.subTest(label=label):
+                self.graph.add(label, "X1", **{field: "https://github.com/old/repo"})
+                response = self.submit(f"/nodes/{label}/X1", **{field: "https://github.com/new/repo"})
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes[label, "X1"][field], "https://github.com/new/repo")
+
+    def test_native_lists_accept_single_values_and_json_for_each_node_type(self):
+        for label, field, value in (("Person", "emails", "a@example.org"),
+                                    ("Department", "name_variants", "Кафедра ИИ"),
+                                    ("Publication", "pdf_urls", "https://example.org/paper.pdf"),
+                                    ("Repository", "topics", "machine-learning")):
+            for initial in (None, []):
+                with self.subTest(label=label, initial=initial):
+                    self.graph.add(label, "X1", **{field: initial})
+                    response = self.submit(f"/nodes/{label}/X1", **{field: value})
+                    self.assertEqual(response.status_code, 303)
+                    self.assertEqual(self.graph.nodes[label, "X1"][field], [value])
+                    response = self.submit(f"/nodes/{label}/X1", **{field: json.dumps([value, "second"])})
+                    self.assertEqual(response.status_code, 303)
+                    self.assertEqual(self.graph.nodes[label, "X1"][field], [value, "second"])
+
+    def test_invalid_native_lists_do_not_change_the_graph_or_decisions(self):
+        self.graph.add("Person", "A9", name_ru="Иван", emails=["first@example.org"])
+        before = dict(self.graph.nodes["Person", "A9"])
+        for value in ('["broken"', '{"email":"a@example.org"}', '["a@example.org", null]', '[42]'):
+            with self.subTest(value=value):
+                response = self.submit("/nodes/Person/A9", emails=value, name_ru="Do not save")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("emails", response.text)
+                self.assertEqual(self.graph.nodes["Person", "A9"], before)
+                self.assertIsNone(self.db[COLLECTION].find_one({"target_id": "A9"}))
+
+    def test_creating_a_list_does_not_guess_a_number_or_boolean_from_its_text(self):
+        for value in ("2024", "true"):
+            with self.subTest(value=value):
+                response = self.submit("/nodes/Repository/new", "Создать", id="R" + value,
+                                       name="Repository", topics=value)
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes["Repository", "R" + value]["topics"], [value])
+
+    def test_json_text_lists_keep_their_graph_format_and_unchanged_form_is_a_noop(self):
+        value = '[{"funder":"Фонд", "grant_id":"42"}]'
+        response = self.submit(funding=value)
+        self.assertEqual(response.status_code, 303)
+        stored = self.graph.nodes["Publication", "W1"]["funding"]
+        self.assertIsInstance(stored, str)
+        self.assertEqual(json.loads(stored), json.loads(value))
+        response = self.submit()
+        self.assertIn("unchanged=1", response.headers["location"])
+
+    def test_untouched_pretty_json_is_not_recorded_as_an_edit(self):
+        funding = '[\n  {"grant_id": "42", "funder": "Фонд"}\n]'
+        self.graph.nodes["Publication", "W1"]["funding"] = funding
+        response = self.submit(title="Changed title")
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes["Publication", "W1"]["funding"], funding)
+        self.assertEqual(self.db[COLLECTION].find_one()["fields"], {"title": "Changed title"})
+
+    def test_legacy_single_object_is_kept_when_editing_another_field(self):
+        grant = {"funder": "Фонд", "grant_id": "42"}
+        self.graph.nodes["Publication", "W1"]["funding"] = json.dumps(grant)
+        response = self.submit(title="Changed title")
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(json.loads(self.graph.nodes["Publication", "W1"]["funding"]), [grant])
+
+    def test_nonfinite_numbers_in_structured_lists_are_rejected_before_writing(self):
+        before = dict(self.graph.nodes["Publication", "W1"])
+        for value in ('[{"funder":NaN}]', '[{"funder":Infinity}]', '[{"funder":-Infinity}]'):
+            with self.subTest(value=value):
+                response = self.submit(funding=value, title="Do not save")
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.graph.nodes["Publication", "W1"], before)
+                self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_clearing_a_native_list_does_not_save_an_empty_string(self):
+        self.graph.add("Person", "A9", emails=["a@example.org"])
+        self.assertEqual(self.submit("/nodes/Person/A9", emails="").status_code, 303)
+        self.assertIsNone(self.graph.nodes["Person", "A9"]["emails"])
+        self.assertIn("unchanged=1", self.submit("/nodes/Person/A9").headers["location"])
+
+
 class FieldTypeTest(unittest.TestCase):
     """A form submits text for every box, including the untouched ones."""
 
@@ -966,14 +1552,10 @@ class FieldTypeTest(unittest.TestCase):
 
     def submit(self, **over):
         """Send the form the way a browser does - every box, as text."""
-        import re
         page = self.client.get("/nodes/Repository/R1").text
-        data = {"csrf": re.search(r'name="csrf" value="([^"]+)"', page).group(1),
-                "seen_at": re.search(r'name="seen_at" value="([^"]*)"', page).group(1),
-                "name": "PAUK", "stars_num": "42", "has_readme": "True",
-                "cited_urls": '["https://a.test"]'}
-        data.update(over)
-        return self.client.post("/nodes/Repository/R1", data=data)
+        form = RenderedForms(page).with_button("Сохранить")
+        form["fields"].update(over)
+        return self.client.post(form["action"], data=form["fields"])
 
     def test_untouched_fields_keep_their_types(self):
         # "42" is not 42, so an untouched count counted as an edit and was
@@ -988,6 +1570,40 @@ class FieldTypeTest(unittest.TestCase):
         self.submit(name="PAUK 2")
         (override,) = list(self.db["graph_overrides"].find())
         self.assertEqual(list(override["fields"]), ["name"])
+
+    def test_an_untouched_rendered_form_records_no_edit(self):
+        response = self.submit()
+
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("unchanged=1", response.headers["location"])
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_quotes_markup_and_line_breaks_in_a_list_survive_an_edit(self):
+        values = ['Иван "Ivan" Петров', "O'Connor", '<script>alert("x")</script>',
+                  "first\nsecond", 'https://a.test/?x=1&y="quoted"#section']
+        self.graph.nodes[("Repository", "R1")]["cited_urls"] = values
+
+        response = self.submit(name="PAUK 2")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["cited_urls"], values)
+
+    def test_an_empty_list_stays_a_list(self):
+        self.graph.nodes[("Repository", "R1")]["cited_urls"] = []
+
+        response = self.submit(name="PAUK 2")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["cited_urls"], [])
+
+    def test_text_that_looks_like_json_stays_text(self):
+        value = '["PAUK", "ИТМО"]'
+        self.graph.nodes[("Repository", "R1")]["name"] = value
+
+        response = self.submit(stars_num="43")
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["name"], value)
 
     def test_a_number_edited_by_hand_stays_a_number(self):
         self.submit(stars_num="43")
@@ -1013,8 +1629,7 @@ class FieldTypeTest(unittest.TestCase):
         self.assertIsNone(self.graph.nodes[("Repository", "R1")]["stars_num"])
 
     def test_a_new_node_reads_values_as_json(self):
-        # Nothing to take a type from, so the rule is the CLI's: 42 is a
-        # number, true is a boolean, everything else is text.
+        # New scalar fields still use the CLI's JSON-first rule.
         import re
         page = self.client.get("/nodes/Repository/new").text
         csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
@@ -1088,8 +1703,8 @@ class UrlAsIdTest(unittest.TestCase):
 
     def test_restoring_works(self):
         self.client.post(f"/nodes/LinkCandidate/delete/{self.path}", data={"csrf": self.csrf})
-        response = self.client.post(f"/nodes/LinkCandidate/restore/{self.path}",
-                                    data={"csrf": self.csrf})
+        form = RenderedForms(self.client.get(f"/nodes/LinkCandidate/{self.path}").text).with_button("Восстановить")
+        response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 303)
         self.assertIn(("LinkCandidate", self.URL), self.graph.nodes)
 
@@ -1193,11 +1808,9 @@ class UnlinkFromTheTargetTest(unittest.TestCase):
         form comes first tests a different one than intended.
         """
         page = self.client.get(f"/nodes/{label}/{node_id}").text
-        for action, body in re.findall(
-                r'<form method="post" action="([^"]*rel/delete[^"]*)">(.*?)</form>', page, re.S):
-            fields = dict(re.findall(r'name="([^"]+)"\s+value="([^"]*)"', body, re.S))
-            if fields.get("triple") == triple:
-                return action, fields
+        for form in RenderedForms(page).forms:
+            if "/rel/delete/" in form["action"] and form["fields"].get("triple", "").split("|", 1)[-1] == triple:
+                return form["action"], form["fields"]
         raise AssertionError(f"на странице нет формы отвязывания для {triple}")
 
     def test_the_form_offers_the_source_id_not_a_missing_property(self):
@@ -1353,7 +1966,8 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         # Both stores gone. Nothing can be done about the graph, and the
         # message has to say that rather than claim it was put back.
         with self.mongo_dies_mid_request(), \
-                patch.object(nodes, "update_node", side_effect=[None, MutationError("no")]):
+                patch.object(nodes, "update_node",
+                             side_effect=[{"updated_at": "after"}, MutationError("no")]):
             response = self.edit()
         self.assertEqual(response.status_code, 503)
         self.assertIn("не откатилась", response.json()["detail"])
@@ -1364,14 +1978,317 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
         self.assertEqual(self.db[COLLECTION].count_documents({}), 1)
 
+    def save_with_reply_failure(self, *, lost_reply=False, failed_readback=False):
+        collection = self.db[COLLECTION]
+        original_find = collection.find_one
+        written = False
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Сохранить")
+        form["fields"]["name_ru"] = "Пётр Иванов"
+
+        def after_write(original):
+            def call(*args, **kwargs):
+                nonlocal written
+                result = original(*args, **kwargs)
+                written = True
+                if lost_reply:
+                    raise AutoReconnect("reply lost after commit")
+                return result
+            return call
+
+        def read(*args, **kwargs):
+            if written and failed_readback:
+                raise AutoReconnect("cannot read the committed decision")
+            return original_find(*args, **kwargs)
+
+        with patch.object(collection, "update_one", after_write(collection.update_one)), \
+                patch.object(collection, "find_one_and_update",
+                             after_write(collection.find_one_and_update)), \
+                patch.object(collection, "find_one", read):
+            return self.client.post(form["action"], data=form["fields"])
+
+    def test_a_post_write_read_failure_cannot_turn_a_saved_edit_into_a_rejection(self):
+        response = self.save_with_reply_failure(failed_readback=True)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр Иванов")
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["fields"]["name_ru"], "Пётр Иванов")
+        self.assertEqual(row["auto_value"]["name_ru"], "Иванов И.")
+
+    def test_a_lost_write_reply_is_confirmed_without_undoing_the_graph(self):
+        response = self.save_with_reply_failure(lost_reply=True)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр Иванов")
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["auto_value"]["name_ru"], "Иванов И.")
+
+    def test_an_unverifiable_write_reports_uncertainty_and_keeps_the_graph(self):
+        response = self.save_with_reply_failure(lost_reply=True, failed_readback=True)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не подтвердила", response.json()["detail"])
+        self.assertNotIn("граф возвращён", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Пётр Иванов")
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["fields"]["name_ru"], "Пётр Иванов")
+
+    def test_a_confirmed_failed_atomic_write_rolls_back_without_leaving_a_decision(self):
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Сохранить")
+        form["fields"]["name_ru"] = "Пётр Иванов"
+        with patch.object(self.db[COLLECTION], "find_one_and_update",
+                          side_effect=AutoReconnect("failed before commit")):
+            response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иванов И.")
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_exhausted_contention_reports_conflict_after_rolling_back(self):
+        form = RenderedForms(self.client.get("/nodes/Person/A1").text).with_button("Сохранить")
+        form["fields"]["name_ru"] = "Пётр Иванов"
+        with patch.object(nodes, "record_override", side_effect=DecisionWriteConflict("busy")):
+            response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Обновите карточку", response.json()["detail"])
+        self.assertNotIn("Mongo не ответила", response.json()["detail"])
+        self.assertEqual(self.graph.nodes["Person", "A1"]["name_ru"], "Иванов И.")
+        self.assertEqual(active_overrides(self.db), [])
+
+
+class NodeDeleteRollbackTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.url = "https://github.com/team/code?x=1&y=2"
+        self.candidate = "https://code.example/tool?a=1&b=2#readme"
+        for label, node_id, props in (
+                ("Person", "A1", {"name_ru": "Иван", "emails": ["a@example.org"]}),
+                ("Person", "A2", {"name_en": "Anna"}),
+                ("Publication", "W1", {"title": "Paper", "versions": '[{"id": "W1"}]'}),
+                ("Publication", "W2", {"title": "Other paper"}),
+                ("Repository", "R1", {"url": self.url}),
+                ("GitHubProfile", "GH1", {"login": "owner", "name": "Owner"}),
+                ("Department", "D1", {"name_en": "Department"}),
+                ("Department", "D2", {"name_en": "Other department"}),
+                ("Organization", "O1", {"name_en": "University"}),
+                ("LinkCandidate", self.candidate, {"url": self.candidate})):
+            self.graph.add(label, node_id, **props)
+        self.graph.relationships = {
+            ("Person", "AUTHORED", "Publication", "A1", "W1"):
+                {"position": 2, "affiliation": "ИТМО", "is_corresponding": False},
+            ("Person", "AUTHORED", "Publication", "A2", "W2"): {"position": 1},
+            ("Person", "CONTRIBUTED_TO", "Repository", "A1", "R1"): {"role": "owner"},
+            ("Publication", "MENTIONS_LINK", "Repository", "W1", self.url):
+                {"context": ["Код & данные", ""], "page_number": [0, 2], "is_relevant": False},
+            ("Publication", "MENTIONS_LINK", "LinkCandidate", "W1", self.candidate): {},
+            ("Repository", "IMPLEMENTS", "Publication", "R1", "W1"): {},
+            ("Repository", "OWNED_BY", "GitHubProfile", "R1", "owner"): {},
+            ("Department", "PART_OF", "Department", "D1", "D2"): {},
+            ("Department", "PART_OF", "Department", "D2", "D1"): {},
+            ("Department", "PART_OF", "Department", "D1", "D1"): {},
+            ("Department", "PART_OF", "Organization", "D1", "O1"): {},
+        }
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def delete_form(self, label="Publication", node_id="W1", cascade=True):
+        address = f"/nodes/{label}/{quote(node_id, safe='/')}"
+        form = RenderedForms(self.client.get(address).text).with_button("Удалить")
+        if cascade:
+            form["fields"]["cascade"] = "1"
+        return form
+
+    def test_failed_cascade_restores_all_edges_and_their_properties(self):
+        before_nodes = deepcopy(self.graph.nodes)
+        before_edges = deepcopy(self.graph.relationships)
+        for label, node_id in (
+                ("Person", "A1"), ("Publication", "W1"), ("Repository", "R1"),
+                ("GitHubProfile", "GH1"), ("Department", "D1"), ("Organization", "O1"),
+                ("LinkCandidate", self.candidate)):
+            with self.subTest(label=label, node_id=node_id):
+                self.graph.nodes = deepcopy(before_nodes)
+                self.graph.relationships = deepcopy(before_edges)
+                target_keys = {node_id}
+                if label == "Repository":
+                    target_keys.add(self.url)
+                elif label == "GitHubProfile":
+                    target_keys.add("owner")
+                remaining = {edge: props for edge, props in before_edges.items()
+                             if not ((edge[0] == label and edge[3] == node_id)
+                                     or (edge[2] == label and edge[4] in target_keys))}
+                form = self.delete_form(label, node_id)
+
+                def unreachable(*args, label=label, node_id=node_id, remaining=remaining, **kwargs):
+                    self.assertNotIn((label, node_id), self.graph.nodes)
+                    self.assertEqual(self.graph.relationships, remaining)
+                    raise AutoReconnect("mongo is not answering")
+
+                with patch.object(nodes, "record_override", unreachable):
+                    response = self.client.post(form["action"], data=form["fields"])
+
+                self.assertEqual(response.status_code, 503)
+                self.assertIn("граф возвращён как был", response.json()["detail"])
+                self.assertEqual(self.graph.relationships, before_edges)
+                for key, props in before_nodes.items():
+                    self.assertEqual(
+                        {k: v for k, v in self.graph.nodes[key].items() if k != "updated_at"},
+                        {k: v for k, v in props.items() if k != "updated_at"})
+                self.assertEqual(active_overrides(self.db), [])
+
+    def test_delete_without_cascade_leaves_the_connected_node_untouched(self):
+        before_nodes, before_edges = deepcopy(self.graph.nodes), deepcopy(self.graph.relationships)
+        form = self.delete_form(cascade=False)
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.graph.nodes, before_nodes)
+        self.assertEqual(self.graph.relationships, before_edges)
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_successful_cascade_still_removes_the_node_and_its_edges(self):
+        form = self.delete_form()
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("Publication", "W1"), self.graph.nodes)
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["op"], "delete")
+        self.assertEqual(decision["snapshot"]["title"], "Paper")
+
+    def test_failure_to_restore_an_edge_reports_an_incomplete_rollback(self):
+        form = self.delete_form()
+        with patch.object(nodes, "record_override", side_effect=AutoReconnect("down")), \
+                patch.object(nodes, "create_relationship", side_effect=MutationError("edge is gone")):
+            response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не откатилась", response.json()["detail"])
+        self.assertIn(("Publication", "W1"), self.graph.nodes)
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+
+    def test_an_unknown_edge_type_is_refused_before_deleting(self):
+        self.graph.relationships[("Person", "LEGACY_REL", "Publication", "A1", "W1")] = {}
+        before_nodes, before_edges = deepcopy(self.graph.nodes), deepcopy(self.graph.relationships)
+        form = self.delete_form()
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.graph.nodes, before_nodes)
+        self.assertEqual(self.graph.relationships, before_edges)
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_an_edge_without_its_target_key_is_refused_before_deleting(self):
+        del self.graph.nodes["Repository", "R1"]["url"]
+        before_nodes, before_edges = deepcopy(self.graph.nodes), deepcopy(self.graph.relationships)
+        form = self.delete_form()
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.graph.nodes, before_nodes)
+        self.assertEqual(self.graph.relationships, before_edges)
+        self.assertEqual(active_overrides(self.db), [])
+
+
+class RelationshipRestoreTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.add("Publication", "W1", title="Paper")
+        self.graph.add("Repository", "R1", url="https://github.com/team/code?x=1&y=2")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def cases(self):
+        authored = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        mentions = ("Publication", "MENTIONS_LINK", "Repository", "W1",
+                    "https://github.com/team/code?x=1&y=2")
+        author_props = {"position": 2, "affiliation": "ИТМО", "affiliation_source": "openalex",
+                        "is_corresponding": False}
+        link_props = {"context": ["Код & данные", ""], "page_number": [0, 2],
+                      "pdf_id": ["", "pdf-1"], "is_relevant": False, "llm_confidence": 0.0}
+        return (
+            ("/nodes/Person/A1", authored, author_props),
+            ("/nodes/Publication/W1", authored, author_props),
+            ("/nodes/Publication/W1", mentions, link_props),
+            ("/nodes/Repository/R1", mentions, link_props),
+            ("/nodes/Person/A1", authored, {}),
+        )
+
+    def test_failed_unlink_restores_properties_from_either_card(self):
+        for card, edge, props in self.cases():
+            with self.subTest(card=card, edge=edge, props=props):
+                self.graph.relationships = {edge: dict(props)}
+                form = RenderedForms(self.client.get(card).text).with_button("отвязать")
+                with patch.object(nodes, "record_relationship_override",
+                                  side_effect=AutoReconnect("mongo is not answering")):
+                    response = self.client.post(form["action"], data=form["fields"])
+
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(self.graph.relationships[edge], props)
+                self.assertEqual(active_overrides(self.db), [])
+
+    def test_unlink_then_undo_restores_properties_from_the_stored_snapshot(self):
+        for card, edge, props in self.cases():
+            with self.subTest(card=card, edge=edge, props=props):
+                self.db[COLLECTION].delete_many({})
+                self.graph.relationships = {edge: dict(props)}
+                form = RenderedForms(self.client.get(card).text).with_button("отвязать")
+                response = self.client.post(form["action"], data=form["fields"])
+                self.assertEqual(response.status_code, 303)
+                self.assertNotIn(edge, self.graph.relationships)
+                (decision,) = active_overrides(self.db)
+                self.assertEqual(decision.get("snapshot"), props)
+
+                form = RenderedForms(self.client.get("/overrides").text).with_button("отменить")
+                response = self.client.post(form["action"], data=form["fields"])
+
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.relationships[edge], props)
+                self.assertEqual(active_overrides(self.db), [])
+
+    def test_unlink_snapshot_excludes_db_owned_timestamps(self):
+        card, edge, props = self.cases()[0]
+        self.graph.relationships[edge] = {
+            **props, "created_at": DateTime(2026, 8, 1), "updated_at": DateTime(2026, 8, 2)}
+        form = RenderedForms(self.client.get(card).text).with_button("отвязать")
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 303)
+        (decision,) = active_overrides(self.db)
+        self.assertEqual(decision["snapshot"], props)
+
+    def test_unlink_of_an_edge_removed_since_rendering_records_no_decision(self):
+        card, edge, props = self.cases()[0]
+        self.graph.relationships[edge] = dict(props)
+        form = RenderedForms(self.client.get(card).text).with_button("отвязать")
+        del self.graph.relationships[edge]
+
+        response = self.client.post(form["action"], data=form["fields"])
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(active_overrides(self.db), [])
+        self.assertEqual(self.graph.relationships, {})
+
 
 class EveryWritePathIsGuardedTest(unittest.TestCase):
-    """`_record` on every route that writes to both stores, not just two.
-
-    A guard on two paths out of five is worse than none: it reads as
-    handled. Linking is the one exception and stays without - it records
-    nothing, so there is no second write to fail.
-    """
+    """Each route compensates a graph write if recording its decision fails."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
@@ -1402,10 +2319,8 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         self.assertIn(edge, self.graph.relationships)
 
     def test_creating_takes_the_new_node_away_again(self):
-        # Pessimistic on purpose: usually there is no tombstone to withdraw
-        # and the node would have been fine, but whether there is one can
-        # only be learned from the store that is refusing to answer.
-        with patch.object(nodes, "deactivate_override", self.unreachable):
+        # Without its creation claim the next prune could remove the node.
+        with patch.object(nodes, "record_override", self.unreachable):
             response = self.client.post("/nodes/Person/new", data={
                 "csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
         self.assertEqual(response.status_code, 503)
@@ -1414,9 +2329,9 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
     def test_restoring_takes_the_record_away_again(self):
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
                         snapshot={"name_ru": "Петров"})
+        form = RenderedForms(self.client.get("/nodes/Person/A2").text).with_button("Восстановить")
         with patch.object(nodes, "deactivate_override", self.unreachable):
-            response = self.client.post("/nodes/Person/restore/A2",
-                                        data={"csrf": self.csrf})
+            response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 503)
         self.assertNotIn(("Person", "A2"), self.graph.nodes)
 
@@ -1426,9 +2341,9 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         record_override(self.db, "Person", "A2", "delete", actor="user:roman",
                         snapshot={"name_ru": "Петров"})
         self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W1")] = {}
+        form = RenderedForms(self.client.get("/nodes/Person/A2").text).with_button("Восстановить")
         with patch.object(nodes, "deactivate_override", self.unreachable):
-            response = self.client.post("/nodes/Person/restore/A2",
-                                        data={"csrf": self.csrf})
+            response = self.client.post(form["action"], data=form["fields"])
         self.assertEqual(response.status_code, 503)
         self.assertIn("не откатилась", response.json()["detail"])
 

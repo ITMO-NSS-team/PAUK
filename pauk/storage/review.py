@@ -8,18 +8,27 @@ rather than patched over its result. A fold can be taken apart afterwards
 (`pauk.graph.unmerge`), but only by rebuilding the record from the prepared
 row it was published from, and only for as long as that row is there.
 
-Four shapes of question:
+Five shapes of question:
 
 - a **pair** the person merge rules would not fold, answered "same" or
   "different";
 - a **group** those rules refused whole, because it spans two ORCIDs or two
   addresses. It is answered by naming which of its records are one person,
   and `record_split` turns that into the pair answers the rules read;
-- a **github account** the matcher could not place, answered "same" (this is
-  them) or "different";
+- a **github account** the matcher could not place, asked once with every
+  author still in the running. It is answered by choosing the author it
+  belongs to (`record_account_choice`) or "different" for none of them; with
+  a single author, "same" or "different";
 - a **catalog record**, where the staff directory holds several people under
   one name. Both namesakes are plausible and exactly one is right, so
-  `record_choice` names the record instead of taking a side.
+  `record_choice` names the record instead of taking a side;
+- a **publication version**, two Publication records the version rules
+  linked with IS_VERSION (`pauk.graph.version_candidates`), answered "same"
+  (one work) or "different". Nothing is folded either way: the answer only
+  confirms the link or removes it.
+- a **publication pair** with an equal title and a shared resolved author but
+  no DOI. A "same" answer is consumed by the next prepared or graph dedup
+  pass; "different" keeps both records.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`: these are
 written long before anything is published, and `pauk/pipeline/` imports
@@ -28,8 +37,10 @@ nothing from the graph layer.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
+from hashlib import sha256
 from itertools import combinations
 
 from pymongo.database import Database
@@ -44,7 +55,12 @@ GROUP = "person_group"
 GITHUB = "github_person"
 #: A person against the catalog records their name matches; answered by choice.
 STAFF = "staff_record"
-KINDS = (PAIR, GROUP, GITHUB, STAFF)
+#: Two publications linked as versions of one work.
+PUB_VERSION = "publication_version"
+#: Two source-neutral publication records awaiting a dedup decision.
+PUBLICATION = "publication_pair"
+ALIAS = "person_alias_conflict"
+KINDS = (PAIR, GROUP, GITHUB, STAFF, PUB_VERSION, PUBLICATION, ALIAS)
 
 #: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
@@ -52,10 +68,32 @@ PERSON_KINDS = (PAIR, GROUP)
 SAME = "same"
 DIFFERENT = "different"
 VERDICTS = (SAME, DIFFERENT)
+DISPUTE_FIELDS = ("disputed_at", "disputed_rule", "disputed_members", "disputed_token")
 
 #: Which pass asked. The same pair can come from both, and it is one question.
 STAGE = "stage"
 GRAPH = "graph"
+
+
+def record_publication_pair(db: Database, first: str, second: str, *,
+                            title: str, shared_authors: list[str],
+                            source: str = STAGE) -> None:
+    """Queue a probable publication duplicate without merging it."""
+    members = sorted({first, second})
+    moment = _now()
+    db[COLLECTION].update_one(
+        {"_id": question_id(PUBLICATION, members)},
+        {"$set": {
+            "evidence": {
+                "held_because": "same title and author without DOI",
+                "title": title,
+                "shared_authors": shared_authors,
+            },
+            "seen_at": moment,
+            "source": source,
+        }, "$setOnInsert": {"kind": PUBLICATION, "members": members}},
+        upsert=True,
+    )
 
 
 class ReviewError(Exception):
@@ -99,14 +137,17 @@ def members_of(row: dict) -> list[str]:
 
     Not always people: a catalog question pairs a person with directory
     rows, and a github question with an account. Callers should not have to
-    know which shape they are holding, so the four are read in one place,
+    know which shape they are holding, so the five are read in one place,
     together with `kind_of` and `names_of` just below, which split on the
     same fields.
     """
     if "records" in row:
         return sorted({row["person"], *row["records"]})
+    if row.get("entity") == "publication":
+        return sorted({row["record_a"], row["record_b"]})
     if "login" in row:
-        return sorted({row["login"], row["person"]})
+        return sorted({row["login"], row["person"],
+                       *(candidate["person"] for candidate in row.get("candidates") or [])})
     if "persons" in row:
         return sorted(set(row["persons"]))
     return sorted({row["person_a"], row["person_b"]})
@@ -116,17 +157,41 @@ def kind_of(row: dict) -> str:
     """Which question a report row is, read off the fields it carries.
 
     Each producer names its subjects its own way: the catalog check a
-    `person` and `records`, the github matcher a `login` and a `person`, a
-    refused group a list of `persons`, a held pair a `person_a` and a
-    `person_b`.
+    `person` and `records`, the github matcher a `login`, a `person` and the
+    `candidates` beside them, a refused group a list of `persons`, a held
+    pair a `person_a` and a `person_b`, the version rules a `record_a` and a
+    `record_b` with `entity: "publication"`.
     """
+    if row.get("kind") == ALIAS:
+        return ALIAS
     if "records" in row:
         return STAFF
+    if row.get("entity") == "publication":
+        return PUB_VERSION
     if "login" in row:
         return GITHUB
     if "persons" in row:
         return GROUP
     return PAIR
+
+
+def require_answerable(db: Database, kind: str, members: list[str]) -> None:
+    """Integrity incidents cannot become identity decisions through a forged form."""
+    question_id(kind, members)
+    if kind == ALIAS or (kind in PERSON_KINDS and db[COLLECTION].find_one(
+        {"kind": ALIAS, "members": {"$all": sorted(set(members))},
+         "auto_resolved_at": {"$exists": False}}, {"_id": 1}
+    ) is not None):
+        raise ReviewError("repair conflicting aliases before answering identity questions")
+
+
+def retire_alias_conflicts(db: Database, operation: str) -> None:
+    """Retire only incidents from a completed pass; another group's input may still conflict."""
+    db[COLLECTION].update_many(
+        {"kind": ALIAS, "evidence.operation": operation,
+         "auto_resolved_at": {"$exists": False}},
+        {"$set": {"auto_resolved_at": _now()}},
+    )
 
 
 def names_of(row: dict, members: list[str]) -> list[str | None]:
@@ -141,9 +206,14 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
     if "records" in row:
         by_id = {row["person"]: row.get("name_raw"),
                  **dict(zip(row["records"], row.get("record_names") or [], strict=False))}
+    elif row.get("entity") == "publication":
+        # A publication is named by its title.
+        by_id = {row["record_a"]: row.get("title_a"), row["record_b"]: row.get("title_b")}
     elif "login" in row:
         # The account is named by its login; there is nothing else to call it.
-        by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw")}
+        by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw"),
+                 **{candidate["person"]: candidate.get("name_raw")
+                    for candidate in row.get("candidates") or []}}
     elif "persons" in row:
         by_id = dict(zip(row["persons"], row.get("names") or [], strict=False))
     else:
@@ -177,13 +247,14 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
     # Look up the existing queue once, not once per automatically rejected
     # candidate. Large runs can contain millions of rejected pairs.
     pending: dict[str, list[str]] = {}
-    aliases = aliases or {}
-    for question in db[COLLECTION].find(
-        {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
-    ):
-        members = {aliases.get(member, member) for member in question["members"]}
-        if len(members) == 2:
-            pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
+    if any(row.get("status") == "separate" for row in report):
+        aliases = aliases or {}
+        for question in db[COLLECTION].find(
+            {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
+        ):
+            members = {aliases.get(member, member) for member in question["members"]}
+            if len(members) == 2:
+                pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
     for row in report:
         if row.get("status") != "separate":
             continue
@@ -217,7 +288,8 @@ def record_held(db: Database, report: list[dict], source: str = STAGE,
     return written
 
 
-def record_disputed(db: Database, report: list[dict]) -> int:
+def record_disputed(db: Database, report: list[dict], *, aliases: dict[str, str] | None = None,
+                    github_scope: dict[str, set[str]] | None = None) -> int:
     """Note where the rules have changed their mind about a settled pair.
 
     Somebody said two records are two people, or that an account is not
@@ -227,27 +299,192 @@ def record_disputed(db: Database, report: list[dict]) -> int:
     a source that starts contradicting a hand edit (see
     `pauk.graph.overrides`).
 
+    GitHub disputes follow the effective answer through person aliases and
+    mark its original question, keeping the answer's members and history.
+    github_scope identifies evaluated accounts and selected authors; an
+    omitted profile cannot retract an earlier discrepancy.
+
     Returns:
         How many disagreements were noted.
     """
     moment = _now()
     noted = 0
+    refresh_github = github_scope is not None or aliases is not None or any("login" in row for row in report)
+    aliases = aliases or {}
+    github_answers = _github_answers(db, aliases) if refresh_github else None
+    person_answers = None
+    if github_answers is not None:
+        active_pairs = {frozenset(aliases.get(member, member) for member in (row["person"], row["login"]))
+                        for row in report if row.get("status") == "disputed" and "login" in row}
+        _retire_github_disputes(db, github_answers, aliases, github_scope, active_pairs)
     for row in report:
         if row.get("status") != "disputed":
             continue
-        members = members_of(row)
-        result = db[COLLECTION].update_one(
-            {"_id": question_id(kind_of(row), members)},
-            {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule")}})
+        kind, members = kind_of(row), members_of(row)
+        if kind == GITHUB:
+            if github_answers is None:
+                github_answers = _github_answers(db, aliases)
+            subjects = {aliases.get(member, member) for member in (row["person"], row["login"])}
+            effective = _effective_github_answer(github_answers, subjects)
+            if effective is None:
+                continue
+            verdict, question = effective
+            if verdict != DIFFERENT:
+                continue
+            found = {"_id": question["_id"], "verdict": question["verdict"],
+                     "chosen": question.get("chosen"), "decided_at": question.get("decided_at"),
+                     "acknowledged_dispute_token": question.get("acknowledged_dispute_token")}
+            original_members = sorted(member for member in question["members"]
+                                      if aliases.get(member, member) in subjects)
+            token = _github_dispute_token(question["_id"], original_members, row)
+            if question.get("acknowledged_dispute_token") == token:
+                db[COLLECTION].update_one(
+                    {**found, "disputed_token": question.get("disputed_token")},
+                    {"$unset": dict.fromkeys(DISPUTE_FIELDS, "")})
+                continue
+            changes = {"disputed_at": moment, "disputed_rule": row.get("rule"),
+                       "disputed_members": original_members, "disputed_token": token, "login": row["login"]}
+        else:
+            if kind in PERSON_KINDS:
+                if person_answers is None:
+                    person_answers = _person_answers(db, aliases, PERSON_KINDS)
+                effective = person_answers.get(frozenset(aliases.get(member, member) for member in members))
+                if effective is None:
+                    continue
+                question = effective[1]
+                found = {"_id": question["_id"], "verdict": question["verdict"],
+                         "decided_at": question.get("decided_at")}
+            else:
+                found = {"_id": question_id(kind, members)}
+            changes = {"disputed_at": moment, "disputed_rule": row.get("rule")}
+        result = db[COLLECTION].update_many(
+            found, {"$set": changes})
         noted += result.matched_count
     if noted:
         logger.warning("review: %d answered pair(s) the rules would now merge", noted)
     return noted
 
 
+def _effective_github_answer(answers: dict[frozenset[str], tuple[str, dict]],
+                             subjects: set[str]) -> tuple[str, dict] | None:
+    effective = None
+    for members, answer in answers.items():
+        if subjects <= members:
+            effective = answer
+    return effective
+
+
+def _github_dispute_token(question_id: str, members: list[str], row: dict) -> str:
+    """Fingerprint evidence independently of run times and current alias ids."""
+    details = {"question": question_id, "members": members, "rule": row.get("rule"),
+               "signals": row.get("signals") or [], "evidence": row.get("evidence") or {}}
+    return sha256(json.dumps(details, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _retire_github_disputes(db: Database, answers: dict[frozenset[str], tuple[str, dict]],
+                            aliases: dict[str, str], scope: dict[str, set[str]] | None,
+                            active_pairs: set[frozenset[str]]) -> None:
+    for question in db[COLLECTION].find({"kind": GITHUB, "disputed_at": {"$exists": True}}):
+        members = question.get("disputed_members")
+        if members:
+            pairs = [members]
+        elif len(question["members"]) == 2:
+            pairs = [question["members"]]
+        else:
+            # Older group disputes do not identify which refusal was challenged.
+            login = question.get("login") or (question.get("evidence") or {}).get("login")
+            if not login or login not in question["members"]:
+                continue
+            pairs = [[login, member] for member in question["members"] if member != login]
+        subjects = [{aliases.get(member, member) for member in pair} for pair in pairs]
+        effective = [_effective_github_answer(answers, pair) for pair in subjects]
+        if any(answer is not None and answer[0] == DIFFERENT and answer[1]["_id"] == question["_id"]
+               for answer in effective):
+            login = question.get("login") or (question.get("evidence") or {}).get("login")
+            covered = (scope or {}).get(login)
+            if covered is None or any(pair - {aliases.get(login, login)} - covered for pair in subjects):
+                continue
+            if any(frozenset(pair) in active_pairs for pair in subjects):
+                continue
+        db[COLLECTION].update_one(
+            {"_id": question["_id"], "disputed_at": question["disputed_at"],
+             "disputed_token": question.get("disputed_token")},
+            {"$unset": dict.fromkeys(DISPUTE_FIELDS, "")})
+
+
+def _write_answer(db: Database, key: str, update: dict, *, dispute_token: str = "",
+                  chosen: str | None = None) -> None:
+    query = {"_id": key}
+    update["$unset"].update(dict.fromkeys(DISPUTE_FIELDS, ""))
+    if dispute_token:
+        query.update(disputed_token=dispute_token, verdict=update["$set"]["verdict"])
+        if chosen is not None:
+            query["chosen"] = chosen
+        update["$set"]["acknowledged_dispute_token"] = dispute_token
+    else:
+        update["$unset"]["acknowledged_dispute_token"] = ""
+    result = db[COLLECTION].update_one(query, update, upsert=not bool(dispute_token))
+    if dispute_token and not result.matched_count:
+        current = db[COLLECTION].find_one({"_id": key}) or {}
+        if (not current.get("disputed_at") and current.get("acknowledged_dispute_token") == dispute_token
+                and current.get("verdict") == update["$set"]["verdict"]
+                and (chosen is None or current.get("chosen") == chosen)):
+            # A replay must not make this answer newer than another question's answer.
+            return
+        raise ReviewError("вопрос или доказательства изменились; откройте его заново")
+
+
+def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[str],
+                  aliases: dict[str, str] | None = None, *,
+                  account_scopes: dict[str, set[str]] | None = None) -> int:
+    """Close open account questions a run has settled without a person.
+
+    An account is asked about once, so any other open question about it is
+    either answered by the rules or replaced by the one asked now, which
+    names a new set of authors. Only questions the run could judge: a login
+    it settled and authors it covers, directly or through a fold. Closed by
+    `auto_resolved_at`, never a verdict.
+
+    Args:
+        outcomes: Each login the run settled, with its decision row, or None
+            when no author fitted. A row still for review is the question
+            asked now, and stays open.
+        people: The persons the run covers; a scoped run covers its selection only.
+        aliases: Folded-away person id to the id that survived.
+        account_scopes: Authors actually covered for each account, including
+            counterparts changed by a cross-group handoff.
+
+    Returns:
+        How many questions were closed.
+    """
+    aliases = aliases or {}
+    moment = _now()
+    asked = {question_id(GITHUB, members_of(row))
+             for row in outcomes.values() if row and row["decision"] == "review"}
+    retired = 0
+    for question in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": False},
+                                         "auto_resolved_at": {"$exists": False},
+                                         "evidence.login": {"$in": list(outcomes)}}):
+        if question["_id"] in asked:
+            continue
+        login = question["evidence"]["login"]
+        covered = account_scopes.get(login, set()) if account_scopes is not None else people
+        if any(aliases.get(member, member) not in covered
+               for member in question["members"] if member != login):
+            continue
+        result = db[COLLECTION].update_one(
+            {"_id": question["_id"], "verdict": {"$exists": False}},
+            {"$set": {"auto_resolved_at": moment,
+                      "auto_resolution": outcomes[login] or {"login": login, "decision": "rejected"}}})
+        retired += result.modified_count
+    if retired:
+        logger.info("review: %d account question(s) settled by the rules", retired)
+    return retired
+
+
 def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                    actor: str = "unknown", note: str = "",
-                   names: list[str | None] | None = None) -> dict:
+                   names: list[str | None] | None = None, *, dispute_token: str = "") -> dict:
     """Write down what a person decided about one question.
 
     The question need not exist yet. Somebody may answer from the CLI about
@@ -260,6 +497,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
             so "these are all one person" would be a decision to ignore
             two different ORCIDs, which the merge itself would refuse.
     """
+    require_answerable(db, kind, members)
     if verdict not in VERDICTS:
         raise ReviewError(f"unknown verdict: {verdict!r} (known: {', '.join(VERDICTS)})")
     if kind == GROUP and verdict == SAME:
@@ -269,21 +507,25 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         # "Yes" names nobody: the queue would look answered and change nothing.
         raise ReviewError("a catalog question is answered by choosing a record; "
                           "see record_choice")
+    if kind == GITHUB and verdict == SAME and len(set(members)) > 2:
+        raise ReviewError("an account asked about several authors is answered by "
+                          "choosing one; see record_account_choice")
     key = question_id(kind, members)
     moment = _now()
-    db[COLLECTION].update_one(
-        {"_id": key},
+    _write_answer(
+        db, key,
         {"$set": {"verdict": verdict, "actor": actor, "note": note,
                   "decided_at": moment},
          # An answer settles what a skip postponed and what the rules disputed.
          "$unset": {"skipped_at": "", "skipped_by": "",
-                    "auto_resolved_at": "", "auto_resolution": "",
-                    "disputed_at": "", "disputed_rule": ""},
+                    # A binary answer replaces a choice made from an older form.
+                    "chosen": "",
+                    "auto_resolved_at": "", "auto_resolution": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
                           # A pair answered before any run held it has no evidence.
                           "evidence": {"names": names} if names else {},
                           "seen_at": moment, "source": STAGE}},
-        upsert=True)
+        dispute_token=dispute_token)
     logger.info("review: %s answered %s by %s", key, verdict, actor)
     return db[COLLECTION].find_one({"_id": key})
 
@@ -296,6 +538,7 @@ def skip(db: Database, kind: str, members: list[str], actor: str = "unknown") ->
     could not tell", which is the difference between a queue that can be
     worked through and one that cannot.
     """
+    require_answerable(db, kind, members)
     result = db[COLLECTION].update_one(
         {"_id": question_id(kind, members)},
         {"$set": {"skipped_at": _now(), "skipped_by": actor}})
@@ -330,6 +573,7 @@ def record_split(db: Database, members: list[str], same: list[str],
             pair, or is the whole group, which is the answer the conflict
             rules out.
     """
+    require_answerable(db, GROUP, members)
     members = sorted(set(members))
     same = sorted(set(same))
     if not set(same) <= set(members):
@@ -340,6 +584,12 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("the group was refused precisely because all of it "
                           "cannot be one person")
     rest = [member for member in members if member not in same]
+    answers = [(first, second, SAME) for first, second in combinations(same, 2)]
+    answers.extend((first, second, DIFFERENT) for first in same for second in rest)
+    # A larger submitted group can contain an unresolved alias component.
+    # Validate every resulting answer before any unrelated pair is persisted.
+    for first, second, _ in answers:
+        require_answerable(db, PAIR, [first, second])
     # The group knows the names; without them the pairs are rows of bare ids.
     asked = db[COLLECTION].find_one({"_id": question_id(GROUP, members)}) or {}
     known = dict(zip(members, (asked.get("evidence") or {}).get("names") or [],
@@ -350,15 +600,10 @@ def record_split(db: Database, members: list[str], same: list[str],
 
     # Inside the subset first: a write that stops halfway merges nothing.
     written = 0
-    for first, second in combinations(same, 2):
-        record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note,
+    for first, second, verdict in answers:
+        record_verdict(db, PAIR, [first, second], verdict, actor=actor, note=note,
                        names=named(first, second))
         written += 1
-    for first in same:
-        for second in rest:
-            record_verdict(db, PAIR, [first, second], DIFFERENT, actor=actor,
-                           note=note, names=named(first, second))
-            written += 1
     record_verdict(db, GROUP, members, DIFFERENT, actor=actor, note=note)
     logger.info("review: group %s split by %s, %d pair(s) written",
                 members, actor, written)
@@ -374,17 +619,20 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     Unless no run ever asked it. A split writes answers about pairs the
     rules never held, and keeping one of those after withdrawal would leave
     a row in the queue with no reason and nothing to decide on. A held
-    question always says why it was held; that is what tells the two apart.
+    question always says why it was held, or for a version which bucket
+    linked the pair; that is what tells the two apart.
 
     Raises:
         ReviewError: The answer has already folded two records into one.
     """
+    require_answerable(db, kind, members)
     key = question_id(kind, members)
     asked = db[COLLECTION].find_one({"_id": key})
     if asked is not None and asked.get("applied_at"):
         # They are one node by now: dropping the answer strands both.
         raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
-    if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
+    evidence = (asked or {}).get("evidence") or {}
+    if asked is not None and not (evidence.get("held_because") or evidence.get("bucket")):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(
         {"_id": key},
@@ -393,7 +641,7 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
                     # The record chosen goes with the answer that chose it.
                     "chosen": "",
                     # Nothing left to disagree with once the answer is gone.
-                    "disputed_at": "", "disputed_rule": ""}})
+                    **dict.fromkeys((*DISPUTE_FIELDS, "acknowledged_dispute_token"), "")}})
     return result.matched_count > 0
 
 
@@ -460,7 +708,7 @@ def record_undo(db: Database, kind: str, members: list[str],
 
 
 def mark_applied(db: Database, kind: str, members: list[str]) -> bool:
-    """Record that a "same" answer reached the graph.
+    """Record that a "same" answer reached prepared data or the graph.
 
     Separate from the answer because the two happen at different times. A
     pair answered before its group is published has nothing to merge yet,
@@ -504,6 +752,35 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
     return db[COLLECTION].find_one({"_id": key})
 
 
+def record_account_choice(db: Database, login: str, persons: list[str], chosen: str,
+                          actor: str = "unknown", note: str = "", *, dispute_token: str = "") -> dict:
+    """Say which of the authors asked about an account it belongs to.
+
+    Like `record_choice`: several authors fit and at most one is right. "None
+    of them" is a plain "different" on the same question, see `record_verdict`.
+
+    Raises:
+        ReviewError: The chosen author is not one of the ones asked about.
+    """
+    if chosen not in persons:
+        raise ReviewError("that author is not one of the ones asked about")
+    members = [login, *persons]
+    key = question_id(GITHUB, members)
+    moment = _now()
+    _write_answer(
+        db, key,
+        # The login is kept on the document: the members alone do not say which one it is.
+        {"$set": {"verdict": SAME, "chosen": chosen, "login": login,
+                  "actor": actor, "note": note, "decided_at": moment},
+         "$unset": {"skipped_at": "", "skipped_by": "",
+                    "auto_resolved_at": "", "auto_resolution": ""},
+         "$setOnInsert": {"kind": GITHUB, "members": sorted(set(members)),
+                          "evidence": {}, "seen_at": moment, "source": STAGE}},
+        dispute_token=dispute_token, chosen=chosen)
+    logger.info("review: %s belongs to %s, said %s", login, chosen, actor)
+    return db[COLLECTION].find_one({"_id": key})
+
+
 def staff_choices(db: Database, aliases: dict[str, str] | None = None) -> dict[str, str]:
     """The catalog record each person was said to be, where somebody said.
 
@@ -525,12 +802,16 @@ def staff_choices(db: Database, aliases: dict[str, str] | None = None) -> dict[s
 
 def github_decisions(db: Database, aliases: dict[str, str] | None = None
                      ) -> dict[frozenset[str], str]:
-    """Answers about accounts, keyed by the login and person they are about.
+    """Answers about accounts, keyed by the login and the persons they are about.
 
     Read off `members`, not off the evidence. An answer can be given before
     the question exists (from the CLI, or about an account this run has not
     reached yet), and such a document carries no evidence at all, so keying
     on it would lose the answer exactly when it mattered.
+
+    The caller knows which member is the account, so the members need no
+    order. A "different" about several authors refuses each of them; a choice
+    is a "yes" to the author chosen and a "no" to the others it was chosen over.
 
     Args:
         aliases: Merged-away id to the id that survived, as for `decisions`.
@@ -539,12 +820,90 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
             not found, and the matcher goes on to link an account a person
             had refused.
 
-    The caller knows which half is the account, so the pair needs no order.
+    Returns:
+        Members to verdict, oldest answer first: where two answers cover one
+        pair, a caller applying them in order keeps the later one.
     """
+    return {members: verdict for members, (verdict, _question) in _github_answers(db, aliases or {}).items()}
+
+
+def _github_answers(db: Database, aliases: dict[str, str]) -> dict[frozenset[str], tuple[str, dict]]:
+    """Keep the source question beside each answer, in application order."""
+    found: dict[frozenset[str], tuple[str, dict]] = {}
+    for row in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": True}}
+                                   ).sort("decided_at", 1):
+        answers = [(row["members"], row["verdict"])]
+        if row["verdict"] == SAME and row.get("chosen"):
+            # The "yes" last: an author folded into the chosen one is the chosen one.
+            answers = [*(([row["login"], member], DIFFERENT) for member in row["members"]
+                         if member not in (row["login"], row["chosen"])),
+                       ([row["login"], row["chosen"]], SAME)]
+        for members, verdict in answers:
+            key = frozenset(aliases.get(member, member) for member in members)
+            # Popped first, so a repeated key moves to the place of its later answer.
+            found.pop(key, None)
+            found[key] = verdict, row
+    return found
+
+
+def version_pair_filter(scope: tuple[set[str], set[str]]) -> dict:
+    return {"$and": [{"members": {"$in": sorted(ids)}} for ids in scope]}
+
+
+def version_answers(db: Database, aliases: dict[str, str] | None = None,
+                    scope: tuple[set[str], set[str]] | None = None) -> dict[frozenset[str], dict]:
+    """Resolve review rows to the active pair without rewriting their original IDs."""
     aliases = aliases or {}
-    return {frozenset(aliases.get(member, member) for member in row["members"]): row["verdict"]
-            for row in db[COLLECTION].find({"kind": GITHUB,
-                                            "verdict": {"$exists": True}})}
+    query = {"kind": PUB_VERSION, "verdict": {"$exists": True}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    found: dict[frozenset[str], dict] = {}
+    ranks: dict[frozenset[str], tuple] = {}
+    for row in db[COLLECTION].find(query):
+        original = frozenset(row["members"])
+        members = frozenset(aliases.get(member, member) for member in original)
+        if len(members) != 2:
+            continue
+        decided_at = row.get("decided_at")
+        if decided_at is None:
+            decided_at = datetime.min.replace(tzinfo=UTC)
+        elif decided_at.tzinfo is None:
+            decided_at = decided_at.replace(tzinfo=UTC)
+        rank = (decided_at, original == members, row["_id"])
+        if members not in ranks or rank > ranks[members]:
+            ranks[members] = rank
+            found[members] = row
+    return found
+
+
+def version_decisions(db: Database, aliases: dict[str, str] | None = None) -> dict[frozenset[str], str]:
+    return {pair: row["verdict"] for pair, row in version_answers(db, aliases).items()}
+
+
+def retire_versions(db: Database, asked: list[dict], *,
+                    scope: tuple[set[str], set[str]] | None = None) -> int:
+    """Drop open version questions the rules no longer ask.
+
+    Unlike a person pair, a version question is about an edge: once the
+    rules stop linking the pair (the evidence moved, or the LLM routed it out
+    of the mergeable buckets) there is nothing left for an answer to
+    confirm. Answered and skipped questions stay, so a decision is never lost.
+
+    Args:
+        asked: The rows this run held, as given to `record_held`.
+
+    Returns:
+        How many questions were dropped.
+    """
+    keep = [question_id(PUB_VERSION, members_of(row)) for row in asked]
+    query = {"kind": PUB_VERSION, "_id": {"$nin": keep},
+             "verdict": {"$exists": False}, "skipped_at": {"$exists": False}}
+    if scope is not None:
+        query.update(version_pair_filter(scope))
+    result = db[COLLECTION].delete_many(query)
+    if result.deleted_count:
+        logger.info("review: %d version question(s) no longer asked", result.deleted_count)
+    return result.deleted_count
 
 
 def decisions(db: Database, aliases: dict[str, str] | None = None,
@@ -567,15 +926,26 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
         Members to verdict. Members are a frozenset, so the caller does not
         have to sort before looking one up.
     """
-    aliases = aliases or {}
-    found: dict[frozenset[str], str] = {}
-    for row in db[COLLECTION].find({"kind": {"$in": list(kinds)},
-                                    "verdict": {"$exists": True}}):
+    return {members: verdict for members, (verdict, _question) in
+            _person_answers(db, aliases or {}, kinds).items()}
+
+
+def _person_answers(db: Database, aliases: dict[str, str],
+                     kinds: tuple[str, ...]) -> dict[frozenset[str], tuple[str, dict]]:
+    found: dict[frozenset[str], tuple[str, dict]] = {}
+    for row in db[COLLECTION].find({"kind": {"$in": [kind for kind in kinds if kind != ALIAS]},
+                                    "verdict": {"$exists": True}}).sort("decided_at", 1):
         members = frozenset(aliases.get(member, member) for member in row["members"])
         if len(members) < 2:
             # Both sides are the same person by now: the question is moot.
             continue
-        found[members] = row["verdict"]
+        verdict = row["verdict"]
+        # Distinct historical questions can collapse onto one pair after a
+        # third record is merged. A direct "different" answer must keep
+        # vetoing that pair instead of depending on Mongo iteration order.
+        previous = found.get(members)
+        if previous is None or verdict == DIFFERENT or previous[0] != DIFFERENT:
+            found[members] = verdict, row
     return found
 
 
@@ -592,7 +962,7 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     """
     query: dict = {}
     if pressing:
-        query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF]}},
+        query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF, ALIAS]}},
                         {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
     if answered is not None:
         query["verdict"] = {"$exists": answered}

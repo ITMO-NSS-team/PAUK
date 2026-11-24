@@ -23,6 +23,7 @@ from pymongo.database import Database
 
 from pauk.graph.person_resolution import (
     FIRST_STAGE_SYSTEM_PROMPT,
+    MODEL_FEATURES,
     SECOND_STAGE_SYSTEM_PROMPT,
     ModelVerdict,
     PairEvidence,
@@ -31,6 +32,7 @@ from pauk.graph.person_resolution import (
     parse_first_stage_response,
     parse_second_stage_response,
 )
+from pauk.graph.person_resolution_model import load_logistic_model
 from pauk.graph.person_resolution_single import (
     BATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -111,10 +113,21 @@ def _batch_request(request: _Request) -> _Request:
 class ResolutionModels:
     """Runs full-context person-resolution requests with bounded concurrency and a Mongo cache."""
 
-    def __init__(self, config: Settings, db: Database, group: str) -> None:
+    def __init__(
+        self,
+        config: Settings,
+        db: Database,
+        group: str,
+        *,
+        cache_only: bool = False,
+    ) -> None:
         self.config = config
         self.db = db
         self.group = group
+        self.cache_only = cache_only
+        self.logreg_model = load_logistic_model(
+            config.person_resolution_logreg_model_path, expected_features=MODEL_FEATURES
+        )
         self.workers = max(1, config.person_resolution_concurrency)
         self.batch_size = max(1, config.person_resolution_batch_size)
         self._local = threading.local()
@@ -128,7 +141,8 @@ class ResolutionModels:
         return self._run(
             [
                 _Request(
-                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT, full_payload(context, evidence), 260, parse_response
+                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT,
+                    full_payload(context, evidence, self.logreg_model), 260, parse_response
                 )
                 for context, evidence in items
             ],
@@ -141,7 +155,7 @@ class ResolutionModels:
                 pair_id=pair_id,
                 stage=FIRST_STAGE,
                 system_prompt=FIRST_STAGE_SYSTEM_PROMPT,
-                payload=first_stage_payload(pair_id, evidence),
+                payload=first_stage_payload(pair_id, evidence, self.logreg_model),
                 max_tokens=160,
                 parser=parse_first_stage_response,
             )
@@ -360,6 +374,11 @@ class ResolutionModels:
     def _run(self, requests: list[_Request], batch_size: int = 1) -> dict[int, Verdict | None]:
         if not requests:
             return {}
+        if self.cache_only:
+            return {
+                request.pair_id: cached.verdict if (cached := self._hit(request, batch_size)) else None
+                for request in requests
+            }
         results: list[_Result] = []
         if self._unavailable:
             results = [self._hit(request, batch_size) or self._invoke(request) for request in requests]

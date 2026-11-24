@@ -1,9 +1,10 @@
-"""Integration tests for the delete paths against a real Neo4j instance.
+"""Integration tests for manual mutations against a real Neo4j instance.
 
 Deletion is the one part of the manual-edit layer a fake client cannot
 vouch for: `delete_nodes_batch` builds a `collect` + `FOREACH` query whose
 validity only a real server can confirm, and the "refuse to delete a
 connected node" guard is enforced by Neo4j itself, not by our Python.
+Version checks also need real concurrent transactions to verify locking.
 
 Skipped unless testcontainers is installed and Docker is reachable:
     uv run --with pytest --with mongomock --with "testcontainers[neo4j]" \
@@ -12,10 +13,13 @@ Skipped unless testcontainers is installed and Docker is reachable:
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from itertools import permutations, product
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
 import mongomock
@@ -23,12 +27,22 @@ import mongomock
 from pauk.graph.audit import AuditedNeo4jClient
 from pauk.graph.client import Neo4jClient
 from pauk.graph.jsonl_loader import load_prepared_rows
-from pauk.graph.mutations import merge_nodes
+from pauk.graph.load import ENTITY_FILES
+from pauk.graph.mutations import (
+    NotFound,
+    VersionConflict,
+    delete_node,
+    merge_nodes,
+    restore_node,
+    snapshot_fields,
+    update_node,
+)
 from pauk.graph.unmerge import split_person
-from pauk.models import Person
+from pauk.models import GitHubProfile, Person
 from pauk.pipeline.stages.dedup import DedupStage
+from pauk.pipeline.stages.github_match import GitHubMatchStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, review
 
 try:
     from testcontainers.community.neo4j import Neo4jContainer
@@ -51,8 +65,8 @@ def setUpModule():  # noqa: N802 - unittest's required hook name
             f"testcontainers not installed ({_IMPORT_ERROR}); "
             "run with --with 'testcontainers[neo4j]' to include these tests"
         )
-    _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
     try:
+        _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
         _container.start()
     except Exception as exc:  # Docker not running, no permission, pull failure
         raise unittest.SkipTest(f"could not start a Neo4j container: {exc}") from exc
@@ -75,6 +89,20 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
         _client.upsert_nodes_batch("Person", [("A1", {"name_en": "Ivan"}), ("A2", {})])
         self.assertEqual(_client.delete_nodes_batch("Person", ["A1", "A2"]), 2)
         self.assertIsNone(_client.fetch_node_properties("Person", "A1"))
+
+    def test_corresponding_corrections_only_preserve_aggregated_edges(self):
+        for merged_label in (None, "Person", "Publication"):
+            with self.subTest(merged_label=merged_label):
+                self.setUp()
+                _client.upsert_nodes_batch("Person", [("A1", {"merged_ids": ["A2"] if merged_label == "Person" else []})])
+                _client.upsert_nodes_batch("Publication", [("W1", {"merged_ids": ["W2"] if merged_label == "Publication" else []})])
+                for flag in (True, False):
+                    _client.upsert_relationships_batch(
+                        "Person", "Publication", "AUTHORED", [("A1", "W1", {"is_corresponding": flag})]
+                    )
+                with _client.driver.session() as session:
+                    flag = session.run("MATCH ()-[r:AUTHORED]->() RETURN r.is_corresponding AS flag").single()["flag"]
+                self.assertEqual(flag, merged_label is not None)
 
     def test_a_connected_node_survives_without_detach(self):
         # The guard that stops a careless delete from tearing edges out of
@@ -101,6 +129,143 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_reading_a_node_that_is_not_there(self):
         self.assertIsNone(_client.fetch_node_properties("Person", "nobody"))
+
+    def test_publication_restore_preserves_read_only_provenance(self):
+        expected = {
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "identifiers": '[{"scheme":"manual","value":"work-1"}]',
+            "source_records": '[{"key":"manual:work-1"}]',
+            "sources": ["manual"],
+            "source_keys": ["manual:work-1"],
+            "openalex_url": "",
+            "versions": "[]",
+        }
+        _client.upsert_nodes_batch("Publication", [("pub_1", expected)])
+        snapshot = snapshot_fields(
+            "Publication",
+            _client.fetch_node_properties("Publication", "pub_1"),
+        )
+
+        self.assertEqual(delete_node(_client, "Publication", "pub_1"), 1)
+        restored = restore_node(_client, "Publication", "pub_1", snapshot)
+
+        self.assertEqual({name: restored[name] for name in expected}, expected)
+
+
+class GitHubMatchPublicationIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n").consume()
+
+    def test_rechoosing_an_account_removes_properties_from_the_real_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(data_dir=Path(directory))
+            db = mongomock.MongoClient()["pauk_test"]
+            prepared = PreparedStore(db, "sample")
+            prepared.write_models("persons", [Person(id=pid, is_itmo=True, name_raw="Ivan Petrov")
+                                               for pid in ("A1", "A2")])
+            prepared.write_models("github_profiles", [GitHubProfile(
+                id="github_coder42", login="coder42", type="user", name="Ivan Petrov",
+                emails=["account@lab.test"],
+            )])
+            stage = GitHubMatchStage(prepared, RawStore(db, "sample"), config)
+            stage.run()
+            for chosen in ("A1", "A2"):
+                review.record_account_choice(db, "coder42", ["A1", "A2"], chosen)
+                stage.run()
+                load_prepared_rows(_client, {filename: list(prepared.read_rows(entity))
+                                             for entity, filename in ENTITY_FILES.items()})
+                self.assertEqual(_client.fetch_node_properties("Person", chosen)["github"], "coder42")
+
+            previous = _client.fetch_node_properties("Person", "A1")
+            self.assertNotIn("github", previous)
+            self.assertNotIn("email", previous)
+            self.assertNotIn("github_match", previous)
+            self.assertEqual(_client.fetch_node_properties("Person", "A2")["email"], "account@lab.test")
+
+    def test_a_partial_person_row_keeps_unrelated_graph_properties(self):
+        _client.upsert_person_nodes_batch([("A1", {"github": "known-login", "email": "source@lab.test"})])
+
+        load_prepared_rows(_client, {"persons.jsonl": [{"id": "A1", "is_itmo": True,
+                                                      "github": None, "email": None}]})
+
+        person = _client.fetch_node_properties("Person", "A1")
+        self.assertEqual(person["github"], "known-login")
+        self.assertEqual(person["email"], "source@lab.test")
+
+
+class ConcurrentNodeUpdatesIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n").consume()
+        _client.upsert_nodes_batch("Person", [("A1", {"name_ru": "Иван"})])
+
+    def test_only_one_save_can_use_the_same_version(self):
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+        barrier = Barrier(2, timeout=10)
+
+        class RacingClient:
+            def __getattr__(self, name):
+                return getattr(_client, name)
+
+            def fetch_node_properties(self, label, node_id):
+                before = _client.fetch_node_properties(label, node_id)
+                barrier.wait()
+                return before
+
+            def update_node_properties(self, *args):
+                barrier.wait()
+                return _client.update_node_properties(*args)
+
+        def save(value):
+            try:
+                update_node(RacingClient(), "Person", "A1", {"name_ru": value}, seen)
+                return True
+            except VersionConflict:
+                return False
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(save, ["Пётр", "Иоанн"]))
+
+        self.assertEqual(sorted(results), [False, True])
+        current = _client.fetch_node_properties("Person", "A1")
+        self.assertEqual(current["name_ru"], ["Пётр", "Иоанн"][results.index(True)])
+        self.assertGreater(current["updated_at"], seen)
+        self.assertNotIn("__pauk_edit_lock", current)
+
+    def test_a_deleted_node_is_not_recreated_by_an_update(self):
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+
+        class DeletedClient:
+            def __getattr__(self, name):
+                return getattr(_client, name)
+
+            def fetch_node_properties(self, label, node_id):
+                before = _client.fetch_node_properties(label, node_id)
+                _client.delete_nodes_batch(label, [node_id])
+                return before
+
+            def update_node_properties(self, label, node_id, *args):
+                _client.delete_nodes_batch(label, [node_id])
+                return _client.update_node_properties(label, node_id, *args)
+
+        with self.assertRaises(NotFound):
+            update_node(DeletedClient(), "Person", "A1", {"name_ru": "Пётр"}, seen)
+
+        self.assertIsNone(_client.fetch_node_properties("Person", "A1"))
+
+    def test_a_version_always_advances_even_when_the_clock_is_behind_it(self):
+        with _client.driver.session() as session:
+            session.run("MATCH (n:Person {id: 'A1'}) "
+                        "SET n.updated_at = datetime('2100-01-01T00:00:00Z')").consume()
+        seen = _client.fetch_node_properties("Person", "A1")["updated_at"]
+
+        updated = update_node(_client, "Person", "A1", {"name_ru": "Пётр"}, seen)
+
+        self.assertGreater(updated["updated_at"], seen)
+        with self.assertRaises(VersionConflict):
+            update_node(_client, "Person", "A1", {"name_ru": "Иоанн"}, seen)
 
 
 class MergePreservationAgainstRealGraphTest(unittest.TestCase):
@@ -160,13 +325,11 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
                     self.assertTrue(self.corresponding())
 
     def test_graph_person_dedup_preserves_full_properties(self):
-        import json
-
         from pauk.graph.dedup import dedup_graph_persons
 
         for index in (1, 2, 3):
             _client.upsert_person_nodes_batch([(f"A{index}", {
-                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0001",
+                "name_raw": "Ivan Petrov", "is_itmo": True, "orcid": "0000-0002-1825-0097",
                 "emails": [f"a{index}@example.org"], "other_names": [f"Alias {index}"],
                 "affiliations": json.dumps([{"name": f"Institute {index}", "source": "openalex"}]),
                 "biography": f"Profile {index}",
@@ -178,11 +341,62 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(len(json.loads(survivor["affiliations"])), 3)
         self.assertEqual(survivor["biography"], "Profile 1")
 
+    def test_publication_fold_preserves_source_identity_and_provenance(self):
+        _client.upsert_nodes_batch("Publication", [
+            ("pub_1", {
+                "sources": ["catalog"],
+                "source_keys": ["catalog:P1"],
+                "identifiers": json.dumps([
+                    {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+                ]),
+                "source_records": json.dumps([
+                    {"source": "catalog", "source_id": "P1", "key": "catalog:P1"},
+                ]),
+            }),
+            ("pub_2", {
+                "sources": ["archive"],
+                "source_keys": ["archive:A1"],
+                "identifiers": json.dumps([
+                    {"scheme": "archive", "value": "A1", "normalized_key": "archive:A1"},
+                ]),
+                "source_records": json.dumps([
+                    {"source": "archive", "source_id": "A1", "key": "archive:A1"},
+                ]),
+            }),
+        ])
+        self.assertEqual(_client.merge_publication_nodes_batch([("pub_2", "pub_1")]), 1)
+        survivor = _client.fetch_node_properties("Publication", "pub_1")
+        self.assertEqual(survivor["sources"], ["catalog", "archive"])
+        self.assertEqual(survivor["source_keys"], ["catalog:P1", "archive:A1"])
+        self.assertEqual(
+            {item["key"] for item in json.loads(survivor["source_records"])},
+            {"catalog:P1", "archive:A1"},
+        )
+
+    def test_source_neutral_publication_loads_without_openalex_fields(self):
+        load_prepared_rows(_client, {"publications.jsonl": [{
+            "id": "pub_1",
+            "title": "Workshop paper",
+            "schema_version": 2,
+            "sources": ["catalog"],
+            "source_keys": ["catalog:P1"],
+            "identifiers": [
+                {"scheme": "catalog", "value": "P1", "normalized_key": "catalog:P1"},
+            ],
+            "source_records": [
+                {"key": "catalog:P1", "source": "catalog", "source_id": "P1"},
+            ],
+        }]})
+        publication = _client.fetch_node_properties("Publication", "pub_1")
+        self.assertNotIn("openalex_url", publication)
+        self.assertEqual(publication["source_keys"], ["catalog:P1"])
+        self.assertEqual(json.loads(publication["source_records"])[0]["key"], "catalog:P1")
+
     def test_partial_republish_keeps_graph_merge_evidence(self):
         from pauk.graph.dedup import dedup_graph_persons
 
         rows = [Person(
-            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="same-orcid",
+            id=f"A{i}", is_itmo=True, name_raw="Ivan Petrov", orcid="0000-0002-1825-0097",
             emails=[f"p{i}@example.org"], other_names=[f"Alias {i}"],
             affiliations=[{"name": f"University {i}", "source": "openalex"}],
         ).model_dump(mode="json") for i in (1, 2)]
@@ -210,7 +424,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
                 fold = _client.merge_person_nodes_batch if label == "Person" else _client.merge_publication_nodes_batch
                 self.assertEqual(fold(list(order)), 2)
                 survivor = _client.fetch_node_properties(label, "X3")
-                self.assertEqual(set(survivor["merged_ids"]), {"old1", "old2"})
+                self.assertEqual(set(survivor["merged_ids"]), {"old1", "old2", "X1", "X2"})
                 self.assertEqual(survivor["detail"], "value2")
                 with _client.driver.session() as session:
                     flags = session.run("MATCH ()-[r:AUTHORED]->() RETURN r.is_corresponding AS flag").value()
@@ -326,7 +540,7 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         db = mongomock.MongoClient().dedup_test
         prepared = PreparedStore(db, "test")
         people = [
-            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="same",
+            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="0000-0002-1825-0097",
                    emails=[f"person{i}@example.org"],
                    authored=[{"publication_id": "W1", "is_corresponding": i == 2}])
             for i in (1, 2)

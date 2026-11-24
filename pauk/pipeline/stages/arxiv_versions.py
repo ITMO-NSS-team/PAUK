@@ -36,6 +36,7 @@ class ArxivPreprint:
     """A prepared record with intrinsic arXiv identity and a possibly reusable cache."""
 
     publication_id: str
+    cache_key: str
     base: str
     revision: str
     cache_compatible: bool
@@ -81,14 +82,22 @@ def native_arxiv_pdf_url(publication: Publication) -> str | None:
     return f"https://arxiv.org/pdf/{''.join(identity)}" if identity else None
 
 
-def _preprint_identity(publication: Publication) -> ArxivPreprint | None:
+def _extract_preprint_candidate(
+    *,
+    publication_id: str,
+    cache_key: str,
+    record_type: str | None,
+    doi: str | None,
+    pdf_urls: Iterable[str],
+    has_supplemental: bool,
+    block_legacy_merged: bool,
+) -> ArxivPreprint | None:
     """Use intrinsic preprint metadata; aggregated or mixed PDFs cannot establish cache provenance."""
-    doi_id = arxiv_doi_identity(publication.doi or "")
-    supplemental = {source.url for source in publication.arxiv_sources}
-    pdf_ids = {arxiv_pdf_identity(url) for url in publication.pdf_urls if url not in supplemental}
+    doi_id = arxiv_doi_identity(doi or "")
+    pdf_ids = {arxiv_pdf_identity(url) for url in pdf_urls}
     recognized = {identity for identity in pdf_ids if identity is not None}
-    preprint_only = publication.type == "preprint" or (publication.type is None and not publication.doi)
-    if not doi_id and (not preprint_only or publication.arxiv_sources or not recognized):
+    preprint_only = record_type == "preprint" or (record_type is None and not doi)
+    if not doi_id and (not preprint_only or has_supplemental or not recognized):
         return None
     bases = {base for base, _ in recognized}
     if not doi_id and len(bases) != 1:
@@ -97,17 +106,51 @@ def _preprint_identity(publication: Publication) -> ArxivPreprint | None:
     revisions = {revision for pdf_base, revision in recognized if pdf_base == base}
     revision = doi_revision or (next(iter(revisions)) if len(revisions) == 1 else "")
     cache_compatible = (
-        not publication.arxiv_sources and not publication.merged_ids and not publication.versions
+        not has_supplemental and not block_legacy_merged
         and (not pdf_ids or pdf_ids == {(base, revision)})
     )
-    return ArxivPreprint(publication.id, base, revision, cache_compatible)
+    return ArxivPreprint(publication_id, cache_key, base, revision, cache_compatible)
+
+
+def _preprint_identities(publication: Publication) -> list[ArxivPreprint]:
+    """Identify per-record (or legacy publication-level) arXiv preprint caches."""
+    supplemental = {source.url for source in publication.arxiv_sources}
+    if publication.source_records:
+        single_record = len(publication.source_records) == 1
+        candidates: list[ArxivPreprint] = []
+        for record in publication.source_records:
+            record_type = record.type if (not single_record or record.type is not None) else publication.type
+            record_doi = record.doi if (not single_record or record.doi is not None) else publication.doi
+            raw_urls = record.pdf_urls if (not single_record or record.pdf_urls) else publication.pdf_urls
+            candidate = _extract_preprint_candidate(
+                publication_id=publication.id,
+                cache_key=record.key,
+                record_type=record_type,
+                doi=record_doi,
+                pdf_urls=(url for url in raw_urls if url not in supplemental),
+                has_supplemental=bool(supplemental),
+                block_legacy_merged=False,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
+    legacy = _extract_preprint_candidate(
+        publication_id=publication.id,
+        cache_key=publication.id,
+        record_type=publication.type,
+        doi=publication.doi,
+        pdf_urls=(url for url in publication.pdf_urls if url not in supplemental),
+        has_supplemental=bool(supplemental),
+        block_legacy_merged=bool(publication.merged_ids),
+    )
+    return [legacy] if legacy is not None else []
 
 
 def arxiv_preprints(publications: Iterable[Publication]) -> dict[str, list[ArxivPreprint]]:
     """Index prepared preprints by arXiv work ID, keeping duplicates visible."""
     indexed: dict[str, list[ArxivPreprint]] = defaultdict(list)
     for publication in publications:
-        if preprint := _preprint_identity(publication):
+        for preprint in _preprint_identities(publication):
             indexed[preprint.base].append(preprint)
     return indexed
 
@@ -162,8 +205,18 @@ class ArxivVersionsStage(EnrichmentStage):
         for publication in publications:
             if not self.selected("publications", publication.id) or (publication.full_text or "").strip():
                 continue
+            updated = False
             if url := native_arxiv_pdf_url(publication):
                 publication.pdf_urls.append(url)
+                updated = True
+            for record in publication.source_records:
+                if not record.pdf_urls and (identity := arxiv_doi_identity(record.doi or "")):
+                    record_url = f"https://arxiv.org/pdf/{''.join(identity)}"
+                    record.pdf_urls.append(record_url)
+                    if record_url not in publication.pdf_urls:
+                        publication.pdf_urls.append(record_url)
+                    updated = True
+            if updated:
                 if publication.id not in self.with_links:
                     publication.processing.pop("code_links", None)
                 changed.append(publication)

@@ -15,7 +15,7 @@ flowchart TB
 
         subgraph RAWSTORE["RawStore: collection raw, append-only"]
             direction TB
-            RDOC["document:<br/>{ source, group, fetched_at, request, payload }"]
+            RDOC["v2 document:<br/>{ provider, record_type, record_key, schema_version,<br/>source, group, fetched_at, request, payload }"]
             RAPP["append(source, payload, request)<br/>-> insert_one, always a new document"]
             RREAD["read(source)<br/>-> find({source, group: self.group})<br/>.sort(fetched_at, 1)"]
             RCROSS["cross-group scan (e.g. collect_raw_orcids)<br/>find({source}) with no group filter,<br/>the latest fetched_at wins"]
@@ -23,6 +23,8 @@ flowchart TB
             RREAD -.->|"find, own group"| RDOC
             RCROSS -.->|"find, all groups"| RDOC
         end
+
+        IDS[("identity_keys (global)<br/>_id = entity:scheme:normalized-value<br/>entity_id = immutable canonical owner")]
 
         subgraph PREPSTORE["PreparedStore: 7 collections, global entities"]
             direction TB
@@ -69,8 +71,8 @@ for the first time.
 
 ## Why a write is not a plain upsert
 
-By contract each stage reads the group's **whole** working set for an entity,
-mutates it and writes the **whole** set back. Steps 2 and 3 enforce that: if a
+`write_models` replaces the group's **whole** working set for an entity.
+Callers using that path must supply the complete set. Steps 2 and 3 enforce it: if a
 row was in the group's working set but is not reconfirmed this time (folded by
 the dedup stage, renamed by re-normalization), the group's claim on it is
 removed, and a document left with no group is deleted, so it does not linger in

@@ -36,9 +36,10 @@ Persons
     which compares persons across published groups.
 
 Publications
-    Rows sharing a DOI or a title are one publication (preprint and version of
-    record, per-version deposits, duplicate OpenAlex records). Merging is
-    lossless: every record folds into `versions`.
+    Rows sharing a DOI are one publication. The historical title rule remains
+    only for schema-v1 rows; schema-v2 title/author matches wait for a review
+    answer. Merging is lossless: every record folds into `source_records` and
+    OpenAlex records are dual-written to `versions` during compatibility.
 
 Repositories
     A renamed or transferred GitHub repository keeps its numeric id, so rows
@@ -62,6 +63,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 from itertools import combinations
 
+from pauk.aliases import flatten_merges
 from pauk.models import (
     ClassificationStatus,
     CodeLink,
@@ -73,7 +75,11 @@ from pauk.models import (
     Repository,
     VersionAuthor,
 )
+from pauk.models.identity import normalize_external_value
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.publication import ArxivSource
+from pauk.pipeline.github_matches import apply_matches, retract_matches
+from pauk.pipeline.membership import apply_membership, coalesce_authorships
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
     _abstract,
@@ -81,8 +87,10 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
+from pauk.pipeline.publication_components import publication_merge_components
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.identity_refs import repoint_person_references
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import deduplicate_repo_urls, normalize_repo_url
@@ -102,10 +110,6 @@ CANDIDATES_FILENAME = "dedup_candidates.jsonl"
 # normalize.py stores works without a title under this placeholder; it says
 # nothing about the work, so it must never be treated as a shared title.
 PLACEHOLDER_TITLES = {"", "untitled"}
-
-DOI_PREFIXES = ("https://doi.org/", "http://doi.org/",
-                "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
-
 
 def _publication_rank_key(publication_type: str | None, publication_date_ordinal: int,
                           author_count: int, publication_id: str) -> tuple[int, int, int, str]:
@@ -136,10 +140,39 @@ def _norm_name(name: str | None) -> str:
 
 def _norm_doi(doi: str | None) -> str | None:
     """Bare lowercase DOI, so a resolver prefix never splits one work."""
-    value = _norm(doi)
-    for prefix in DOI_PREFIXES:
-        value = value.removeprefix(prefix)
-    return value.rstrip("/") or None
+    return normalize_external_value("doi", doi or "") or None
+
+
+def publication_buckets(rows: Iterable, doi_of: Callable, title_of: Callable) -> list[tuple[str, list]]:
+    """Records of one work, as (rule, records) buckets to fold together.
+
+    A shared DOI is one work. A shared title is one only where it cannot
+    join two DOIs: two records with different DOIs and one title are a
+    preprint and its article, an original and its translation, two talks.
+    Those stay apart, and `pauk versions link` relates them. A record with
+    no DOI still folds into the one DOI its title carries; where the title
+    carries several, it folds only with the other records that have none,
+    since nothing says which of the DOIs it belongs to.
+
+    Grouping these buckets transitively can never put two DOIs together:
+    a record has one DOI and one title, and no title bucket holds two DOIs.
+
+    Args:
+        doi_of, title_of: The normalized key of a record, or None.
+    """
+    by_doi: dict[str, list] = defaultdict(list)
+    by_title: dict[str, list] = defaultdict(list)
+    for row in rows:
+        if doi := doi_of(row):
+            by_doi[doi].append(row)
+        if title := title_of(row):
+            by_title[title].append(row)
+    buckets = [("doi", bucket) for bucket in by_doi.values()]
+    for bucket in by_title.values():
+        if len({doi_of(row) for row in bucket} - {None}) > 1:
+            bucket = [row for row in bucket if not doi_of(row)]
+        buckets.append(("title", bucket))
+    return buckets
 
 
 def _variant_set(person: Person) -> set[str]:
@@ -246,6 +279,9 @@ def plan_person_merges(
         status "merged" plus their rule(s); held-back pairs and groups carry
         status "held" plus the reasons.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _orcid_relation
+
+    trusted_orcid = {identifier: _normalize_orcid(value) or None for identifier, value in trusted_orcid.items()}
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
@@ -322,10 +358,16 @@ def plan_person_merges(
     malformed_pairs: set[frozenset[str]] = set()
 
     def hold_multi_person(first: Person, second: Person) -> bool:
-        from pauk.graph.person_resolution import is_multi_person_name
+        from pauk.graph.person_resolution import _normalize_orcid, is_multi_person_name
 
         if not (is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")):
             return False
+        first_identity = _normalize_orcid(trusted_orcid.get(first.id) or first.orcid)
+        second_identity = _normalize_orcid(trusted_orcid.get(second.id) or second.orcid)
+        if _orcid_relation(first_identity, second_identity) == "conflict":
+            return True
+        if staff_ids.get(first.id) and staff_ids.get(second.id) and staff_ids[first.id] != staff_ids[second.id]:
+            return True
         members = frozenset((first.id, second.id))
         if members not in malformed_pairs:
             malformed_pairs.add(members)
@@ -359,21 +401,27 @@ def plan_person_merges(
             continue
         first_orcid = trusted_orcid.get(first.id)
         second_orcid = trusted_orcid.get(second.id)
+        relation = _orcid_relation(first_orcid or first.orcid, second_orcid or second.orcid)
+        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
+        if first_staff and second_staff and first_staff != second_staff:
+            continue
+        if relation == "unverified":
+            report.append({
+                "status": "held", "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "route": "invalid_orcid_reference",
+                "reason": "unverified ORCID reference cannot establish identity or conflict",
+            })
+            continue
         if first_orcid and second_orcid and first_orcid == second_orcid:
             plan_pair(first, second, "orcid")
             continue
         # Merging asks for the trusted ORCID, refusing takes any one on
         # record: an ORCID the crossref backfill supplied is weak evidence
         # that two persons are one, and full evidence that they are not.
-        if (first_orcid or first.orcid) and (second_orcid or second.orcid) \
-                and (first_orcid or first.orcid) != (second_orcid or second.orcid):
+        if relation == "conflict":
             # Different ORCIDs are explicit evidence of two distinct people:
             # never merge and not worth reporting.
-            continue
-        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
-        # Two official staff records are two employees, however alike the
-        # romanized names look. Like a differing ORCID, this needs no report.
-        if first_staff and second_staff and first_staff != second_staff:
             continue
         if _profiles_conflict(first, second):
             continue
@@ -634,6 +682,8 @@ def _partition_conflicted_component(
     Such a choice would make an arbitrary edge decide an identity and recreate
     the false-merge risk this safety check exists to prevent.
     """
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     member_set = set(members)
     adjacency: dict[str, set[str]] = {member: set() for member in members}
     for first, second in pairs:
@@ -660,7 +710,8 @@ def _partition_conflicted_component(
 
     def value_for(member: str, field: str) -> str | None:
         if field == "ORCID":
-            return trusted_orcid.get(member) or None
+            value = _normalize_orcid(trusted_orcid.get(member))
+            return value if value and not _unverified_orcid_reference(value) else None
         if field == "staff record":
             return staff_ids.get(member) or None
         value = getattr(by_id[member], field)
@@ -737,10 +788,15 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
+    from pauk.graph.person_resolution import _normalize_orcid, _unverified_orcid_reference
+
     # An empty string is an absent identity, not a second one: counting it
     # as a value splits a group on nothing, and the partitioner reads the
     # same field back as absent, so the two disagree about the same record.
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
+    orcids = {
+        orcid for member in members
+        if (orcid := _normalize_orcid(trusted_orcid.get(member))) and not _unverified_orcid_reference(orcid)
+    }
     if len(orcids) > 1:
         return "ORCID", orcids
     staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
@@ -786,7 +842,7 @@ def folded_ids(people: Iterable[Person]) -> dict[str, str]:
     an id nothing carries any more. Every reader of those answers needs this,
     which is why it lives here rather than on one stage.
     """
-    return {folded: person.id for person in people for folded in person.merged_ids}
+    return dict(flatten_merges([(folded, person.id) for person in people for folded in person.merged_ids], label="Person"))
 
 
 def staff_identities(catalog: RussianNamesCatalog | None,
@@ -954,6 +1010,26 @@ def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationV
     return list(merged.values())
 
 
+_ARXIV_SOURCE_STATUS_RANK = {
+    ProcessingStatus.NOT_STARTED: 0,
+    ProcessingStatus.FAILED: 1,
+    ProcessingStatus.COMPLETED_EMPTY: 2,
+    ProcessingStatus.COMPLETED: 3,
+}
+
+
+def _arxiv_source_rank(source: ArxivSource) -> tuple[int, int, float]:
+    """Order arXiv source states so failed/completed attempts are never overwritten by unstarted ones."""
+    state = source.state
+    finished = state.finished_at
+    if finished is None:
+        timestamp = float("-inf")
+    else:
+        normalized = finished.replace(tzinfo=UTC) if finished.tzinfo is None else finished.astimezone(UTC)
+        timestamp = normalized.timestamp()
+    return _ARXIV_SOURCE_STATUS_RANK[state.status], state.attempts, timestamp
+
+
 def _merge_publication(base: Publication, extra: Publication,
                        extra_authors: Iterable[VersionAuthor] = ()) -> Publication:
     """Fold one publication record into the record that survives.
@@ -973,9 +1049,21 @@ def _merge_publication(base: Publication, extra: Publication,
     arxiv_sources = {source.url: source for source in base.arxiv_sources}
     for source in extra.arxiv_sources:
         current = arxiv_sources.get(source.url)
-        if current is None or current.state.status in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+        if current is None or _arxiv_source_rank(source) > _arxiv_source_rank(current):
             arxiv_sources[source.url] = source
     base.arxiv_sources = list(arxiv_sources.values())
+    if base.full_text is None:
+        base.full_text = extra.full_text
+    base.source_records = list({
+        record.key: record for record in [*base.source_records, *extra.source_records]
+    }.values())
+    base.sources = _union(base.sources, extra.sources)
+    base.source_keys = _union(base.source_keys, extra.source_keys)
+    base.identifiers = list({
+        identifier.normalized_key: identifier
+        for identifier in [*base.identifiers, *extra.identifiers]
+    }.values())
+    base.schema_version = max(base.schema_version, extra.schema_version)
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)
@@ -1050,13 +1138,11 @@ class DedupStage(EnrichmentStage):
     def _refresh_version_ledger(self, publications: list[Publication],
                                 version_authors: dict[str, list[VersionAuthor]],
                                 known_persons: dict[str, Person]) -> int:
-        """Rebuild ledger entries from the raw payload of each record.
+        """Rebuild the compatibility ledger from source records or legacy raw.
 
-        Raw is the only per-record source that stays correct: a ledger entry
-        written after a merge would describe the merged state (the union of
-        every record's authors). Only authors that exist as persons here are
-        kept, which leaves out organizations in author slots, coauthors
-        dropped by the consortium cap, and ids person dedup folded away.
+        V2 source records are authoritative and already contain resolved PAUK
+        person ids. Raw OpenAlex payloads remain the fallback for legacy rows
+        that do not have that provenance ledger yet.
         """
         if not any(publication.versions for publication in publications):
             return 0
@@ -1070,7 +1156,29 @@ class DedupStage(EnrichmentStage):
 
         refreshed = 0
         for publication in publications:
+            source_records = {
+                record.source_id: record
+                for record in publication.source_records
+                if record.source == "openalex"
+            } if publication.schema_version >= 2 else {}
             for version in publication.versions:
+                source_record = source_records.get(version.openalex_id)
+                if source_record is not None:
+                    authors = [
+                        VersionAuthor(
+                            person_id=author.person_id,
+                            name=author.name,
+                            position=author.position,
+                        )
+                        for author in source_record.authors
+                    ]
+                    if authors != version.authors:
+                        version.authors = authors
+                        refreshed += 1
+                    if version.abstract is None and source_record.abstract is not None:
+                        version.abstract = source_record.abstract
+                        refreshed += 1
+                    continue
                 work = raw_works.get(version.openalex_id)
                 if work is None:
                     # No raw payload: keep whatever the entry already carries.
@@ -1128,22 +1236,55 @@ class DedupStage(EnrichmentStage):
                                              author.position, author.person_id))
         refreshed = self._refresh_version_ledger(publications, version_authors, known_persons)
 
-        pairs = self._pairs_by_key(publications, in_scope, (
+        buckets = publication_buckets(
+            publications,
             lambda publication: _norm_doi(publication.doi),
             lambda publication: (
-                title if (title := _norm(publication.title)) not in PLACEHOLDER_TITLES else None
+                title
+                if publication.schema_version < 2
+                and (title := _norm(publication.title)) not in PLACEHOLDER_TITLES
+                else None
             ),
-        ))
+        )
+        automatic_pairs = self._bucket_pairs([bucket for _, bucket in buckets], in_scope)
+        publication_aliases = {
+            merged_id: publication.id
+            for publication in publications
+            for merged_id in publication.merged_ids
+        }
+        publication_answers = review.decisions(
+            self.prepared.db,
+            publication_aliases,
+            kinds=(review.PUBLICATION,),
+        )
+        publication_groups, _accepted_manual, rejected_manual = publication_merge_components(
+            by_id,
+            automatic_pairs,
+            publication_answers,
+            scope=in_scope,
+        )
+        for first, second in rejected_manual:
+            logger.warning(
+                "dedup: publication merge %s/%s contradicts a 'different' answer",
+                first,
+                second,
+            )
 
         id_map: dict[str, str] = {}
-        for members in _grouped(pairs):
+        for members in publication_groups:
+            member_ids = set(members)
             ranked = sorted(
                 (by_id[member] for member in members),
-                key=lambda publication: _publication_rank_key(
-                    publication.type,
-                    (publication.publication_date or date.min).toordinal(),
-                    author_counts[publication.id],
-                    publication.id,
+                key=lambda publication: (
+                    0 if (member_ids - {publication.id}).intersection(
+                        publication.merged_ids
+                    ) else 1,
+                    *_publication_rank_key(
+                        publication.type,
+                        (publication.publication_date or date.min).toordinal(),
+                        author_counts[publication.id],
+                        publication.id,
+                    ),
                 ),
             )
             canonical, duplicates = ranked[0], ranked[1:]
@@ -1151,13 +1292,14 @@ class DedupStage(EnrichmentStage):
                 canonical.versions,
                 [_version_of(canonical, version_authors.get(canonical.id, ()))])
             for duplicate in duplicates:
-                logger.info("dedup: merging publication %s (%s) into %s (%s)",
+                logger.debug("dedup: merging publication %s (%s) into %s (%s)",
                             duplicate.id, duplicate.journal, canonical.id, canonical.journal)
                 _merge_publication(canonical, duplicate,
                                    version_authors.get(duplicate.id, ()))
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d publication(s)", len(id_map))
 
         if not id_map:
             # Ledger rebuilds still have to reach disk when nothing merged.
@@ -1167,10 +1309,18 @@ class DedupStage(EnrichmentStage):
         self.prepared.write_models(
             "publications", [row for row in publications if row.id not in id_map])
         self._repoint_publication_references(id_map)
+        for members, verdict in publication_answers.items():
+            if verdict == review.SAME and len({id_map.get(member, member) for member in members}) == 1:
+                review.mark_applied(self.prepared.db, review.PUBLICATION, sorted(members))
         return id_map
 
     def _repoint_publication_references(self, id_map: dict[str, str]) -> None:
         """Rewrite every prepared row that referenced a merged publication."""
+        for duplicate_id, canonical_id in id_map.items():
+            self.prepared.db.identity_keys.update_many(
+                {"entity": "publication", "entity_id": duplicate_id},
+                {"$set": {"entity_id": canonical_id}},
+            )
         people = list(self.prepared.read_models("persons", Person))
         for person in people:
             authored = []
@@ -1183,6 +1333,10 @@ class DedupStage(EnrichmentStage):
                 if authorship not in authored:
                     authored.append(authorship)
             person.authored = authored
+            for source in person.membership_work_sources:
+                source.publication_id = id_map.get(source.publication_id, source.publication_id)
+            coalesce_authorships(person)
+            apply_membership(person)
         self.prepared.write_models("persons", people)
 
         repositories = list(self.prepared.read_models("repositories", Repository))
@@ -1227,6 +1381,10 @@ class DedupStage(EnrichmentStage):
             self.prepared.write_models("publications", publications)
         self.prepared.write_models("repositories", repositories)
 
+    def _repoint_person_references(self, id_map: dict[str, str]) -> None:
+        """Rewrite identity and provenance references to merged people."""
+        repoint_person_references(self.prepared.db, id_map)
+
     def _dedup_repositories(self) -> dict[str, str]:
         """Fold repository rows that GitHub considers one repository."""
         repositories = list(self.prepared.read_models("repositories", Repository))
@@ -1266,12 +1424,13 @@ class DedupStage(EnrichmentStage):
             )
             canonical, duplicates = ranked[0], ranked[1:]
             for duplicate in duplicates:
-                logger.info("dedup: merging repository %s (%s) into %s (%s)",
+                logger.debug("dedup: merging repository %s (%s) into %s (%s)",
                             duplicate.id, duplicate.url, canonical.id, canonical.url)
                 _merge_repository(canonical, duplicate)
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d repository(ies)", len(id_map))
 
         if not id_map:
             return {}
@@ -1279,9 +1438,19 @@ class DedupStage(EnrichmentStage):
             "repositories", [row for row in repositories if row.id not in id_map])
         people = list(self.prepared.read_models("persons", Person))
         for person in people:
-            for contribution in person.contributed_to:
+            tracked = person.github_match is not None
+            # Rebuild provenance after renaming: a match may now overlap an independent contribution.
+            matches = retract_matches(person)
+            contributions = list(person.contributed_to)
+            if person.github_match:
+                contributions.extend(person.github_match.cleared_contributions)
+            for match in matches:
+                contributions.extend(match.contributed_to)
+            for contribution in contributions:
                 contribution.repository_id = id_map.get(
                     contribution.repository_id, contribution.repository_id)
+            if tracked:
+                apply_matches(person, matches)
         self.prepared.write_models("persons", people)
         return id_map
 
@@ -1334,17 +1503,22 @@ class DedupStage(EnrichmentStage):
             [person.id for canonical, duplicates in groups for person in (canonical, *duplicates)],
         )
         removed: set[str] = set()
+        id_map: dict[str, str] = {}
         for canonical, duplicates in groups:
             for duplicate in duplicates:
-                logger.info("dedup: merging %s (%s) into %s (%s)",
+                logger.debug("dedup: merging %s (%s) into %s (%s)",
                             duplicate.id, duplicate.name_raw, canonical.id, canonical.name_raw)
                 _merge_person(canonical, duplicate)
                 if duplicate.name_raw:
                     canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
+                id_map[duplicate.id] = canonical.id
+            apply_membership(canonical)
             self._record_state(canonical, len(duplicates))
+        logger.info("dedup: merged %d person(s)", len(removed))
         if removed:
+            self._repoint_person_references(id_map)
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
         # Which answers this fold carried out. Read off the rows rather than
@@ -1359,7 +1533,7 @@ class DedupStage(EnrichmentStage):
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
-        review.record_disputed(self.prepared.db, report)
+        review.record_disputed(self.prepared.db, report, aliases=folded_ids(people))
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:
@@ -1396,13 +1570,15 @@ class DedupStage(EnrichmentStage):
         OpenAlex author record was fetched it overrides the prepared value,
         including with None when OpenAlex knows no ORCID.
         """
+        from pauk.graph.person_resolution import _normalize_orcid
+
         raw_orcids: dict[str, str | None] = {}
         for envelope in self.raw.read("openalex_authors"):
             payload = envelope.get("payload") or {}
             author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
             if author_id:
-                raw_orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
-        return {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+                raw_orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
+        return {person.id: _normalize_orcid(raw_orcids.get(person.id, person.orcid)) or None for person in people}
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
         """Person ids the selection allows to participate in merging."""

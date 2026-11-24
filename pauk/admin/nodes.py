@@ -18,8 +18,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from neo4j.exceptions import Neo4jError
-from pymongo.errors import PyMongoError
 
 from pauk.admin import decisions, feed, source
 from pauk.admin.deps import (
@@ -36,6 +34,7 @@ from pauk.admin.deps import (
 from pauk.graph.mutations import (
     LIST_ORDER,
     NODE_FIELDS,
+    NODE_LIST_FIELDS,
     RELATIONSHIPS,
     RESERVED_FIELDS,
     SEARCH_FIELDS,
@@ -48,16 +47,23 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    field_values_equal,
     folded_into,
     node_relationships,
+    normalize_fields,
     read_node,
+    read_relationship,
+    restore_node,
     search_nodes,
+    snapshot_fields,
+    snapshot_relationships,
     update_node,
 )
 from pauk.graph.overrides import (
     CREATE,
     LINK,
     deactivate_override,
+    override_generation,
     record_override,
     record_relationship_override,
 )
@@ -78,11 +84,7 @@ def _worded(relationships: list[dict], label: str) -> list[dict]:
 
 
 def _parse_new_value(raw: str):
-    """A value for a node that does not exist yet.
-
-    With no stored type to go by, JSON decides (42 is a number, `["a"]` a list),
-    and anything JSON refuses is text. Same rule as `pauk admin node create --set`.
-    """
+    """Parse a new non-list field using the CLI's JSON-first rule."""
     text = raw.strip()
     if not text:
         return None
@@ -102,37 +104,6 @@ def _node_url(label: str, node_id: str, query: str = "") -> str:
     return f"{address}?{query}" if query else address
 
 
-def _record(undo, write) -> None:
-    """Write the decision that protects a change already made to the graph.
-
-    Neo4j and Mongo share no transaction, so the decision can fail after the
-    graph has moved, and the next publish would silently revert the change.
-    The graph is put back instead, and the undo lands in the audit feed.
-
-    Args:
-        undo: Puts the graph back the way it was.
-        write: Records the decision.
-
-    Raises:
-        HTTPException: 503. The wording says whether the graph was restored.
-    """
-    try:
-        write()
-    except PyMongoError as error:
-        logger.error("could not record the decision: %s", error)
-        try:
-            undo()
-        except (MutationError, Neo4jError) as failure:
-            logger.exception("and the graph could not be put back")
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                "правка записана в граф, но не сохранилась как решение "
-                f"и не откатилась ({failure}). Следующая публикация её снимет") from None
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
-
-
 def _known_label(label: str) -> str:
     """Reject an unknown label with 404 rather than let it reach Cypher."""
     if label not in NODE_FIELDS:
@@ -141,13 +112,7 @@ def _known_label(label: str) -> str:
 
 
 def _parse_value(raw: str, current: object = None):
-    """Turn a form field into what should be stored.
-
-    Browsers submit every box as text, so the type comes from what the field
-    already holds (`"42"` would otherwise differ from 42 and count as an edit).
-    An empty field in the graph stays text. An empty box means "clear this
-    field" and yields None, as the pipeline writes for what it did not find.
-    """
+    """Parse remaining form fields using their stored types; blank clears."""
     text = raw.strip()
     if not text:
         return None
@@ -171,6 +136,39 @@ def _parse_value(raw: str, current: object = None):
             return text
         return parsed if isinstance(parsed, type(current)) else text
     return text
+
+
+def _form_fields(label: str, form, current: dict | None = None) -> dict:
+    """Parse submitted fields, leaving untouched invalid legacy values out."""
+    fields = {}
+    for name in NODE_FIELDS[label]:
+        if name not in form:
+            continue
+        raw = str(form[name])
+        if name in NODE_LIST_FIELDS[label]:
+            if current is not None:
+                previous = current.get(name)
+                displayed = (str(templates.env.call_filter("tojson", previous))
+                             if isinstance(previous, (list, dict)) else "" if previous is None else str(previous))
+                if raw == displayed:
+                    try:
+                        normalize_fields(label, {name: previous})
+                    except MutationError:
+                        continue
+            fields[name] = raw
+        else:
+            fields[name] = (_parse_new_value(raw) if current is None
+                            else _parse_value(raw, current.get(name)))
+    return normalize_fields(label, fields)
+
+
+def _field_hints(label: str) -> dict[str, str]:
+    hints = {name: ("Одно значение или JSON-список строк." if item_type is str
+                    else "JSON-объект или список объектов.")
+             for name, item_type in NODE_LIST_FIELDS[label].items()}
+    if "code_url" in hints:
+        hints["code_url"] = "Одна ссылка или JSON-список ссылок."
+    return hints
 
 
 @router.get("/nodes/{label}", response_class=HTMLResponse)
@@ -202,7 +200,8 @@ def create_form(request: Request, label: str, user: Editor, session: Session):
     _known_label(label)
     return templates.TemplateResponse(request, "create.html", {
         "user": user, "csrf": session["csrf"], "label": label,
-        "editable": sorted(NODE_FIELDS[label]), "labels": sorted(NODE_FIELDS)})
+        "editable": sorted(NODE_FIELDS[label]), "labels": sorted(NODE_FIELDS),
+        "field_hints": _field_hints(label)})
 
 
 @router.post("/nodes/{label}/new")
@@ -210,8 +209,8 @@ async def create(request: Request, label: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Add a node by hand.
 
-    No override is recorded for the id itself: the loader only touches ids it
-    has rows for. A *changed* field on a known node does need one.
+    A creation claim keeps a prune from removing the node and replaces any
+    earlier deletion decision in the same atomic write.
     """
     _known_label(label)
     form = await request.form()
@@ -222,26 +221,20 @@ async def create(request: Request, label: str, user: Editor,
     if any(character < " " or character == "\x7f" for character in node_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "the id cannot hold line breaks or control characters")
-    # Nothing to compare against yet: text unless it parses as JSON, as in --set.
-    fields = {name: value for name in NODE_FIELDS[label]
-              if (value := _parse_new_value(str(form.get(name, "")))) is not None}
     try:
+        fields = {name: value for name, value in _form_fields(label, form).items() if value is not None}
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    # Claimed so a prune keeps it, and any earlier tombstone is withdrawn.
-    def claim() -> None:
-        deactivate_override(db, label, node_id, only_op="delete")
-        record_override(db, label, node_id, CREATE, fields, actor=user.actor)
-
-    _record(undo=lambda: delete_node(graph, label, node_id), write=claim)
+    decisions.record_change(undo=lambda: delete_node(graph, label, node_id),
+            write=lambda: record_override(db, label, node_id, CREATE, fields, actor=user.actor))
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "created=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/nodes/{label}/restore/{node_id:path}")
-async def restore(label: str, node_id: str, user: Editor,
+async def restore(request: Request, label: str, node_id: str, user: Editor,
                   db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Put a deleted node back as it was, from the snapshot on its decision.
 
@@ -252,14 +245,17 @@ async def restore(label: str, node_id: str, user: Editor,
     if not fields:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "не сохранилось данных, чтобы восстановить эту запись")
+    form = await request.form()
+    version = decisions.decision_version(db, label, node_id)
+    if "seen_write" not in form or str(form["seen_write"]) != version:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Решение изменилось. Обновите страницу перед восстановлением.")
     try:
-        create_node(graph, label, node_id,
-                    {name: value for name, value in fields.items()
-                     if name in NODE_FIELDS[label]})
+        restore_node(graph, label, node_id, snapshot_fields(label, fields))
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    _record(undo=lambda: delete_node(graph, label, node_id),
-            write=lambda: deactivate_override(db, label, node_id, only_op="delete"))
+    decisions.record_change(undo=lambda: delete_node(graph, label, node_id),
+                            write=lambda: deactivate_override(db, label, node_id, only_op="delete",
+                                                              expected_write_id=version))
     logger.info("%s restored %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "restored=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -288,12 +284,14 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
             "history": gone, "restorable": restorable,
+            "decision_version": decisions.decision_version(db, label, node_id),
             "labels": sorted(NODE_FIELDS)},
             status_code=status.HTTP_404_NOT_FOUND)
     editable = sorted(NODE_FIELDS[label])
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
+        "field_hints": _field_hints(label),
         # Only an id this record really swallowed: the value comes from the URL.
         "folded": folded if folded in (props.get("merged_ids") or []) else "",
         # Where the reader came from, when that was not the search.
@@ -315,11 +313,17 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
     try:
         # Snapshot first: after the delete there is nothing left to read.
         snapshot = read_node(graph, label, node_id)
-        kept = {name: value for name, value in snapshot.items()
-                if name in NODE_FIELDS[label] and value is not None}
+        kept = snapshot_fields(label, snapshot)
+        relationships = snapshot_relationships(graph, label, node_id, snapshot) if cascade else []
         delete_node(graph, label, node_id, cascade=cascade)
+
+        def undo():
+            restore_node(graph, label, node_id, kept)
+            for relationship in relationships:
+                create_relationship(graph, **relationship)
+
         # Without the tombstone the next publish brings the record back.
-        _record(undo=lambda: create_node(graph, label, node_id, kept),
+        decisions.record_change(undo=undo,
                 write=lambda: record_override(
                     db, label, node_id, "delete", actor=user.actor,
                     note=str(form.get("note", "")).strip(), snapshot=kept))
@@ -362,6 +366,24 @@ def _triple(raw: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _relationship_choice(label: str, raw: str) -> tuple[str, str, str, bool]:
+    """Read the card's side of a relationship, including older unambiguous forms."""
+    direction, _, triple = raw.partition("|")
+    if direction in ("outgoing", "incoming"):
+        src_label, rel_type, tgt_label = _triple(triple)
+        outgoing = direction == "outgoing"
+    else:
+        src_label, rel_type, tgt_label = _triple(raw)
+        if src_label == tgt_label == label:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "В старой форме не указано направление связи. Откройте карточку заново.")
+        outgoing = src_label == label
+    if label != (src_label if outgoing else tgt_label):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Выбранная сторона связи не относится к этой карточке.")
+    return src_label, rel_type, tgt_label, outgoing
+
+
 # How each link reads in Russian: leaving the node, then entering it.
 LINK_WORDS = {
     ("Department", "PART_OF", "Department"): ("входит в подразделение", "включает подразделение"),
@@ -369,6 +391,7 @@ LINK_WORDS = {
     ("Person", "AUTHORED", "Publication"): ("написал публикацию", "написана автором"),
     ("Person", "BELONGS_TO", "Department"): ("работает в подразделении", "здесь работает"),
     ("Person", "CONTRIBUTED_TO", "Repository"): ("участвовал в разработке", "в разработке участвовал"),
+    ("Publication", "IS_VERSION", "Publication"): ("версия публикации", "у публикации есть версия"),
     ("Publication", "MENTIONS_LINK", "LinkCandidate"): ("ссылается на адрес", "упомянут в публикации"),
     ("Publication", "MENTIONS_LINK", "Repository"): ("ссылается на репозиторий", "упомянут в публикации"),
     ("Publication", "PRODUCED_BY", "Department"): ("сделана в подразделении", "здесь сделана публикация"),
@@ -401,18 +424,17 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     if not other:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the other end is empty")
 
-    # This node takes whichever end its label matches; the other one is typed.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label))
     if match_prop is None:
         return _link_failed(label, node_id,
                             f"Граф не знает связи ({src_label})-[:{rel_type}]->({tgt_label}).")
     try:
-        if src_label == label:
+        if outgoing:
             src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
         else:
             # This node is the target, and a target is matched by match_prop.
@@ -435,7 +457,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
     # Claimed so a prune tells it from an edge the pipeline stopped making.
-    _record(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
+    decisions.record_change(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
                                              src_id, tgt_id),
             write=lambda: record_relationship_override(
                 db, src_label, rel_type, tgt_label, src_id, tgt_id,
@@ -470,25 +492,28 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
     """
     _known_label(label)
     form = await request.form()
-    src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
+    src_label, rel_type, tgt_label, outgoing = _relationship_choice(label, str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
     # As in the link form: a target is addressed by match_prop, not always by id.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
-    if src_label == label:
+    if outgoing:
         src_id, tgt_id = node_id, other
     else:
         src_id = other
         tgt_id = node_id if match_prop == "id" else _self_match_value(graph, label, node_id, match_prop)
     try:
+        snapshot = read_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         removed = delete_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         if not removed:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "there is no such link")
-        _record(
+        decisions.record_change(
             undo=lambda: create_relationship(graph, src_label, rel_type, tgt_label,
-                                             src_id, tgt_id),
+                                             src_id, tgt_id, snapshot),
             write=lambda: record_relationship_override(
                 db, src_label, rel_type, tgt_label, src_id, tgt_id,
-                actor=user.actor, note=str(form.get("note", "")).strip()))
+                actor=user.actor, note=str(form.get("note", "")).strip(), snapshot=snapshot))
+    except NotFound as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s unlinked (%s %s)-[:%s]->(%s %s)",
@@ -508,25 +533,28 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
     try:
         # Inside the try: the record can be deleted while the form is open.
         before = read_node(graph, label, node_id)
-        fields = {name: _parse_value(str(form[name]), before.get(name))
-                  for name in NODE_FIELDS[label] if name in form}
+        fields = _form_fields(label, form, before)
         if not fields:
             return RedirectResponse(_node_url(label, node_id),
                                     status_code=status.HTTP_303_SEE_OTHER)
         # Only what differs: an unchanged form must not stamp every field.
-        changed = {name: value for name, value in fields.items() if before.get(name) != value}
+        changed = {name: value for name, value in fields.items()
+                   if not field_values_equal(name, before.get(name), value)}
         if not changed:
             return RedirectResponse(_node_url(label, node_id, "unchanged=1"),
                                     status_code=status.HTTP_303_SEE_OTHER)
         # The updated_at the form was rendered with: parallel saves collide.
-        update_node(graph, label, node_id, changed,
-                    expected_updated_at=str(form.get("seen_at") or "") or None)
-        _record(
+        generation = override_generation(db, label, node_id)
+        updated = update_node(graph, label, node_id, changed,
+                              expected_updated_at=str(form.get("seen_at") or "") or None)
+        decisions.record_change(
             undo=lambda: update_node(graph, label, node_id,
-                                     {name: before.get(name) for name in changed}),
+                                     {name: before.get(name) for name in changed},
+                                     expected_updated_at=updated["updated_at"], from_snapshot=True),
             write=lambda: record_override(
                 db, label, node_id, "set", changed, actor=user.actor, note=note,
-                auto_value={name: before.get(name) for name in changed}))
+                auto_value={name: before.get(name) for name in changed},
+                graph_updated_at=updated["updated_at"], expected_generation=generation))
     except VersionConflict:
         # Someone got there first: hand the page back with what is there now.
         logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)

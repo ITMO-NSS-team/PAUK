@@ -1,7 +1,7 @@
 """`pauk reports build`: OSA reports on every repository of a graph snapshot.
 
-OSA needs an LLM, which the lab server can't reach, so this runs locally,
-outside the lab VPN, from the same snapshot `pauk gui build` reads.
+Reports use the same graph snapshot as `pauk gui build` and an LLM via
+OpenRouter, optionally through a configured proxy.
 """
 
 from __future__ import annotations

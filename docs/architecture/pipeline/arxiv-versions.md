@@ -36,14 +36,18 @@ eligible for retry without discarding text or links. If the paper has no old
 code links, discovery also reopens the ordinary extraction path.
 
 A journal paper can borrow a cached PDF from a unique prepared preprint only
-when the cache's recorded source and byte digest verify the arXiv identity.
+when the cache's recorded source and byte digest verify the arXiv identity
+(keyed by `source_record.key`, with legacy publication-ID fallback). Populated
+`versions` from source-record projection do not disqualify a preprint record
+whose own provenance ledger isolates its files by record key.
 An explicit revision requires an exact version match; an unversioned URL
 does not prove a revision. Old cache entries and crawler responses without
 verified provenance do not qualify. When borrowing isn't possible, the stage
 requests the arXiv PDF directly and keeps it in a separate source cache if it
-cannot safely use the preprint's publication cache. Occurrences keep their
-source PDF ID and local page number. Preprint text fills a gap rather than
-replacing existing text.
+cannot safely use the preprint's record cache. Occurrences keep their
+source PDF ID and local page number. When the primary PDF is reread cleanly
+under `--force`, its text updates `full_text`; preprint text fills an empty text
+gap rather than replacing existing primary text.
 
 New occurrences use the ordinary repository URL identity. With `--force`,
 `code_links` removes stale automatic occurrences from successfully reread
