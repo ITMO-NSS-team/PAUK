@@ -914,6 +914,53 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertEqual(reset.arxiv_sources, [])
         self.assertNotIn(url, reset.pdf_urls)
 
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_textless_arxiv_pdf_does_not_block_crawler_or_clear_primary_error(self, http: mock.Mock) -> None:
+        publisher = "https://publisher.example/paper.pdf"
+        arxiv_url = "https://arxiv.org/pdf/2201.06114"
+        crawler_url = "https://crawler.example"
+        textless_pdf = _pdf("")
+        crawler_pdf = _pdf("Crawler publisher text\nhttps://github.com/org/from-crawler")
+
+        def fetch_pdf(url: str, **_: object) -> bytes:
+            if url == f"{crawler_url}/health":
+                return b"ok"
+            if url.startswith(f"{crawler_url}/download"):
+                return crawler_pdf
+            raise HttpRequestError("GET", url, status_code=403)
+
+        http.return_value.get_bytes.side_effect = fetch_pdf
+        http.return_value.get_bytes_with_url.return_value = (textless_pdf, arxiv_url)
+
+        for crawler_enabled in (True, False):
+            with self.subTest(crawler_enabled=crawler_enabled), tempfile.TemporaryDirectory() as directory:
+                self.db.pdfs.drop()
+                self.prepared.write_models("repo_links", [])
+                self.prepared.write_models("publications", [Publication(
+                    id="W1",
+                    title="Journal",
+                    doi="10.1/journal",
+                    pdf_urls=[publisher],
+                    arxiv_sources=[ArxivSource(url=arxiv_url)],
+                )])
+                config = replace(
+                    self.config,
+                    data_dir=Path(directory),
+                    pdf_crawler_url=crawler_url if crawler_enabled else "",
+                )
+                CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+
+                work = self._work()
+                self.assertEqual(self._source_state(arxiv_url).status, ProcessingStatus.COMPLETED_EMPTY)
+                if crawler_enabled:
+                    self.assertEqual(work.processing["code_links"].status, ProcessingStatus.COMPLETED)
+                    self.assertIn("Crawler publisher text", work.full_text)
+                    self.assertIn("https://github.com/org/from-crawler", self._links())
+                else:
+                    self.assertEqual(work.processing["code_links"].status, ProcessingStatus.FAILED)
+                    self.assertIn("403", work.processing["code_links"].error or "")
+                    self.assertIsNone(work.full_text)
+
 
 if __name__ == "__main__":
     unittest.main()

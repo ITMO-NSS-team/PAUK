@@ -801,8 +801,14 @@ class CodeLinksStage(EnrichmentStage):
             self._pdf_pages(pub, include_crawler=False, reread=reread) if run_main else ([], [], None)
         )
         supplemental_text, supplemental_evidence = self._process_arxiv_sources(pub, reread)
-        arxiv_readable = any(source.state.status in {ProcessingStatus.COMPLETED, ProcessingStatus.COMPLETED_EMPTY}
-                             for source in pub.arxiv_sources)
+        arxiv_has_text = any(
+            "\n\n".join(source_pages).strip() for source_pages in supplemental_text
+        ) or bool((pub.full_text or "").strip())
+        arxiv_completed = any(source.state.status == ProcessingStatus.COMPLETED for source in pub.arxiv_sources)
+        arxiv_completed_empty = any(
+            source.state.status == ProcessingStatus.COMPLETED_EMPTY for source in pub.arxiv_sources
+        )
+        arxiv_readable = arxiv_completed or bool(supplemental_evidence) or (arxiv_completed_empty and arxiv_has_text)
         if run_main and not pages and not arxiv_readable:
             crawler_targets = [
                 (record.key, record.doi) for record in pub.source_records if record.doi
