@@ -1360,6 +1360,58 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
             self.assertIsNone(link.llm_reason)
             self.assertNotIn("link_relevance", self._work().processing)
 
+    @mock.patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_refined_deposit_title_promotes_existing_rejected_link_without_force(
+        self, llm: mock.Mock,
+    ) -> None:
+        repo_url = "https://github.com/lab/pkg"
+        llm.return_value.configure_mock(
+            model="test",
+            last_response=None,
+            last_usage=None,
+            **{"chat_json.return_value": {
+                "is_authors_artifact": False,
+                "confidence": 0.9,
+                "reason": "external dependency",
+            }},
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(self.config, data_dir=Path(directory))
+            self.prepared.write_models("publications", [Publication(
+                id="W1",
+                title="Updated record",
+                type="software",
+                abstract=f"Uses {repo_url}",
+            )])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            llm.return_value.chat_json.assert_called_once()
+            self.assertFalse(self._links()[repo_url].is_relevant)
+            self.assertFalse(self._work().has_code)
+            self.assertIsNone(self._work().code_url)
+
+            llm.return_value.chat_json.reset_mock()
+            work = self._work()
+            work.title = "lab/pkg: release"
+            work.processing.pop("code_links", None)
+            self.prepared.upsert_models("publications", [work])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            self.assertNotIn("link_relevance", self._work().processing)
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+
+            llm.return_value.chat_json.assert_not_called()
+            link = self._links()[repo_url]
+            self.assertEqual(link.classification_status, ClassificationStatus.CLASSIFIED)
+            self.assertTrue(link.is_relevant)
+            self.assertEqual(link.llm_confidence, 1.0)
+            self.assertEqual(link.llm_reason, ARCHIVED_DEPOSIT_REASON)
+            work = self._work()
+            self.assertTrue(work.has_code)
+            self.assertEqual(json.loads(work.code_url or "[]"), [repo_url])
+
 
 if __name__ == "__main__":
     unittest.main()

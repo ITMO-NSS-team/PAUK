@@ -688,6 +688,7 @@ def _merge_additional_evidence(
         key = normalize_repo_url(link.url)
         if key not in by_url or (_is_manual_link(by_url[key]) and not _is_manual_link(link)):
             by_url[key] = link
+    archived_identity = normalize_repo_url(archived) if archived else None
     reopen = False
     for url, occurrences in evidence.items():
         identity = normalize_repo_url(url)
@@ -696,13 +697,19 @@ def _merge_additional_evidence(
             continue
         if link is None:
             link = CodeLink(url=url, host=urlparse(url).netloc)
-            if archived and identity == normalize_repo_url(archived):
-                link.classification_status = ClassificationStatus.CLASSIFIED
-                link.is_relevant = True
-                link.llm_confidence = 1.0
-                link.llm_reason = ARCHIVED_DEPOSIT_REASON
             row.links.append(link)
             by_url[identity] = link
+            reopen = True
+        if archived_identity and identity == archived_identity and (
+            link.classification_status != ClassificationStatus.CLASSIFIED
+            or link.is_relevant is not True
+            or link.llm_confidence != 1.0
+            or link.llm_reason != ARCHIVED_DEPOSIT_REASON
+        ):
+            link.classification_status = ClassificationStatus.CLASSIFIED
+            link.is_relevant = True
+            link.llm_confidence = 1.0
+            link.llm_reason = ARCHIVED_DEPOSIT_REASON
             reopen = True
         seen = {occ.model_dump_json() for occ in link.occurrences}
         abstract_seen = {
