@@ -26,27 +26,35 @@ import { mountNodeProximity } from "../map/proximity";
 import { mountReactiveGraph, populateGraph } from "../map/build";
 import { mountRegions } from "../map/regions";
 
-// Node label in its department color with a halo. Also used for hover and
-// selection, with no extra glow. Lives here, not in map/build.ts: runtime
-// imports from "sigma" touch WebGL, which the jsdom tests lack.
-function drawHaloedNodeLabel(
+type LabelNode = PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">;
+
+/** Draw each frame in priority order, using viewport pixels at the current zoom. */
+function drawNodeLabels(
   context: CanvasRenderingContext2D,
-  data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
+  nodes: LabelNode[],
   settings: Settings,
 ): void {
-  if (!data.label) return;
-
   context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
-  const x = data.x + data.size + 3;
-  const y = data.y + settings.labelSize / 3;
-
   context.lineJoin = "round";
   context.lineWidth = MAP_CONFIG.node.labelHaloWidth;
   context.strokeStyle = themeById(store.get().theme).map.labelHalo;
-  context.strokeText(data.label, x, y);
-
-  context.fillStyle = data.color;
-  context.fillText(data.label, x, y);
+  const placed: { left: number; right: number; top: number; bottom: number }[] = [];
+  for (const node of nodes) {
+    if (!node.label) continue;
+    const x = node.x + node.size + 3;
+    const y = node.y + settings.labelSize / 3;
+    const metrics = context.measureText(node.label);
+    const pad = MAP_CONFIG.node.labelHaloWidth / 2 + 2;
+    const left = x - metrics.actualBoundingBoxLeft - pad;
+    const right = x + metrics.actualBoundingBoxRight + pad;
+    const top = y - metrics.actualBoundingBoxAscent - pad;
+    const bottom = y + metrics.actualBoundingBoxDescent + pad;
+    if (placed.some(box => left < box.right && right > box.left && top < box.bottom && bottom > box.top)) continue;
+    placed.push({ left, right, top, bottom });
+    context.strokeText(node.label, x, y);
+    context.fillStyle = node.color;
+    context.fillText(node.label, x, y);
+  }
 }
 
 const store = new Store<AppState>({
@@ -132,22 +140,33 @@ function renderApp(data: GraphData): void {
   const initial = store.get();
   populateGraph(graph, data, initial.lang, initial.tab, initial.filters, pubDetailsByKey);
 
+  const candidates: LabelNode[] = [];
+  const priority: LabelNode[] = [];
   const renderer = new Sigma(graph, container, {
     stagePadding: MAP_CONFIG.fitPadding,
     enableEdgeEvents: true,
     enableCameraRotation: false,
-    defaultDrawNodeHover: (context, nodeData, settings) => {
+    defaultDrawNodeHover: (_context, nodeData) => {
       // In region mode the hovered node is not labelled; the selected one is.
       const ratio = renderer.getCamera().getState().ratio;
       if (nodeData.highlighted || !isRegionMode(store.get(), ratio)) {
-        drawHaloedNodeLabel(context, nodeData, settings);
+        priority.push(nodeData);
       }
     },
-    defaultDrawNodeLabel: drawHaloedNodeLabel,
+    defaultDrawNodeLabel: (_context, node) => candidates.push(node),
     labelRenderedSizeThreshold: MAP_CONFIG.node.labelVisibleAtSize,
     labelDensity: MAP_CONFIG.node.labelDensity,
     zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
     maxCameraRatio: MAP_CONFIG.camera.maxRatio,
+  });
+
+  renderer.on("beforeRender", () => {
+    candidates.length = 0;
+    priority.length = 0;
+  });
+  renderer.on("afterRender", () => {
+    const context = renderer.getCanvases().labels?.getContext("2d");
+    if (context) drawNodeLabels(context, priority.concat(candidates), renderer.getSettings());
   });
 
   // Before mountReactiveGraph, which drops a selection missing from the graph.
