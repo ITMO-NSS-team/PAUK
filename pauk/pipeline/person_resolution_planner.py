@@ -83,10 +83,31 @@ def plan_person_merges_resolved(
         source_work_ids[identity].append(source_id)
     identity_details: dict[str, dict[str, Any]] = {}
     identity_fields: dict[str, set[str]] = defaultdict(set)
+    source_years: dict[str, int | None] = {}
+    source_owners: dict[str, set[str]] = {}
+    historical_records: set[str] = set()
+    conflicted_identities: set[str] = set()
+    identity_years: dict[str, set[int]] = defaultdict(set)
     for source_id, identity in sorted(work_identity.items()):
         identity_fields[identity].update(fields_of.get(source_id, ()))
         target = identity_details.setdefault(identity, {})
-        for key, value in (publication_details or {}).get(source_id, {}).items():
+        source_details = (publication_details or {}).get(source_id, {})
+        if source_details.get("source_record_conflict") is True:
+            conflicted_identities.add(identity)
+        owners = source_details.get("source_person_ids")
+        if "source_person_ids" in source_details:
+            historical_records.add(source_id)
+            source_owners[source_id] = {
+                owner for owner in owners if isinstance(owner, str) and owner
+            } if isinstance(owners, (list, tuple)) else set()
+        aliases = source_details.get("merged_ids")
+        if isinstance(aliases, (list, tuple)) and aliases:
+            historical_records.add(source_id)
+        year = source_details.get("year")
+        source_years[source_id] = year if type(year) is int and year > 0 else None
+        if source_years[source_id] is not None:
+            identity_years[identity].add(source_years[source_id])
+        for key, value in source_details.items():
             if value is not None and key not in target:
                 target[key] = value
     fields_of = identity_fields
@@ -320,6 +341,22 @@ def plan_person_merges_resolved(
 
     context_cache: dict[str, ResearcherContext] = {}
     authorship_cache: dict[str, dict[str, list[Any]]] = {}
+    year_source_cache: dict[tuple[str, str], list[tuple[str, int | None]]] = {}
+
+    def year_sources(person: Person, source_id: str) -> list[tuple[str, int | None]]:
+        """Recover per-author years after a fold without borrowing the survivor's year."""
+        key = (person.id, source_id)
+        if key not in year_source_cache:
+            if source_id in historical_records:
+                owner_ids = {person.id, *person.merged_ids}
+                record_ids = [
+                    record_id for record_id in source_work_ids[work_identity[source_id]]
+                    if source_owners.get(record_id, set()) & owner_ids
+                ]
+            else:
+                record_ids = [source_id]
+            year_source_cache[key] = [(record_id, source_years[record_id]) for record_id in record_ids]
+        return year_source_cache[key]
 
     def authored_on(person: Person, work_id: str) -> list[Any]:
         if person.id not in authorship_cache:
@@ -373,11 +410,10 @@ def plan_person_merges_resolved(
         persons = {}
         for side, person in (("a", first), ("b", second)):
             years = sorted({
-                identity_details[work_id]["year"]
-                for work_id in publication_ids[person.id]
-                if work_id in identity_details
-                and type(identity_details[work_id].get("year")) is int
-                and identity_details[work_id]["year"] > 0
+                year
+                for row in person.authored
+                for _, year in year_sources(person, row.publication_id)
+                if year is not None
             })
             affiliations = (
                 person_affiliations.get(person.id)
@@ -405,13 +441,21 @@ def plan_person_merges_resolved(
         documents = []
         for work_id in sorted(selected):
             details = identity_details.get(work_id, {})
+            years = identity_years[work_id]
+            shown_sources = source_work_ids[work_id][:10]
             document = {
                 "id": work_id,
-                "source_record_ids": source_work_ids[work_id][:10],
+                "source_record_ids": shown_sources,
                 "source_records_available": len(source_work_ids[work_id]),
+                "source_record_years": [
+                    {"publication_id": source_id, "year": source_years[source_id]}
+                    for source_id in shown_sources
+                ],
                 "doi": clipped(details.get("doi"), 120),
                 "title": clipped(details.get("title"), 180),
-                "year": details.get("year") if type(details.get("year")) is int else None,
+                "year": next(iter(years)) if len(years) == 1 and work_id not in conflicted_identities else None,
+                "year_conflict": len(years) > 1,
+                "source_record_conflict": work_id in conflicted_identities,
                 "observed_team_size": len(publication_authors.get(work_id, ())),
                 "source_team_complete": None,
             }
@@ -420,16 +464,24 @@ def plan_person_merges_resolved(
                     authored_on(person, work_id),
                     key=lambda row: (row.position is None, row.position or 0, row.affiliation or ""),
                 )
-                document[f"{side}_stored_authorships"] = [
-                    {
+                stored_authorships = []
+                for row in records[:3]:
+                    original_records = year_sources(person, row.publication_id)
+                    original_years = {year for _, year in original_records if year is not None}
+                    stored_authorships.append({
                         "publication_id": row.publication_id,
+                        "publication_year": next(iter(original_years)) if len(original_years) == 1 else None,
+                        "source_records": [
+                            {"publication_id": record_id, "year": year}
+                            for record_id, year in original_records[:10]
+                        ],
+                        "source_records_available": len(original_records),
                         "position": row.position,
                         "affiliation": clipped(row.affiliation, 160),
                         "affiliation_source": clipped(row.affiliation_source, 80),
                         "is_corresponding": True if row.is_corresponding else None,
-                    }
-                    for row in records[:3]
-                ]
+                    })
+                document[f"{side}_stored_authorships"] = stored_authorships
                 document[f"{side}_authorships_available"] = len(records)
             documents.append(document)
         return {

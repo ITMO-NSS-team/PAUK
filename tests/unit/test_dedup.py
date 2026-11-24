@@ -552,7 +552,9 @@ class PublicationDedupTest(unittest.TestCase):
         DedupStage(prepared, raw, self.config).run()
         (row,) = prepared.read_models("publications", Publication)
         ledger = {v.openalex_id: v for v in row.versions}
-        self.assertEqual([a.person_id for a in ledger["W1"].authors], ["A1"])
+        # Without that record's raw payload, the merged author union cannot
+        # establish who appeared on the surviving source record itself.
+        self.assertEqual(ledger["W1"].authors, [])
         # The folded record's own author list is rebuilt from its raw payload,
         # without the organization sitting in an author slot.
         self.assertEqual([a.person_id for a in ledger["W2"].authors], ["A1"])

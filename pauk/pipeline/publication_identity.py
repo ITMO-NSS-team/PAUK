@@ -7,6 +7,16 @@ from typing import Any
 from pauk.aliases import flatten_merges
 
 
+def normalize_publication_doi(doi: object) -> str | None:
+    """Use the same resolver-prefix and suffix handling in both dedup passes."""
+    if not isinstance(doi, str):
+        return None
+    value = " ".join(doi.split()).casefold()
+    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"):
+        value = value.removeprefix(prefix).strip()
+    return value.rstrip("/") or None
+
+
 def publication_identity_map(
     work_ids: Iterable[str], details: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, str]:
@@ -38,12 +48,9 @@ def publication_identity_map(
         join(alias, survivor)
     doi_owner: dict[str, str] = {}
     for work_id, row in details.items():
-        doi = row.get("doi")
-        if not isinstance(doi, str):
+        doi = normalize_publication_doi(row.get("doi"))
+        if doi is None:
             continue
-        doi = doi.strip().lower()
-        for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"):
-            doi = doi.removeprefix(prefix).strip()
         if not re.fullmatch(r"10\.\d{4,9}/\S+", doi):
             continue
         join(work_id, doi_owner.setdefault(doi, work_id))

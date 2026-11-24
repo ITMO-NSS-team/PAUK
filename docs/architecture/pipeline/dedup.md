@@ -65,6 +65,9 @@ identifier or independent coauthor evidence can still support merging.
 Both paths use the primary `email` and additional `emails` together.
 Independent coauthor evidence excludes shared works after resolving valid
 normalized DOIs and confirmed publication `merged_ids`, not just equal node IDs.
+Publication and person passes share DOI normalization, including a trailing
+slash. The prepared person pass looks up authored publications across groups
+in batches, including merged IDs, without expanding the set of people to merge.
 Conflicting or cyclic publication aliases fail before person merges; titles
 alone do not establish work identity for this check.
 An uncorroborated third record with no address cannot bridge two such
@@ -137,8 +140,16 @@ version families as unverified. These details inform the judge but do not
 create an automatic merge rule. The extra evidence is assembled only for
 pairs routed to the model, with no database query per pair.
 Grouped documents retain their source record IDs and each stored authorship's
-original publication ID. Graph reads validate optional context fields: invalid
-author positions become unknown and malformed affiliation years are omitted
+original publication ID. Years from different source records remain separate:
+each person's observed year range uses their own authored record IDs. After a
+publication fold, version-ledger authors identify the source records for each
+person; an empty ledger is not filled from the merged author union.
+Conflicting historical records cannot supply a year and an author from different
+versions; their provenance remains unknown and is flagged in the model context.
+Documents expose source years and conflict flags instead of assigning the first
+record's year to both people.
+Missing historical years remain unknown. Graph reads validate optional context
+fields: invalid author positions become unknown and malformed affiliation years are omitted
 with a warning. This does not rewrite the stored graph data.
 
 Role alignment prefers explicit and primary readings over alphabetical order.

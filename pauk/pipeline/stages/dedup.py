@@ -86,7 +86,7 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
-from pauk.pipeline.publication_identity import publication_identity_map
+from pauk.pipeline.publication_identity import normalize_publication_doi, publication_identity_map
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
@@ -108,10 +108,6 @@ CANDIDATES_FILENAME = "dedup_candidates.jsonl"
 # normalize.py stores works without a title under this placeholder; it says
 # nothing about the work, so it must never be treated as a shared title.
 PLACEHOLDER_TITLES = {"", "untitled"}
-
-DOI_PREFIXES = ("https://doi.org/", "http://doi.org/",
-                "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
-
 
 def _publication_rank_key(publication_type: str | None, publication_date_ordinal: int,
                           author_count: int, publication_id: str) -> tuple[int, int, int, str]:
@@ -142,10 +138,7 @@ def _norm_name(name: str | None) -> str:
 
 def _norm_doi(doi: str | None) -> str | None:
     """Bare lowercase DOI, so a resolver prefix never splits one work."""
-    value = _norm(doi)
-    for prefix in DOI_PREFIXES:
-        value = value.removeprefix(prefix)
-    return value.rstrip("/") or None
+    return normalize_publication_doi(doi)
 
 
 def _variant_set(person: Person) -> set[str]:
@@ -1162,7 +1155,8 @@ class DedupStage(EnrichmentStage):
                 work = raw_works.get(version.openalex_id)
                 if work is None:
                     # No raw payload: keep whatever the entry already carries.
-                    if not version.authors and version.openalex_id == publication.id:
+                    if (not version.authors and version.openalex_id == publication.id
+                            and not publication.merged_ids):
                         version.authors = list(version_authors.get(publication.id, ()))
                         refreshed += bool(version.authors)
                     continue
@@ -1394,7 +1388,21 @@ class DedupStage(EnrichmentStage):
         people = list(self.prepared.read_models("persons", Person))
         fields_of: dict[str, set[str]] = {}
         publication_details: dict[str, dict[str, Any]] = {}
-        for publication in self.prepared.read_models("publications", Publication):
+        publications: dict[str, Publication] = {}
+        pending = {entry.publication_id for person in people for entry in person.authored}
+        checked: set[str] = set()
+        while pending:
+            checked.update(pending)
+            discovered: set[str] = set()
+            ids = sorted(pending)
+            for offset in range(0, len(ids), 1000):
+                for publication in self.prepared.get_models(
+                    "publications", ids[offset:offset + 1000], Publication, include_merged=True,
+                ):
+                    publications[publication.id] = publication
+                    discovered.update((publication.id, *publication.merged_ids))
+            pending = discovered - checked
+        for publication in publications.values():
             if publication.fields:
                 fields_of[publication.id] = set(publication.fields)
             publication_details[publication.id] = {
@@ -1403,6 +1411,43 @@ class DedupStage(EnrichmentStage):
                 "year": publication.year,
                 "merged_ids": publication.merged_ids,
             }
+        version_candidates: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for publication in publications.values():
+            if publication.merged_ids or publication.versions:
+                publication_details[publication.id]["source_person_ids"] = []
+            for version in publication.versions:
+                source_id = version.openalex_id
+                if source_id not in {publication.id, *publication.merged_ids}:
+                    continue
+                if source_id in publications and source_id != publication.id:
+                    continue
+                version_candidates[source_id].append({
+                    "doi": version.doi,
+                    "title": version.title,
+                    "year": version.year,
+                    "merged_ids": [],
+                    "source_person_ids": sorted({author.person_id for author in version.authors}),
+                })
+        for source_id, candidates in version_candidates.items():
+            identities = {(row["year"], tuple(row["source_person_ids"])) for row in candidates}
+            confirmed_dois = {
+                doi for row in candidates
+                if (doi := normalize_publication_doi(row["doi"])) and re.fullmatch(r"10\.\d{4,9}/\S+", doi)
+            }
+            if len(identities) > 1 or len(confirmed_dois) > 1:
+                details = publication_details.setdefault(source_id, {"doi": None, "title": None, "merged_ids": []})
+                details.update(year=None, source_person_ids=[], source_record_conflict=True)
+            else:
+                candidate = min(candidates, key=lambda row: (
+                    normalize_publication_doi(row["doi"]) not in confirmed_dois,
+                    json.dumps(row, sort_keys=True),
+                ))
+                if source_id in publications:
+                    publication_details[source_id].update(
+                        year=candidate["year"], source_person_ids=candidate["source_person_ids"],
+                    )
+                else:
+                    publication_details[source_id] = candidate
         trusted_orcids = self._trusted_orcids(people)
         staff_ids = self._staff_ids(people)
         answers = review.decisions(self.prepared.db, folded_ids(people))
