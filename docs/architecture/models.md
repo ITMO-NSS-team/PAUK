@@ -37,7 +37,10 @@ the relation-like models.
     (`journal`, `conference`, `repository`, ...); the version rules use it
     to tell a conference paper's journal extension from two talks.
   - `pdf_urls` are unique candidates from `best_oa_location` and `locations`,
-    in load order; they are combined on re-normalization and dedup.
+    in load order, plus any supplemental arXiv URL recorded in `arxiv_sources`;
+    they are combined on re-normalization and dedup.
+- **`arxiv_sources`**: optional per-URL `ArxivSource(url, state)` tracking
+  supplemental arXiv PDFs found by `arxiv_versions`.
 - **`PublicationSourceRecord`** is the source-neutral replacement for the
   OpenAlex-only version ledger. It owns its title, DOI, venue, type, dates,
   subjects, PDFs, abstract, authors and metadata. Canonical fields are a

@@ -182,6 +182,7 @@ class GraphFieldCoverageTest(unittest.TestCase):
         "department_ids": "published as a PRODUCED_BY relationship",
         "mentions_links": "published as MENTIONS_LINK relationships",
         "processing": "per-stage pipeline bookkeeping, never meant for the graph",
+        "arxiv_sources": "per-source pipeline bookkeeping for discovered arXiv PDFs, never meant for the graph",
     }
 
     def test_every_person_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
