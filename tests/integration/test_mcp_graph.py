@@ -39,10 +39,11 @@ CREATE (p:Publication {id:'p-paper', merged_ids:['old-paper'], title:'Synthetic 
                       name:'Synthetic code', description:'PRIVATE_CANARY', language:'Python', license:'MIT',
                       archived:false, last_updated:datetime('2026-01-02T00:00:00Z')}),
        (d:Repository {id:'r-dependency', merged_ids:['ambiguous'], name:'Dependency'}),
+       (nameless:Repository {id:'r-url-only', url:'https://github.com/pauk-test/nameless-repo'}),
        (u:Repository {id:'r-unknown'}), (s:Repository {id:'r-scalar'}),
        (m:Repository {id:'r-misaligned'}), (n:Repository {id:'r-no-relation'}),
        (short:Repository {id:'r-short-source'}), (long:Repository {id:'r-long-source'}),
-       (r)-[:IMPLEMENTS]->(p),
+       (r)-[:IMPLEMENTS]->(p), (nameless)-[:IMPLEMENTS]->(p2),
        (p)-[:MENTIONS_LINK {context:['Synthetic abstract','Synthetic PDF'], page_number:[0,3], pdf_id:['','pdf-1'],
           context_source:['abstract','pdf_text'], candidate_urls:['https://github.com/unrelated/candidate'],
           is_relevant:true, classification_status:'classified', llm_confidence:0.0, llm_reason:'Synthetic reason'}]->(r),
@@ -100,6 +101,10 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p.publication_id for p in page.items], ["p-other"])
         page = await self.service.search_publications(SearchRequest(repository_contains="pauk-test/code"))
         self.assertEqual([p.publication_id for p in page.items], ["p-paper"])
+        page = await self.service.search_publications(SearchRequest(repository_contains="pauk-test/nameless-repo"))
+        self.assertEqual([p.publication_id for p in page.items], ["p-other"])
+        page = await self.service.search_publications(SearchRequest(repository_contains="nameless-repo"))
+        self.assertEqual([p.publication_id for p in page.items], ["p-other"])
         page = await self.service.search_publications(SearchRequest(repository_contains="Synthetic code"))
         self.assertEqual([p.publication_id for p in page.items], ["p-paper"])
         page = await self.service.search_publications(SearchRequest(repository_contains="Dependency"))

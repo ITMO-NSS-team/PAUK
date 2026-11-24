@@ -46,7 +46,7 @@ _APPROVED_REPO_ORIGINS = [
     for port in ports
 ]
 SAFE_REPO_URL = (
-    "CASE WHEN r.url IS :: STRING AND size(r.url) <= 2000 "
+    "CASE WHEN r.url IS NOT NULL AND r.url IS :: STRING AND size(r.url) <= 2000 "
     "AND NOT (r.url CONTAINS '@' OR r.url CONTAINS '?' OR r.url CONTAINS '#' "
     "OR r.url CONTAINS ' ' OR r.url CONTAINS '\\t' OR r.url CONTAINS '\\n' OR r.url CONTAINS '\\r') "
     f"AND ANY(origin IN {_APPROVED_REPO_ORIGINS!r} "
@@ -62,8 +62,9 @@ SEARCH_TITLE = (
 )
 SEARCH_REPOSITORY = (
     "MATCH (r:Repository)-[:IMPLEMENTS]->(n:Publication) "
-    "WITH n, CASE WHEN r.name IS :: STRING THEN toLower(r.name) ELSE '' END AS repo_name, "
-    f"CASE WHEN r.name IS :: STRING THEN toLower(r.name) ELSE '' END + ' ' + ({SAFE_REPO_URL}) AS repo_text "
+    "WITH n, CASE WHEN r.name IS NOT NULL AND r.name IS :: STRING THEN toLower(r.name) ELSE '' END AS repo_name, "
+    f"({SAFE_REPO_URL}) AS repo_url "
+    "WITH n, repo_name, repo_name + ' ' + repo_url AS repo_text "
     "WHERE ALL(token IN split($query, ' ') WHERE token = '' OR repo_text CONTAINS token) "
     "WITH n, "
     "max(CASE WHEN repo_name = $query THEN 1 ELSE 0 END) AS exact_name, "
