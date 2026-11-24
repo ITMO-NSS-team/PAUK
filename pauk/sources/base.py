@@ -27,6 +27,7 @@ from pauk.settings import (
     ORCID_RPS,
 )
 
+from .http_stream import watch_headers
 from .rate_limit import LONG_WAIT_SECONDS, HostPaused, HostRateLimiter, RateLimit, RequestDeferred
 
 logger = logging.getLogger(__name__)
@@ -94,16 +95,15 @@ class HttpClient:
         self.default_rate_limit = default_rate_limit
         self.default_rate_limiter = default_rate_limiter if default_rate_limiter is not None else self.rate_limiter
         self._cancelled = threading.Event()
-        self._responses: set[requests.Response] = set()
-        self._response_lock = threading.Lock()
+        self._active_reads: set[Callable[[], None]] = set()
+        self._read_lock = threading.Lock()
 
     def cancel(self) -> None:
         """Stop retries and release active streaming reads."""
         self._cancelled.set()
-        with self._response_lock:
-            responses = tuple(self._responses)
-        for response in responses:
-            self._abort_read(response)
+        with self._read_lock:
+            for abort in self._active_reads:
+                abort()
 
     def close(self) -> None:
         self.cancel()
@@ -156,19 +156,23 @@ class HttpClient:
                 sock.shutdown(socket.SHUT_RDWR)
 
     @contextmanager
-    def _stream_response(self, response: requests.Response, end: float | None) -> Iterator[None]:
+    def _watch_read(self, interrupt: Callable[[], None], end: float | None) -> Iterator[None]:
+        def abort():
+            with suppress(OSError):
+                interrupt()
+
         expired = threading.Event()
 
         def expire():
             expired.set()
-            self._abort_read(response)
+            abort()
 
         timer = threading.Timer(max(0, end - time.monotonic()), expire) if end is not None else None
         if timer is not None:
             timer.daemon = True
             timer.start()
-        with self._response_lock:
-            self._responses.add(response)
+        with self._read_lock:
+            self._active_reads.add(abort)
         try:
             if self._cancelled.is_set():
                 raise CancelledError
@@ -182,7 +186,7 @@ class HttpClient:
         except (requests.RequestException, UrllibError, OSError):
             if self._cancelled.is_set():
                 raise CancelledError from None
-            if expired.is_set():
+            if expired.is_set() or (end is not None and time.monotonic() >= end):
                 raise _DownloadDeadline from None
             raise
         finally:
@@ -190,9 +194,27 @@ class HttpClient:
                 # The watchdog must finish before the socket can be reused.
                 timer.cancel()
                 timer.join()
-            with self._response_lock:
-                self._responses.discard(response)
+            with self._read_lock:
+                self._active_reads.discard(abort)
+
+    @contextmanager
+    def _stream_response(self, response: requests.Response, end: float | None) -> Iterator[None]:
+        try:
+            with self._watch_read(lambda: self._abort_read(response), end):
+                yield
+        finally:
             response.close()
+
+    @contextmanager
+    def _watch_headers(self, url: str, end: float | None) -> Iterator[None]:
+        with watch_headers(self.session, url, lambda sock: self._watch_read(lambda: sock.shutdown(socket.SHUT_RDWR), end)):
+            try:
+                yield
+            except (requests.RequestException, UrllibError, OSError):
+                # urllib3 can wrap a header deadline as a transport error.
+                if end is not None and time.monotonic() >= end:
+                    raise _DownloadDeadline from None
+                raise
 
     def get_text(self, url: str, *, retries: int = 3, timeout: int | None = None) -> str:
         """Send a GET request and return the decoded response text (charset auto-detected)."""
@@ -257,8 +279,6 @@ class HttpClient:
         prepared = state.prepared if state is not None else None
         history = state.history if state is not None else []
         end = state.deadline if state is not None else None
-        if state is None and deadline is not None:
-            end = time.monotonic() + deadline
         while True:
             current_url = prepared.url if prepared is not None else url
             try:
@@ -283,16 +303,17 @@ class HttpClient:
                 return self.session.request(method, url, **kwargs)
             admission = ({"cancel": self._cancelled, "deadline": end, "max_wait": max_wait, "defer": state is not None}
                          if consume is not None else {})
+            scoped = (self.default_rate_limiter, scoped_limit) if scoped_limit is not None else None
             with ExitStack() as cleanup:
-                if scoped_limit is not None:
-                    cleanup.enter_context(self.default_rate_limiter.slot(host, scoped_limit, **admission))
-                cleanup.enter_context(self.rate_limiter.slot(host, limit, **admission))
+                cleanup.enter_context(self.rate_limiter.slot(host, limit, scoped=scoped, **admission))
                 request_kwargs = dict(kwargs)
                 if consume is not None:
                     if self._cancelled.is_set():
                         raise CancelledError
-                    if state is not None and end is None and deadline is not None:
-                        state.deadline = end = time.monotonic() + deadline
+                    if end is None and deadline is not None:
+                        end = time.monotonic() + deadline
+                        if state is not None:
+                            state.deadline = end
                     if end is not None:
                         remaining = end - time.monotonic()
                         if remaining <= 0:
@@ -308,6 +329,7 @@ class HttpClient:
                         return response
 
                     request_kwargs.update(stream=True, hooks={"response": registered})
+                    cleanup.enter_context(self._watch_headers(current_url, end))
                 if prepared is None:
                     response = self.session.request(method, url, allow_redirects=False, **request_kwargs)
                 else:

@@ -44,6 +44,7 @@ and caps concurrency per host. Retries and redirects from a limited API
 request each pass through the limiter. Separate processes are not coordinated.
 PDF limits are shared across `PdfDownloader` instances separately from API
 quotas. Server limits and pauses use the common limiter, including on redirects.
+PDF requests count against both limits when both admit the request.
 
 Clients sharing a host use the stricter profile within each limiter.
 Server headers only tighten common limits; raising a limit requires a process

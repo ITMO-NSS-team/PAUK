@@ -23,10 +23,11 @@ from pauk.models import CodeLink, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.code_links import CodeLinksStage, _extract_pdf
 from pauk.settings import Settings
-from pauk.sources.base import HttpClient, HttpRequestError
+from pauk.sources.base import DownloadState, HttpClient, HttpRequestError
 from pauk.sources.pdf import PdfDownloader
-from pauk.sources.rate_limit import HostRateLimiter, RateLimit
+from pauk.sources.rate_limit import HostRateLimiter, RateLimit, RequestDeferred
 from pauk.storage import PdfStore, PreparedStore, RawStore
+from tests.unit.test_rate_limit import _Clock
 
 _SEND = requests.Session.send
 
@@ -80,6 +81,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def respond(self, path, count):
         query = parse_qs(urlsplit(self.path).query)
+        if path == "/headers-drip":
+            self.wfile.write(b"HTTP/1.1 200 OK\r\nX-Drip: ")
+            for _ in range(30):
+                self.wfile.write(b"x")
+                self.wfile.flush()
+                time.sleep(0.035)
+            self.wfile.write(b"\r\nContent-Length: 0\r\n\r\n")
+            return
         if path == "/headers":
             time.sleep(float(query.get("delay", [0.4])[0]))
         if path == "/redirect-slow":
@@ -215,6 +224,30 @@ class LocalPdfTest(unittest.TestCase):
 
 
 class PdfTransportTest(LocalPdfTest):
+    def test_deferred_api_admission_does_not_reserve_a_pdf_start(self):
+        clock = _Clock()
+        host = urlsplit(self.url).hostname
+        api = HostRateLimiter(clock=clock)
+        pdf = HostRateLimiter(clock=clock)
+        client = _client(0.2, rate_limiter=api, rate_limits={host: RateLimit(5)},
+                         default_rate_limiter=pdf, default_rate_limit=RateLimit(10, 2))
+        self.addCleanup(client.close)
+        self.assertEqual(client.get_bytes(self.url + "/pdf", state=DownloadState()), self.server.pdf)
+        clock.now += 0.15
+        state = DownloadState()
+        with self.assertRaises(RequestDeferred) as deferred:
+            client.get_bytes(self.url + "/pdf", state=state)
+        self.assertAlmostEqual(deferred.exception.ready_at, 100.2)
+        self.assertEqual(self.server.counts["/pdf"], 1)
+        clock.now = deferred.exception.ready_at
+        self.assertEqual(client.get_bytes(self.url + "/pdf", state=state), self.server.pdf)
+
+    def test_synchronous_download_deadline_also_starts_after_admission(self):
+        limiter = self.client.rate_limiter
+        with limiter.slot("127.0.0.1", RateLimit()):
+            limiter.pause("127.0.0.1", 0.4)
+        self.assertEqual(self.fetch("/pdf", deadline=0.2, max_wait=1), self.server.pdf)
+
     def test_pdf_concurrency_does_not_lower_an_api_profile_on_the_same_host(self):
         host = urlsplit(self.url).hostname
         pdf_limiter = HostRateLimiter(host_limits={host: RateLimit(10)})
@@ -299,7 +332,7 @@ class PdfTransportTest(LocalPdfTest):
         for path in ("/pdf", "/chunked", "/chunked-gzip"):
             with self.subTest(path=path):
                 self.assertEqual(self.fetch(path), self.server.pdf)
-        self.assertFalse(self.client._responses)
+        self.assertFalse(self.client._active_reads)
 
     def test_header_status_and_partial_body_failures_retry_the_entire_request(self):
         for path in ("/flaky", "/drop", "/chunked-drop"):
@@ -314,13 +347,13 @@ class PdfTransportTest(LocalPdfTest):
         self.assertEqual(self.server.counts["/refused"], 1)
 
     def test_deadline_covers_headers_body_and_redirect_body(self):
-        for path in ("/headers", "/drip", "/drip?close=1", "/redirect-drip"):
+        for path in ("/headers", "/headers-drip", "/drip", "/drip?close=1", "/redirect-drip"):
             with self.subTest(path=path):
                 started = time.monotonic()
                 with self.assertRaises(HttpRequestError):
                     self.fetch(path, timeout=1, deadline=0.15)
-                self.assertLess(time.monotonic() - started, 0.8)
-                self.assertFalse(self.client._responses)
+                self.assertLess(time.monotonic() - started, 0.65)
+                self.assertFalse(self.client._active_reads)
                 self.assertEqual(self.fetch("/pdf"), self.server.pdf)
 
     def test_read_timeout_is_independent_of_the_whole_attempt_budget(self):
@@ -340,7 +373,7 @@ class PdfTransportTest(LocalPdfTest):
         with self.assertRaises(HttpRequestError):
             self.fetch("/redirect-slow?delay=0.1&to=" + target, deadline=0.15, timeout=1)
         self.assertLess(time.monotonic() - started, 0.5)
-        self.assertFalse(self.client._responses)
+        self.assertFalse(self.client._active_reads)
 
     def test_redirects_are_bounded(self):
         with self.assertRaises(HttpRequestError):
@@ -359,13 +392,13 @@ class PdfTransportTest(LocalPdfTest):
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(self.fetch, "/drip", timeout=1, deadline=5)
             until = time.monotonic() + 1
-            while not self.client._responses and time.monotonic() < until:
+            while not self.client._active_reads and time.monotonic() < until:
                 time.sleep(0.005)
-            self.assertTrue(self.client._responses)
+            self.assertTrue(self.client._active_reads)
             self.client.cancel()
             with self.assertRaises(CancelledError):
                 future.result(timeout=1)
-        self.assertFalse(self.client._responses)
+        self.assertFalse(self.client._active_reads)
 
     def test_redirect_target_concurrency_is_shared_between_clients(self):
         pdf_limiter = HostRateLimiter(host_limits={"localhost": RateLimit(20)})
@@ -396,28 +429,65 @@ class PdfStageTest(LocalPdfTest):
                                pdf_connect_timeout=0.2, pdf_download_deadline=1, pdf_retries=0)
         self.enterContext(patch("pauk.pipeline.stages.code_links.HttpClient", side_effect=_client))
 
-    def test_only_admitted_publications_check_the_cache_and_start_the_deadline(self):
+    def test_host_pause_does_not_delay_cached_publications_from_the_same_host(self):
+        self.prepared.write_models("publications", [
+            Publication(id=key, title="paper", pdf_urls=[self.url + "/pdf"]) for key in ("W1", "W2")
+        ])
+        PdfStore(self.db, self.config.pdf_dir).save("W2", self.server.pdf)
+        limiter = self.client.rate_limiter
+        with limiter.slot("127.0.0.1", RateLimit()):
+            limiter.pause("127.0.0.1", 1)
+
+        def stop_after_cached(_label, done, _total):
+            if done:
+                raise CancelledError
+
+        config = Settings(**(self.config.__dict__ | {"pdf_host_concurrency": 1}))
+        stage = CodeLinksStage(self.prepared, self.raw, config=config, on_progress=stop_after_cached)
+        stage.REPORT_SECONDS = 0
+        with self.assertRaises(CancelledError):
+            stage.run()
+        rows = {publication.id: publication for publication in self.prepared.read_models("publications", Publication)}
+        self.assertNotIn("code_links", rows["W1"].processing)
+        self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(self.server.counts["/pdf"], 0)
+
+    def test_waiting_for_admission_does_not_spend_the_attempt_deadline(self):
         records = [Publication(id=f"W{i}", title="paper", pdf_urls=[self.url + "/pdf"]) for i in range(8)]
         self.prepared.write_models("publications", records)
         limiter = self.client.rate_limiter
         with limiter.slot("127.0.0.1", RateLimit()):
             limiter.pause("127.0.0.1", 0.6)
         config = Settings(**(self.config.__dict__ | {"pdf_host_concurrency": 1, "pdf_download_deadline": 0.3}))
-        store = PdfStore(self.db, config.pdf_dir)
+        calls = []
+        original = HttpClient.get_bytes
+
+        def fetch(client, url, **kwargs):
+            calls.append(url)
+            return original(client, url, **kwargs)
+
+        with patch.object(HttpClient, "get_bytes", fetch):
+            CodeLinksStage(self.prepared, self.raw, config=config).run()
+        self.assertEqual(len(calls), len(records) + 1)
+        self.assertEqual(self.server.counts["/pdf"], len(records))
+        for publication in self.prepared.read_models("publications", Publication):
+            self.assertEqual(publication.processing["code_links"].status, ProcessingStatus.COMPLETED)
+
+    def test_network_starts_before_all_publication_caches_are_checked(self):
+        records = [Publication(id=f"W{i}", title="paper", pdf_urls=[self.url + "/held"]) for i in range(2)]
+        self.prepared.write_models("publications", records)
+        store = PdfStore(self.db, self.config.pdf_dir)
         find = store.pointers.find_one
-        checked_before_first_request = set()
 
         def find_one(query, *args, **kwargs):
-            if not self.server.counts["/pdf"]:
-                checked_before_first_request.add(query["_id"])
+            if query.get("_id") == "W1":
+                self.assertTrue(self.server.held.wait(1))
+                self.server.release.set()
             return find(query, *args, **kwargs)
 
         with patch.object(store.pointers, "find_one", side_effect=find_one):
-            CodeLinksStage(self.prepared, self.raw, config=config).run()
-        self.assertEqual(self.server.counts["/pdf"], len(records))
-        self.assertEqual(checked_before_first_request, {"W0"})
-        for publication in self.prepared.read_models("publications", Publication):
-            self.assertEqual(publication.processing["code_links"].status, ProcessingStatus.COMPLETED)
+            CodeLinksStage(self.prepared, self.raw, config=self.config).run()
+        self.assertEqual(self.server.counts["/held"], len(records))
 
     def test_a_paused_redirect_target_can_exhaust_the_started_attempt(self):
         target = self.url.replace("127.0.0.1", "localhost") + "/redirect-target"
@@ -681,7 +751,7 @@ class PdfStageTest(LocalPdfTest):
         self.assertNotIn("code_links", rows["W1"].processing)
         self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(len(list(self.prepared.read_models("repo_links", RepoLink))), 1)
-        self.assertTrue(all(client._cancelled.is_set() and not client._responses for client in stage.http._clients))
+        self.assertTrue(all(client._cancelled.is_set() and not client._active_reads for client in stage.http._clients))
         rows["W1"].pdf_urls = [self.url + "/pdf"]
         self.prepared.upsert_models("publications", [rows["W1"]])
         resumed = CodeLinksStage(self.prepared, self.raw, config=self.config).run()
@@ -820,21 +890,23 @@ class PdfStageTest(LocalPdfTest):
 class HttpsPdfTest(LocalPdfTest):
     secure = True
 
-    def test_deadline_interrupts_https_for_close_and_keep_alive_responses(self):
-        for suffix in ("", "?close=1"):
-            with self.subTest(suffix=suffix):
-                with self.assertRaises(HttpRequestError):
-                    self.fetch("/drip" + suffix, timeout=1, deadline=0.15)
-                self.assertFalse(self.client._responses)
+    def test_deadline_interrupts_https_headers_and_bodies(self):
+        for path in ("/headers-drip", "/drip", "/drip?close=1"):
+            with self.subTest(path=path):
+                started = time.monotonic()
+                with self.assertRaisesRegex(HttpRequestError, "download deadline exceeded"):
+                    self.fetch(path, timeout=1, deadline=0.15)
+                self.assertLess(time.monotonic() - started, 0.65)
+                self.assertFalse(self.client._active_reads)
                 self.assertEqual(self.fetch("/pdf"), self.server.pdf)
 
-    def test_cancellation_before_headers_finishes_within_the_socket_timeout(self):
+    def test_cancellation_interrupts_header_reads_before_the_socket_timeout(self):
         with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(self.fetch, "/headers", timeout=0.1, deadline=1)
+            future = pool.submit(self.fetch, "/headers-drip", timeout=2, deadline=2)
             until = time.monotonic() + 1
-            while not self.server.counts["/headers"] and time.monotonic() < until:
+            while not self.server.counts["/headers-drip"] and time.monotonic() < until:
                 time.sleep(0.005)
-            self.assertTrue(self.server.counts["/headers"])
+            self.assertTrue(self.server.counts["/headers-drip"])
             self.client.cancel()
             with self.assertRaises(CancelledError):
                 future.result(timeout=0.8)

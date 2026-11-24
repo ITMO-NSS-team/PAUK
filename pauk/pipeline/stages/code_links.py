@@ -5,7 +5,7 @@ import re
 import unicodedata
 from bisect import bisect_right
 from collections import Counter, defaultdict, deque
-from collections.abc import Generator, Iterator
+from collections.abc import Collection, Generator, Iterator
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPoolExecutor, wait
 from contextlib import closing, suppress
 from dataclasses import dataclass, field
@@ -664,7 +664,7 @@ class CodeLinksStage(EnrichmentStage):
             if self.selected("publications", publication.id)
             and self.needs_attempt(publication.processing.get(self.name))
         ]
-        with closing(self._fetch_all(candidates)) as results:
+        with closing(self._fetch_all(candidates, links_by_publication)) as results:
             return self._apply_results(results, links_by_publication)
 
     def _perform_pdf_io(self, task: _PdfTask) -> bytes | None:
@@ -683,7 +683,8 @@ class CodeLinksStage(EnrichmentStage):
             groups.setdefault(_pdf_host(source), deque()).append(publication)
         return groups
 
-    def _fetch_all(self, candidates: list[Publication]) -> Iterator[tuple[Publication, _PdfResult]]:
+    def _fetch_all(self, candidates: list[Publication],
+                   previous_links: dict[str, RepoLink]) -> Iterator[tuple[Publication, _PdfResult]]:
         """Queue individual source URLs and parse completed PDFs on the caller thread."""
         pool = ThreadPoolExecutor(max_workers=self.config.code_links_concurrency, thread_name_prefix="pauk-pdf")
         pending: dict[Future[bytes | None], tuple[_PdfWorkflow, _PdfTask, str]] = {}
@@ -725,16 +726,27 @@ class CodeLinksStage(EnrichmentStage):
                 remaining.setdefault(task.host, deque()).append((workflow, task))
 
         def fill_window():
+            checked = 0
             while len(pending) < self.config.code_links_concurrency and heartbeat():
-                while deferred and deferred[0][0] <= monotonic():
+                now = monotonic()
+                while deferred and deferred[0][0] <= now:
                     _, _, workflow, task = heappop(deferred)
-                    remaining.setdefault(task.host, deque()).append((workflow, task))
+                    queue = remaining.setdefault(task.host, deque())
+                    if isinstance(task, _PdfRequest) and task.state.deadline is not None:
+                        queue.appendleft((workflow, task))
+                    else:
+                        queue.append((workflow, task))
                 submitted = False
                 # Slow downloads must not strand already parsed PDFs waiting for a cache write.
                 for host in sorted(remaining, key=bool):
-                    if host and reserved[host] >= self.config.pdf_host_concurrency:
+                    workflow, task = remaining[host][0]
+                    deadline = task.state.deadline if isinstance(task, _PdfRequest) else None
+                    expired = deadline is not None and deadline <= now
+                    if host and not expired and (
+                        reserved[host] >= self.config.pdf_host_concurrency or host_ready_at.get(host, 0) > now
+                    ):
                         continue
-                    workflow, task = remaining[host].popleft()
+                    remaining[host].popleft()
                     if not remaining[host]:
                         del remaining[host]
                     pending[pool.submit(self._perform_pdf_io, task)] = (workflow, task, host)
@@ -746,19 +758,20 @@ class CodeLinksStage(EnrichmentStage):
                     return
                 if submitted:
                     continue
-                now = monotonic()
-                host = next((host for host in publications if not host or (
-                    reserved[host] < self.config.pdf_host_concurrency and host_ready_at.get(host, 0) <= now
-                )), None)
+                if checked == self.config.code_links_concurrency:
+                    return
+                # The source host is only a scheduling hint until the cache has been checked.
+                host = next(iter(publications), None)
                 if host is None:
                     return
                 group = publications.pop(host)
                 publication = group.popleft()
                 if group:
                     publications[host] = group
-                workflow = self._pdf_workflow(publication)
+                workflow = self._pdf_workflow(publication, previous_links.get(publication.id))
                 workflows.add(workflow)
                 advance(publication, workflow)
+                checked += 1
 
         try:
             if not candidates:
@@ -779,11 +792,18 @@ class CodeLinksStage(EnrichmentStage):
                             fill_window()
                         if stopped is not None:
                             break
+                        can_check_cache = publications and len(pending) < self.config.code_links_concurrency
                         if not pending:
-                            if deferred:
-                                sleep(min(PDF_POLL_SECONDS, max(0., deferred[0][0] - monotonic())))
+                            if not can_check_cache:
+                                now = monotonic()
+                                wakeups = [host_ready_at[host] for host in remaining if host_ready_at.get(host, 0) > now]
+                                if deferred:
+                                    wakeups.append(deferred[0][0])
+                                if wakeups:
+                                    sleep(min(PDF_POLL_SECONDS, max(0., min(wakeups) - now)))
                             continue
-                        ready, _ = wait(pending, timeout=PDF_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                        ready, _ = wait(pending, timeout=0 if can_check_cache else PDF_POLL_SECONDS,
+                                        return_when=FIRST_COMPLETED)
                         for future in ready:
                             workflow, task, host = pending.pop(future)
                             reserved[host] -= 1
@@ -791,7 +811,7 @@ class CodeLinksStage(EnrichmentStage):
                                 data = future.result()
                             except RequestDeferred as retry:
                                 if retry.host is not None:
-                                    host_ready_at[retry.host] = retry.ready_at
+                                    host_ready_at[retry.host] = max(retry.ready_at, host_ready_at.get(retry.host, 0))
                                 heappush(deferred, (retry.ready_at, next(sequence), workflow, task))
                             except Exception as error:
                                 advance(task.publication, workflow, error=error)
@@ -824,6 +844,16 @@ class CodeLinksStage(EnrichmentStage):
                 workflow.close()
             self.http.close()
 
+    def _missing_pdf_ids(self, previous: RepoLink | None, parsed_ids: Collection[str]) -> set[str]:
+        missing = {
+            occ.pdf_id for link in previous.links for occ in link.occurrences
+            if occ.pdf_id and occ.pdf_id not in parsed_ids
+        } if previous else set()
+        if missing and parsed_ids:
+            parsed_files = {self.pdf_store.cache_identity(key) for key in parsed_ids}
+            missing = {key for key in missing if self.pdf_store.cache_identity(key) not in parsed_files}
+        return missing
+
     def _apply_results(self, results, links_by_publication: dict[str, RepoLink]) -> dict[str, int]:
         changed = 0
         for pub, fetched in results:
@@ -831,13 +861,7 @@ class CodeLinksStage(EnrichmentStage):
             archived = _archived_repository_url(pub)
             pdf_pages, pdf_page_occurrences, pdf_error = fetched.pages, fetched.occurrences, fetched.error
             previous = links_by_publication.get(pub.id)
-            missing_pdf_ids = {
-                occ.pdf_id for link in previous.links for occ in link.occurrences
-                if occ.pdf_id and occ.pdf_id not in fetched.parsed_ids
-            } if previous else set()
-            if missing_pdf_ids and fetched.parsed_ids:
-                parsed_files = {self.pdf_store.cache_identity(key) for key in fetched.parsed_ids}
-                missing_pdf_ids = {key for key in missing_pdf_ids if self.pdf_store.cache_identity(key) not in parsed_files}
+            missing_pdf_ids = self._missing_pdf_ids(previous, fetched.parsed_ids)
             if missing_pdf_ids:
                 pdf_error = "; ".join(filter(None, (pdf_error, f"PDF evidence unavailable: {', '.join(sorted(missing_pdf_ids))}")))
             if pdf_pages and (not pdf_error or not pub.full_text):
@@ -920,7 +944,7 @@ class CodeLinksStage(EnrichmentStage):
             )
             return False
 
-    def _pdf_workflow(self, pub: Publication) -> _PdfWorkflow:
+    def _pdf_workflow(self, pub: Publication, previous: RepoLink | None) -> _PdfWorkflow:
         """Collect source-record and cached-version evidence across queued I/O."""
         primary = _primary_pdf_record(pub)
         primary_id = primary.key if primary else pub.id
@@ -948,18 +972,19 @@ class CodeLinksStage(EnrichmentStage):
                 errors[key] = f"{key}: {redact_text(exc)}"
 
         download_errors = []
+        missing = self._missing_pdf_ids(previous, parsed.keys())
         records = [record for record in pub.source_records if record.pdf_urls or record.doi]
         for record in records or [None]:
             key = record.key if record else pub.id
-            if parsed and key not in errors:
+            if parsed and key not in errors and key not in missing:
                 continue
             pages, occurrences, error = yield from self._download_record(pub, record)
             if pages:
                 parsed[key] = pages, occurrences
                 errors.pop(key, None)
             elif error:
-                if key in errors:
-                    errors[key] += f"; {error}"
+                if key in errors or key in missing:
+                    errors[key] = "; ".join(filter(None, (errors.get(key), error)))
                 else:
                     download_errors.append(error)
 

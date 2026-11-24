@@ -167,6 +167,30 @@ class CodeLinksVersionsTest(unittest.TestCase):
                 [link] = self.run_stage().links
                 self.assertEqual([occ.pdf_id for occ in link.occurrences], [preprint])
 
+    def test_redownloads_a_missing_version_that_previously_supplied_links(self):
+        preprint = "archive:preprint"
+        url = "https://example.org/preprint.pdf"
+        store = PdfStore(self.db, self.config.pdf_dir)
+        pub = Publication(id="pub_1", title="paper", schema_version=2, source_records=[
+            {"source": "catalog", "source_id": "article", "doi": "10.1/article"},
+            {"source": "archive", "source_id": "preprint", "pdf_urls": [url]},
+        ])
+        self.prepared.write_models("publications", [pub])
+        store.save("catalog:article", _make_pdf_bytes("Article without code"))
+        self.prepared.write_models("repo_links", [RepoLink(publication_id=pub.id, links=[
+            CodeLink(url="https://github.com/org/stale",
+                     occurrences=[LinkOccurrence(page_number=1, pdf_id=preprint)]),
+        ])])
+        with patch("pauk.pipeline.stages.code_links.HttpClient") as http:
+            http.return_value.get_bytes.return_value = _make_pdf_bytes("https://github.com/org/recovered")
+            CodeLinksStage(self.prepared, RawStore(self.db, "sample"), self.config).run()
+            self.assertEqual([call.args for call in http.return_value.get_bytes.call_args_list], [(url,)])
+        [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
+        self.assertEqual(link.url, "https://github.com/org/recovered")
+        self.assertEqual(link.occurrences[0].pdf_id, preprint)
+        publication = next(self.prepared.read_models("publications", Publication))
+        self.assertEqual(publication.processing["code_links"].status, "completed")
+
     def test_legacy_evidence_is_replaced_only_when_the_same_file_was_read(self):
         store = PdfStore(self.db, self.config.pdf_dir)
         store.save("W1", _make_pdf_bytes("https://github.com/org/current"))

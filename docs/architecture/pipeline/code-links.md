@@ -180,7 +180,8 @@ configuration: [../deploy.md](../deploy.md).
 
 Downloads use a sliding window: each finished task frees a slot for
 the next one. Publications are grouped by their primary host from metadata.
-The stage checks each publication's cache when it enters the window.
+The stage checks each publication's cache before queuing network work.
+Host pauses and concurrency limits apply only to network requests.
 Each source URL is queued under its own host; a failed source
 releases that host before an alternative URL or the crawler is queued.
 Sources waiting in the host queue do not occupy network workers.
@@ -197,7 +198,7 @@ Settings in `pauk/settings.py`:
 | `PAUK_PDF_HOST_CONCURRENCY` | `2` | Concurrent requests per host |
 | `PAUK_PDF_CONNECT_TIMEOUT` | `5` | Connection timeout, seconds |
 | `PAUK_PDF_READ_TIMEOUT` | `15` | Socket read timeout, seconds |
-| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds from admission of the first request through redirects and body reads |
+| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds from admission of the first request through redirects, headers and body reads |
 | `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
 | `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
 
@@ -211,9 +212,9 @@ timeout and deadline.
 Results are saved as they finish. Before replacing links, the stage clears
 completed statuses so a partial write can be retried without `--force`.
 Stopping saves results whose cache writes have started before exiting.
-Cancellation interrupts body reads and retry/host waits. Before headers
-arrive, stopping may take up to the socket timeout; OS DNS lookup has no hard
-deadline. Sessions close after workers finish.
+Cancellation interrupts header and body reads and retry/host waits. Connection
+setup uses its socket timeout. OS DNS lookup has no hard deadline.
+Sessions close after workers finish.
 
 `data/pdf/<sha256(source-record-key)>.pdf` (`PdfStore`, with a
 `{record_key, filename, fetched_at}` pointer in the `pdfs` collection). Legacy
@@ -228,8 +229,8 @@ cache is not downloaded again. Normalized page texts are joined into
 After the highest-ranked source record, the stage reads already-cached files
 from the other `source_keys`, `merged_ids` and `versions[].openalex_id`.
 If no cached PDF is usable, it tries the source records' URLs and DOIs in
-rank order. A corrupt cached version with its own source is downloaded again
-even if another version was readable.
+rank order. If a version has a usable source, the stage downloads it again
+when its cache is corrupt or its file is missing despite saved link evidence.
 
 Texts are combined in `full_text`, and every occurrence keeps its own `pdf_id`
 and local page number. Caches are read even without `pdf_urls`. Failure or
