@@ -92,11 +92,11 @@ class ContractsTests(unittest.TestCase):
 
     def test_cursor_request_binding_and_tampering(self) -> None:
         cursors = Cursors(b"synthetic-test-key")
-        request = {"tool": "search", "query": "abc", "page_size": 10}
+        request = {"tool": "search", "query": "abc"}
         cursor = cursors.encode(request, 10)
         self.assertEqual(cursors.decode(cursor, request), 10)
         for bad, binding in (
-            (cursor, {**request, "page_size": 5}),
+            (cursor, {**request, "query": "other"}),
             (cursor[:-2] + "xx", request),
             ("not base64!", request),
             ("x" * 1025, request),
@@ -281,6 +281,167 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         reader = StubReader([[{"id": "x" * 257}]])
         with self.assertRaises(MCPError):
             await Service(reader, b"key").get_repository(RepositoryRequest(repository_id="r"))
+
+    async def test_cursor_allows_changing_page_size_across_all_paginated_tools(self) -> None:
+        reader = StubReader(
+            [
+                [{"id": f"p{i}", "title": f"Title {i}", "doi": None, "year": 2026} for i in range(6)],
+                [{"id": "p5", "title": "Title 5", "doi": None, "year": 2026}],
+            ]
+        )
+        service = Service(reader, b"synthetic-key")
+        search_page = await service.search_publications(SearchRequest(title_contains="Title", page_size=5))
+        self.assertIsNotNone(search_page.next_cursor)
+        await service.search_publications(
+            SearchRequest(title_contains="Title", page_size=2, cursor=search_page.next_cursor)
+        )
+        self.assertEqual(reader.calls[-1][1]["offset"], 5)
+        self.assertEqual(reader.calls[-1][1]["limit"], 3)
+        with self.assertRaises(MCPError) as caught:
+            await service.search_publications(
+                SearchRequest(title_contains="Other", page_size=2, cursor=search_page.next_cursor)
+            )
+        self.assertEqual(caught.exception.code, "CURSOR")
+
+        repo_reader = StubReader(
+            [
+                [{"id": "p"}],
+                [{"id": f"r{i}", "url": f"https://github.com/o/r{i}", "name": f"repo {i}"} for i in range(4)],
+                [{"id": "p"}],
+                [],
+            ]
+        )
+        repo_service = Service(repo_reader, b"synthetic-key")
+        repo_page = await repo_service.get_publication_repositories(
+            PublicationRequest(publication_id="p", page_size=3)
+        )
+        self.assertIsNotNone(repo_page.next_cursor)
+        await repo_service.get_publication_repositories(
+            PublicationRequest(publication_id="p", page_size=1, cursor=repo_page.next_cursor)
+        )
+        self.assertEqual(repo_reader.calls[-1][1]["offset"], 3)
+        self.assertEqual(repo_reader.calls[-1][1]["limit"], 2)
+        with self.assertRaises(MCPError) as caught:
+            await repo_service.get_publication_repositories(
+                PublicationRequest(publication_id="other", page_size=1, cursor=repo_page.next_cursor)
+            )
+        self.assertEqual(caught.exception.code, "CURSOR")
+
+        explain_reader = StubReader(
+            [
+                [{"id": "p"}],
+                [{"id": "r"}],
+                [],
+                [{"aligned": True, "context": f"ctx {i}", "context_present": True} for i in range(3)],
+                [{"id": "p"}],
+                [{"id": "r"}],
+                [],
+                [],
+            ]
+        )
+        explain_service = Service(explain_reader, b"synthetic-key", safe_synthetic_text=True)
+        explain_page = await explain_service.explain_link(
+            ExplainRequest(publication_id="p", repository_id="r", page_size=2)
+        )
+        self.assertIsNotNone(explain_page.next_cursor)
+        await explain_service.explain_link(
+            ExplainRequest(publication_id="p", repository_id="r", page_size=5, cursor=explain_page.next_cursor)
+        )
+        self.assertEqual(explain_reader.calls[-1][1]["offset"], 2)
+        self.assertEqual(explain_reader.calls[-1][1]["limit"], 6)
+        with self.assertRaises(MCPError) as caught:
+            await explain_service.explain_link(
+                ExplainRequest(publication_id="p", repository_id="other", page_size=5, cursor=explain_page.next_cursor)
+            )
+        self.assertEqual(caught.exception.code, "CURSOR")
+
+    async def test_oversized_page_shrinks_and_advances_cursor_without_gaps(self) -> None:
+        all_pubs = [
+            {"id": f"p-{i}", "title": "\U0001f600" * 1000, "doi": "10." + "a" * 400, "year": 2026} for i in range(25)
+        ]
+
+        class PagedReader:
+            def __init__(self, rows: list[dict[str, Any]]) -> None:
+                self.rows = rows
+
+            async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
+                if "MATCH (n:Publication) WHERE n.id" in query:
+                    return [{"id": parameters["id"]}]
+                if "MATCH (n:Repository) WHERE n.id" in query:
+                    return [{"id": parameters["id"]}]
+                if "RETURN true AS implements" in query:
+                    return []
+                offset = int(parameters["offset"])
+                limit = int(parameters["limit"])
+                return self.rows[offset : offset + limit]
+
+        pub_service = Service(PagedReader(all_pubs), b"synthetic-key")
+        collected_pubs: list[str] = []
+        cursor: str | None = None
+        pages = 0
+        while True:
+            page = await pub_service.search_publications(
+                SearchRequest(title_contains="abc", page_size=25, cursor=cursor)
+            )
+            self.assertGreaterEqual(len(page.items), 1)
+            self.assertLess(len(page.items), 25)
+            collected_pubs.extend(item.publication_id for item in page.items)
+            pages += 1
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        self.assertGreater(pages, 1)
+        self.assertEqual(collected_pubs, [f"p-{i}" for i in range(25)])
+
+        all_repos = [
+            {
+                "id": f"r-{i}",
+                "url": "https://github.com/org/" + "r" * 1500,
+                "name": "\U0001f600" * 1000,
+            }
+            for i in range(15)
+        ]
+        repo_service = Service(PagedReader(all_repos), b"synthetic-key")
+        collected_repos: list[str] = []
+        cursor = None
+        while True:
+            page = await repo_service.get_publication_repositories(
+                PublicationRequest(publication_id="p-0", page_size=25, cursor=cursor)
+            )
+            self.assertGreaterEqual(len(page.items), 1)
+            self.assertLess(len(page.items), 15)
+            collected_repos.extend(item.repository_id for item in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        self.assertEqual(collected_repos, [f"r-{i}" for i in range(15)])
+
+        all_evidence = [
+            {
+                "aligned": True,
+                "context": "\U0001f600" * 1000,
+                "context_present": True,
+                "reason": "y" * 500,
+                "reason_present": True,
+                "page": i + 1,
+                "source": "pdf_text",
+            }
+            for i in range(10)
+        ]
+        explain_service = Service(PagedReader(all_evidence), b"synthetic-key", safe_synthetic_text=True)
+        collected_pages: list[int] = []
+        cursor = None
+        while True:
+            page = await explain_service.explain_link(
+                ExplainRequest(publication_id="p-0", repository_id="r-0", page_size=10, cursor=cursor)
+            )
+            self.assertGreaterEqual(len(page.evidence), 1)
+            self.assertLess(len(page.evidence), 10)
+            collected_pages.extend(ev.pages[0] for ev in page.evidence)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        self.assertEqual(collected_pages, list(range(1, 11)))
 
 
 class ReaderTests(unittest.IsolatedAsyncioTestCase):

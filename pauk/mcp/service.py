@@ -1,10 +1,13 @@
 """Four bounded read operations over the published graph."""
 
+import json
 import math
+from collections.abc import Callable
 from typing import Any
 
 from pauk.mcp import reader as queries
 from pauk.mcp.contracts import (
+    Contract,
     Cursors,
     Evidence,
     ExplainRequest,
@@ -24,6 +27,16 @@ from pauk.mcp.contracts import (
 )
 
 SOURCES = {"abstract", "pdf_text", "pdf_annotation", "reference", "citation", "deposit_title"}
+WIRE_RESPONSE_LIMIT = 65536
+WIRE_ENVELOPE_HEADROOM = 8192
+PAGE_WIRE_BUDGET = WIRE_RESPONSE_LIMIT - WIRE_ENVELOPE_HEADROOM
+
+
+def _estimated_wire_bytes(page: Contract) -> int:
+    """Estimate UTF-8 bytes of FastMCP's dual text and structuredContent JSON framing."""
+    structured = page.model_dump_json()
+    encoded_text = json.dumps(page.model_dump_json(indent=2), ensure_ascii=False)
+    return len(structured.encode("utf-8")) + len(encoded_text.encode("utf-8"))
 
 
 def text(value: object, *, allowed: bool = True, present: bool = False, limit: int = 1000) -> Text:
@@ -90,12 +103,36 @@ class Service:
 
     def _page(self, request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         cursor = request.pop("cursor")
+        page_size = request.pop("page_size")
         offset = self.cursors.decode(cursor, request)
-        return request, {"offset": offset, "limit": request["page_size"] + 1}
+        return request, {"offset": offset, "limit": page_size + 1}
 
-    def _next(self, request: dict[str, Any], parameters: dict[str, Any], rows: list[Any]) -> str | None:
-        size = request["page_size"]
-        return self.cursors.encode(request, parameters["offset"] + size) if len(rows) > size else None
+    def _next(self, binding: dict[str, Any], parameters: dict[str, Any], rows: list[Any], emitted: int) -> str | None:
+        return self.cursors.encode(binding, parameters["offset"] + emitted) if len(rows) > emitted else None
+
+    def _fit_page[TPage: Contract, TItem](
+        self,
+        binding: dict[str, Any],
+        parameters: dict[str, Any],
+        rows: list[Any],
+        candidates: list[TItem],
+        build: Callable[[list[TItem], str | None], TPage],
+    ) -> TPage:
+        """Shrink a page to the largest prefix that fits inside the safe wire budget."""
+        page = build(candidates, self._next(binding, parameters, rows, len(candidates)))
+        if len(candidates) <= 1 or _estimated_wire_bytes(page) <= PAGE_WIRE_BUDGET:
+            return page
+        low, high = 1, len(candidates) - 1
+        best = build(candidates[:1], self._next(binding, parameters, rows, 1))
+        while low <= high:
+            mid = (low + high) // 2
+            candidate = build(candidates[:mid], self._next(binding, parameters, rows, mid))
+            if _estimated_wire_bytes(candidate) <= PAGE_WIRE_BUDGET:
+                best = candidate
+                low = mid + 1
+            else:
+                high = mid - 1
+        return best
 
     async def search_publications(self, request: SearchRequest) -> PublicationPage:
         """Search by exact normalized DOI, literal title tokens, or confirmed repository name/URL."""
@@ -114,7 +151,7 @@ class Service:
             parameters["query"] = binding["repository_contains"]
             query = queries.SEARCH_REPOSITORY
         rows = await self.reader.query(query, parameters)
-        items = [
+        candidates = [
             Publication(
                 publication_id=_identifier(row.get("id")),
                 title=text(row.get("title")),
@@ -123,17 +160,30 @@ class Service:
             )
             for row in rows[: request.page_size]
         ]
-        return PublicationPage(items=items, next_cursor=self._next(binding, parameters, rows))
+        return self._fit_page(
+            binding,
+            parameters,
+            rows,
+            candidates,
+            lambda page_items, next_cursor: PublicationPage(items=page_items, next_cursor=next_cursor),
+        )
 
     async def get_publication_repositories(self, request: PublicationRequest) -> RepositoryPage:
         """Return only canonical repositories linked by IMPLEMENTS, not mentions."""
         binding, parameters = self._page({"tool": "repositories", **request.model_dump()})
         publication_id = _identifier(await queries.resolve(self.reader, "Publication", request.publication_id))
         rows = await self.reader.query(queries.REPOSITORIES, {**parameters, "publication_id": publication_id})
-        return RepositoryPage(
-            publication_id=publication_id,
-            items=[_repository_link(r) for r in rows[: request.page_size]],
-            next_cursor=self._next(binding, parameters, rows),
+        candidates = [_repository_link(r) for r in rows[: request.page_size]]
+        return self._fit_page(
+            binding,
+            parameters,
+            rows,
+            candidates,
+            lambda page_items, next_cursor: RepositoryPage(
+                publication_id=publication_id,
+                items=page_items,
+                next_cursor=next_cursor,
+            ),
         )
 
     async def get_repository(self, request: RepositoryRequest) -> Repository:
@@ -169,9 +219,16 @@ class Service:
         pair = {"publication_id": publication_id, "repository_id": repository_id}
         implements = bool(await self.reader.query(queries.IMPLEMENTS, pair))
         rows = await self.reader.query(queries.EVIDENCE, {**pair, **parameters, "text": self.safe_synthetic_text})
-        return Explanation(
-            **pair,
-            implements=implements,
-            evidence=[_evidence(r, self.safe_synthetic_text) for r in rows[: request.page_size]],
-            next_cursor=self._next(binding, parameters, rows),
+        candidates = [_evidence(r, self.safe_synthetic_text) for r in rows[: request.page_size]]
+        return self._fit_page(
+            binding,
+            parameters,
+            rows,
+            candidates,
+            lambda page_items, next_cursor: Explanation(
+                **pair,
+                implements=implements,
+                evidence=page_items,
+                next_cursor=next_cursor,
+            ),
         )

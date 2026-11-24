@@ -1,11 +1,19 @@
-"""Opt-in synthetic Neo4j checks in a new disposable container, never an existing graph."""
+"""Synthetic Neo4j checks in a disposable testcontainers instance, never an existing graph.
+
+Neither Docker nor `testcontainers` is a project dependency (see AGENTS.md). Run explicitly, with Docker
+running:
+
+    uv run --extra mcp --with pytest --with 'testcontainers[neo4j]' pytest tests/integration/test_mcp_graph.py -q
+
+Defaults to `neo4j:5-community` (shared with the other Neo4j integration tests); set
+`PAUK_MCP_NEO4J_IMAGE` to test against another image (such as `neo4j:2026.05.0`). If `testcontainers` is
+missing or Docker is unreachable, the test class is skipped instead of erroring.
+"""
 
 import asyncio
 import os
-import subprocess
 import time
 import unittest
-import uuid
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
@@ -13,6 +21,15 @@ from pauk.mcp.contracts import ExplainRequest, MCPError, PublicationRequest, Rep
 from pauk.mcp.reader import Neo4jReader
 from pauk.mcp.service import Service
 
+try:
+    from testcontainers.community.neo4j import Neo4jContainer
+
+    _IMPORT_ERROR: Exception | None = None
+except ImportError as exc:  # pragma: no cover - exercised only when the extra isn't installed
+    Neo4jContainer = None  # type: ignore[assignment,misc]
+    _IMPORT_ERROR = exc
+
+DEFAULT_NEO4J_IMAGE = "neo4j:5-community"
 SYNTHETIC_PASSWORD = "pauk-mcp-synthetic-only-password"
 SEED = """
 CREATE (p:Publication {id:'p-paper', merged_ids:['old-paper'], title:'Synthetic PAUK paper',
@@ -41,67 +58,35 @@ CREATE (p:Publication {id:'p-paper', merged_ids:['old-paper'], title:'Synthetic 
 """
 
 
-@unittest.skipUnless(os.getenv("PAUK_MCP_INTEGRATION") == "1", "Opt-in disposable synthetic Neo4j test")
 class GraphTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
-    def _start_container(cls) -> None:
-        cls.container = "pauk-mcp-isolated-" + uuid.uuid4().hex[:12]
-        subprocess.run(
-            [
-                "docker",
-                "run",
-                "--detach",
-                "--rm",
-                "--pull",
-                "never",
-                "--name",
-                cls.container,
-                "-p",
-                "127.0.0.1::7687",
-                "-e",
-                "NEO4J_AUTH=neo4j/" + SYNTHETIC_PASSWORD,
-                "-e",
-                "NEO4J_server_memory_heap_initial__size=256m",
-                "-e",
-                "NEO4J_server_memory_heap_max__size=256m",
-                "neo4j:2026.05.0",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-    @classmethod
     def setUpClass(cls) -> None:
-        cls._start_container()
-        cls.addClassCleanup(cls.stop_container)
-        port = (
-            subprocess.check_output(["docker", "port", cls.container, "7687/tcp"], text=True).strip().rsplit(":", 1)[1]
-        )
-        cls.uri = "bolt://127.0.0.1:" + port
-        with GraphDatabase.driver(
-            cls.uri, auth=("neo4j", SYNTHETIC_PASSWORD), connection_timeout=1, max_transaction_retry_time=0
-        ) as driver:
-            deadline = time.monotonic() + 70
-            while True:
-                try:
-                    driver.verify_connectivity()
-                    break
-                except Exception:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("Disposable Neo4j startup timed out") from None
-                    time.sleep(0.5)
-            with driver.session(database="neo4j") as session:
-                session.run(SEED).consume()
-
-    @classmethod
-    def stop_container(cls) -> None:
-        """Stop only the exact new container owned by this test class."""
-        subprocess.run(["docker", "stop", "--time", "5", cls.container], check=True, capture_output=True)
+        if _IMPORT_ERROR is not None:
+            raise unittest.SkipTest(
+                f"testcontainers not installed ({_IMPORT_ERROR}); "
+                "run with --with 'testcontainers[neo4j]' to include these tests"
+            )
+        image = os.getenv("PAUK_MCP_NEO4J_IMAGE", DEFAULT_NEO4J_IMAGE)
+        container = Neo4jContainer(image=image, password=SYNTHETIC_PASSWORD)
+        try:
+            container.start()
+        except Exception as exc:  # Docker daemon not running, no permission, image pull failure, etc.
+            raise unittest.SkipTest(f"could not start a Neo4j container: {exc}") from exc
+        cls._container = container
+        cls.addClassCleanup(cls._container.stop)
+        cls.uri = cls._container.get_connection_url()
+        cls.username = cls._container.username
+        with (
+            GraphDatabase.driver(
+                cls.uri, auth=(cls.username, SYNTHETIC_PASSWORD), connection_timeout=1, max_transaction_retry_time=0
+            ) as driver,
+            driver.session(database="neo4j") as session,
+        ):
+            session.run(SEED).consume()
 
     async def asyncSetUp(self) -> None:
         self.driver = AsyncGraphDatabase.driver(
-            self.uri, auth=("neo4j", SYNTHETIC_PASSWORD), max_transaction_retry_time=0
+            self.uri, auth=(self.username, SYNTHETIC_PASSWORD), max_transaction_retry_time=0
         )
         self.service = Service(Neo4jReader(self.driver, "neo4j"), b"synthetic", safe_synthetic_text=True)
 

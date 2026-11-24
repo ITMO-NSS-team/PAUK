@@ -236,14 +236,23 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.reader.calls, 0)
 
     async def test_wire_response_cap_unicode_and_framing(self) -> None:
+        rows = [{"id": f"p-{i}", "title": "\U0001f600" * 1001, "doi": None, "year": 2026} for i in range(25)]
+
         class LargeReader(SyntheticReader):
             async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
-                """Fill the largest allowed publication page."""
-                return [{"id": f"p-{i}", "title": "\U0001f600" * 1001, "doi": None, "year": 2026} for i in range(25)]
+                """Return an offset-sliced page of large Unicode publications."""
+                offset = int(parameters.get("offset", 0))
+                limit = int(parameters.get("limit", 25))
+                return rows[offset : offset + limit]
 
         manager = live_server(create_app(Service(LargeReader(), b"key"), TEST_TOKEN))
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-11-25",
+        }
         with manager as url:
-            request = {
+            first_request = {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
@@ -252,20 +261,32 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                     "arguments": {"title_contains": "abc", "page_size": 25},
                 },
             }
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2025-11-25",
+            first_response = await self.http.post(url, json=first_request, headers=headers)
+            self.assertEqual(first_response.status_code, 200)
+            self.assertLessEqual(len(first_response.content), 65536)
+            first_page = first_response.json()["result"]["structuredContent"]
+            first_count = len(first_page["items"])
+            self.assertGreaterEqual(first_count, 1)
+            self.assertLess(first_count, 25)
+            self.assertEqual(first_page["items"][0]["publication_id"], "p-0")
+            self.assertIsNotNone(first_page["next_cursor"])
+
+            next_request = {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "search_publications",
+                    "arguments": {"title_contains": "abc", "page_size": 2, "cursor": first_page["next_cursor"]},
+                },
             }
-            response = await self.http.post(url, json=request, headers=headers)
-            self.assertLessEqual(len(response.content), 65536)
-            self.assertEqual(response.status_code, 500)
-            self.assertEqual(response.json(), {"error": "INTERNAL"})
-        request["params"]["arguments"]["page_size"] = 1
-        response = await self.http.post(self.url, json=request, headers=headers)
-        self.assertEqual(response.status_code, 200)
-        self.assertLessEqual(len(response.content), 65536)
-        self.assertIn("structuredContent", response.json()["result"])
+            next_response = await self.http.post(url, json=next_request, headers=headers)
+            self.assertEqual(next_response.status_code, 200)
+            self.assertLessEqual(len(next_response.content), 65536)
+            next_page = next_response.json()["result"]["structuredContent"]
+            self.assertEqual(len(next_page["items"]), 2)
+            self.assertEqual(next_page["items"][0]["publication_id"], f"p-{first_count}")
+            self.assertEqual(next_page["items"][1]["publication_id"], f"p-{first_count + 1}")
 
 
 @unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for boundary tests")

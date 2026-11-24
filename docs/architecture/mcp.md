@@ -88,10 +88,13 @@ checking, and the server never fetches a returned URL.
 
 Publication/repository pages default to 10, maximum 25; evidence defaults to
 5, maximum 10. Cursors are HMAC-authenticated JSON continuations bound to the
-normalized request and page size, ordered by canonical ID or graph edge ID
-plus occurrence position. They expire on server restart because the signing
-key is ephemeral. Pagination is not a snapshot: graph mutation between calls
-can shift offsets.
+normalized request without `page_size` (so callers can change `page_size` on
+continuation requests), ordered by canonical ID or graph edge ID plus
+occurrence position. Oversized pages shrink to the largest prefix (at least one
+item) that fits inside the safe wire budget, advancing `next_cursor` by the
+number of emitted items. Cursors expire on server restart because the signing key
+is ephemeral. Pagination is not a snapshot: graph mutation between calls can
+shift offsets.
 
 ## Evidence limits
 
@@ -126,23 +129,24 @@ Person objects, schema initialization or mutation/admin imports. Async Neo4j
 queries have a 3-second transaction and coroutine deadline, no retries; a
 5-second tool deadline propagates cancellation and cancels the active session.
 The HTTP boundary limits request bodies to 8 KiB and complete response bodies
-(including SDK text plus structured-result framing) to 64 KiB. An oversized
-response becomes a small valid HTTP 500 JSON error; it is never byte-truncated.
-Clients should retry a legitimate large page with a smaller page size.
+(including SDK text plus structured-result framing) to 64 KiB. `Service` adapts
+page length down inside that wire budget before serialization; as defense-in-depth,
+an oversized response at the HTTP boundary becomes a small valid HTTP 500 JSON
+error without byte-truncation, and clients may also reduce `page_size` on a
+continuation cursor without losing their offset.
 
 ```bash
-uv run --no-sync python -m unittest tests.unit.test_mcp_service tests.unit.test_mcp_server
-PAUK_MCP_INTEGRATION=1 uv run --no-sync python -m unittest tests.integration.test_mcp_graph
+uv run --extra mcp --with pytest pytest tests/unit/test_mcp_service.py tests/unit/test_mcp_server.py -q
+uv run --extra mcp --with pytest --with 'testcontainers[neo4j]' pytest tests/integration/test_mcp_graph.py -q
 ```
 
 The first command uses synthetic in-memory records and a real loopback HTTP
 server/client. Without the optional SDK, only protocol tests are skipped; base
-pipeline imports remain independent. The second command requires an already
-cached `neo4j:2026.05.0` Docker image, creates one new named disposable container
-with synthetic credentials and a random loopback Bolt port, seeds synthetic
-records and stops only that owned container. It never pulls images, connects
-to an existing graph or mounts user storage. Ordinary test discovery does not
-connect to Neo4j.
+pipeline imports remain independent. The second command uses `testcontainers`
+to start a disposable `neo4j:5-community` container (overridable via
+`PAUK_MCP_NEO4J_IMAGE`, e.g. `neo4j:2026.05.0`), seeds synthetic records and
+stops the container afterward. It never connects to an existing graph or mounts
+user storage, and skips cleanly when `testcontainers` or Docker is absent.
 
 For a separate client's local contract check, `tests.mcp_support` exports
 `SyntheticReader`, `TEST_TOKEN` and `live_server(app)`. Build the app with
