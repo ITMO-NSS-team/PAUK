@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -1113,6 +1114,172 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
                 self.assertEqual(work.processing["code_links"].status, ProcessingStatus.COMPLETED)
                 self.assertIn("Paper text", work.full_text or "")
                 self.assertIn("https://github.com/org/from-abs", self._links())
+
+
+    @mock.patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_non_force_rerun_removes_stale_abstract_link_while_keeping_manual_and_unavailable_pdf(
+        self, llm: mock.Mock,
+    ) -> None:
+        old_url = "https://github.com/lab/old"
+        manual_url = "https://github.com/lab/manual"
+        unavailable_url = "https://github.com/lab/unreadable"
+        done = ProcessingState(status=ProcessingStatus.COMPLETED)
+        llm.return_value.configure_mock(model="test", last_response=None, last_usage=None)
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(self.config, data_dir=Path(directory))
+            self.prepared.write_models("publications", [Publication(
+                id="W1",
+                title="Updated paper",
+                abstract="Updated abstract with no links",
+                has_code=True,
+                code_url=json.dumps([old_url]),
+                processing={"link_relevance": done},
+            )])
+            self.prepared.write_models("repo_links", [RepoLink(
+                publication_id="W1",
+                links=[
+                    CodeLink(
+                        url=old_url,
+                        classification_status=ClassificationStatus.CLASSIFIED,
+                        is_relevant=True,
+                        llm_confidence=0.9,
+                        llm_reason="old abstract link",
+                        occurrences=[LinkOccurrence(source="abstract", context=f"See {old_url}")],
+                    ),
+                    CodeLink(
+                        url=manual_url,
+                        classification_status=ClassificationStatus.CLASSIFIED,
+                        is_relevant=True,
+                        occurrences=[],
+                    ),
+                    CodeLink(
+                        url=unavailable_url,
+                        classification_status=ClassificationStatus.CLASSIFIED,
+                        is_relevant=False,
+                        llm_confidence=0.8,
+                        llm_reason="external dependency",
+                        occurrences=[LinkOccurrence(
+                            pdf_id="W_missing", page_number=2, source="pdf_text", context=f"Using {unavailable_url}",
+                        )],
+                    ),
+                ],
+            )])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+
+            llm.return_value.chat_json.assert_not_called()
+            links = self._links()
+            self.assertNotIn(old_url, links)
+            self.assertTrue(links[manual_url].is_relevant)
+            self.assertFalse(links[unavailable_url].is_relevant)
+            self.assertEqual(links[unavailable_url].occurrences[0].pdf_id, "W_missing")
+            work = self._work()
+            self.assertTrue(work.has_code)
+            self.assertEqual(json.loads(work.code_url or "[]"), [manual_url])
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(self.config, data_dir=Path(directory))
+            self.prepared.write_models("publications", [Publication(
+                id="W1",
+                title="Only old abstract link",
+                abstract="Updated abstract with no links",
+                has_code=True,
+                code_url=json.dumps([old_url]),
+                processing={"link_relevance": done},
+            )])
+            self.prepared.write_models("repo_links", [RepoLink(
+                publication_id="W1",
+                links=[CodeLink(
+                    url=old_url,
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    llm_confidence=0.9,
+                    llm_reason="old abstract link",
+                    occurrences=[LinkOccurrence(source="abstract", context=f"See {old_url}")],
+                )],
+            )])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+
+            llm.return_value.chat_json.assert_not_called()
+            work = self._work()
+            self.assertEqual(work.processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
+            self.assertFalse(work.has_code)
+            self.assertIsNone(work.code_url)
+            self.assertEqual(self._links(), {})
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_cross_group_preprint_cache_is_reused_without_network(self, http: mock.Mock) -> None:
+        arxiv_url = "https://arxiv.org/pdf/2201.06114"
+        resolved_url = "https://arxiv.org/pdf/2201.06114v2"
+        preprint_group = PreparedStore(self.db, "preprints")
+        journal_group = PreparedStore(self.db, "journals")
+        preprint_group.write_models("publications", [Publication(
+            id="pub_preprint",
+            title="Preprint",
+            schema_version=2,
+            source_records=[PublicationSourceRecord(
+                key="openalex:W2",
+                source="openalex",
+                source_id="W2",
+                title="Preprint",
+                type="preprint",
+                doi="10.48550/arXiv.2201.06114",
+                pdf_urls=[arxiv_url],
+            )],
+        )])
+        journal_group.write_models("publications", [Publication(
+            id="W1",
+            title="Journal",
+            doi="10.1/journal",
+            arxiv_sources=[ArxivSource(url=arxiv_url)],
+        )])
+        PdfStore(self.db, self.config.pdf_dir).save(
+            "openalex:W2",
+            _pdf("Cross-group preprint\nhttps://github.com/org/cross-group"),
+            source_url=resolved_url,
+        )
+        http.return_value.get_bytes_with_url.side_effect = HttpRequestError("GET", arxiv_url, status_code=503)
+
+        CodeLinksStage(
+            journal_group,
+            RawStore(self.db, "journals"),
+            config=self.config,
+            selection=self.selection,
+        ).run()
+
+        http.return_value.get_bytes_with_url.assert_not_called()
+        work = next(pub for pub in journal_group.read_models("publications", Publication) if pub.id == "W1")
+        self.assertIn("Cross-group preprint", work.full_text or "")
+        self.assertEqual(work.arxiv_sources[0].state.status, ProcessingStatus.COMPLETED)
+        row = next(r for r in journal_group.read_models("repo_links", RepoLink) if r.publication_id == "W1")
+        links = {link.url: link for link in row.links}
+        self.assertEqual(links["https://github.com/org/cross-group"].occurrences[0].pdf_id, "openalex:W2")
+
+        duplicate_group = PreparedStore(self.db, "duplicates")
+        duplicate_group.write_models("publications", [Publication(
+            id="pub_preprint_2",
+            title="Duplicate Preprint",
+            type="preprint",
+            doi="10.48550/arXiv.2201.06114",
+        )])
+        journal_group.write_models("publications", [Publication(
+            id="W1",
+            title="Journal",
+            doi="10.1/journal",
+            arxiv_sources=[ArxivSource(url=arxiv_url)],
+        )])
+        CodeLinksStage(
+            journal_group,
+            RawStore(self.db, "journals"),
+            config=self.config,
+            selection=self.selection,
+        ).run()
+        work = next(pub for pub in journal_group.read_models("publications", Publication) if pub.id == "W1")
+        self.assertEqual(work.arxiv_sources[0].state.status, ProcessingStatus.FAILED)
 
 
 if __name__ == "__main__":

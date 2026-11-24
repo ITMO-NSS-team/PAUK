@@ -610,23 +610,58 @@ def _is_manual_link(link: CodeLink) -> bool:
             and link.llm_confidence is None and link.llm_reason is None)
 
 
-def _remove_stale_pdf_evidence(
-    row: RepoLink, fresh: dict[str, list[LinkOccurrence]], reread: set[str],
+def _remove_stale_evidence(
+    row: RepoLink,
+    fresh: dict[str, list[LinkOccurrence]],
+    reread: set[str],
+    *,
+    reconcile_abstract: bool = False,
+    archived: str | None = None,
 ) -> bool:
-    """Remove only automatic evidence absent from a successfully reread PDF."""
-    extracted_sources = {"pdf_text", "pdf_annotation", "reference", "citation"}
-    fresh_keys = {normalize_repo_url(url): {o.model_dump_json() for o in occurrences}
-                  for url, occurrences in fresh.items()}
+    """Remove only automatic evidence absent from refreshed abstracts or reread PDFs."""
+    extracted_pdf_sources = {"pdf_text", "pdf_annotation", "reference", "citation"}
+    abstract_sources = {"abstract", "deposit_title"}
+    archived_identity = normalize_repo_url(archived) if archived else None
+    fresh_keys = {
+        normalize_repo_url(url): {o.model_dump_json() for o in occurrences}
+        for url, occurrences in fresh.items()
+    }
+    fresh_abstract = {
+        normalize_repo_url(url): {
+            (o.source, o.context)
+            for o in occurrences
+            if o.page_number is None and o.source in abstract_sources
+        }
+        for url, occurrences in fresh.items()
+    }
     retained = []
     reopen = False
     for link in row.links:
-        known = fresh_keys.get(normalize_repo_url(link.url), set())
-        occurrences = [o for o in link.occurrences if (
-            o.pdf_id not in reread or o.source not in extracted_sources or o.model_dump_json() in known
-        )]
+        if _is_manual_link(link):
+            retained.append(link)
+            continue
+        identity = normalize_repo_url(link.url)
+        known = fresh_keys.get(identity, set())
+        known_abstract = fresh_abstract.get(identity, set())
+        occurrences = []
+        for o in link.occurrences:
+            stale_pdf = o.source in extracted_pdf_sources and o.pdf_id in reread and o.model_dump_json() not in known
+            stale_abstract = (
+                reconcile_abstract
+                and o.page_number is None
+                and o.source in abstract_sources
+                and o.model_dump_json() not in known
+                and (o.source, o.context) not in known_abstract
+            )
+            if not stale_pdf and not stale_abstract:
+                occurrences.append(o)
         if len(occurrences) != len(link.occurrences):
             link.occurrences = occurrences
-            if not occurrences and not known and link.llm_reason != ARCHIVED_DEPOSIT_REASON:
+            keep_archived = (
+                link.llm_reason == ARCHIVED_DEPOSIT_REASON
+                and (not reconcile_abstract or identity == archived_identity)
+            )
+            if not occurrences and not known and not keep_archived:
                 reopen = True
                 continue
             reopen |= _invalidate_automatic_verdict(link)
@@ -701,9 +736,27 @@ def _compatible_arxiv_pdf(requested: str, actual: str | None) -> bool:
                 and (not expected[1] or expected[1] == observed[1]))
 
 
+_ARXIV_PREPRINT_QUERY = {
+    "$or": [
+        {"doi": {"$regex": "arxiv", "$options": "i"}},
+        {"pdf_urls": {"$regex": r"arxiv\.org", "$options": "i"}},
+        {"source_records.doi": {"$regex": "arxiv", "$options": "i"}},
+        {"source_records.pdf_urls": {"$regex": r"arxiv\.org", "$options": "i"}},
+    ]
+}
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
     progress_label = "Publications: finding code links in abstracts and PDFs"
+
+    def _all_arxiv_publications(self) -> list[Publication]:
+        """Load candidate arXiv publications across every group so shared caches reuse safely."""
+        rows = self.prepared.db["publications"].find(
+            _ARXIV_PREPRINT_QUERY,
+            {"_id": False, "groups": False, "_version": False},
+        )
+        return [Publication.model_validate(row) for row in rows]
 
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
@@ -720,7 +773,9 @@ class CodeLinksStage(EnrichmentStage):
             and (self.needs_attempt(publication.processing.get(self.name))
                  or any(self.needs_attempt(source.state) for source in publication.arxiv_sources))
         ]
-        self.preprints = arxiv_preprints(publications) if any(pub.arxiv_sources for pub in candidates) else {}
+        self.preprints = (
+            arxiv_preprints(self._all_arxiv_publications()) if any(pub.arxiv_sources for pub in candidates) else {}
+        )
         changed = 0
         for pub in self.progress(candidates, total=len(candidates)):
             if pub.arxiv_sources:
@@ -759,7 +814,14 @@ class CodeLinksStage(EnrichmentStage):
             occurrences_by_url = _merge_url_spellings(occurrences_by_url)
             archived_identity = normalize_repo_url(archived) if archived else None
             if not self.force and previous is not None:
-                reopen = _merge_additional_evidence(previous, occurrences_by_url, archived)
+                reopen = _remove_stale_evidence(
+                    previous,
+                    occurrences_by_url,
+                    self.parsed_pdf_ids,
+                    reconcile_abstract=True,
+                    archived=archived,
+                )
+                reopen |= _merge_additional_evidence(previous, occurrences_by_url, archived)
                 if reopen:
                     pub.processing.pop("link_relevance", None)
                 pub.processing[self.name] = self._extraction_state(state, len(previous.links), pdf_error)
@@ -847,7 +909,9 @@ class CodeLinksStage(EnrichmentStage):
         for url, occurrences in supplemental_evidence.items():
             evidence.setdefault(url, []).extend(occurrences)
         evidence = _merge_url_spellings(evidence)
-        reopen = self.force and bool(reread) and _remove_stale_pdf_evidence(row, evidence, reread)
+        reopen = bool(reread or run_main) and _remove_stale_evidence(
+            row, evidence, reread, reconcile_abstract=run_main, archived=archived,
+        )
         reopen |= _merge_additional_evidence(row, evidence, archived)
         if reopen:
             pub.processing.pop("link_relevance", None)
