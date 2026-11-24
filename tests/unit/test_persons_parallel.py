@@ -26,6 +26,8 @@ from tests.unit.test_rate_limit import _Clock
 
 
 class PersonsParallelTest(unittest.TestCase):
+    ORCIDS = {"A1": "0000-0002-1825-0097", "A2": "0000-0001-5109-3700"}
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -69,7 +71,7 @@ class PersonsParallelTest(unittest.TestCase):
     def author(self, identifier):
         result = {"id": f"https://openalex.org/{identifier}", "display_name": f"Author {identifier}"}
         if self.with_orcid:
-            result["orcid"] = "https://orcid.org/" + identifier
+            result["orcid"] = "https://orcid.org/" + self.ORCIDS[identifier]
         return result
 
     def respond(self, request):
@@ -168,6 +170,45 @@ class PersonsParallelTest(unittest.TestCase):
         self.assertEqual(self.db.raw.count_documents({"source": "orcid"}), 1)
         self.assertTrue(all(person.emails == ["researcher@example.org"] for person in self.rows().values()))
 
+    def test_an_openalex_identifier_added_later_reopens_a_not_applicable_record(self):
+        self.prepared.write_models("persons", [Person(id="per_test", is_itmo=False)])
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        stage.run()
+        person = self.rows()["per_test"]
+        self.assertEqual(person.processing["openalex_author"].status, ProcessingStatus.NOT_APPLICABLE)
+        self.assertEqual(self.requests, [])
+
+        person = Person.model_validate(person.model_dump() | {"identifiers": [
+            {"scheme": "openalex", "value": "https://openalex.org/a123/"},
+            {"scheme": "openalex", "value": "A123"},
+            {"scheme": "dblp", "value": "A456"},
+        ]})
+        self.prepared.upsert_models("persons", [person])
+        stage.run()
+        stage.run()
+        person = self.rows()["per_test"]
+        self.assertIsNone(person.openalex_id)
+        self.assertEqual(person.processing["openalex_author"].request_key, "A123")
+        self.assertEqual(person.processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(person.name_raw, "Author A123")
+        self.assertEqual([urlsplit(request.url).path for request, *_ in self.requests], ["/authors/A123"])
+        self.assertEqual(next(self.raw.read("openalex_authors"))["request"], {"author_id": "A123"})
+
+    def test_ambiguous_openalex_identifiers_leave_only_that_author_failed(self):
+        self.prepared.write_models("persons", [
+            Person(id="per_ambiguous", is_itmo=False, identifiers=[
+                {"scheme": "openalex", "value": "A1"}, {"scheme": "openalex", "value": "A2"},
+            ]),
+            Person(id="A3", is_itmo=False),
+        ])
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        stage.run()
+        state = self.rows()["per_ambiguous"].processing["openalex_author"]
+        self.assertEqual(state.status, ProcessingStatus.FAILED)
+        self.assertIn("Multiple OpenAlex author IDs", state.error)
+        self.assertEqual(self.rows()["A3"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual([urlsplit(request.url).path for request, *_ in self.requests], ["/authors/A3"])
+
     def test_missing_batch_id_is_retrieved_individually(self):
         self.people(2)
         self.omitted = {"A2"}
@@ -211,6 +252,42 @@ class PersonsParallelTest(unittest.TestCase):
         self.handler = None
         stage.run()
         self.assertEqual(self.rows()["P1"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+
+    def test_single_author_only_accepts_a_changed_id_when_openalex_confirms_the_merge(self):
+        self.people(1)
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        confirmed = False
+
+        def merged(request, _client):
+            if urlsplit(request.url).path == "/authors":
+                metadata = {"merged_ids": [{"id": "A1", "merge_into_id": "A2"}]} if confirmed else {}
+                return 200, {}, {"results": [self.author("A2")], "meta": metadata}
+            return 200, {}, self.author("A2")
+
+        self.handler = merged
+        stage.run()
+        person = self.rows()["P1"]
+        self.assertEqual(person.processing["openalex_author"].status, ProcessingStatus.FAILED)
+        self.assertIn("without a confirmed merge", person.processing["openalex_author"].error)
+        self.assertIsNone(person.name_raw)
+        self.assertEqual(list(self.raw.read("openalex_authors")), [])
+
+        confirmed = True
+        stage.run()
+        self.assertEqual(self.rows()["P1"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(openalex_orcid_references(self.db), {"A1": None, "A2": None})
+
+    def test_foreign_orcid_url_does_not_trigger_an_orcid_lookup(self):
+        self.people(1)
+        foreign_url = f"https://example.org/{self.ORCIDS['A1']}"
+        self.handler = lambda *_: (200, {}, self.author("A1") | {"orcid": foreign_url})
+        PersonsStage(self.prepared, self.raw, self.config).run()
+        person = self.rows()["P1"]
+        self.assertIsNone(person.orcid)
+        self.assertEqual(person.processing["openalex_author"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(person.processing["orcid"].status, ProcessingStatus.NOT_APPLICABLE)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(openalex_orcid_references(self.db)["A1"], foreign_url)
 
     def test_invalid_orcid_response_preserves_employment_until_a_valid_empty_record(self):
         self.prepared.write_models("persons", [Person(
@@ -322,9 +399,10 @@ class PersonsParallelTest(unittest.TestCase):
     def test_cancellation_retains_source_results_and_resume_only_fetches_unfinished_orcid(self):
         self.people(2)
         self.with_orcid = True
+        record_path = f"/v3.0/{self.ORCIDS['A1']}/record"
 
         def handler(request, client):
-            if urlsplit(request.url).hostname == "pub.orcid.org" and "/A1/record" in request.url:
+            if urlsplit(request.url).hostname == "pub.orcid.org" and record_path in request.url:
                 if not client._cancel.wait(2):
                     raise AssertionError("slow ORCID request did not stop")
                 raise CancelledError
@@ -348,7 +426,7 @@ class PersonsParallelTest(unittest.TestCase):
         self.requests.clear()
         PersonsStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(len(self.requests), 1)
-        self.assertIn("/A1/record", self.requests[0][0].url)
+        self.assertIn(record_path, self.requests[0][0].url)
         self.assertEqual(self.rows()["P2"].processing["orcid"].attempts, 1)
 
     def test_progress_can_stop_a_retry_wait_without_failing_the_author(self):

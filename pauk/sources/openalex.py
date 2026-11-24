@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import re
 import threading
 from collections.abc import Iterator, Sequence
 
 from pauk.aliases import flatten_merges
-from pauk.models.identity import normalize_external_value
+from pauk.models.identity import verified_openalex_author_id
 from pauk.settings import OPENALEX_PUBLIC_RPS, OPENALEX_RPS
 
 from .base import HttpClient
@@ -15,10 +14,8 @@ AUTHOR_BATCH_SIZE = 100
 
 
 def normalize_author_id(author_id: str) -> str:
-    if not isinstance(author_id, str):
-        raise ValueError("Invalid OpenAlex author ID")
-    normalized = normalize_external_value("openalex", author_id)
-    if not re.fullmatch(r"A[0-9]+", normalized):
+    normalized = verified_openalex_author_id(author_id)
+    if normalized is None:
         raise ValueError("Invalid OpenAlex author ID")
     return normalized
 
@@ -63,7 +60,14 @@ class OpenAlexClient(HttpClient):
 
     def get_author(self, author_id: str) -> dict:
         normalized = normalize_author_id(author_id)
-        return self.get_json(f"{self.AUTHORS_URL}/{normalized}")
+        record = self.get_json(f"{self.AUTHORS_URL}/{normalized}")
+        actual = verified_openalex_author_id(record.get("id")) if isinstance(record, dict) else None
+        if actual and actual != normalized:
+            # OpenAlex follows merged IDs internally, so the singleton can return HTTP 200.
+            confirmed = self.get_authors((normalized,)).get(normalized)
+            if not confirmed or verified_openalex_author_id(confirmed.get("id")) != actual:
+                raise ValueError("OpenAlex returned a different author ID without a confirmed merge")
+        return record
 
     def get_authors(self, author_ids: Sequence[str]) -> dict[str, dict]:
         """Map a batch response back to requested IDs, including merged authors."""
@@ -105,7 +109,10 @@ class OpenAlexClient(HttpClient):
             except ValueError:
                 ambiguous.add(source)
             else:
-                aliases.append((source, target))
+                if source != target and source in records:
+                    ambiguous.add(source)
+                else:
+                    aliases.append((source, target))
         resolved = dict(flatten_merges(aliases, ambiguous=ambiguous))
         return {identifier: records[canonical] for identifier in identifiers if identifier not in ambiguous
                 and (canonical := resolved.get(identifier, identifier)) in records and canonical not in conflicts}

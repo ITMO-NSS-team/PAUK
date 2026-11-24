@@ -50,6 +50,12 @@ def normalize_external_value(scheme: str, value: str) -> str:
     return cleaned
 
 
+def verified_openalex_author_id(value: str | None) -> str | None:
+    """Return a normalized OpenAlex author ID when the value has author ID syntax."""
+    normalized = normalize_external_value("openalex", value) if isinstance(value, str) else ""
+    return normalized if re.fullmatch(r"A[0-9]+", normalized) else None
+
+
 class ExternalIdentifier(BaseModel):
     """An identifier owned by a system outside PAUK."""
 

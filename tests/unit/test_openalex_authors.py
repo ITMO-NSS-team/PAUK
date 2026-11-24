@@ -72,6 +72,17 @@ class OpenAlexAuthorsTest(unittest.TestCase):
                 ]}}
                 self.assertEqual(self.client.get_authors(["A1", "A9"]), {"A9": {"id": "A9"}})
 
+    def test_direct_and_merged_records_for_one_id_need_an_individual_lookup(self):
+        self.payload = {
+            "meta": {"merged_ids": [
+                {"id": "A1", "merge_into_id": "A2"},
+                {"id": "A3", "merge_into_id": "A1"},
+            ]},
+            "results": [{"id": "A1"}, {"id": "A2"}, {"id": "A9"}],
+        }
+        self.assertEqual(self.client.get_authors(["A1", "A2", "A3", "A9"]),
+                         {"A2": {"id": "A2"}, "A9": {"id": "A9"}})
+
     def test_malformed_batch_response_is_not_treated_as_an_empty_success(self):
         for payload in ([], {}, {"results": None}, {"results": [], "meta": {"merged_ids": {}}}):
             with self.subTest(payload=payload):

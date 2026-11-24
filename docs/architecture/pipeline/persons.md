@@ -20,6 +20,13 @@ applies and saves responses.
 OpenAlex batches up to 100 IDs and resolves merged IDs. Missing or ambiguous
 records and batches rejected with HTTP 400 get individual lookups. Duplicate
 IDs share one response and one raw entry per source.
+If an individual lookup returns a different author ID, the list endpoint
+confirms the merge before the profile is applied.
+
+The lookup uses `openalex_id` when valid, then a single normalized OpenAlex
+entry in `identifiers`. Legacy person IDs can supply the author ID when both
+fields are absent. Several distinct OpenAlex IDs without a primary one mark
+that author's OpenAlex step as failed.
 
 Profiles are parsed before they enter raw storage. An invalid response leaves
 the source in `FAILED` for retry. ORCID replaces earlier employments only
@@ -27,8 +34,8 @@ when the record includes an employment list. An empty list clears them.
 
 For each `Person` that needs attention (`needs_attempt`):
 
-1. With an `openalex_id`, the author response updates `name_raw`, collects name
-   variants (`name_variants`), the ORCID (if not yet known) and the author's
+1. The OpenAlex author response updates `name_raw`, collects name
+   variants (`name_variants`), a valid ORCID (if not yet known) and the author's
    affiliations from their own record (`affiliations` plus
    `last_known_institutions`; the latter has no years and is a fallback for a
    year with no explicit entry).
@@ -97,6 +104,6 @@ nothing to look up in Crossref without a DOI.
 
 Matching is by surname alone, so dedup (`pipeline/stages/dedup.py`) treats
 `Person.orcid` as not fully authoritative: if a raw OpenAlex record exists for
-the author, dedup uses its ORCID, including an explicit absence. When OpenAlex
-merges an author, both the requested ID and the surviving ID refer to the
-latest profile of the survivor.
+the author, dedup uses its ORCID, including an explicit absence. Both dedup
+passes use the same OpenAlex ID selection as enrichment. When OpenAlex merges
+an author, both IDs refer to the latest profile of the survivor.

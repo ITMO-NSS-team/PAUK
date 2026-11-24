@@ -3,11 +3,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .identity import ExternalIdentifier
+from .identity import ExternalIdentifier, verified_openalex_author_id
 from .processing import ProcessingState
 from .relations import Authorship, Contribution
 
 GitHubMatchField = Literal["github", "email"]
+
+
+class AmbiguousOpenAlexAuthorId(ValueError):
+    """A person has several OpenAlex author IDs without a primary one."""
 
 
 class Affiliation(BaseModel):
@@ -143,3 +147,17 @@ class Person(BaseModel):
     status: str | None = None
     created_at: datetime | None = None
     enriched_at: datetime | None = None
+
+    def openalex_author_id(self) -> str | None:
+        """Use the explicit author ID, a unique source ID, or a legacy person ID."""
+        if key := verified_openalex_author_id(self.openalex_id):
+            return key
+        identifiers = [identifier.value for identifier in self.identifiers if identifier.scheme == "openalex"]
+        keys = {key for identifier in identifiers if (key := verified_openalex_author_id(identifier))}
+        if len(keys) > 1:
+            raise AmbiguousOpenAlexAuthorId("Multiple OpenAlex author IDs without a primary ID")
+        if keys:
+            return keys.pop()
+        if (self.openalex_id or "").strip() or identifiers:
+            raise ValueError("Invalid OpenAlex author ID")
+        return verified_openalex_author_id(self.id.removeprefix("itmo_").removeprefix("external_"))

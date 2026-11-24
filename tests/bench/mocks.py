@@ -470,7 +470,7 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": person_id,
                 **{field: props.get(field) for field in (
-                    "openalex_id", "name_raw", "name_variants", "orcid", "email",
+                    "openalex_id", "identifiers", "name_raw", "name_variants", "orcid", "email",
                     "github", "google_scholar", "merged_ids")},
                 "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({

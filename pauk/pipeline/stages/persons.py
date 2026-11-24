@@ -10,6 +10,7 @@ from time import monotonic
 from typing import Self
 
 from pauk.models import Affiliation, Person, Publication
+from pauk.models.identity import verified_orcid
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.membership import (
     apply_membership,
@@ -209,7 +210,7 @@ class _OpenAlexProfile:
         orcid = payload.get("orcid")
         if orcid is not None and not isinstance(orcid, str):
             raise ValueError("Invalid OpenAlex author ORCID")
-        return cls(name, variants, (orcid or "").rstrip("/").rsplit("/", 1)[-1] or None, _openalex_affiliations(payload))
+        return cls(name, variants, verified_orcid(orcid), _openalex_affiliations(payload))
 
     def apply(self, person: Person) -> None:
         person.name_raw = self.name or person.name_raw
@@ -305,13 +306,9 @@ class PersonsStage(EnrichmentStage):
     def _save_person(self, person: Person) -> None:
         self.prepared.upsert_models("persons", [person])
 
-    def _source_key(self, person: Person, source: str) -> str:
-        return (person.openalex_id if source == self.openalex_name else person.orcid) or ""
-
-    def _complete_source(self, person: Person, source: str, publications: dict[str, Publication], *,
+    def _complete_source(self, person: Person, source: str, key: str, publications: dict[str, Publication], *,
                          profile: _OpenAlexProfile | _OrcidProfile | None = None, observed_at: datetime | None = None,
                          error: Exception | None = None) -> None:
-        key = self._source_key(person, source)
         state = person.processing.get(source)
         if error is None and profile is not None:
             try:
@@ -321,11 +318,12 @@ class PersonsStage(EnrichmentStage):
                     profile.apply(person, key, observed_at)
             except Exception as exc:
                 error = exc
-        status = (ProcessingStatus.NOT_APPLICABLE if not key else
-                  ProcessingStatus.FAILED if error is not None else ProcessingStatus.COMPLETED)
+        status = (ProcessingStatus.FAILED if error is not None else
+                  ProcessingStatus.COMPLETED if key else ProcessingStatus.NOT_APPLICABLE)
         person.processing[source] = ProcessingState(
             status=status, request_key=key, attempts=self._next_attempt(state), finished_at=datetime.now(UTC),
-            result_count=0 if not key else None, error=redact_text(error) if error is not None else None,
+            result_count=0 if status == ProcessingStatus.NOT_APPLICABLE else None,
+            error=redact_text(error) if error is not None else None,
         )
         apply_membership(person)
         self._fill_missing_affiliations(person, publications)
@@ -405,10 +403,17 @@ class PersonsStage(EnrichmentStage):
                 request.close()
 
     def _enrich_source(self, source: str, people: list[Person], publications: dict[str, Publication]) -> int:
-        candidates = [person for person in people
-                      if self._needs_source(person.processing.get(source), self._source_key(person, source))]
         openalex = source == self.openalex_name
         raw_source, request_key = ("openalex_authors", "author_id") if openalex else ("orcid", "orcid")
+        candidates = []
+        for person in people:
+            try:
+                key = (person.openalex_author_id() if openalex else person.orcid) or ""
+            except ValueError as error:
+                candidates.append((person, "", error))
+            else:
+                if self._needs_source(person.processing.get(source), key):
+                    candidates.append((person, key, None))
         groups: dict[str, list[Person]] = {}
         done, reported = 0, 0.0
         label = "Authors: OpenAlex" if openalex else "Authors: ORCID"
@@ -420,24 +425,18 @@ class PersonsStage(EnrichmentStage):
                 self.on_progress(label, done, len(candidates))
 
         with self.progress_bar(total=len(candidates), label=label, unit="author") as bar:
-            def complete(person, **kwargs):
+            def complete(person, key, **kwargs):
                 nonlocal done
-                self._complete_source(person, source, publications, **kwargs)
+                self._complete_source(person, source, key, publications, **kwargs)
                 done += 1
                 bar.update()
                 heartbeat()
 
-            for person in candidates:
-                key = self._source_key(person, source)
+            for person, key, error in candidates:
                 if not key:
-                    complete(person)
-                    continue
-                try:
-                    normalized = normalize_author_id(key) if openalex else key
-                except ValueError as error:
-                    complete(person, error=error)
+                    complete(person, key, error=error)
                 else:
-                    groups.setdefault(normalized, []).append(person)
+                    groups.setdefault(key, []).append(person)
             size = AUTHOR_BATCH_SIZE if openalex else 1
             jobs = list(batched(groups, size))
             while jobs:
@@ -464,7 +463,7 @@ class PersonsStage(EnrichmentStage):
                                 except Exception as exc:
                                     failure = exc
                             for person in groups[key]:
-                                complete(person, profile=profile, observed_at=observed_at, error=failure)
+                                complete(person, key, profile=profile, observed_at=observed_at, error=failure)
                 jobs = fallbacks
         return done
 
