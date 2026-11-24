@@ -20,8 +20,9 @@
         --border: #333333;
         --text: #dcdcdc;
         --muted: #8a8a8a;
-        --accent: #ff7f50;
-        --accent-soft: rgba(255, 127, 80, 0.18);
+        --accent: #c5aae8;
+        --accent-fill: #6c5294;
+        --accent-soft: rgba(197, 170, 232, 0.14);
         --danger-bg: #2a1414;
         --danger-border: #e03131;
         --danger-text: #ffb3b3;
@@ -83,8 +84,13 @@
       }
       input[type="checkbox"]:checked {
         border-color: var(--accent);
-        background: var(--surface-2) url("./src/assets/icons/pauk-frame-accent.png") center / 70%
-          no-repeat;
+      }
+      input[type="checkbox"]:checked::before {
+        content: "";
+        display: block;
+        height: 100%;
+        background: var(--accent);
+        mask: url("./src/assets/icons/pauk-frame-accent.png") center / 70% no-repeat;
       }
       /* Accent spider thumb; -webkit- and -moz- pseudo-elements cannot be merged. */
       input[type="range"] {
@@ -106,7 +112,8 @@
         width: 16px;
         height: 16px;
         margin-top: -6px; /* (4px track - 16px thumb) / 2 */
-        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        background: var(--accent);
+        mask: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
         transition: transform 0.15s ease;
       }
       input[type="range"][data-tilt="right"]:active::-webkit-slider-thumb {
@@ -125,7 +132,8 @@
         height: 16px;
         border: none;
         border-radius: 0;
-        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        background: var(--accent);
+        mask: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
         transition: transform 0.15s ease;
       }
       input[type="range"][data-tilt="right"]:active::-moz-range-thumb {
@@ -164,12 +172,10 @@
         border-right: 1px solid var(--border);
       }
       .sidebar-section-label {
-        padding: 18px 16px 0;
+        padding: 16px 16px 0;
         color: var(--muted);
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 600;
-        letter-spacing: 0.09em;
-        text-transform: uppercase;
       }
       /* Anchor for the zoom debug readout. */
       #map {
@@ -196,6 +202,7 @@
         gap: 10px;
       }
       .map-brand img {
+        filter: hue-rotate(235deg);
         width: 26px;
         height: 26px;
       }
@@ -311,8 +318,6 @@
         color: var(--muted);
         font-size: 11px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       }
 
       #tab-buttons {
@@ -547,8 +552,6 @@
         color: var(--muted);
         font-size: 10px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
         white-space: nowrap;
       }
       .panel-card__subtitle {
@@ -675,8 +678,6 @@
         font-size: 11px;
         font-weight: 600;
         color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       }
       .chart-bar-row {
         display: flex;
@@ -703,7 +704,7 @@
       }
       .chart-bar-row__fill {
         height: 100%;
-        background: var(--accent);
+        background: var(--accent-fill);
         border-radius: inherit;
         transition: width 0.2s ease-out;
       }
@@ -784,7 +785,7 @@
       .boot-progress-bar {
         height: 100%;
         width: 0%;
-        background: var(--accent);
+        background: var(--accent-fill);
         transition: width 0.2s ease-out;
         border-radius: inherit;
       }
@@ -801,107 +802,85 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(
-          ellipse 900px 700px at 50% 40%,
-          var(--surface) 0%,
-          var(--bg) 70%
-        );
+        background: var(--bg);
+        padding: 24px;
+        overflow: auto;
       }
-      #menu[hidden] {
-        display: none;
-      }
+      #menu[hidden] { display: none; }
       .menu-hero {
-        text-align: center;
-        max-width: 560px;
-        padding: 20px;
+        position: relative;
+        width: min(100%, 760px);
+        margin: auto;
+        padding-block: 24px;
+        border-block: 1px solid var(--border);
+      }
+      .menu-mark {
+        position: absolute;
+        right: 0;
+        top: 48px;
+        width: 126px;
+        image-rendering: pixelated;
+        filter: hue-rotate(235deg);
       }
       .menu-badge {
         display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        padding: 7px 14px 7px 16px;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text);
-        text-decoration: none;
-        margin-bottom: 24px;
-        transition: border-color 0.12s ease;
-      }
-      .menu-badge:hover {
-        border-color: var(--accent);
-      }
-      .menu-badge-arrow {
+        gap: 8px;
+        align-items: baseline;
         color: var(--muted);
+        text-decoration: none;
+        font-size: 13px;
       }
+      .menu-badge strong { font-size: 16px; color: var(--text); }
+      .menu-badge:hover { text-decoration: underline; }
       .menu-title {
-        font-size: clamp(28px, 4vw, 42px);
+        max-width: min(18ch, calc(100% - 150px));
+        margin: 40px 0 16px;
+        font-size: clamp(32px, 5vw, 56px);
         font-weight: 600;
         letter-spacing: -0.035em;
-        line-height: 1.15;
-        color: var(--text);
-        margin: 0 0 16px;
+        line-height: 1.08;
+        text-wrap: balance;
       }
       .menu-subtitle {
-        font-size: 15px;
-        line-height: 1.55;
+        max-width: 48ch;
+        margin: 0 0 24px;
         color: var(--muted);
-        margin: 0 auto 28px;
-        max-width: 460px;
+        font-size: 16px;
+        line-height: 1.5;
       }
       .menu-cta {
-        padding: 12px 22px;
-        background: var(--accent);
-        color: #181818;
-        border: 1px solid var(--accent);
-        border-radius: 5px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition:
-          transform 0.12s ease,
-          box-shadow 0.12s ease,
-          filter 0.12s ease;
-      }
-      /* brightness() keeps --accent the only source of the color. */
-      .menu-cta:hover {
-        filter: brightness(1.08);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 16px var(--accent-soft);
-      }
-      .menu-cta:active {
-        transform: translateY(0);
-      }
-      .menu-lang {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        margin-top: 20px;
-      }
-      .menu-lang button {
-        padding: 6px 14px;
-        border: 1px solid var(--border);
+        padding: 12px 20px;
+        border: 0;
         border-radius: 6px;
-        background: var(--surface);
-        color: var(--muted);
-        font-size: 12px;
+        background: var(--accent-fill);
+        color: white;
+        font: inherit;
         font-weight: 600;
         cursor: pointer;
-        transition:
-          color 0.12s ease,
-          border-color 0.12s ease;
       }
-      .menu-lang button:hover {
+      .menu-cta:hover { filter: brightness(1.08); }
+      .menu-settings, .menu-lang { display: flex; align-items: center; }
+      .menu-settings { flex-wrap: wrap; gap: 16px; margin-top: 32px; }
+      .menu-lang { gap: 2px; }
+      .menu-theme { padding-left: 16px; border-left: 1px solid var(--border); }
+      .menu-lang button {
+        padding: 8px 12px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        cursor: pointer;
+      }
+      .menu-lang button:hover, .menu-lang button.menu-lang--active {
+        background: var(--surface-2);
         color: var(--text);
       }
-      .menu-theme {
-        margin-top: 8px;
-      }
-      .menu-lang button.menu-lang--active {
-        color: var(--text);
-        border-color: var(--accent);
+      #menu :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      @media (max-width: 600px) {
+        .menu-mark { width: 42px; top: 16px; }
+        .menu-badge { max-width: calc(100% - 56px); }
+        .menu-title { max-width: 100%; margin-top: 32px; }
       }
       .mobile-tools,
       #mobile-backdrop {
@@ -1025,22 +1004,25 @@
     <!-- hidden only until JS runs; features/start.ts drives it. -->
     <div id="menu" hidden>
       <div class="menu-hero">
+        <img class="menu-mark" src="./src/assets/icons/pauk-frame-accent.png" alt="" />
         <a
           class="menu-badge"
           href="https://github.com/ITMO-NSS-team/PAUK"
           target="_blank"
           rel="noopener noreferrer"
         >
-          <span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
+          <strong>PAUK</strong><span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
         </a>
         <h1 class="menu-title" id="menu-title"></h1>
         <p class="menu-subtitle" id="menu-subtitle"></p>
         <button type="button" id="menu-enter" class="menu-cta"></button>
-        <div class="menu-lang">
-          <button type="button" data-lang="ru">RU</button>
-          <button type="button" data-lang="en">EN</button>
+        <div class="menu-settings">
+          <div class="menu-lang">
+            <button type="button" data-lang="ru">RU</button>
+            <button type="button" data-lang="en">EN</button>
+          </div>
+          <div class="menu-lang menu-theme" id="menu-theme"></div>
         </div>
-        <div class="menu-lang menu-theme" id="menu-theme"></div>
       </div>
     </div>
 

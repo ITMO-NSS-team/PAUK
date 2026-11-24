@@ -9,6 +9,7 @@ export interface ThemeUiTokens {
   text: string;
   muted: string;
   accent: string;
+  "accent-fill": string;
   "accent-soft": string;
   "danger-bg": string;
   "danger-border": string;
