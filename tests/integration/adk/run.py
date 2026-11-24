@@ -36,7 +36,7 @@ def invoke_client(python: Path, url: str, unavailable: str, token: str) -> dict[
     env = {key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH") if key in os.environ}
     env.update(PAUK_MCP_TEST_TOKEN=token, GOOGLE_API_USE_CLIENT_CERTIFICATE="false", PYTHONIOENCODING="utf-8")
     command = [
-        str(python.resolve()),
+        str(python.absolute()),
         str(ROOT / "client.py"),
         "--url",
         url,

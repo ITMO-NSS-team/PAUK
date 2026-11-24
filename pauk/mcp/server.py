@@ -54,21 +54,37 @@ REQUESTS: dict[str, type[Contract]] = {
 class SafeMCP(FastMCP):
     """Sanitize SDK argument/output errors as well as backend failures."""
 
-    def __init__(self, *, tool_timeout: float = 5.0, **kwargs: Any) -> None:
+    def __init__(self, service: Service, *, tool_timeout: float = 5.0, **kwargs: Any) -> None:
+        self.service = service
         self.tool_timeout = tool_timeout
         super().__init__(**kwargs)
 
+    async def _dispatch(self, name: str, request: Contract) -> Any:
+        if name == "search_publications" and isinstance(request, SearchRequest):
+            return await self.service.search_publications(request)
+        if name == "get_publication_repositories" and isinstance(request, PublicationRequest):
+            return await self.service.get_publication_repositories(request)
+        if name == "get_repository" and isinstance(request, RepositoryRequest):
+            return await self.service.get_repository(request)
+        if name == "explain_link" and isinstance(request, ExplainRequest):
+            return await self.service.explain_link(request)
+        raise ToolError("INPUT")
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Validate strict DTOs before SDK coercion and apply a cancellable deadline."""
+        """Validate strict DTOs without SDK JSON re-parsing and apply a cancellable deadline."""
         if name not in REQUESTS:
             raise ToolError("INPUT")
         try:
-            REQUESTS[name].model_validate(arguments)
+            validated = REQUESTS[name].model_validate(arguments)
         except ValidationError:
             raise ToolError("INPUT") from None
+        tool = self._tool_manager.get_tool(name)
+        if tool is None:
+            raise ToolError("INPUT")
         try:
             async with asyncio.timeout(self.tool_timeout):
-                return await super().call_tool(name, arguments)
+                result = await self._dispatch(name, validated)
+                return tool.fn_metadata.convert_result(result)
         except TimeoutError:
             raise ToolError("TIMEOUT") from None
         except Exception as exc:
@@ -300,6 +316,7 @@ def create_app(
 ) -> Boundary:
     """Run optional resources once per ASGI application, preserving the SDK lifespan."""
     mcp = SafeMCP(
+        service,
         name="PAUK isolated read prototype",
         host="127.0.0.1",
         tool_timeout=tool_timeout,

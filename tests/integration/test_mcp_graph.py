@@ -67,8 +67,8 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
                 "run with --with 'testcontainers[neo4j]' to include these tests"
             )
         image = os.getenv("PAUK_MCP_NEO4J_IMAGE", DEFAULT_NEO4J_IMAGE)
-        container = Neo4jContainer(image=image, password=SYNTHETIC_PASSWORD)
         try:
+            container = Neo4jContainer(image=image, password=SYNTHETIC_PASSWORD)
             container.start()
         except Exception as exc:  # Docker daemon not running, no permission, image pull failure, etc.
             raise unittest.SkipTest(f"could not start a Neo4j container: {exc}") from exc

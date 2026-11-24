@@ -2,10 +2,13 @@
 
 import importlib.util
 import json
+import subprocess
 import unittest
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from pauk.mcp.service import Service
 from tests.mcp_support import TEST_TOKEN, SyntheticReader, live_server
@@ -287,6 +290,60 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(next_page["items"]), 2)
             self.assertEqual(next_page["items"][0]["publication_id"], f"p-{first_count}")
             self.assertEqual(next_page["items"][1]["publication_id"], f"p-{first_count + 1}")
+
+    async def test_json_like_string_arguments_are_not_reparsed(self) -> None:
+        title = "null hypothesis [1]"
+
+        class LiteralStringReader(SyntheticReader):
+            async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
+                """Return the literal title fixture when every query token appears."""
+                if "title CONTAINS token" in query:
+                    tokens = [t for t in str(parameters["query"]).split(" ") if t]
+                    if all(token in title for token in tokens):
+                        return [{"id": "p-null", "title": title, "doi": None, "year": 2026}]
+                    return []
+                if "MATCH (n:Repository) WHERE n.id" in query or "merged_ids" in query:
+                    return []
+                return []
+
+        manager = live_server(create_app(Service(LiteralStringReader(), b"key"), TEST_TOKEN))
+        with manager as url:
+            async with (
+                streamable_http_client(url, http_client=self.http) as (rx, tx, _),
+                ClientSession(rx, tx) as session,
+            ):
+                await session.initialize()
+                for fragment in ("null", "[1]", "null hypothesis"):
+                    result = await session.call_tool("search_publications", {"title_contains": fragment})
+                    self._assert_pauk_source(result)
+                    self.assertEqual([item["publication_id"] for item in result.structuredContent["items"]], ["p-null"])
+                for arguments in (
+                    {"title_contains": "true"},
+                    {"title_contains": '{"a": 1}'},
+                    {"repository_contains": "null"},
+                    {"doi": "null"},
+                ):
+                    result = await session.call_tool("search_publications", arguments)
+                    self._assert_pauk_source(result)
+                    self.assertEqual(result.structuredContent["items"], [])
+                missing = await session.call_tool("get_repository", {"repository_id": "null"})
+                self.assertTrue(missing.isError)
+                self.assertEqual(missing.content[0].text, "NOT_FOUND")
+
+
+class AdkRunnerTests(unittest.TestCase):
+    def test_invoke_client_keeps_symlinked_venv_python_path(self) -> None:
+        from tests.integration.adk.run import invoke_client
+
+        python_path = Path("fake-venv/bin/python")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"status":"passed"}\n', stderr="")
+        with (
+            mock.patch.object(Path, "resolve", side_effect=AssertionError("must not resolve symlinks")),
+            mock.patch("tests.integration.adk.run.subprocess.run", return_value=completed) as run_mock,
+        ):
+            report = invoke_client(python_path, "http://127.0.0.1:1/mcp", "http://127.0.0.1:2/mcp", "tok")
+        self.assertEqual(report["status"], "passed")
+        self.assertEqual(run_mock.call_args.args[0][0], str(python_path.absolute()))
 
 
 @unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for boundary tests")
