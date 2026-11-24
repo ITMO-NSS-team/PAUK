@@ -1,4 +1,4 @@
-<div id="jobs-fragment" data-active="{{ 'true' if has_active_jobs else 'false' }}"></div>
+<div id="jobs-fragment" data-active="{{ 'true' if has_active_jobs else 'false' }}" data-page="{{ page }}" data-groups-active="{{ groups_active }}"></div>
 <div id="jobs-active">{% include "jobs_active.html" %}</div>
 <div id="jobs-history">{% include "jobs_history.html" %}</div>
 <div id="jobs-graph-banner">{% include "graph_job_banner.html" %}</div>

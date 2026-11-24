@@ -2009,7 +2009,7 @@ class StageProgressTest(unittest.TestCase):
             self.assertTrue(bar.disable)
             bar.update(2)
             bar.update(3)
-        self.assertEqual(self.told, [("repos", 2, 5), ("repos", 5, 5)])
+        self.assertEqual(self.told, [("repos", 2, 5), ("repos", 5, 5), ("repos", 5, 5)])
 
     def test_manual_bar_throttles_callback(self):
         with (patch("pauk.pipeline.stages.base.monotonic", side_effect=[10.0, 10.5, 11.0]),
@@ -2017,7 +2017,57 @@ class StageProgressTest(unittest.TestCase):
             bar.update()
             bar.update()
             bar.update()
-        self.assertEqual(self.told, [("repos", 1, 3), ("repos", 3, 3)])
+        self.assertEqual(self.told, [("repos", 1, 3), ("repos", 3, 3), ("repos", 3, 3)])
+
+    def test_manual_bar_flushes_throttled_progress_on_success(self):
+        with (patch("pauk.pipeline.stages.base.monotonic", side_effect=[10.0, 10.5]),
+              self.stage().progress_bar(total=5, label="repos") as bar):
+            bar.update()
+            bar.update()
+        self.assertEqual(self.told, [("repos", 1, 5), ("repos", 2, 5)])
+
+    def test_manual_bar_checks_cancel_at_unchanged_report_boundary(self):
+        state = {"cancel": False, "checks": 0}
+
+        def report(label, done, total):
+            state["checks"] += 1
+            if state["cancel"]:
+                raise StoppedFromOutsideError("cancelled")
+
+        stage = CountingStage(self.prepared, self.raw, Settings(), on_progress=report)
+        with (patch("pauk.pipeline.stages.base.monotonic", side_effect=[10.0, 10.1]),
+              self.assertRaisesRegex(StoppedFromOutsideError, "cancelled")):
+            bar = stage.progress_bar(total=1)
+            bar.update()
+            state["cancel"] = True
+            bar.report()
+        self.assertEqual(state["checks"], 2)
+
+    def test_empty_manual_bar_reports_zero_on_success(self):
+        with self.stage().progress_bar(total=5, label="repos"):
+            pass
+        self.assertEqual(self.told, [("repos", 0, 5)])
+
+    def test_manual_bar_does_not_flush_on_exception(self):
+        with (patch("pauk.pipeline.stages.base.monotonic", side_effect=[10.0, 10.5]),
+              self.assertRaisesRegex(RuntimeError, "inside"),
+              self.stage().progress_bar(total=2, label="repos") as bar):
+            bar.update()
+            bar.update()
+            raise RuntimeError("inside")
+        self.assertEqual(self.told, [("repos", 1, 2)])
+
+    def test_manual_bar_final_callback_exception_propagates(self):
+        def report(label, done, total):
+            if done == 2:
+                raise StoppedFromOutsideError("cancelled")
+
+        stage = CountingStage(self.prepared, self.raw, Settings(), on_progress=report)
+        with (patch("pauk.pipeline.stages.base.monotonic", side_effect=[10.0, 10.5]),
+              self.assertRaisesRegex(StoppedFromOutsideError, "cancelled"),
+              stage.progress_bar(total=2) as bar):
+            bar.update()
+            bar.update()
 
     def test_manual_bar_reports_changed_description(self):
         stage = self.stage()
@@ -2026,7 +2076,7 @@ class StageProgressTest(unittest.TestCase):
             bar.update()
             bar.set_description_str("repos: owners")
             bar.update()
-        self.assertEqual(self.told, [("repos", 1, 2), ("repos: owners", 2, 2)])
+        self.assertEqual(self.told, [("repos", 1, 2), ("repos: owners", 2, 2), ("repos: owners", 2, 2)])
 
     def test_manual_bar_without_callback(self):
         stage = CountingStage(self.prepared, self.raw, Settings())

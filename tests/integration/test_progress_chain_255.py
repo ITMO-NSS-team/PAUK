@@ -76,6 +76,28 @@ class ProgressChainTest(unittest.TestCase):
         self.assertEqual(store.read(self.db, self.job.id).state, JobState.DONE)
         self.assertEqual(store.read(self.db, self.job.id).progress["step"], "repositories 2/2")
 
+    def test_repeated_boundary_does_not_write_progress_twice(self):
+        self.completed = False
+        with patch.object(store, "progress", wraps=store.progress) as saved_progress:
+            self.run_stage(lambda: None)
+        self.assertTrue(self.completed)
+        self.assertEqual(store.read(self.db, self.job.id).state, JobState.DONE)
+        self.assertEqual(saved_progress.call_count, 3)
+
+    def test_cancellation_at_unchanged_final_progress_boundary(self):
+        self.completed = False
+
+        def cancel_after_last_update():
+            self.assertTrue(store.request_cancel(self.db, self.job.id))
+
+        with patch.object(store, "progress", wraps=store.progress) as saved_progress:
+            self.run_stage(lambda: None, cancel_after_last_update)
+        self.assertFalse(self.completed)
+        saved = store.read(self.db, self.job.id)
+        self.assertEqual(saved.state, JobState.CANCELLED)
+        self.assertEqual(saved.progress["step"], "repositories 2/2")
+        self.assertEqual(saved_progress.call_count, 3)
+
     def test_cancellation_is_seen_at_next_manual_update(self):
         self.completed = False
 

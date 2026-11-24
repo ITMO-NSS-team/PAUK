@@ -15,6 +15,8 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv sync
+      - name: Run JavaScript tests
+        run: node --test tests/unit/test_jobs_polling.cjs tests/unit/test_jobs_groups.cjs
       - name: Run unit and bench tests
         run: uv run --with pytest pytest tests/ -q
       - name: Run integration tests against a real Neo4j

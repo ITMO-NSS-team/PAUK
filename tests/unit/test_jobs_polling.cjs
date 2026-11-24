@@ -2,23 +2,25 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createJobsPoller } = require('../../pauk/admin/static/jobs.js');
 
-function fixture(initialActive = false) {
+function fixture(initialActive = false, initialPage = '2') {
   const timers = new Map();
   let next = 0;
   let listener;
   let responseActive = initialActive;
   let focused = null;
+  let responsePage = "2";
+  const focusedElement = {};
   const detail = { dataset: { jobDetails: 'one' }, open: true };
   const incomingDetail = { dataset: { jobDetails: 'one' }, open: false };
-  const active = { contains: (x) => x === focused && focused !== null, replaceChildren() {} };
-  const history = { contains: () => false, querySelectorAll: () => [detail], replaceChildren(...nodes) {
+  const active = { contains: (x) => x === focusedElement && focused === 'active', replaceChildren(...nodes) { this.nodes = nodes; } };
+  const history = { contains: (x) => x === focusedElement && focused === 'history', querySelectorAll: () => [detail], replaceChildren(...nodes) {
     this.nodes = nodes;
   } };
   const incoming = { childNodes: ['active'] };
   const incomingHistory = { childNodes: ['history'], querySelectorAll: () => [incomingDetail] };
-  const banner = { contains: () => false, replaceChildren(...nodes) { this.nodes = nodes; } };
+  const banner = { contains: (x) => x === focusedElement && focused === 'banner', replaceChildren(...nodes) { this.nodes = nodes; } };
   const incomingBanner = { childNodes: ['graph warning'] };
-  const marker = { dataset: { active: String(initialActive) } };
+  const marker = { dataset: { active: String(initialActive), page: initialPage } };
   const box = { children: [], replaceChildren(...items) { this.children = items; },
     append(...items) { this.children.push(...items); }, hidden: true };
   const elements = { 'jobs-fragment': marker, 'jobs-active': active, 'jobs-history': history,
@@ -30,15 +32,16 @@ function fixture(initialActive = false) {
     setTimeout: (fn, delay) => { timers.set(++next, { fn, delay }); return next; },
     clearTimeout: (id) => timers.delete(id),
     DOMParser: class { parseFromString() { return { getElementById: (id) => ({
-      'jobs-fragment': { dataset: { active: String(responseActive) } },
+      'jobs-fragment': { dataset: { active: String(responseActive), page: responsePage } },
       'jobs-active': incoming, 'jobs-history': incomingHistory, 'jobs-graph-banner': incomingBanner,
     })[id] }; } },
     fetch: async () => ({ ok: true, status: 200, redirected: false, text: async () => 'fragment' }),
   };
-  return { env, timers, box, detail, incomingDetail, history, banner, incomingBanner,
+  return { env, timers, box, detail, incomingDetail, active, history, banner, incomingBanner,
+    setPage: (value) => { responsePage = value; },
     visibility: (hidden) => { document.hidden = hidden; listener(); },
     setActive: (value) => { responseActive = value; },
-    focus: (value) => { focused = value; document.activeElement = value; } };
+    focus: (value) => { focused = value; document.activeElement = value ? focusedElement : null; } };
 }
 
 test('initial interval follows active state', () => {
@@ -97,8 +100,9 @@ test('expired session stops polling and leaves job content intact', async () => 
 });
 
 test('does not replace content while a job control has focus', async () => {
-  const f = fixture(); f.focus({}); const poller = createJobsPoller(f.env);
-  await poller.poll(); assert.equal(f.history.nodes, undefined);
+  const f = fixture(); f.focus('active'); const poller = createJobsPoller(f.env);
+  await poller.poll(); assert.equal(f.active.nodes, undefined);
+  assert.deepEqual(f.history.nodes, ['history']);
 });
 
 test('a hung request is aborted, backs off, and recovers without overlap', async () => {
@@ -131,4 +135,34 @@ test('graph warning follows the fragment', async () => {
   await poller.poll(); assert.deepEqual(f.banner.nodes, ['graph warning']);
   f.incomingBanner.childNodes = [];
   await poller.poll(); assert.deepEqual(f.banner.nodes, []);
+});
+
+test('focused block alone is deferred and updates after blur', async () => {
+  for (const block of ['active', 'history', 'banner']) {
+    const f = fixture(); f.focus(block); const poller = createJobsPoller(f.env);
+    await poller.poll();
+    for (const name of ['active', 'history', 'banner']) {
+      assert.equal(f[name].nodes === undefined, name === block, `${block} focus, ${name}`);
+    }
+    f.focus(null); await poller.poll();
+    assert.notEqual(f[block].nodes, undefined);
+  }
+});
+
+test('clamped page updates the URL only when history is replaced', async () => {
+  const f = fixture(); f.setPage('1'); f.focus('history');
+  f.env.location.pathname = '/jobs'; f.env.location.hash = '#history';
+  f.env.history = {state: null, replaceState(state, title, url) { this.url = url; }};
+  const poller = createJobsPoller(f.env); await poller.poll();
+  assert.equal(f.env.history.url, undefined);
+  f.focus(null); await poller.poll();
+  assert.equal(f.env.history.url, '/jobs?kind=collect&page=1&ignored=x#history');
+});
+
+test('initial full page normalizes an invalid page in the address', () => {
+  const f = fixture(false, '1');
+  f.env.location.pathname = '/jobs'; f.env.location.hash = '#history';
+  f.env.history = {state: null, replaceState(state, title, url) { this.url = url; }};
+  createJobsPoller(f.env);
+  assert.equal(f.env.history.url, '/jobs?kind=collect&page=1&ignored=x#history');
 });

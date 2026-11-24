@@ -138,15 +138,24 @@ def _jobs_context(db, user, session, kind: str, state: str, actor: str, page: in
     page = max(page, 1)
     filters = {"kind": kind, "state": state, "actor": actor}
     total = store.count(db, **filters)
+    pages = max((total + store.PAGE - 1) // store.PAGE, 1)
+    page = min(page, pages)
     running = store.running(db)
+    rows = store.recent(db, **filters, skip=(page - 1) * store.PAGE)
+    if not rows and page > 1:
+        total = store.count(db, **filters)
+        pages = max((total + store.PAGE - 1) // store.PAGE, 1)
+        if page > pages:
+            page = pages
+            rows = store.recent(db, **filters, skip=(page - 1) * store.PAGE)
     return {
         "user": user, "csrf": session["csrf"],
         "under_way": [_shown(job) for job in running],
         "has_active_jobs": bool(running) or bool(store.count(db, state=str(JobState.QUEUED))),
-        "rows": [_shown(job) for job in
-                 store.recent(db, **filters, skip=(page - 1) * store.PAGE)],
+        "groups_active": ",".join(job.id for job in running if job.kind in {JobKind.COLLECT, JobKind.PIPELINE}),
+        "rows": [_shown(job) for job in rows],
         "total": total, "page": page,
-        "pages": max((total + store.PAGE - 1) // store.PAGE, 1),
+        "pages": pages,
         "filters": filters, "final": {str(name) for name in FINAL},
         "result_open_upto": RESULT_OPEN_UPTO,
     }
@@ -173,6 +182,16 @@ def jobs_fragment(request: Request, user: CurrentUser, session: Session, db: Db,
     """Render the same job lists without rebuilding the rest of the page."""
     context = _jobs_context(db, user, session, kind, state, actor, page)
     response = templates.TemplateResponse(request, "jobs_fragment.html", context)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.get("/jobs/groups", response_class=HTMLResponse)
+def jobs_groups(request: Request, user: CurrentUser, db: Db):
+    """Render the publication group controls without rebuilding the jobs page."""
+    response = templates.TemplateResponse(request, "jobs_groups.html", {
+        "user": user, "groups": PreparedStore.known_groups(db),
+    })
     response.headers["Cache-Control"] = "no-store"
     return response
 

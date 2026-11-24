@@ -90,13 +90,8 @@
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="publish">
-          <div class="grow"><label for="group">группа</label>
-            <select id="group" name="group" required>
-              {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-            </select></div>
-          <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
+          {% include "jobs_groups.html" %}
         </form>
-        {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
       </div>
     </div>
 
@@ -194,7 +189,7 @@
 </div>
 {% endif %}
 
-<div id="jobs-fragment" data-active="{{ 'true' if has_active_jobs else 'false' }}"></div>
+<div id="jobs-fragment" data-active="{{ 'true' if has_active_jobs else 'false' }}" data-page="{{ page }}" data-groups-active="{{ groups_active }}"></div>
 <p id="jobs-refresh-status" role="status" hidden></p>
 <div id="jobs-active">{% include "jobs_active.html" %}</div>
 

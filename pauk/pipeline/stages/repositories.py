@@ -367,7 +367,10 @@ class RepositoriesStage(EnrichmentStage):
                                     fetched_orgs)
             progress.update()
             changed += 1
-        progress.close()
+        try:
+            progress.report()
+        finally:
+            progress.close()
         updated_rows = []
         for row in rows:
             if not self._row_in_scope(row):

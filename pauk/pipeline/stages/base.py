@@ -36,7 +36,26 @@ class _ReportingBar(tqdm):
                  report_seconds: float, **kwargs) -> None:
         self._label, self._total, self._done, self._said = desc, total or 0, 0, 0.0
         self._on_progress, self._report_seconds = on_progress, report_seconds
+        self._last_reported = None
         super().__init__(desc=desc, total=total, **kwargs)
+
+    def _emit(self, *, boundary: bool = False) -> None:
+        state = (self._label, self._done, self._total)
+        if self._on_progress is not None and (boundary or state != self._last_reported):
+            self._on_progress(*state)
+            self._last_reported = state
+
+    def report(self) -> None:
+        """Report a meaningful boundary without waiting for the throttle."""
+        if self._on_progress is not None:
+            self._said = monotonic()
+            self._emit(boundary=True)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        result = super().__exit__(exc_type, exc_value, traceback)
+        if exc_type is None:
+            self._emit(boundary=True)
+        return result
 
     def set_description_str(self, desc: str | None = None, refresh: bool = True) -> None:
         self._label = desc or self._label
@@ -47,7 +66,7 @@ class _ReportingBar(tqdm):
         self._done += int(n or 0)
         if self._on_progress is not None and (moment := monotonic()) - self._said >= self._report_seconds:
             self._said = moment
-            self._on_progress(self._label, self._done, self._total)
+            self._emit()
         return shown
 
 
@@ -120,7 +139,7 @@ class EnrichmentStage(ABC):
                     self.on_progress(described, done, total)
 
     def progress_bar(self, *, total: int | None, label: str | None = None,
-                     unit: str = "item") -> tqdm:
+                     unit: str = "item") -> _ReportingBar:
         """Create a throttled progress bar for work that is not iterable.
 
         Like `progress`, it also reports to the worker: tqdm turns itself off

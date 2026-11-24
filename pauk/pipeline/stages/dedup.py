@@ -1091,6 +1091,7 @@ class DedupStage(EnrichmentStage):
         with self.progress_bar(total=len(steps), unit="step") as progress:
             for entity, step in steps:
                 progress.set_description_str(f"{self.progress_label}: {entity}")
+                progress.report()
                 result = step()
                 if entity == "publications":
                     publication_merges = result
