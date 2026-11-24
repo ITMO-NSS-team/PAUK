@@ -22,7 +22,7 @@ from pauk.pipeline.stages.arxiv_versions import (
     has_arxiv_link,
 )
 from pauk.pipeline.stages.base import PreparedSelection
-from pauk.pipeline.stages.code_links import CodeLinksStage
+from pauk.pipeline.stages.code_links import ARCHIVED_DEPOSIT_REASON, CodeLinksStage
 from pauk.pipeline.stages.dedup import _merge_publication
 from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
 from pauk.settings import ARXIV_RPS, Settings
@@ -1280,6 +1280,85 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         ).run()
         work = next(pub for pub in journal_group.read_models("publications", Publication) if pub.id == "W1")
         self.assertEqual(work.arxiv_sources[0].state.status, ProcessingStatus.FAILED)
+
+    @mock.patch("pauk.pipeline.stages.link_relevance.llm_client")
+    def test_changed_deposit_title_reopens_stale_archived_verdict_without_force(
+        self, llm: mock.Mock,
+    ) -> None:
+        repo_url = "https://github.com/lab/pkg"
+        llm.return_value.configure_mock(
+            model="test",
+            last_response=None,
+            last_usage=None,
+            **{"chat_json.return_value": {
+                "is_authors_artifact": False,
+                "confidence": 0.9,
+                "reason": "external dependency",
+            }},
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(self.config, data_dir=Path(directory))
+            self.prepared.write_models("publications", [Publication(
+                id="W1",
+                title="lab/pkg: release",
+                type="software",
+                abstract=f"Uses {repo_url}",
+            )])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            llm.return_value.chat_json.assert_not_called()
+            self.assertEqual(self._links()[repo_url].llm_reason, ARCHIVED_DEPOSIT_REASON)
+            self.assertTrue(self._work().has_code)
+
+            work = self._work()
+            work.title = "Updated record"
+            work.processing.pop("code_links", None)
+            self.prepared.upsert_models("publications", [work])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            link = self._links()[repo_url]
+            self.assertEqual(link.classification_status, ClassificationStatus.PENDING)
+            self.assertIsNone(link.is_relevant)
+            self.assertIsNone(link.llm_confidence)
+            self.assertIsNone(link.llm_reason)
+            self.assertNotIn("link_relevance", self._work().processing)
+
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            llm.return_value.chat_json.assert_called_once()
+            self.assertFalse(self._links()[repo_url].is_relevant)
+            self.assertFalse(self._work().has_code)
+            self.assertIsNone(self._work().code_url)
+
+        llm.return_value.chat_json.reset_mock()
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(self.config, data_dir=Path(directory))
+            self.db.pdfs.drop()
+            self.prepared.write_models("repo_links", [])
+            self.prepared.write_models("publications", [Publication(
+                id="W1",
+                title="lab/pkg: release",
+                type="software",
+            )])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            LinkRelevanceStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            self.assertEqual([occ.source for occ in self._links()[repo_url].occurrences], ["deposit_title"])
+            self.assertEqual(self._links()[repo_url].llm_reason, ARCHIVED_DEPOSIT_REASON)
+
+            work = self._work()
+            work.title = "Updated record"
+            work.abstract = f"Uses {repo_url}"
+            work.processing.pop("code_links", None)
+            self.prepared.upsert_models("publications", [work])
+
+            CodeLinksStage(self.prepared, self.raw, config=config, selection=self.selection).run()
+            link = self._links()[repo_url]
+            self.assertEqual([occ.source for occ in link.occurrences], ["abstract"])
+            self.assertEqual(link.classification_status, ClassificationStatus.PENDING)
+            self.assertIsNone(link.llm_reason)
+            self.assertNotIn("link_relevance", self._work().processing)
 
 
 if __name__ == "__main__":

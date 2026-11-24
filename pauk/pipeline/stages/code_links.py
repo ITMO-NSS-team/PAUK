@@ -593,15 +593,20 @@ def _archived_repository_url(publication: Publication) -> str | None:
     return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
-def _invalidate_automatic_verdict(link: CodeLink) -> bool:
-    """Clear the verdict for changed automatic evidence, but keep deterministic archives."""
-    if link.llm_reason == ARCHIVED_DEPOSIT_REASON:
-        return False
+def _clear_verdict(link: CodeLink) -> bool:
+    """Reset a link verdict to pending so relevance is re-assessed."""
     link.classification_status = ClassificationStatus.PENDING
     link.is_relevant = None
     link.llm_confidence = None
     link.llm_reason = None
     return True
+
+
+def _invalidate_automatic_verdict(link: CodeLink) -> bool:
+    """Clear the verdict for changed automatic evidence, but keep deterministic archives."""
+    if link.llm_reason == ARCHIVED_DEPOSIT_REASON:
+        return False
+    return _clear_verdict(link)
 
 
 def _is_manual_link(link: CodeLink) -> bool:
@@ -643,6 +648,11 @@ def _remove_stale_evidence(
         identity = normalize_repo_url(link.url)
         known = fresh_keys.get(identity, set())
         known_abstract = fresh_abstract.get(identity, set())
+        stale_archived = (
+            reconcile_abstract
+            and link.llm_reason == ARCHIVED_DEPOSIT_REASON
+            and identity != archived_identity
+        )
         occurrences = []
         for o in link.occurrences:
             stale_pdf = o.source in extracted_pdf_sources and o.pdf_id in reread and o.model_dump_json() not in known
@@ -657,14 +667,13 @@ def _remove_stale_evidence(
                 occurrences.append(o)
         if len(occurrences) != len(link.occurrences):
             link.occurrences = occurrences
-            keep_archived = (
-                link.llm_reason == ARCHIVED_DEPOSIT_REASON
-                and (not reconcile_abstract or identity == archived_identity)
-            )
+            keep_archived = link.llm_reason == ARCHIVED_DEPOSIT_REASON and not stale_archived
             if not occurrences and not known and not keep_archived:
                 reopen = True
                 continue
-            reopen |= _invalidate_automatic_verdict(link)
+            reopen |= _clear_verdict(link) if stale_archived else _invalidate_automatic_verdict(link)
+        elif stale_archived:
+            reopen |= _clear_verdict(link)
         retained.append(link)
     row.links = retained
     return reopen
