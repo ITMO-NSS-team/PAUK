@@ -57,6 +57,7 @@ interface PanelLink {
 }
 /** Numbered full-width list with the first {@link PANEL_CONFIG.listLimit} items and a "N more" toggle. */
 interface PanelList {
+  nodeKind?: NodeKind;
   kind: "list";
   items: (string | PanelText | PanelLink | PanelEntityRef)[];
 }
@@ -726,6 +727,7 @@ export function mountPanel(
           privateRows.push([t("field.loadingDetails", lang), LOADING]);
         }
 
+        const connections: PanelRow[] = [];
         const pubKeys = pubKeysByYear(authorPubs.get(node.key) ?? []);
         if (pubKeys.length > 0) {
           const pubRefs = entityRefsOf(pubKeys, lang).map((ref, i) => {
@@ -742,22 +744,22 @@ export function mountPanel(
               : "";
             return meta ? { ...ref, meta } : ref;
           });
-          general.push([t("tab.pubs", lang), { kind: "list", items: pubRefs }]);
+          connections.push([t("tab.pubs", lang), { kind: "list", nodeKind: "pub", items: pubRefs }]);
         }
 
         const coauthors = topCoauthorKeys(node.key);
         if (coauthors.length > 0) {
-          general.push([
+          connections.unshift([
             t("field.topCoauthors", lang),
-            { kind: "list", items: entityRefsOf(coauthors, lang) },
+            { kind: "list", nodeKind: "author", items: entityRefsOf(coauthors, lang) },
           ]);
         }
 
         const authorRepos = authorRepoKeysOf(node.key);
         if (authorRepos.length > 0) {
-          general.push([
+          connections.push([
             t("tab.repos", lang),
-            { kind: "list", items: entityRefsOf(authorRepos, lang) },
+            { kind: "list", nodeKind: "repo", items: entityRefsOf(authorRepos, lang) },
           ]);
         }
 
@@ -765,6 +767,7 @@ export function mountPanel(
           title,
           kindLabel(node.kind, lang),
           [
+            { title: lang === "ru" ? "Связи автора" : "Author connections", rows: connections },
             { title: t("section.general", lang), rows: general },
             { title: t("section.private", lang), rows: privateRows },
             { title: t("section.service", lang), rows: service },
@@ -1097,7 +1100,8 @@ function buildCard(options: PanelCardOptions): HTMLElement {
   function listElement(value: PanelList): HTMLUListElement {
     const ul = document.createElement("ul");
     ul.className = "panel-list";
-    const limit = PANEL_CONFIG.listLimit;
+    if (value.nodeKind) ul.dataset.nodeKind = value.nodeKind;
+    const limit = value.nodeKind ? 3 : PANEL_CONFIG.listLimit;
     let shown = limit;
 
     function button(text: string, onClick: () => void): HTMLButtonElement {

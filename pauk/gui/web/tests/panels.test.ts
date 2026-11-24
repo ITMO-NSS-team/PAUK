@@ -261,12 +261,12 @@ describe("mountPanel", () => {
         section,
       ]),
     );
-    expect([...sections.keys()]).toEqual(["Общее", "Приватное", "Служебное"]);
+    expect([...sections.keys()]).toEqual(["Связи автора", "Общее", "Приватное", "Служебное"]);
 
     const general = sections.get("Общее");
     expect(general?.textContent).toContain("Департамент");
     expect(general?.querySelector("a[href='https://openalex.org/A5000000001']")).not.toBeNull();
-    expect(general?.textContent).toContain("Топ соавторов");
+    expect(sections.get("Связи автора")?.querySelectorAll("[data-node-kind]")).toHaveLength(3);
 
     const privateSection = sections.get("Приватное");
     expect(privateSection?.querySelector("a[href='mailto:ivanov@example.edu']")).not.toBeNull();
@@ -293,10 +293,10 @@ describe("mountPanel", () => {
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const titles = [...panel.querySelectorAll(".panel-section__title")].map((el) => el.textContent);
-    expect(titles).toEqual(["Общее", "Приватное", "Служебное"]);
-    const privateSection = panel.querySelectorAll(".panel-section")[1];
+    expect(titles).toEqual(["Связи автора", "Общее", "Приватное", "Служебное"]);
+    const privateSection = panel.querySelectorAll(".panel-section")[2];
     expect(privateSection?.querySelector(".loading-indicator")).not.toBeNull();
-    expect(panel.querySelectorAll(".panel-section")[2]?.textContent).toContain("A1");
+    expect(panel.querySelectorAll(".panel-section")[3]?.textContent).toContain("A1");
   });
 
   it("affiliations with the same name are merged into one item: ROR link, year range and sources", async () => {

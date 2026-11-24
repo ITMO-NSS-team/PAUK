@@ -643,6 +643,22 @@
         counter-increment: panel-item;
         content: counter(panel-item) ".";
       }
+      .panel-list[data-node-kind] {
+        border-inline-start: 1px solid var(--border);
+        margin-inline-start: 5px;
+        padding-inline-start: 13px;
+      }
+      .panel-list[data-node-kind] li:not(.panel-list__toggle)::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        margin: .38em 4px 0 -18px;
+        background: var(--accent);
+      }
+      .panel-list[data-node-kind="author"] li::before { border-radius: 50%; }
+      .panel-list[data-node-kind="pub"] li::before {
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
+      }
       .panel-list__body {
         min-width: 0;
       }
