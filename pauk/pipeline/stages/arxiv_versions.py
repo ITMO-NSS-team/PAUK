@@ -171,18 +171,18 @@ class ArxivVersionsStage(EnrichmentStage):
 
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
+        self.with_links = {row.publication_id for row in self.prepared.read_models("repo_links", RepoLink)
+                           if row.links}
+        found, failed = self._seed_native_pdfs(publications), 0
         candidates = [
             publication for publication in publications
             if self.selected("publications", publication.id)
             and self.needs_attempt(publication.processing.get(self.name))
             and wants_arxiv_copy(publication)
         ]
-        self.with_links = {row.publication_id for row in self.prepared.read_models("repo_links", RepoLink)
-                           if row.links}
         client = SemanticScholarClient(self.config.request_timeout, self.config.semantic_scholar_api_key,
                                        requests_per_second=self.config.semantic_scholar_rps)
         batches = [candidates[start:start + MAX_BATCH] for start in range(0, len(candidates), MAX_BATCH)]
-        found, failed = self._seed_native_pdfs(publications), 0
         for batch in self.progress(batches, total=len(batches), unit="batch"):
             dois = [bare_doi(publication.doi or "") for publication in batch]
             try:
@@ -217,8 +217,7 @@ class ArxivVersionsStage(EnrichmentStage):
                         publication.pdf_urls.append(record_url)
                     updated = True
             if updated:
-                if publication.id not in self.with_links:
-                    publication.processing.pop("code_links", None)
+                publication.processing.pop("code_links", None)
                 changed.append(publication)
         self.prepared.upsert_models("publications", changed)
         return len(changed)

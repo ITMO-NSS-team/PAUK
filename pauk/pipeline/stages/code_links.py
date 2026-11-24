@@ -661,13 +661,21 @@ def _merge_additional_evidence(
             by_url[identity] = link
             reopen = True
         seen = {occ.model_dump_json() for occ in link.occurrences}
+        abstract_seen = {
+            (occ.source, occ.context) for occ in link.occurrences if occ.page_number is None
+        }
         added = False
         for occurrence in occurrences:
             key = occurrence.model_dump_json()
-            if key not in seen:
-                seen.add(key)
-                link.occurrences.append(occurrence)
-                added = True
+            if key in seen or (
+                occurrence.page_number is None and (occurrence.source, occurrence.context) in abstract_seen
+            ):
+                continue
+            seen.add(key)
+            if occurrence.page_number is None:
+                abstract_seen.add((occurrence.source, occurrence.context))
+            link.occurrences.append(occurrence)
+            added = True
         if added:
             _invalidate_automatic_verdict(link)
         reopen |= link.classification_status == ClassificationStatus.PENDING
@@ -750,6 +758,14 @@ class CodeLinksStage(EnrichmentStage):
                 }
             occurrences_by_url = _merge_url_spellings(occurrences_by_url)
             archived_identity = normalize_repo_url(archived) if archived else None
+            if not self.force and previous is not None:
+                reopen = _merge_additional_evidence(previous, occurrences_by_url, archived)
+                if reopen:
+                    pub.processing.pop("link_relevance", None)
+                pub.processing[self.name] = self._extraction_state(state, len(previous.links), pdf_error)
+                links_by_publication[pub.id] = previous
+                changed += 1
+                continue
             urls = list(occurrences_by_url)
             # Replacing the evidence invalidates any verdict made from the
             # previous contexts; the next link_relevance pass must judge the
@@ -1121,9 +1137,10 @@ class CodeLinksStage(EnrichmentStage):
         for source_url, kwargs in sources:
             try:
                 provenance = None
-                if arxiv_pdf_identity(source_url):
-                    pdf_bytes, resolved_url = self.http.get_bytes_with_url(source_url, **kwargs)
-                    if not _compatible_arxiv_pdf(source_url, resolved_url):
+                if identity := arxiv_pdf_identity(source_url):
+                    request_url = f"https://arxiv.org/pdf/{''.join(identity)}"
+                    pdf_bytes, resolved_url = self.http.get_bytes_with_url(request_url, **kwargs)
+                    if not _compatible_arxiv_pdf(request_url, resolved_url):
                         raise ValueError("arXiv PDF response does not match the requested work or revision")
                     provenance = _canonical_arxiv_pdf(resolved_url)
                 else:
