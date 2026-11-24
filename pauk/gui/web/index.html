@@ -68,12 +68,12 @@
         outline-offset: 2px;
       }
 
-      /* The accent spider instead of the native check mark; accent-color cannot swap it for an image. */
+      /* Keep the sprite at its native size so the body and legs stay distinct. */
       input[type="checkbox"] {
         appearance: none;
         -webkit-appearance: none;
-        width: 16px;
-        height: 16px;
+        width: 23px;
+        height: 23px;
         margin: 0;
         border: 1px solid var(--border);
         border-radius: 3px;
@@ -89,8 +89,8 @@
         content: "";
         display: block;
         height: 100%;
-        background: var(--accent);
-        mask: url("./src/assets/icons/pauk-frame-accent.png") center / 70% no-repeat;
+        background: var(--filter-spider) center no-repeat;
+        filter: hue-rotate(235deg);
       }
       /* Accent spider thumb; -webkit- and -moz- pseudo-elements cannot be merged. */
       input[type="range"] {
@@ -109,11 +109,11 @@
       input[type="range"]::-webkit-slider-thumb {
         appearance: none;
         -webkit-appearance: none;
-        width: 16px;
-        height: 16px;
-        margin-top: -6px; /* (4px track - 16px thumb) / 2 */
-        background: var(--accent);
-        mask: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        width: 21px;
+        height: 19px;
+        margin-top: -7.5px; /* (4px track - 19px thumb) / 2 */
+        background: var(--filter-spider) center no-repeat;
+        filter: hue-rotate(235deg);
         transition: transform 0.15s ease;
       }
       input[type="range"][data-tilt="right"]:active::-webkit-slider-thumb {
@@ -128,12 +128,12 @@
         background: var(--border);
       }
       input[type="range"]::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
+        width: 21px;
+        height: 19px;
         border: none;
         border-radius: 0;
-        background: var(--accent);
-        mask: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        background: var(--filter-spider) center no-repeat;
+        filter: hue-rotate(235deg);
         transition: transform 0.15s ease;
       }
       input[type="range"][data-tilt="right"]:active::-moz-range-thumb {
@@ -341,6 +341,7 @@
       }
 
       #filter-bar {
+        --filter-spider: url("./src/assets/icons/pauk-frame-accent.png");
         display: flex;
         flex-direction: column;
         gap: 12px;
