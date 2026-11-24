@@ -93,6 +93,11 @@ Settings:
 | `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
 | `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Optional Semantic Scholar pace override: lower it or match a higher quota assigned to the key |
 
+## GitHub GraphQL
+
+A failed batch can be retried on the next run. Request-wide authentication and
+rate limit errors stop subsequent GraphQL requests from the same client.
+
 ## Clients
 
 | File | Class | What it provides |

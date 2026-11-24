@@ -164,8 +164,11 @@ class GitHubClient(HttpClient):
             try:
                 nodes = self._graphql_nodes(fields)
             except HttpRequestError as error:
-                self._prefetched_repositories.update(dict.fromkeys(pending[start:], error))
-                break
+                blocked = self._graphql_blocked is not None
+                self._prefetched_repositories.update(dict.fromkeys(pending[start:] if blocked else chunk, error))
+                if blocked:
+                    break
+                continue
             for pair, node in zip(chunk, nodes, strict=True):
                 if isinstance(node, HttpRequestError):
                     self._prefetched_repositories[pair] = node
@@ -268,22 +271,25 @@ class GitHubClient(HttpClient):
             chunk = pending[start:start + self.USERS_PER_QUERY]
             fields = (
                 f"repositoryOwner(login: {json.dumps(login)}) {{ __typename login url"
-                " ... on User { name email bio location company }"
-                " ... on Organization { name email description location } }"
+                " ... on User { name userEmail: email bio location company }"
+                " ... on Organization { name organizationEmail: email description location } }"
                 for login in chunk
             )
             try:
                 nodes = self._graphql_nodes(fields)
             except HttpRequestError as error:
-                found.update(dict.fromkeys(pending[start:], error))
-                break
+                blocked = self._graphql_blocked is not None
+                found.update(dict.fromkeys(pending[start:] if blocked else chunk, error))
+                if blocked:
+                    break
+                continue
             for login, node in zip(chunk, nodes, strict=True):
                 if node is None:
                     node = self._get_user_result(login)
                 elif isinstance(node, dict) and node.get("login") and node.get("url") and node.get("__typename"):
                     node = {
                         "login": node["login"], "html_url": node["url"], "type": node["__typename"],
-                        "name": node.get("name"), "email": node.get("email") or None,
+                        "name": node.get("name"), "email": node.get("userEmail") or node.get("organizationEmail") or None,
                         "bio": node.get("bio"), "description": node.get("description"),
                         "location": node.get("location"), "company": node.get("company"),
                     }

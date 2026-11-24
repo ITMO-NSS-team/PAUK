@@ -232,18 +232,50 @@ class GitHubBatchTest(unittest.TestCase):
 
     def test_profile_batches_normalize_case_and_keep_results_on_partial_failure(self):
         unavailable = {"path": ["item1", "name"], "type": "INTERNAL"}
-        users = {"data": {f"item{i}": self.user() for i in range(50)}, "errors": [unavailable]}
-        org = {"login": "lab", "url": "https://github.com/lab", "__typename": "Organization", "description": "Lab"}
+        user = self.user() | {"userEmail": "alice@example.org"}
+        users = {"data": {f"item{i}": user for i in range(50)}, "errors": [unavailable]}
+        org = {
+            "login": "lab", "url": "https://github.com/lab", "__typename": "Organization",
+            "description": "Lab", "organizationEmail": "lab@example.org",
+        }
         logins = [f"user{i}" for i in range(50)] + ["lab", "USER0"]
         with mock.patch.object(self.client, "request_json", side_effect=[users, {"data": {"item0": org}}]) as request:
             profiles = self.client.get_users(logins)
         self.assertEqual(len(profiles), 51)
         self.assertEqual(profiles["user0"]["login"], "Alice")
+        self.assertEqual(profiles["user0"]["email"], "alice@example.org")
         self.assertIsInstance(profiles["user1"], HttpRequestError)
         self.assertEqual(profiles["lab"]["description"], "Lab")
         self.assertEqual(profiles["lab"]["type"], "Organization")
+        self.assertEqual(profiles["lab"]["email"], "lab@example.org")
         queries = [call.kwargs["json"]["query"] for call in request.call_args_list]
         self.assertEqual([query.count("repositoryOwner(login:") for query in queries], [50, 1])
+        self.assertIn("userEmail: email", queries[0])
+        self.assertIn("organizationEmail: email", queries[0])
+
+    def test_a_failed_repository_batch_does_not_skip_the_next_batch(self):
+        failure = HttpRequestError("POST", self.client.GRAPHQL_URL, status_code=502)
+        pairs = [("org", f"repo{i}") for i in range(self.client.REPOSITORIES_PER_QUERY + 1)]
+        with mock.patch.object(self.client, "request_json", side_effect=[
+            failure, {"data": {"item0": self.repository()}},
+        ]) as request:
+            self.client.prefetch_repositories(pairs)
+            with self.assertRaises(HttpRequestError) as error:
+                self.client.get_repository(*pairs[0])
+            self.assertEqual(error.exception.status_code, 502)
+            self.assertEqual(self.client.get_repository(*pairs[-1])["id"], 3_000_000_000)
+        self.assertEqual(request.call_count, 2)
+
+    def test_a_failed_profile_batch_does_not_skip_the_next_batch(self):
+        failure = HttpRequestError("POST", self.client.GRAPHQL_URL, status_code=502)
+        logins = [f"user{i}" for i in range(self.client.USERS_PER_QUERY + 1)]
+        with mock.patch.object(self.client, "request_json", side_effect=[
+            failure, {"data": {"item0": self.user()}},
+        ]) as request:
+            profiles = self.client.get_users(logins)
+        self.assertEqual(profiles[logins[0]].status_code, 502)
+        self.assertEqual(profiles[logins[-1]]["login"], "Alice")
+        self.assertEqual(request.call_count, 2)
 
     def test_global_rate_limit_does_not_trigger_rest_or_a_second_batch(self):
         limit = {"data": None, "errors": [{"type": "RATE_LIMITED", "message": "private details"}]}
