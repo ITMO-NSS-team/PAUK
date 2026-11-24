@@ -12,6 +12,7 @@ from pauk.pipeline.stages.social_graph import (
     itmo_organization_status,
 )
 from pauk.settings import Settings
+from pauk.sources.base import HttpRequestError
 from pauk.storage import PreparedStore, RawStore
 from pauk.storage.static import StaticStore
 
@@ -238,7 +239,7 @@ class SocialGraphStageTest(unittest.TestCase):
             "owner": {"login": "ipetrov", "type": "User"}}
         client.return_value.contributors.return_value = []
         client.return_value.commits.return_value = []
-        client.return_value.get_user.return_value = {"login": "ipetrov"}
+        client.return_value.get_users.return_value = {"ipetrov": {"login": "ipetrov"}}
         result = SocialGraphStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(result["social_repositories"], 1)
 
@@ -246,20 +247,55 @@ class SocialGraphStageTest(unittest.TestCase):
     def test_people_found_on_a_walked_repository_become_candidates(self, client):
         self.build([person("A1", "Ivan Petrov", github="ipetrov")],
                    [repository("ipetrov", "known")], [])
-        client.return_value.user_repositories.return_value = [
-            {"html_url": "https://github.com/ipetrov/lab-tool"}]
-        client.return_value.get_repository.return_value = {
-            "owner": {"login": "ipetrov", "type": "User"}}
+        client.return_value.user_repositories.return_value = [{
+            "html_url": "https://github.com/ipetrov/lab-tool",
+            "owner": {"login": "ipetrov", "type": "User"},
+        }]
         client.return_value.contributors.return_value = [{"login": "colleague", "type": "User"}]
         client.return_value.commits.return_value = [
             {"author": {"login": "colleague"},
              "commit": {"author": {"email": "colleague@itmo.ru", "name": "Anna Sidorova"}}}]
-        client.return_value.get_user.side_effect = lambda login: {"login": login, "name": "Anna Sidorova"}
+        client.return_value.get_users.side_effect = lambda logins: {login: {"login": login} for login in logins}
         result = SocialGraphStage(self.prepared, self.raw, self.config).run()
         profiles = {p.login: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertEqual(result["social_accounts"], 2)
+        client.return_value.get_repository.assert_not_called()
         self.assertEqual(profiles["colleague"].emails, ["colleague@itmo.ru"])
         self.assertEqual(profiles["colleague"].repos, ["https://github.com/ipetrov/lab-tool"])
+        self.assertTrue(profiles["colleague"].profile_fetched)
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_retry_fetches_an_unfilled_profile_without_rewalking_its_repository(self, client):
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")], [], [])
+        api = client.return_value
+        api.user_repositories.return_value = [{
+            "html_url": "https://github.com/ipetrov/lab-tool",
+            "owner": {"login": "ipetrov", "type": "User"},
+        }]
+        api.contributors.return_value = [{"login": "Colleague", "type": "User"}]
+        api.commits.return_value = [{
+            "author": {"login": "colleague"},
+            "commit": {"author": {"email": "commit@example.org", "name": "Commit Name"}},
+        }]
+        api.get_users.return_value = {
+            "ipetrov": {"login": "ipetrov"},
+            "colleague": HttpRequestError("POST", "https://api.github.com/graphql", status_code=502),
+        }
+        stage = SocialGraphStage(self.prepared, self.raw, self.config)
+        with self.assertLogs("pauk.pipeline.stages.social_graph", level="WARNING"):
+            stage.run()
+        profiles = {p.id: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertFalse(profiles["github_colleague"].profile_fetched)
+        self.assertEqual(profiles["github_colleague"].emails, ["commit@example.org"])
+
+        api.get_users.return_value = {"colleague": {"login": "Colleague", "email": "profile@example.org"}}
+        result = stage.run()
+        self.assertEqual(result["social_repositories"], 0)
+        api.contributors.assert_called_once()
+        self.assertEqual(list(api.get_users.call_args.args[0]), ["colleague"])
+        profiles = {p.id: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(profiles["github_colleague"].profile_fetched)
+        self.assertEqual(profiles["github_colleague"].emails, ["commit@example.org", "profile@example.org"])
 
     @patch("pauk.pipeline.stages.social_graph.GitHubClient")
     def test_repositories_walked_by_an_earlier_run_are_not_walked_again(self, client):
@@ -299,7 +335,7 @@ class SocialGraphStageTest(unittest.TestCase):
             "owner": {"login": "ipetrov", "type": "User"}}
         client.return_value.contributors.return_value = [{"login": "colleague", "type": "User"}]
         client.return_value.commits.return_value = []
-        client.return_value.get_user.return_value = {"login": "colleague"}
+        client.return_value.get_users.side_effect = lambda logins: {login: {"login": login} for login in logins}
         SocialGraphStage(self.prepared, self.raw, self.config).run()
         self.assertTrue(matcher.called, "github_match must run between rings")
 

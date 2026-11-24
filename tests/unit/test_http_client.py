@@ -193,6 +193,10 @@ class GitHubBatchTest(unittest.TestCase):
             "repositoryTopics": {"nodes": []}, "readme0": {"id": "blob"},
         }
 
+    @staticmethod
+    def user():
+        return {"login": "Alice", "url": "https://github.com/Alice", "__typename": "User"}
+
     def test_repository_batches_deduplicate_keys_and_keep_canonical_metadata(self):
         data = {"item" + str(i): self.repository() for i in range(25)}
         replies = [{"data": data}, {"data": {"item0": self.repository()}}]
@@ -225,6 +229,45 @@ class GitHubBatchTest(unittest.TestCase):
             self.assertIsNone(error.exception.status_code)
             self.assertEqual(self.client.get_repository("org", "old")["html_url"], "https://github.com/org/renamed")
             self.assertEqual(request.call_count, 3)
+
+    def test_profile_batches_normalize_case_and_keep_results_on_partial_failure(self):
+        unavailable = {"path": ["item1", "name"], "type": "INTERNAL"}
+        users = {"data": {f"item{i}": self.user() for i in range(50)}, "errors": [unavailable]}
+        org = {"login": "lab", "url": "https://github.com/lab", "__typename": "Organization", "description": "Lab"}
+        logins = [f"user{i}" for i in range(50)] + ["lab", "USER0"]
+        with mock.patch.object(self.client, "request_json", side_effect=[users, {"data": {"item0": org}}]) as request:
+            profiles = self.client.get_users(logins)
+        self.assertEqual(len(profiles), 51)
+        self.assertEqual(profiles["user0"]["login"], "Alice")
+        self.assertIsInstance(profiles["user1"], HttpRequestError)
+        self.assertEqual(profiles["lab"]["description"], "Lab")
+        self.assertEqual(profiles["lab"]["type"], "Organization")
+        queries = [call.kwargs["json"]["query"] for call in request.call_args_list]
+        self.assertEqual([query.count("repositoryOwner(login:") for query in queries], [50, 1])
+
+    def test_global_rate_limit_does_not_trigger_rest_or_a_second_batch(self):
+        limit = {"data": None, "errors": [{"type": "RATE_LIMITED", "message": "private details"}]}
+        with mock.patch.object(self.client, "request_json", return_value=limit) as request:
+            profiles = self.client.get_users(f"user{i}" for i in range(51))
+            later = self.client.get_users(["later"])
+        request.assert_called_once()
+        self.assertEqual(set(error.status_code for error in profiles.values()), {429})
+        self.assertEqual(later["later"].status_code, 429)
+        self.assertNotIn("private details", str(profiles["user0"]))
+
+    def test_without_a_token_all_reads_use_rest_and_keep_errors_per_profile(self):
+        client = GitHubClient(timeout=5)
+        self.addCleanup(client.session.close)
+        missing = HttpRequestError("GET", f"{client.API_URL}/users/gone", status_code=404)
+        with mock.patch.object(client, "request_json", side_effect=[{"id": 1}, {}, missing, {"login": "here"}]) as request:
+            client.prefetch_repositories([("org", "repo")])
+            self.assertEqual(client.get_repository("org", "repo")["id"], 1)
+            self.assertTrue(client.has_readme("org", "repo"))
+            profiles = client.get_users(["gone", "here"])
+        self.assertIs(profiles["gone"], missing)
+        self.assertEqual(profiles["here"], {"login": "here"})
+        self.assertEqual([call.args[0] for call in request.call_args_list], ["GET"] * 4)
+
 
 if __name__ == "__main__":
     unittest.main()

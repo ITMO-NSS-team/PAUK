@@ -13,6 +13,7 @@ class GitHubClient(HttpClient):
     API_URL = "https://api.github.com"
     GRAPHQL_URL = f"{API_URL}/graphql"
     REPOSITORIES_PER_QUERY = 25
+    USERS_PER_QUERY = 50
     REPOSITORY_TOPIC_LIMIT = 20
     README_NAMES = (
         "README.md", "README.rst", "README.txt", "README", "readme.md", "Readme.md",
@@ -256,6 +257,51 @@ class GitHubClient(HttpClient):
 
     def get_user(self, login: str) -> dict:
         return self.get_json(f"{self.API_URL}/users/{login}")
+
+    def get_users(self, logins: Iterable[str]) -> dict[str, dict | HttpRequestError]:
+        """Fetch profiles keyed by lowercase login, with errors per login."""
+        pending = list(dict.fromkeys(login.lower() for login in logins))
+        found: dict[str, dict | HttpRequestError] = {}
+        if not self._has_token:
+            return {login: self._get_user_result(login) for login in pending}
+        for start in range(0, len(pending), self.USERS_PER_QUERY):
+            chunk = pending[start:start + self.USERS_PER_QUERY]
+            fields = (
+                f"repositoryOwner(login: {json.dumps(login)}) {{ __typename login url"
+                " ... on User { name email bio location company }"
+                " ... on Organization { name email description location } }"
+                for login in chunk
+            )
+            try:
+                nodes = self._graphql_nodes(fields)
+            except HttpRequestError as error:
+                found.update(dict.fromkeys(pending[start:], error))
+                break
+            for login, node in zip(chunk, nodes, strict=True):
+                if node is None:
+                    node = self._get_user_result(login)
+                elif isinstance(node, dict) and node.get("login") and node.get("url") and node.get("__typename"):
+                    node = {
+                        "login": node["login"], "html_url": node["url"], "type": node["__typename"],
+                        "name": node.get("name"), "email": node.get("email") or None,
+                        "bio": node.get("bio"), "description": node.get("description"),
+                        "location": node.get("location"), "company": node.get("company"),
+                    }
+                elif isinstance(node, dict):
+                    node = HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL profile")
+                found[login] = node
+        return found
+
+    def _get_user_result(self, login: str) -> dict | HttpRequestError:
+        try:
+            user = self.get_user(login)
+        except HttpRequestError as error:
+            return error
+        except ValueError:
+            return HttpRequestError("GET", f"{self.API_URL}/users/{login}", cause_type="Invalid GitHub JSON")
+        if isinstance(user, dict) and user.get("login"):
+            return user
+        return HttpRequestError("GET", f"{self.API_URL}/users/{login}", cause_type="Missing GitHub profile")
 
     def user_repositories(self, login: str, limit: int) -> list[dict]:
         """Repositories the account owns, most recently pushed first.

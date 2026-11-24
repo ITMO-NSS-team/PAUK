@@ -27,7 +27,7 @@ class GitHubProfile(BaseModel):
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
-    # Whether GET /users/{login} has answered for this account. The repositories
+    # Whether GitHub returned a full profile for this account. The repositories
     # stage writes a stub from the nested owner object (login, URL, type only);
     # without this marker it looks like a fetched profile with empty optional fields.
     profile_fetched: bool = False

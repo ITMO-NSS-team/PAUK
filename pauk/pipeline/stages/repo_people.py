@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pauk.models import GitHubProfile, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
+from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
@@ -53,7 +54,7 @@ def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]
         if not login:
             continue
         author = (commit.get("commit") or {}).get("author") or {}
-        emails, names = identities.setdefault(login, (set(), set()))
+        emails, names = identities.setdefault(login.lower(), (set(), set()))
         email = (author.get("email") or "").strip().lower()
         if email and NOREPLY_EMAIL not in email:
             emails.add(email)
@@ -62,9 +63,17 @@ def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]
     return identities
 
 
-def _is_filled(profile: GitHubProfile | None) -> bool:
-    """Commit identities and owner stubs do not prove a successful user request."""
-    return profile is not None and profile.profile_fetched
+def _apply_profile_details(profile: GitHubProfile, payload: dict) -> None:
+    profile.name = payload.get("name") or profile.name
+    profile.html_url = payload.get("html_url") or profile.html_url
+    profile.description = payload.get("bio") or payload.get("description") or profile.description
+    profile.location = payload.get("location") or profile.location
+    profile.company = payload.get("company") or profile.company
+    profile.type = (payload.get("type") or "").lower() or profile.type
+    profile_email = (payload.get("email") or "").strip().lower()
+    if profile_email and NOREPLY_EMAIL not in profile_email:
+        profile.emails = sorted(set(profile.emails) | {profile_email})
+    profile.profile_fetched = True
 
 
 class RepoPeopleStage(EnrichmentStage):
@@ -86,7 +95,7 @@ class RepoPeopleStage(EnrichmentStage):
         return self.in_scope("repositories", repo.id)
 
     def _harvest(self, client: GitHubClient, repo: Repository, owner: str, name: str,
-                 profiles: dict[str, GitHubProfile]) -> None:
+                 profiles: dict[str, GitHubProfile], *, refreshed: set[str] | None = None) -> None:
         """Collect the people behind one repository into github_profiles.
 
         These are the candidates an author is later matched against: the
@@ -95,45 +104,47 @@ class RepoPeopleStage(EnrichmentStage):
         """
         contributors = client.contributors(owner, name)
         identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
+        if refreshed is None:
+            refreshed = set()
 
         owner_profile = profiles.get(f"github_{(repo.owner_login or '').lower()}")
-        roles: dict[str, str] = {}
+        logins: dict[str, str] = {}
         if repo.owner_login and _is_person(repo.owner_login,
                                            owner_profile.type if owner_profile else None):
-            roles[repo.owner_login] = "owner"
+            logins[repo.owner_login.lower()] = repo.owner_login
         for contributor in contributors:
             login = contributor.get("login") or ""
             if _is_person(login, contributor.get("type")):
-                roles.setdefault(login, "contributor")
+                logins.setdefault(login.lower(), login)
 
-        repo.contributors = sorted(roles)
-        for login in sorted(roles):
-            profile_id = f"github_{login.lower()}"
-            emails, commit_names = identities.get(login, (set(), set()))
-            known = profiles.get(profile_id)
-            payload: dict = {}
-            fetched = known.profile_fetched if known else False
-            if self.force or not _is_filled(known):
-                payload = client.get_user(login)
-                fetched = True
-                self.raw.append("github_user", payload, {"login": login})
-            profile_email = (payload.get("email") or "").strip().lower()
-            if profile_email and NOREPLY_EMAIL not in profile_email:
-                emails = emails | {profile_email}
-            profiles[profile_id] = GitHubProfile(
-                id=profile_id,
-                login=login,
-                name=payload.get("name") or (known.name if known else None),
-                html_url=payload.get("html_url") or (known.html_url if known else None),
-                description=payload.get("bio") or (known.description if known else None),
-                location=payload.get("location") or (known.location if known else None),
-                company=payload.get("company") or (known.company if known else None),
-                type=(payload.get("type") or "").lower() or (known.type if known else None),
-                emails=sorted(set(known.emails if known else []) | emails),
-                commit_names=sorted(set(known.commit_names if known else []) | commit_names),
-                repos=sorted(set(known.repos if known else []) | {repo.url}),
-                profile_fetched=fetched,
-            )
+        repo.contributors = sorted(logins.values())
+        candidates = {}
+        for key, login in sorted(logins.items()):
+            profile_id = f"github_{key}"
+            profile = profiles.get(profile_id)
+            if profile is None:
+                profile = profiles[profile_id] = GitHubProfile(id=profile_id, login=login)
+            emails, commit_names = identities.get(key, (set(), set()))
+            profile.emails = sorted(set(profile.emails) | emails)
+            profile.commit_names = sorted(set(profile.commit_names) | commit_names)
+            profile.repos = sorted(set(profile.repos) | {repo.url})
+            if key not in refreshed and (self.force or not profile.profile_fetched):
+                candidates[key] = profile
+
+        if not candidates:
+            return
+        failure = None
+        for login, payload in client.get_users(candidates).items():
+            if isinstance(payload, HttpRequestError):
+                if failure is None:
+                    failure = payload
+            else:
+                profile = candidates[login]
+                self.raw.append("github_user", payload, {"login": profile.login})
+                _apply_profile_details(profile, payload)
+                refreshed.add(login)
+        if failure is not None:
+            raise failure.with_traceback(None)
 
     def run(self) -> dict[str, int]:
         repositories = {
@@ -151,13 +162,14 @@ class RepoPeopleStage(EnrichmentStage):
             and self.needs_attempt(repo.processing.get(self.name))
         ]
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
+        refreshed: set[str] = set()
         changed = 0
         for repo in self.progress(sorted(pending, key=lambda r: r.id),
                                   total=len(pending), unit="repository"):
             owner, name = _github_owner_name(repo.url)
             state = repo.processing.get(self.name)
             try:
-                self._harvest(client, repo, owner, name, profiles)
+                self._harvest(client, repo, owner, name, profiles, refreshed=refreshed)
                 status, error = ProcessingStatus.COMPLETED, None
             except Exception as exc:
                 # GitHub answers 403 on repositories it has not analysed yet.

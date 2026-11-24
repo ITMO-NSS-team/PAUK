@@ -107,6 +107,9 @@ class MockGitHubClient:
     def get_user(self, login: str) -> dict:
         return {}
 
+    def get_users(self, logins) -> dict:
+        return {login: {"login": login} for login in logins}
+
 
 class MockCrossrefClient:
     def __init__(self, universe: dict) -> None:

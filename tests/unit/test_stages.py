@@ -37,6 +37,7 @@ from pauk.pipeline.stages.link_relevance import (
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
+from pauk.sources.base import HttpRequestError
 from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PdfStore, PreparedStore, RawStore
 
@@ -1027,7 +1028,9 @@ class HarvestAccountsTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = list(contributors)
         github_client.return_value.commits.return_value = list(commits)
-        github_client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        github_client.return_value.get_users.side_effect = lambda logins: {
+            login: (users or {}).get(login, {"login": login}) for login in logins
+        }
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         raw = RawStore(db, "sample")
@@ -1111,7 +1114,7 @@ class HarvestAccountsTest(unittest.TestCase):
             client.return_value.contributors.return_value = []
             client.return_value.commits.side_effect = lambda owner, name, pages: [
                 self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
-            client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
+            client.return_value.get_users.return_value = {"alice": {"name": "Alice Ivanova"}}
             RepositoriesStage(prepared, raw).run()
             RepoPeopleStage(prepared, raw).run()
         profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
@@ -1173,7 +1176,7 @@ class AccountTypeSpellingTest(unittest.TestCase):
         client = Mock()
         client.contributors.return_value = []
         client.commits.return_value = []
-        client.get_user.return_value = {"login": "alice", "type": "User"}
+        client.get_users.return_value = {"alice": {"login": "alice", "type": "User"}}
         # The type is read off the stored profile rather than passed in.
         profiles = {"github_alice": GitHubProfile(id="github_alice", login="alice",
                                                   type="user")}
@@ -1268,9 +1271,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
-            client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.return_value = {"alice": self.USER}
             RepoPeopleStage(self.prepared, self.raw).run()
-            calls = client.return_value.get_user.call_count
+            calls = client.return_value.get_users.call_count
         return calls, {p.login: p
                        for p in self.prepared.read_models("github_profiles", GitHubProfile)}
 
@@ -1310,7 +1313,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.commits.return_value = [
                 {"author": {"login": "alice"},
                  "commit": {"author": {"name": "Alice", "email": "alice@example.org"}}}]
-            client.return_value.get_user.side_effect = RuntimeError("502")
+            client.return_value.get_users.return_value = {
+                "alice": HttpRequestError("POST", "https://api.github.com/graphql", status_code=502),
+            }
             RepoPeopleStage(self.prepared, self.raw).run()
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
@@ -1323,9 +1328,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
-            client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.return_value = {"alice": self.USER}
             RepoPeopleStage(self.prepared, self.raw).run()
-            client.return_value.get_user.assert_called_once_with("alice")
+            self.assertEqual(list(client.return_value.get_users.call_args.args[0]), ["alice"])
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertTrue(profiles["alice"].profile_fetched)
@@ -1801,6 +1806,9 @@ class RepoPeopleStageTest(unittest.TestCase):
         client.return_value.contributors.return_value = [{"login": "bob", "type": "User"}]
         client.return_value.commits.return_value = []
         client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        client.return_value.get_users.side_effect = lambda logins: {
+            login: (users or {}).get(login, {"login": login}) for login in logins
+        }
         return client
 
     def _profiles(self):
@@ -1855,12 +1863,13 @@ class RepoPeopleStageTest(unittest.TestCase):
         self._client(people_client, users=users)
         RepositoriesStage(self.prepared, self.raw).run()
         RepoPeopleStage(self.prepared, self.raw).run()
-        self.assertEqual(people_client.return_value.get_user.call_count, 2)
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
+        self.assertEqual(list(people_client.return_value.get_users.call_args.args[0]), ["alice", "bob"])
         self.assertEqual(self._profiles()["bob"].name, "Bob")
 
         RepoPeopleStage(self.prepared, self.raw, force=True).run()
         # Forced: the profiles are re-read, but only because they were asked for.
-        self.assertEqual(people_client.return_value.get_user.call_count, 4)
+        self.assertEqual(people_client.return_value.get_users.call_count, 2)
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
@@ -1881,9 +1890,13 @@ class RepoPeopleStageTest(unittest.TestCase):
         RepoPeopleStage(self.prepared, self.raw).run()
         # bob is credited on both repositories; his profile is fetched once.
         self.assertEqual(people_client.return_value.contributors.call_count, 2)
-        self.assertEqual(people_client.return_value.get_user.call_count, 1)
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
         self.assertEqual(sorted(self._profiles()["bob"].repos),
                          ["https://github.com/org/first", "https://github.com/org/second"])
+        people_client.return_value.get_users.reset_mock()
+        RepoPeopleStage(self.prepared, self.raw, force=True).run()
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
+        self.assertEqual(people_client.return_value.contributors.call_count, 4)
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")

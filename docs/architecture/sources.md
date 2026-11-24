@@ -98,7 +98,7 @@ Settings:
 | File | Class | What it provides |
 |---|---|---|
 | `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author` |
-| `github.py` | `GitHubClient` | `prefetch_repositories` uses GraphQL with a token. Single-repository, README, contributor, commit and profile endpoints are available over REST. For HTTP `403` or `429` rate limits, retries use `Retry-After`, then `X-RateLimit-Reset` for an exhausted primary limit, then a wait of at least 60 seconds for a secondary limit reported in the body. |
+| `github.py` | `GitHubClient` | `prefetch_repositories` and `get_users` use GraphQL with a token. Single-repository, README, contributor, commit and profile endpoints are available over REST. For HTTP `403` or `429` rate limits, retries use `Retry-After`, then `X-RateLimit-Reset` for an exhausted primary limit, then a wait of at least 60 seconds for a secondary limit reported in the body. |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname; optional contact email selects polite-pool limits |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
 | `semantic_scholar.py` | `SemanticScholarClient` | `papers_by_doi(dois)`: up to 500 DOIs per `POST /graph/v1/paper/batch`, one record or `None` per DOI in request order, retried up to eight times; `arxiv_id(record)` reads `externalIds.ArXiv`. Used by `ArxivVersionsStage` |
