@@ -233,7 +233,8 @@ class LinkRelevanceStage(EnrichmentStage):
             if not self.needs_attempt(state):
                 continue
             for link in row.links:
-                if link.url_ambiguous:
+                if (link.url_ambiguous and link.llm_reason != ARCHIVED_DEPOSIT_REASON
+                        and (self.force or link.classification_status != ClassificationStatus.CLASSIFIED)):
                     link.classification_status = ClassificationStatus.CLASSIFIED
                     link.is_relevant = None
                     link.llm_confidence = None

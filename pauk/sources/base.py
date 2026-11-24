@@ -13,6 +13,7 @@ import requests
 
 from pauk.redaction import redact_url
 from pauk.settings import (
+    ARXIV_RPS,
     CROSSREF_PUBLIC_CONCURRENCY,
     CROSSREF_PUBLIC_RPS,
     OPENALEX_PUBLIC_RPS,
@@ -27,6 +28,9 @@ PUBLIC_LIMITS = {
     "api.openalex.org": RateLimit(OPENALEX_PUBLIC_RPS),
     "pub.orcid.org": RateLimit(ORCID_RPS),
     "api.crossref.org": RateLimit(CROSSREF_PUBLIC_RPS, CROSSREF_PUBLIC_CONCURRENCY),
+    "arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "www.arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "export.arxiv.org": RateLimit(ARXIV_RPS, 1),
 }
 RATE_LIMITER = HostRateLimiter()
 
@@ -78,6 +82,11 @@ class HttpClient:
     def get_bytes(self, url: str, *, retries: int = 3, timeout: int | None = None) -> bytes:
         """Send a GET request and return the raw response body."""
         return self._request("GET", url, retries=retries, timeout=timeout).content
+
+    def get_bytes_with_url(self, url: str, *, retries: int = 3, timeout: int | None = None) -> tuple[bytes, str]:
+        """Return the response bytes and final URL after following redirects."""
+        response = self._request("GET", url, retries=retries, timeout=timeout)
+        return response.content, response.url
 
     def get_text(self, url: str, *, retries: int = 3, timeout: int | None = None) -> str:
         """Send a GET request and return the decoded response text (charset auto-detected)."""

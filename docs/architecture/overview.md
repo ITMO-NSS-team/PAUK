@@ -26,9 +26,9 @@ Source API (OpenAlex today)
 MongoDB: raw                                 RawStore, append-only
   |  pauk normalize                          adapter -> identity resolver -> aggregate builder
 MongoDB: publications/persons/...            PreparedStore, 7 collections
-  |  pauk enrich [stage]                     persons -> departments -> code_links -> link_relevance ->
-  |                                          emails -> repositories -> repo_people -> dedup ->
-  |                                          github_match -> author_names
+  |  pauk enrich [stage]                     persons -> departments -> arxiv_versions -> code_links ->
+  |                                          link_relevance -> emails -> repositories -> repo_people ->
+  |                                          dedup -> github_match -> author_names
 MongoDB: publications/persons/...            the same collections, enriched
   |  pauk publish graph
 Neo4j                                        accumulates across runs, MERGE

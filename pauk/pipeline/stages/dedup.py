@@ -77,6 +77,7 @@ from pauk.models import (
 )
 from pauk.models.identity import normalize_external_value
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.publication import ArxivSource
 from pauk.pipeline.github_matches import apply_matches, retract_matches
 from pauk.pipeline.membership import apply_membership, coalesce_authorships
 from pauk.pipeline.normalize import (
@@ -1009,6 +1010,26 @@ def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationV
     return list(merged.values())
 
 
+_ARXIV_SOURCE_STATUS_RANK = {
+    ProcessingStatus.NOT_STARTED: 0,
+    ProcessingStatus.FAILED: 1,
+    ProcessingStatus.COMPLETED_EMPTY: 2,
+    ProcessingStatus.COMPLETED: 3,
+}
+
+
+def _arxiv_source_rank(source: ArxivSource) -> tuple[int, int, float]:
+    """Order arXiv source states so failed/completed attempts are never overwritten by unstarted ones."""
+    state = source.state
+    finished = state.finished_at
+    if finished is None:
+        timestamp = float("-inf")
+    else:
+        normalized = finished.replace(tzinfo=UTC) if finished.tzinfo is None else finished.astimezone(UTC)
+        timestamp = normalized.timestamp()
+    return _ARXIV_SOURCE_STATUS_RANK[state.status], state.attempts, timestamp
+
+
 def _merge_publication(base: Publication, extra: Publication,
                        extra_authors: Iterable[VersionAuthor] = ()) -> Publication:
     """Fold one publication record into the record that survives.
@@ -1025,6 +1046,12 @@ def _merge_publication(base: Publication, extra: Publication,
     ])
     base.code_url = json.dumps(code_urls, ensure_ascii=False) if code_urls else None
     base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
+    arxiv_sources = {source.url: source for source in base.arxiv_sources}
+    for source in extra.arxiv_sources:
+        current = arxiv_sources.get(source.url)
+        if current is None or _arxiv_source_rank(source) > _arxiv_source_rank(current):
+            arxiv_sources[source.url] = source
+    base.arxiv_sources = list(arxiv_sources.values())
     if base.full_text is None:
         base.full_text = extra.full_text
     base.source_records = list({

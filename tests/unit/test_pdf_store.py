@@ -43,6 +43,16 @@ class PdfStoreTest(unittest.TestCase):
         store.save("W1", b"new bytes")
         self.assertEqual(store.read("W1"), b"new bytes")
 
+    def test_provenance_is_bound_to_the_bytes_and_cleared_by_an_unknown_source(self) -> None:
+        store = PdfStore(self.db, self.pdf_dir)
+        source = "https://arxiv.org/pdf/2201.06114v2"
+        store.save("W1", b"v2", source_url=source)
+        self.assertEqual(store.read_with_source("W1"), (b"v2", source))
+        (self.pdf_dir / "W1.pdf").write_bytes(b"other bytes")
+        self.assertEqual(store.read_with_source("W1"), (b"other bytes", None))
+        store.save("W1", b"v2")
+        self.assertEqual(store.read_with_source("W1"), (b"v2", None))
+
     def test_file_handle_is_released_after_read(self):
         # Guards against WinError 32 (a handle held open across a delete):
         # read() must open, read, and close in one step so the caller is free
@@ -71,6 +81,15 @@ class PdfStoreTest(unittest.TestCase):
         self.assertTrue(store.exists("openalex:W1"))
         self.assertEqual(store.read("openalex:W1"), b"legacy")
         self.assertEqual(store.cache_identity("openalex:W1"), store.cache_identity("W1"))
+
+    def test_openalex_record_key_verifies_legacy_and_explicit_provenance(self) -> None:
+        store = PdfStore(self.db, self.pdf_dir)
+        legacy_source = "https://arxiv.org/pdf/2201.06114v1"
+        explicit_source = "https://arxiv.org/pdf/2201.06114v2"
+        store.save("W1", b"legacy-v1", source_url=legacy_source)
+        self.assertEqual(store.read_with_source("openalex:W1"), (b"legacy-v1", legacy_source))
+        store.save("openalex:W1", b"explicit-v2", source_url=explicit_source)
+        self.assertEqual(store.read_with_source("openalex:W1"), (b"explicit-v2", explicit_source))
 
     def test_pointer_filename_cannot_escape_pdf_directory(self):
         outside = self.pdf_dir.parent / "outside.pdf"

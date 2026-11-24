@@ -5,6 +5,7 @@ import re
 import unicodedata
 from bisect import bisect_right
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 from urllib.parse import urlencode, urlparse
@@ -18,6 +19,7 @@ from pauk.sources.base import HttpClient
 from pauk.storage import PdfStore
 from pauk.urls import normalize_repo_url
 
+from .arxiv_versions import arxiv_doi_identity, arxiv_pdf_identity, arxiv_preprints, native_arxiv_pdf_url
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
@@ -591,9 +593,186 @@ def _archived_repository_url(publication: Publication) -> str | None:
     return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
+def _clear_verdict(link: CodeLink) -> bool:
+    """Reset a link verdict to pending so relevance is re-assessed."""
+    link.classification_status = ClassificationStatus.PENDING
+    link.is_relevant = None
+    link.llm_confidence = None
+    link.llm_reason = None
+    return True
+
+
+def _invalidate_automatic_verdict(link: CodeLink) -> bool:
+    """Clear the verdict for changed automatic evidence, but keep deterministic archives."""
+    if link.llm_reason == ARCHIVED_DEPOSIT_REASON:
+        return False
+    return _clear_verdict(link)
+
+
+def _is_manual_link(link: CodeLink) -> bool:
+    """Recognize the evidence-free positive verdict written by the manual-add recipe."""
+    return (not link.occurrences and link.is_relevant is True
+            and link.llm_confidence is None and link.llm_reason is None)
+
+
+def _remove_stale_evidence(
+    row: RepoLink,
+    fresh: dict[str, list[LinkOccurrence]],
+    reread: set[str],
+    *,
+    reconcile_abstract: bool = False,
+    archived: str | None = None,
+) -> bool:
+    """Remove only automatic evidence absent from refreshed abstracts or reread PDFs."""
+    extracted_pdf_sources = {"pdf_text", "pdf_annotation", "reference", "citation"}
+    abstract_sources = {"abstract", "deposit_title"}
+    archived_identity = normalize_repo_url(archived) if archived else None
+    fresh_keys = {
+        normalize_repo_url(url): {o.model_dump_json() for o in occurrences}
+        for url, occurrences in fresh.items()
+    }
+    fresh_abstract = {
+        normalize_repo_url(url): {
+            (o.source, o.context)
+            for o in occurrences
+            if o.page_number is None and o.source in abstract_sources
+        }
+        for url, occurrences in fresh.items()
+    }
+    retained = []
+    reopen = False
+    for link in row.links:
+        if _is_manual_link(link):
+            retained.append(link)
+            continue
+        identity = normalize_repo_url(link.url)
+        known = fresh_keys.get(identity, set())
+        known_abstract = fresh_abstract.get(identity, set())
+        stale_archived = (
+            reconcile_abstract
+            and link.llm_reason == ARCHIVED_DEPOSIT_REASON
+            and identity != archived_identity
+        )
+        occurrences = []
+        for o in link.occurrences:
+            stale_pdf = o.source in extracted_pdf_sources and o.pdf_id in reread and o.model_dump_json() not in known
+            stale_abstract = (
+                reconcile_abstract
+                and o.page_number is None
+                and o.source in abstract_sources
+                and o.model_dump_json() not in known
+                and (o.source, o.context) not in known_abstract
+            )
+            if not stale_pdf and not stale_abstract:
+                occurrences.append(o)
+        if len(occurrences) != len(link.occurrences):
+            link.occurrences = occurrences
+            keep_archived = link.llm_reason == ARCHIVED_DEPOSIT_REASON and not stale_archived
+            if not occurrences and not known and not keep_archived:
+                reopen = True
+                continue
+            reopen |= _clear_verdict(link) if stale_archived else _invalidate_automatic_verdict(link)
+        elif stale_archived:
+            reopen |= _clear_verdict(link)
+        retained.append(link)
+    row.links = retained
+    return reopen
+
+
+def _merge_additional_evidence(
+    row: RepoLink, evidence: dict[str, list[LinkOccurrence]], archived: str | None,
+) -> bool:
+    """Append distinct occurrences and reopen only verdicts touched by new evidence."""
+    by_url: dict[str, CodeLink] = {}
+    for link in row.links:
+        key = normalize_repo_url(link.url)
+        if key not in by_url or (_is_manual_link(by_url[key]) and not _is_manual_link(link)):
+            by_url[key] = link
+    archived_identity = normalize_repo_url(archived) if archived else None
+    reopen = False
+    for url, occurrences in evidence.items():
+        identity = normalize_repo_url(url)
+        link = by_url.get(identity)
+        if link is not None and _is_manual_link(link):
+            continue
+        if link is None:
+            link = CodeLink(url=url, host=urlparse(url).netloc)
+            row.links.append(link)
+            by_url[identity] = link
+            reopen = True
+        if archived_identity and identity == archived_identity and (
+            link.classification_status != ClassificationStatus.CLASSIFIED
+            or link.is_relevant is not True
+            or link.llm_confidence != 1.0
+            or link.llm_reason != ARCHIVED_DEPOSIT_REASON
+        ):
+            link.classification_status = ClassificationStatus.CLASSIFIED
+            link.is_relevant = True
+            link.llm_confidence = 1.0
+            link.llm_reason = ARCHIVED_DEPOSIT_REASON
+            reopen = True
+        seen = {occ.model_dump_json() for occ in link.occurrences}
+        abstract_seen = {
+            (occ.source, occ.context) for occ in link.occurrences if occ.page_number is None
+        }
+        added = False
+        for occurrence in occurrences:
+            key = occurrence.model_dump_json()
+            if key in seen or (
+                occurrence.page_number is None and (occurrence.source, occurrence.context) in abstract_seen
+            ):
+                continue
+            seen.add(key)
+            if occurrence.page_number is None:
+                abstract_seen.add((occurrence.source, occurrence.context))
+            link.occurrences.append(occurrence)
+            added = True
+        if added:
+            _invalidate_automatic_verdict(link)
+        reopen |= link.classification_status == ClassificationStatus.PENDING
+    return reopen
+
+
+PdfEvidence = list[dict[str, list[LinkOccurrence]]]
+PdfPages = tuple[list[str], PdfEvidence, str | None]
+ArxivPdfPages = tuple[list[str], PdfEvidence, str | None, str | None]
+
+
+def _canonical_arxiv_pdf(url: str) -> str | None:
+    """Record the public arXiv identity without URL query parameters or fragments."""
+    identity = arxiv_pdf_identity(url, pdf_only=True)
+    return f"https://arxiv.org/pdf/{''.join(identity)}" if identity else None
+
+
+def _compatible_arxiv_pdf(requested: str, actual: str | None) -> bool:
+    """An explicit revision requires an exact match; an unversioned URL does not claim one."""
+    expected = arxiv_pdf_identity(requested)
+    observed = arxiv_pdf_identity(actual, pdf_only=True) if actual else None
+    return bool(expected and observed and expected[0] == observed[0]
+                and (not expected[1] or expected[1] == observed[1]))
+
+
+_ARXIV_PREPRINT_QUERY = {
+    "$or": [
+        {"doi": {"$regex": "arxiv", "$options": "i"}},
+        {"pdf_urls": {"$regex": r"arxiv\.org", "$options": "i"}},
+        {"source_records.doi": {"$regex": "arxiv", "$options": "i"}},
+        {"source_records.pdf_urls": {"$regex": r"arxiv\.org", "$options": "i"}},
+    ]
+}
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
     progress_label = "Publications: finding code links in abstracts and PDFs"
+
+    def _all_arxiv_publications(self) -> list[Publication]:
+        """Load candidate arXiv publications across every group so shared caches reuse safely."""
+        rows = self.prepared.db["publications"].find(
+            _ARXIV_PREPRINT_QUERY,
+            {"_id": False, "groups": False, "_version": False},
+        )
+        return [Publication.model_validate(row) for row in rows]
 
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
@@ -607,10 +786,19 @@ class CodeLinksStage(EnrichmentStage):
             publication
             for publication in publications
             if self.selected("publications", publication.id)
-            and self.needs_attempt(publication.processing.get(self.name))
+            and (self.needs_attempt(publication.processing.get(self.name))
+                 or any(self.needs_attempt(source.state) for source in publication.arxiv_sources))
         ]
+        self.preprints = (
+            arxiv_preprints(self._all_arxiv_publications()) if any(pub.arxiv_sources for pub in candidates) else {}
+        )
         changed = 0
         for pub in self.progress(candidates, total=len(candidates)):
+            if pub.arxiv_sources:
+                previous = links_by_publication.get(pub.id)
+                links_by_publication[pub.id] = self._process_with_arxiv(pub, previous)
+                changed += 1
+                continue
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
             pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
@@ -641,6 +829,21 @@ class CodeLinksStage(EnrichmentStage):
                 }
             occurrences_by_url = _merge_url_spellings(occurrences_by_url)
             archived_identity = normalize_repo_url(archived) if archived else None
+            if not self.force and previous is not None:
+                reopen = _remove_stale_evidence(
+                    previous,
+                    occurrences_by_url,
+                    self.parsed_pdf_ids,
+                    reconcile_abstract=True,
+                    archived=archived,
+                )
+                reopen |= _merge_additional_evidence(previous, occurrences_by_url, archived)
+                if reopen:
+                    pub.processing.pop("link_relevance", None)
+                pub.processing[self.name] = self._extraction_state(state, len(previous.links), pdf_error)
+                links_by_publication[pub.id] = previous
+                changed += 1
+                continue
             urls = list(occurrences_by_url)
             # Replacing the evidence invalidates any verdict made from the
             # previous contexts; the next link_relevance pass must judge the
@@ -677,9 +880,160 @@ class CodeLinksStage(EnrichmentStage):
                 ],
             )
             changed += 1
-        self.prepared.write_models("publications", publications)
         self.prepared.write_models("repo_links", links_by_publication.values())
+        self.prepared.write_models("publications", publications)
         return {"publications": changed, "repo_links": len(links_by_publication)}
+
+    def _process_with_arxiv(self, pub: Publication, previous: RepoLink | None) -> RepoLink:
+        """Collect the primary and supplemental sources without discarding earlier evidence."""
+        row = previous if previous is not None else RepoLink(publication_id=pub.id)
+        archived = _archived_repository_url(pub)
+        main_state = pub.processing.get(self.name)
+        run_main = self.needs_attempt(main_state)
+        reread: set[str] = set()
+        pages, page_evidence, main_error = (
+            self._pdf_pages(pub, include_crawler=False, reread=reread) if run_main else ([], [], None)
+        )
+        supplemental_text, supplemental_evidence = self._process_arxiv_sources(pub, reread)
+        arxiv_has_text = any(
+            "\n\n".join(source_pages).strip() for source_pages in supplemental_text
+        ) or bool((pub.full_text or "").strip())
+        arxiv_completed = any(source.state.status == ProcessingStatus.COMPLETED for source in pub.arxiv_sources)
+        arxiv_completed_empty = any(
+            source.state.status == ProcessingStatus.COMPLETED_EMPTY for source in pub.arxiv_sources
+        )
+        arxiv_readable = arxiv_completed or bool(supplemental_evidence) or (arxiv_completed_empty and arxiv_has_text)
+        if run_main and not pages and not arxiv_readable:
+            crawler_targets = [
+                (record.key, record.doi) for record in pub.source_records if record.doi
+            ] or ([(pub.id, pub.doi)] if pub.doi else [])
+            for record_key, doi in crawler_targets:
+                fallback_pages, fallback_evidence, fallback_error = self._download_primary_pdf(
+                    record_key, self._crawler_sources(doi),
+                )
+                if fallback_pages:
+                    pages, page_evidence, main_error = fallback_pages, fallback_evidence, None
+                    reread.add(record_key)
+                    _tag_pdf_occurrences(page_evidence, record_key)
+                    break
+                if fallback_error:
+                    main_error = "; ".join(filter(None, (main_error, fallback_error)))
+        self._update_full_text(pub, pages, main_error, supplemental_text)
+        evidence = _collect_occurrences(_normalize_ligatures(pub.abstract or ""), page_evidence) if run_main else {}
+        if run_main and archived:
+            evidence = {archived: [LinkOccurrence(source="deposit_title"), *evidence.pop(archived, [])], **evidence}
+        for url, occurrences in supplemental_evidence.items():
+            evidence.setdefault(url, []).extend(occurrences)
+        evidence = _merge_url_spellings(evidence)
+        reopen = bool(reread or run_main) and _remove_stale_evidence(
+            row, evidence, reread, reconcile_abstract=run_main, archived=archived,
+        )
+        reopen |= _merge_additional_evidence(row, evidence, archived)
+        if reopen:
+            pub.processing.pop("link_relevance", None)
+        if run_main:
+            pub.processing[self.name] = self._extraction_state(main_state, len(row.links),
+                                                               None if arxiv_readable and not pages else main_error)
+        return row
+
+    @staticmethod
+    def _update_full_text(
+        pub: Publication,
+        primary_pages: list[str],
+        primary_error: str | None,
+        supplemental_pages: Iterable[list[str]],
+    ) -> None:
+        """Update full text from a clean primary read, or fill an empty gap from preprints."""
+        primary_text = "\n\n".join(primary_pages)
+        if primary_text.strip() and (not primary_error or not (pub.full_text or "").strip()):
+            pub.full_text = primary_text
+            return
+        if not (pub.full_text or "").strip():
+            for pages in supplemental_pages:
+                if (text := "\n\n".join(pages)).strip():
+                    pub.full_text = text
+                    break
+
+    def _process_arxiv_sources(
+        self, pub: Publication, reread: set[str],
+    ) -> tuple[list[list[str]], dict[str, list[LinkOccurrence]]]:
+        """Parse each due arXiv source and persist its status independently of the main PDF."""
+        texts = []
+        combined: dict[str, list[LinkOccurrence]] = defaultdict(list)
+        for source in pub.arxiv_sources:
+            if not self.needs_attempt(source.state):
+                continue
+            pages, page_evidence, pdf_id, error = self._arxiv_pdf_pages(pub.id, source.url)
+            evidence = _collect_occurrences("", page_evidence)
+            source.state = self._extraction_state(source.state, len(evidence), error)
+            if pdf_id is not None:
+                reread.add(pdf_id)
+                texts.append(pages)
+                for url, occurrences in evidence.items():
+                    combined[url].extend(occurrences)
+        return texts, combined
+
+    @staticmethod
+    def _extraction_state(previous: ProcessingState | None, count: int, error: str | None) -> ProcessingState:
+        """Record an extraction attempt without coupling independent sources."""
+        return ProcessingState(
+            status=ProcessingStatus.FAILED if error else (
+                ProcessingStatus.COMPLETED if count else ProcessingStatus.COMPLETED_EMPTY
+            ),
+            attempts=(previous.attempts if previous else 0) + 1,
+            finished_at=datetime.now(UTC),
+            result_count=count,
+            error=error,
+        )
+
+    def _arxiv_pdf_pages(self, publication_id: str, url: str) -> ArxivPdfPages:
+        """Use a verified preprint cache or keep the targeted PDF under its own identity."""
+        identity = arxiv_pdf_identity(url, pdf_only=True)
+        if identity is None:
+            return [], [], None, "Invalid arXiv PDF source"
+        base, revision = identity
+        matches = [preprint for preprint in self.preprints.get(base, [])
+                   if preprint.publication_id != publication_id and (not revision or preprint.revision == revision)]
+        if len({match.publication_id for match in matches}) != 1:
+            matches = []
+        compatible = [match for match in matches if match.cache_compatible]
+        for candidate in compatible:
+            candidate_url = url + candidate.revision if not revision and candidate.revision else url
+            if not self.pdf_store.exists(candidate.cache_key):
+                continue
+            try:
+                data, source = self.pdf_store.read_with_source(candidate.cache_key)
+                if _compatible_arxiv_pdf(candidate_url, source):
+                    pages, evidence = _extract_pdf(data)
+                    _tag_pdf_occurrences(evidence, candidate.cache_key)
+                    return pages, evidence, candidate.cache_key, None
+            except Exception as exc:
+                logger.debug("code_links: could not parse arXiv cache %s: %s", candidate.cache_key, redact_text(exc))
+        target = compatible[0] if len(compatible) == 1 and not self.pdf_store.exists(compatible[0].cache_key) else None
+        target_key = target.cache_key if target else None
+        download_url = url + target.revision if target and not revision else url
+        try:
+            return self._read_or_download_arxiv(download_url, target_key)
+        except Exception as exc:
+            return [], [], None, redact_text(exc) or type(exc).__name__
+
+    def _read_or_download_arxiv(self, url: str, target_key: str | None) -> ArxivPdfPages:
+        """Parse cached source bytes or validate the final URL before caching a download."""
+        pdf_id = url
+        try:
+            pages, evidence = _extract_pdf(self.pdf_store.read_source(url))
+        except (OSError, RuntimeError, ValueError):
+            data, actual_url = self.http.get_bytes_with_url(url)
+            if not _compatible_arxiv_pdf(url, actual_url):
+                raise ValueError("arXiv PDF response does not match the requested work or revision") from None
+            pages, evidence = _extract_pdf(data)
+            if target_key and not self.pdf_store.exists(target_key):
+                self.pdf_store.save(target_key, data, source_url=_canonical_arxiv_pdf(actual_url))
+                pdf_id = target_key
+            else:
+                self.pdf_store.save_source(url, data)
+        _tag_pdf_occurrences(evidence, pdf_id)
+        return pages, evidence, pdf_id, None
 
     def _crawler_available(self) -> bool:
         """Cheap, no-retry probe - PAUK_PDF_CRAWLER_URL unset means the fallback is off."""
@@ -699,7 +1053,11 @@ class CodeLinksStage(EnrichmentStage):
     def _pdf_pages(
         self,
         pub: Publication,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
+        *,
+        include_crawler: bool = True,
+        reread: set[str] | None = None,
+    ) -> PdfPages:
+        """Read primary and cached merged-version PDFs, preserving source-record IDs."""
         primary_id = next(
             (record.key for record in pub.source_records if record.pdf_urls or record.doi),
             pub.id,
@@ -727,7 +1085,9 @@ class CodeLinksStage(EnrichmentStage):
         if cached_versions and not self.pdf_store.exists(primary_id):
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = self._primary_pdf_pages(pub, primary_id)
+            pages, occurrences, error = self._primary_pdf_pages(
+                pub, primary_id, include_crawler=include_crawler, reread=reread,
+            )
         self.parsed_pdf_ids = {primary_id} if pages else set()
         self.failed_pdf_ids = {primary_id} if error else set()
         _tag_pdf_occurrences(occurrences, primary_id)
@@ -741,6 +1101,8 @@ class CodeLinksStage(EnrichmentStage):
                 errors.append(f"{pdf_id}: {redact_text(exc)}")
                 continue
             self.parsed_pdf_ids.add(pdf_id)
+            if reread is not None:
+                reread.add(pdf_id)
             _tag_pdf_occurrences(version_occurrences, pdf_id)
             pages.extend(version_pages)
             occurrences.extend(version_occurrences)
@@ -757,7 +1119,7 @@ class CodeLinksStage(EnrichmentStage):
             ]
             for record_key in fallback_ids:
                 fallback_pages, fallback_occurrences, fallback_error = self._primary_pdf_pages(
-                    pub, record_key,
+                    pub, record_key, include_crawler=include_crawler, reread=reread,
                 )
                 if fallback_pages:
                     pages.extend(fallback_pages)
@@ -774,7 +1136,9 @@ class CodeLinksStage(EnrichmentStage):
                     errors.append(fallback_error)
         if cached_versions and not pages and not self.pdf_store.exists(primary_id):
             # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub, primary_id)
+            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(
+                pub, primary_id, include_crawler=include_crawler, reread=reread,
+            )
             if primary_error:
                 self.failed_pdf_ids.add(primary_id)
                 errors.append(primary_error)
@@ -789,7 +1153,10 @@ class CodeLinksStage(EnrichmentStage):
         self,
         pub: Publication,
         record_key: str,
-    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
+        *,
+        include_crawler: bool = True,
+        reread: set[str] | None = None,
+    ) -> PdfPages:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
         Tries every direct PDF candidate before falling back to the
@@ -804,25 +1171,63 @@ class CodeLinksStage(EnrichmentStage):
         if self.pdf_store.exists(record_key):
             try:
                 pages, occurrences = _extract_pdf(self.pdf_store.read(record_key))
+                if reread is not None:
+                    reread.add(record_key)
                 return pages, occurrences, None
             except Exception as exc:
                 errors.append(redact_text(exc))
 
         source_record = next((record for record in pub.source_records if record.key == record_key), None)
-        pdf_urls = source_record.pdf_urls if source_record else pub.pdf_urls
+        raw_pdf_urls = source_record.pdf_urls if source_record else pub.pdf_urls
         doi = source_record.doi if source_record else pub.doi
-        sources = [(url, {}) for url in pdf_urls]
-        if self.crawler_available and doi:
-            sources.append((
-                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": doi}),
-                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
-            ))
+        supplemental = {source.url for source in pub.arxiv_sources}
+        identities = {arxiv_pdf_identity(url) for url in supplemental} - {None}
+        sources = [
+            (url, {})
+            for url in raw_pdf_urls
+            if url not in supplemental and (not identities or arxiv_pdf_identity(url) not in identities)
+        ]
+        if not raw_pdf_urls and (doi_id := arxiv_doi_identity(doi or "")):
+            native_url = f"https://arxiv.org/pdf/{''.join(doi_id)}"
+            if native_url not in supplemental:
+                sources.append((native_url, {}))
+        elif source_record is None and (native_url := native_arxiv_pdf_url(pub)) and native_url not in supplemental:
+            sources.append((native_url, {}))
+        if include_crawler:
+            sources.extend(self._crawler_sources(doi))
+        pages, occurrences, error = self._download_primary_pdf(record_key, sources)
+        if pages:
+            if reread is not None:
+                reread.add(record_key)
+            return pages, occurrences, None
+        return [], [], "; ".join(filter(None, (*errors, error))) or None
+
+    def _crawler_sources(self, doi: str | None) -> list[tuple[str, dict[str, int]]]:
+        """Build the DOI crawler candidate when the service is available."""
+        if not self.crawler_available or not doi:
+            return []
+        return [(
+            f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": doi}),
+            {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
+        )]
+
+    def _download_primary_pdf(self, record_key: str, sources: Iterable[tuple[str, dict[str, int]]]) -> PdfPages:
+        """Try the supplied sources in order and cache only successfully parsed PDFs."""
+        errors = []
         for source_url, kwargs in sources:
             try:
-                pdf_bytes = self.http.get_bytes(source_url, **kwargs)
+                provenance = None
+                if identity := arxiv_pdf_identity(source_url):
+                    request_url = f"https://arxiv.org/pdf/{''.join(identity)}"
+                    pdf_bytes, resolved_url = self.http.get_bytes_with_url(request_url, **kwargs)
+                    if not _compatible_arxiv_pdf(request_url, resolved_url):
+                        raise ValueError("arXiv PDF response does not match the requested work or revision")
+                    provenance = _canonical_arxiv_pdf(resolved_url)
+                else:
+                    pdf_bytes = self.http.get_bytes(source_url, **kwargs)
                 pages, occurrences = _extract_pdf(pdf_bytes)
                 # Error pages must never poison the cache for subsequent attempts.
-                self.pdf_store.save(record_key, pdf_bytes)
+                self.pdf_store.save(record_key, pdf_bytes, source_url=provenance)
                 return pages, occurrences, None
             except Exception as exc:
                 errors.append(redact_text(exc))
