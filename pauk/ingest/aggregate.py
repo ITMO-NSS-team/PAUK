@@ -61,7 +61,7 @@ def build_publication(entity_id: str, records: list[PublicationSourceRecord],
                 known_identifiers.add(identifier.normalized_key)
         for name in (
             "has_code", "code_url", "full_text", "department_ids",
-            "mentions_links", "merged_ids", "processing",
+            "mentions_links", "merged_ids", "processing", "arxiv_sources",
         ):
             setattr(publication, name, deepcopy(getattr(existing, name)))
         if reset_enrichment and ranked != existing.source_records:
@@ -69,8 +69,14 @@ def build_publication(entity_id: str, records: list[PublicationSourceRecord],
             # source PDF evidence, so it must be recomputed after a real
             # source-record change. An identical record never reaches here.
             publication.processing.clear()
+            publication.arxiv_sources = []
             publication.full_text = None
             publication.mentions_links = []
             publication.has_code = False
             publication.code_url = None
+        elif publication.arxiv_sources:
+            publication.pdf_urls = list(dict.fromkeys([
+                *publication.pdf_urls,
+                *(source.url for source in publication.arxiv_sources),
+            ]))
     return publication

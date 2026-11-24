@@ -379,6 +379,20 @@ class PdfTransportTest(LocalPdfTest):
         with self.assertRaises(HttpRequestError):
             self.fetch("/loop", timeout=0.2, deadline=1)
 
+    def test_streamed_download_returns_the_final_url_after_deferred_redirect(self):
+        target = self.url.replace("127.0.0.1", "localhost") + "/pdf"
+        source = self.url + "/redirect?to=" + quote(target, safe="")
+        state = DownloadState()
+        with (self.client.rate_limiter.slot("localhost", RateLimit(max_concurrent=1)),
+              self.assertRaises(RequestDeferred)):
+            self.client.get_bytes_with_url(source, deadline=1, retries=0, state=state)
+
+        data, final_url = self.client.get_bytes_with_url(source, deadline=1, retries=0, state=state)
+
+        self.assertEqual(data, self.server.pdf)
+        self.assertEqual(final_url, target)
+        self.assertEqual(self.server.counts["/redirect"], 1)
+
     def test_final_429_preserves_shared_pause_without_waiting_an_hour(self):
         with self.assertRaises(HttpRequestError):
             self.fetch("/pause", retries=0, max_wait=1)

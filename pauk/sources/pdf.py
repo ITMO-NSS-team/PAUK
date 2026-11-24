@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from concurrent.futures import CancelledError
+from typing import TypedDict
 
 from pauk.settings import PDF_HOST_RPS, Settings
 
@@ -12,6 +13,14 @@ from .base import DownloadState, HttpClient
 from .rate_limit import HostRateLimiter, RateLimit
 
 PDF_RATE_LIMITER = HostRateLimiter(host_limits={host: RateLimit(rate) for host, rate in PDF_HOST_RPS.items()})
+
+
+class _DownloadOptions(TypedDict):
+    retries: int
+    timeout: tuple[float, float]
+    deadline: float
+    max_wait: float
+    state: DownloadState | None
 
 
 class PdfDownloader:
@@ -44,8 +53,16 @@ class PdfDownloader:
 
     def get_bytes(self, url: str, *, retries: int | None = None, timeout: float | None = None,
                   deadline: float | None = None, state: DownloadState | None = None) -> bytes:
-        return self._client().get_bytes(
-            url, retries=self.config.pdf_retries if retries is None else retries,
+        return self._client().get_bytes(url, **self._options(retries, timeout, deadline, state))
+
+    def get_bytes_with_url(self, url: str, *, retries: int | None = None, timeout: float | None = None,
+                           deadline: float | None = None, state: DownloadState | None = None) -> tuple[bytes, str]:
+        return self._client().get_bytes_with_url(url, **self._options(retries, timeout, deadline, state))
+
+    def _options(self, retries: int | None, timeout: float | None,
+                 deadline: float | None, state: DownloadState | None) -> _DownloadOptions:
+        return _DownloadOptions(
+            retries=self.config.pdf_retries if retries is None else retries,
             timeout=(self.config.pdf_connect_timeout, self.config.pdf_read_timeout if timeout is None else timeout),
             deadline=self.config.pdf_download_deadline if deadline is None else deadline,
             max_wait=self.config.pdf_max_retry_wait,

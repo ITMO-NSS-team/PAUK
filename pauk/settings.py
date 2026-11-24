@@ -37,6 +37,9 @@ PDF_HOST_RPS = {
     "www.vestnik-vsuet.ru": 1.0,
 }
 
+SEMANTIC_SCHOLAR_RPS = 1
+ARXIV_RPS = 1 / 15
+
 
 def _path_setting(name: str, default: Path) -> Path:
     configured = os.getenv(name)
@@ -55,6 +58,8 @@ class Settings:
     crossref_rps: float = float(os.getenv("PAUK_CROSSREF_RPS") or CROSSREF_RPS)
     crossref_concurrency: int = int(os.getenv("PAUK_CROSSREF_CONCURRENCY") or CROSSREF_CONCURRENCY)
     crossref_mailto: str = os.getenv("CROSSREF_MAILTO", "")
+    semantic_scholar_api_key: str = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
+    semantic_scholar_rps: float = float(os.getenv("PAUK_SEMANTIC_SCHOLAR_RPS") or SEMANTIC_SCHOLAR_RPS)
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL") or "qwen/qwen-2.5-72b-instruct"

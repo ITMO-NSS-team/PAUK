@@ -13,7 +13,8 @@ from .atomic import atomic_write_bytes
 class PdfStore:
     """PDF bytes on local disk (`pdf_dir`), keyed by source-record key.
 
-    Mongo holds `{record_key, filename, fetched_at}` pointers, not the bytes.
+    Mongo holds `{record_key, filename, fetched_at}` pointers (and optional
+    source provenance), not the bytes.
     """
 
     def __init__(self, db: Database, pdf_dir: Path) -> None:
@@ -30,6 +31,18 @@ class PdfStore:
             return f"{record_key}.pdf"
         digest = sha256(record_key.encode("utf-8")).hexdigest()
         return f"{digest}.pdf"
+
+    def _source_path(self, source_url: str) -> Path:
+        """Keep URL-keyed PDFs outside the source-record key namespace."""
+        return self.pdf_dir / "sources" / f"{sha256(source_url.encode()).hexdigest()}.pdf"
+
+    def read_source(self, source_url: str) -> bytes:
+        """Read a PDF cached by its source URL rather than a record key."""
+        return self._source_path(source_url).read_bytes()
+
+    def save_source(self, source_url: str, data: bytes) -> None:
+        """Cache validated PDF bytes without creating a record pointer."""
+        atomic_write_bytes(self._source_path(source_url), data)
 
     def _path(self, record_key: str) -> Path:
         pointer = self.pointers.find_one({"_id": record_key}, {"filename": 1})
@@ -55,11 +68,28 @@ class PdfStore:
         return str(self._path(record_key).resolve())
 
     def read(self, record_key: str) -> bytes:
-        """Bytes for an id already known to exist (see `exists`)."""
+        """Bytes for a key already known to exist (see `exists`)."""
         return self._path(record_key).read_bytes()
 
-    def save(self, record_key: str, data: bytes) -> None:
-        """Write the PDF atomically, then record the pointer.
+    def _pointer(self, record_key: str) -> dict:
+        pointer = self.pointers.find_one({"_id": record_key})
+        if pointer is None and record_key.startswith("openalex:"):
+            legacy = record_key.split(":", 1)[1]
+            if self.LEGACY_ID.fullmatch(legacy):
+                pointer = self.pointers.find_one({"_id": legacy})
+        return pointer or {}
+
+    def read_with_source(self, record_key: str) -> tuple[bytes, str | None]:
+        """Return bytes and their recorded source only if the recorded digest agrees."""
+        metadata = self._pointer(record_key)
+        data = self.read(record_key)
+        source = metadata.get("source_url")
+        if isinstance(source, str) and metadata.get("sha256") == sha256(data).hexdigest():
+            return data, source
+        return data, None
+
+    def save(self, record_key: str, data: bytes, *, source_url: str | None = None) -> None:
+        """Write the PDF atomically, then record the pointer and provenance digest.
 
         The order matters: if the process dies between the two steps, the next
         run sees a file without a pointer and re-saves it, instead of a pointer
@@ -73,6 +103,8 @@ class PdfStore:
                 "record_key": record_key,
                 "filename": filename,
                 "fetched_at": datetime.now(UTC).isoformat(),
+                "source_url": source_url,
+                "sha256": sha256(data).hexdigest(),
             }},
             upsert=True,
         )

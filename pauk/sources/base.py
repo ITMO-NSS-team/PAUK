@@ -21,6 +21,7 @@ from urllib3.util import Timeout
 
 from pauk.redaction import redact_url
 from pauk.settings import (
+    ARXIV_RPS,
     CROSSREF_PUBLIC_CONCURRENCY,
     CROSSREF_PUBLIC_RPS,
     OPENALEX_PUBLIC_RPS,
@@ -36,6 +37,9 @@ PUBLIC_LIMITS = {
     "api.openalex.org": RateLimit(OPENALEX_PUBLIC_RPS),
     "pub.orcid.org": RateLimit(ORCID_RPS),
     "api.crossref.org": RateLimit(CROSSREF_PUBLIC_RPS, CROSSREF_PUBLIC_CONCURRENCY),
+    "arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "www.arxiv.org": RateLimit(ARXIV_RPS, 1),
+    "export.arxiv.org": RateLimit(ARXIV_RPS, 1),
 }
 RATE_LIMITER = HostRateLimiter()
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
@@ -123,8 +127,14 @@ class HttpClient:
                   deadline: float | None = None, max_wait: float | None = None,
                   state: DownloadState | None = None) -> bytes:
         """Send a GET request and return the raw response body."""
+        return self._bytes_response(url, retries=retries, timeout=timeout, deadline=deadline,
+                                    max_wait=max_wait, state=state).content
+
+    def _bytes_response(self, url: str, *, retries: int, timeout: float | tuple[float, float] | None,
+                        deadline: float | None, max_wait: float | None,
+                        state: DownloadState | None) -> requests.Response:
         if deadline is None and max_wait is None and state is None:
-            return self._request("GET", url, retries=retries, timeout=timeout).content
+            return self._request("GET", url, retries=retries, timeout=timeout)
         if deadline is not None and (isinstance(deadline, bool) or not math.isfinite(deadline) or deadline <= 0):
             raise ValueError("deadline must be positive and finite")
         if max_wait is not None and (isinstance(max_wait, bool) or not math.isfinite(max_wait) or max_wait < 0):
@@ -132,7 +142,7 @@ class HttpClient:
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
             raise ValueError("retries must be a nonnegative integer")
         return self._request("GET", url, retries=retries, timeout=timeout, deadline=deadline,
-                             max_wait=max_wait, consume=self._read_body, state=state).content
+                             max_wait=max_wait, consume=self._read_body, state=state)
 
     def _read_body(self, response: requests.Response) -> bytes:
         chunks = []
@@ -215,6 +225,14 @@ class HttpClient:
                 if end is not None and time.monotonic() >= end:
                     raise _DownloadDeadline from None
                 raise
+
+    def get_bytes_with_url(self, url: str, *, retries: int = 3, timeout: float | tuple[float, float] | None = None,
+                           deadline: float | None = None, max_wait: float | None = None,
+                           state: DownloadState | None = None) -> tuple[bytes, str]:
+        """Return the response bytes and final URL after following redirects."""
+        response = self._bytes_response(url, retries=retries, timeout=timeout, deadline=deadline,
+                                        max_wait=max_wait, state=state)
+        return response.content, response.url
 
     def get_text(self, url: str, *, retries: int = 3, timeout: int | None = None) -> str:
         """Send a GET request and return the decoded response text (charset auto-detected)."""
