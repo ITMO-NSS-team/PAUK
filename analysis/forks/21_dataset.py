@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -205,9 +205,14 @@ def write_readme(rows: list[dict]) -> None:
         "- `target_contribution_next_year`: есть хотя бы один форк категории `contribution`.",
         "- `target_pr_merged_next_year`: есть хотя бы один форк с `pr_merged = true`.",
         "",
-        "## Положительные строки",
+        "## Строки панели по годам",
         "",
+        "| Год | Строк |",
+        "|---|---:|",
     ]
+    by_year = Counter(row["year"] for row in rows)
+    lines.extend(f"| {year} | {by_year[year]} |" for year in sorted(by_year))
+    lines.extend(["", f"Итого {len(rows)}.", "", "## Положительные строки", ""])
     lines.extend(f"- `{name}`: {positives[name]}" for name in TARGETS)
     README_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
