@@ -14,10 +14,13 @@ from pauk.mcp.contracts import (
     ExplainRequest,
     MCPError,
     PublicationRequest,
+    RepositoryPublicationsRequest,
     RepositoryRequest,
+    SearchRepositoriesRequest,
     SearchRequest,
     Text,
     normalize_doi,
+    normalize_repo_url_query,
     safe_url,
 )
 from pauk.mcp.reader import Neo4jReader, resolve
@@ -65,6 +68,50 @@ class ContractsTests(unittest.TestCase):
             ExplainRequest(publication_id="p", repository_id="r", page_size=11)
         with self.assertRaises(ValidationError):
             RepositoryRequest(repository_id="x" * 257)
+        for bad_repo_args in (
+            {},
+            {"url": "https://github.com/a/b", "query": "repo"},
+            {"url": "https://private.example.org/a/b"},
+            {"url": "https://github.com/"},
+            {"url": "https://github.com/.git"},
+            {"url": "https://github.com////"},
+            {"url": "   "},
+            {"query": "   "},
+            {"url": "https://user:secret@github.com/a/b"},
+            {"url": "https://@github.com/a/b"},
+            {"url": "https://:@github.com/a/b"},
+            {"url": "https://github.com/a/b?"},
+            {"url": "https://github.com/a/b#"},
+            {"url": "https://github.com/a/b?token=x"},
+            {"url": "https://github.com:/a/b"},
+            {"url": "http://github.com:443/a/b"},
+            {"url": "https://github.com:80/a/b"},
+            {"query": "ab"},
+            {"query": "abc", "extra": True},
+            {"url": "https://github.com/a/b", "page_size": 26},
+            {"url": "https://github.com/a/b", "page_size": True},
+            {"url": "https://github.com/a/b", "page_size": "1"},
+            {"repository_id": "r", "relation": "invalid"},
+            {"repository_id": "r", "relation": None},
+            {"repository_id": "r", "relation": "IMPLEMENTS"},
+            {"repository_id": "r", "extra": True},
+        ):
+            model = (
+                RepositoryPublicationsRequest
+                if "relation" in bad_repo_args or "repository_id" in bad_repo_args
+                else SearchRepositoriesRequest
+            )
+            with self.subTest(bad_repo_args=bad_repo_args), self.assertRaises(ValidationError):
+                model.model_validate(bad_repo_args)
+        self.assertEqual(
+            normalize_repo_url_query(" HTTP://www.github.com/Org/Repo.git/ "),
+            "https://github.com/org/repo",
+        )
+        self.assertEqual(
+            normalize_repo_url_query("https://doi.org/10.1234/foo:80/bar"),
+            "https://doi.org/10.1234/foo:80/bar",
+        )
+        self.assertEqual(RepositoryPublicationsRequest(repository_id="r").relation, "implements")
 
     def test_text_invariants(self) -> None:
         for status in ("withheld", "unavailable"):
@@ -77,9 +124,17 @@ class ContractsTests(unittest.TestCase):
 
     def test_safe_urls(self) -> None:
         self.assertEqual(safe_url("https://github.com/org/repo"), "https://github.com/org/repo")
+        self.assertEqual(safe_url("https://www.github.com/org/repo"), "https://www.github.com/org/repo")
         for value in (
             "file:///private/key",
             "https://github.com/a?signature=SECRET",
+            "https://github.com/a?",
+            "https://github.com/a#",
+            "https://@github.com/a",
+            "https://:@github.com/a",
+            "https://github.com:/a",
+            "http://github.com:443/a",
+            "https://github.com:80/a",
             "http://127.0.0.1/x",
             "https://private.example.org/repo",
             "https://user:SECRET@github.com/a",
@@ -309,6 +364,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 [{"id": f"r{i}", "url": f"https://github.com/o/r{i}", "name": f"repo {i}"} for i in range(4)],
                 [{"id": "p"}],
                 [],
+                [{"id": "other"}],
             ]
         )
         repo_service = Service(repo_reader, b"synthetic-key")
@@ -337,6 +393,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 [{"id": "r"}],
                 [],
                 [],
+                [{"id": "p"}],
+                [{"id": "other"}],
             ]
         )
         explain_service = Service(explain_reader, b"synthetic-key", safe_synthetic_text=True)
@@ -442,6 +500,185 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             if cursor is None:
                 break
         self.assertEqual(collected_pages, list(range(1, 11)))
+
+    async def test_search_repositories_and_reverse_publication_lookup(self) -> None:
+        from tests.mcp_support import SyntheticReader
+
+        synthetic = Service(SyntheticReader(), b"synthetic-key")
+        by_url = await synthetic.search_repositories(
+            SearchRepositoriesRequest(url="http://www.github.com/PAUK-TEST/code.git/")
+        )
+        self.assertEqual([item.repository_id for item in by_url.items], ["r-code"])
+        by_query = await synthetic.search_repositories(SearchRepositoriesRequest(query="Dependency"))
+        self.assertEqual([item.repository_id for item in by_query.items], ["r-dependency"])
+
+        impl_page = await synthetic.get_repository_publications(RepositoryPublicationsRequest(repository_id="old-code"))
+        self.assertEqual(impl_page.repository_id, "r-code")
+        self.assertEqual(impl_page.relation, "implements")
+        self.assertEqual([(p.publication_id, p.implements, p.verdict) for p in impl_page.items], [("p-paper", True, None)])
+
+        dep_impl = await synthetic.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-dependency", relation="implements")
+        )
+        self.assertEqual(dep_impl.items, [])
+        dep_mentions = await synthetic.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-dependency", relation="mentions")
+        )
+        self.assertEqual(
+            [(p.publication_id, p.implements, p.verdict) for p in dep_mentions.items],
+            [("p-paper", False, "rejected")],
+        )
+
+        reader = StubReader(
+            [
+                [{"id": "r-multi", "url": "https://github.com/o/multi", "name": "multi"}, {"id": "r-extra"}],
+                [{"id": "r-extra", "url": "https://github.com/o/extra", "name": "extra"}],
+            ]
+        )
+        repo_service = Service(reader, b"synthetic-key")
+        first = await repo_service.search_repositories(SearchRepositoriesRequest(query="Multi   Repo", page_size=1))
+        self.assertEqual(reader.calls[0][0], queries.SEARCH_REPOSITORIES_QUERY)
+        self.assertEqual(reader.calls[0][1]["query"], "multi repo")
+        self.assertNotIn("r.description", queries.SEARCH_REPOSITORIES_QUERY)
+        self.assertIsNotNone(first.next_cursor)
+        second = await repo_service.search_repositories(
+            SearchRepositoriesRequest(query="multi repo", page_size=3, cursor=first.next_cursor)
+        )
+        self.assertEqual([item.repository_id for item in second.items], ["r-extra"])
+        self.assertEqual(reader.calls[-1][1]["offset"], 1)
+        self.assertEqual(reader.calls[-1][1]["limit"], 4)
+
+        rev_reader = StubReader(
+            [
+                [{"id": "r-multi"}],
+                [
+                    {"id": "p1", "title": "First", "doi": None, "year": 2025, "implements": True, "relevant": None},
+                    {"id": "p2", "title": "Second", "doi": None, "year": 2024, "implements": True, "relevant": None},
+                ],
+                [{"id": "r-multi"}],
+                [{"id": "p2", "title": "Second", "doi": None, "year": 2024, "implements": True, "relevant": None}],
+                [{"id": "r-multi"}],
+            ]
+        )
+        rev_service = Service(rev_reader, b"synthetic-key")
+        rev_first = await rev_service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-multi", relation="implements", page_size=1)
+        )
+        self.assertIsNotNone(rev_first.next_cursor)
+        rev_second = await rev_service.get_repository_publications(
+            RepositoryPublicationsRequest(
+                repository_id="r-multi", relation="implements", page_size=2, cursor=rev_first.next_cursor
+            )
+        )
+        self.assertEqual([item.publication_id for item in rev_second.items], ["p2"])
+        with self.assertRaises(MCPError) as caught:
+            await rev_service.get_repository_publications(
+                RepositoryPublicationsRequest(
+                    repository_id="r-multi", relation="mentions", page_size=2, cursor=rev_first.next_cursor
+                )
+            )
+        self.assertEqual(caught.exception.code, "CURSOR")
+
+        alias_reader = StubReader(
+            [
+                [{"id": "r-multi"}],
+                [
+                    {"id": "p1", "title": "First", "doi": None, "year": 2025, "implements": True, "relevant": None},
+                    {"id": "p2", "title": "Second", "doi": None, "year": 2024, "implements": True, "relevant": None},
+                ],
+                [{"id": "r-multi"}],
+                [{"id": "p2", "title": "Second", "doi": None, "year": 2024, "implements": True, "relevant": None}],
+                [{"id": "r-multi"}],
+            ]
+        )
+        alias_service = Service(alias_reader, b"synthetic-key")
+        alias_page1 = await alias_service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="old-multi", page_size=1)
+        )
+        self.assertEqual(alias_page1.repository_id, "r-multi")
+        self.assertIsNotNone(alias_page1.next_cursor)
+        canonical_page2 = await alias_service.get_repository_publications(
+            RepositoryPublicationsRequest(
+                repository_id=alias_page1.repository_id, page_size=1, cursor=alias_page1.next_cursor
+            )
+        )
+        self.assertEqual([item.publication_id for item in canonical_page2.items], ["p2"])
+
+        url_reader = StubReader(
+            [
+                [{"id": "r-1", "url": "https://github.com/o/repo", "name": "One"}, {"id": "r-2"}],
+                [{"id": "r-2", "url": "https://github.com/o/repo", "name": "Two"}],
+            ]
+        )
+        url_service = Service(url_reader, b"synthetic-key")
+        url_page1 = await url_service.search_repositories(
+            SearchRepositoriesRequest(url="HTTP://www.github.com/O/Repo.git/", page_size=1)
+        )
+        self.assertIsNotNone(url_page1.next_cursor)
+        url_page2 = await url_service.search_repositories(
+            SearchRepositoriesRequest(url="https://github.com/o/repo", page_size=1, cursor=url_page1.next_cursor)
+        )
+        self.assertEqual([item.repository_id for item in url_page2.items], ["r-2"])
+
+        class PagedReverseReader:
+            def __init__(self, rows: list[dict[str, Any]]) -> None:
+                self.rows = rows
+
+            async def query(self, query: str, parameters: dict[str, object]) -> list[dict[str, Any]]:
+                if "MATCH (n:Repository) WHERE n.id" in query:
+                    return [{"id": parameters["id"]}]
+                offset = int(parameters["offset"])
+                limit = int(parameters["limit"])
+                return self.rows[offset : offset + limit]
+
+        big_repos = [
+            {
+                "id": f"r-big-{i}",
+                "url": "https://github.com/org/" + "r" * 1500,
+                "name": "\U0001f600" * 1000,
+            }
+            for i in range(15)
+        ]
+        big_repo_service = Service(PagedReverseReader(big_repos), b"synthetic-key")
+        got_repos: list[str] = []
+        cursor: str | None = None
+        while True:
+            page = await big_repo_service.search_repositories(
+                SearchRepositoriesRequest(query="org", page_size=25, cursor=cursor)
+            )
+            self.assertGreaterEqual(len(page.items), 1)
+            self.assertLess(len(page.items), 15)
+            got_repos.extend(item.repository_id for item in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        self.assertEqual(got_repos, [f"r-big-{i}" for i in range(15)])
+
+        big_rev_pubs = [
+            {
+                "id": f"p-rev-{i}",
+                "title": "\U0001f600" * 1000,
+                "doi": "10." + "a" * 400,
+                "year": 2026,
+                "implements": True,
+                "relevant": None,
+            }
+            for i in range(15)
+        ]
+        big_rev_service = Service(PagedReverseReader(big_rev_pubs), b"synthetic-key")
+        got_rev: list[str] = []
+        cursor = None
+        while True:
+            page = await big_rev_service.get_repository_publications(
+                RepositoryPublicationsRequest(repository_id="r-big", page_size=25, cursor=cursor)
+            )
+            self.assertGreaterEqual(len(page.items), 1)
+            self.assertLess(len(page.items), 15)
+            got_rev.extend(item.publication_id for item in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        self.assertEqual(got_rev, [f"p-rev-{i}" for i in range(15)])
 
 
 class ReaderTests(unittest.IsolatedAsyncioTestCase):

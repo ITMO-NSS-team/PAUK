@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from pauk.mcp import reader as queries
+from pauk.mcp.contracts import normalize_repo_url_query
 
 TEST_TOKEN = "pauk-synthetic-machine-token-0000000001"
 
@@ -38,7 +39,63 @@ class SyntheticReader:
         if query in (queries.RESOLVE["Publication"][1], queries.RESOLVE["Repository"][1]):
             if parameters["id"] == "old-paper":
                 return [{"id": "p-paper"}]
+            if parameters["id"] == "old-code":
+                return [{"id": "r-code"}]
             return [{"id": "r-code"}, {"id": "r-dependency"}] if parameters["id"] == "ambiguous-repo" else []
+        if query in (queries.SEARCH_REPOSITORIES_URL, queries.SEARCH_REPOSITORIES_QUERY):
+            records = [
+                {"id": "r-code", "name": "Synthetic code", "url": "https://github.com/pauk-test/code"},
+                {"id": "r-dependency", "name": "Dependency", "url": None},
+            ]
+            needle = str(parameters["query"])
+            offset = int(parameters.get("offset", 0))
+            limit = int(parameters.get("limit", 25))
+            if query == queries.SEARCH_REPOSITORIES_URL:
+                matched = [record for record in records if normalize_repo_url_query(record["url"]) == needle]
+                return matched[offset : offset + limit]
+            tokens = [token for token in needle.split(" ") if token]
+            matched = [
+                record
+                for record in records
+                if tokens and all(
+                    token in f"{(record['name'] or '').lower()} {(record['url'] or '').lower()}"
+                    for token in tokens
+                )
+            ]
+            return matched[offset : offset + limit]
+        if query == queries.REPOSITORY_IMPLEMENTS_PUBLICATIONS:
+            offset = int(parameters.get("offset", 0))
+            limit = int(parameters.get("limit", 25))
+            if parameters["repository_id"] == "r-code":
+                rows = [
+                    {
+                        "id": "p-paper",
+                        "title": "Synthetic PAUK paper",
+                        "doi": "10.1234/pauk-test",
+                        "year": 2026,
+                        "implements": True,
+                        "relevant": None,
+                    }
+                ]
+                return rows[offset : offset + limit]
+            return []
+        if query == queries.REPOSITORY_MENTIONS_PUBLICATIONS:
+            offset = int(parameters.get("offset", 0))
+            limit = int(parameters.get("limit", 25))
+            repo_id = parameters["repository_id"]
+            if repo_id in ("r-code", "r-dependency"):
+                rows = [
+                    {
+                        "id": "p-paper",
+                        "title": "Synthetic PAUK paper",
+                        "doi": "10.1234/pauk-test",
+                        "year": 2026,
+                        "implements": repo_id == "r-code",
+                        "relevant": repo_id == "r-code",
+                    }
+                ]
+                return rows[offset : offset + limit]
+            return []
         if query in (queries.SEARCH_TITLE, queries.SEARCH_DOI, queries.SEARCH_REPOSITORY):
             if query == queries.SEARCH_DOI:
                 match = parameters["query"] == "10.1234/pauk-test"

@@ -95,6 +95,8 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             "get_publication_repositories": {"publication_id", "page_size", "cursor"},
             "get_repository": {"repository_id"},
             "explain_link": {"publication_id", "repository_id", "page_size", "cursor"},
+            "search_repositories": {"url", "query", "page_size", "cursor"},
+            "get_repository_publications": {"repository_id", "relation", "page_size", "cursor"},
         }
         self.assertEqual({tool.name for tool in tools}, set(expected))
         for tool in tools:
@@ -107,7 +109,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.structuredContent["source_system"], "PAUK")
         self.assertEqual(result.structuredContent["retrieval_mode"], "cached_prepared_graph")
 
-    async def test_real_client_four_flat_tools_and_structured_results(self) -> None:
+    async def test_real_client_six_flat_tools_and_structured_results(self) -> None:
         async with (
             streamable_http_client(self.url, http_client=self.http) as (rx, tx, _),
             ClientSession(rx, tx) as session,
@@ -144,6 +146,26 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.structuredContent["implements"])
             self.assertEqual(result.structuredContent["evidence"][0]["verdict"], "rejected")
             self.assertIsNone(result.structuredContent["evidence"][0]["confidence"])
+            result = await session.call_tool(
+                "search_repositories", {"url": "http://www.github.com/PAUK-TEST/code.git/"}
+            )
+            self._assert_pauk_source(result)
+            self.assertEqual([r["repository_id"] for r in result.structuredContent["items"]], ["r-code"])
+            result = await session.call_tool("search_repositories", {"query": "Dependency"})
+            self._assert_pauk_source(result)
+            self.assertEqual([r["repository_id"] for r in result.structuredContent["items"]], ["r-dependency"])
+            result = await session.call_tool(
+                "get_repository_publications", {"repository_id": "old-code", "relation": "implements"}
+            )
+            self._assert_pauk_source(result)
+            self.assertEqual(result.structuredContent["repository_id"], "r-code")
+            self.assertEqual([p["publication_id"] for p in result.structuredContent["items"]], ["p-paper"])
+            result = await session.call_tool(
+                "get_repository_publications", {"repository_id": "r-dependency", "relation": "mentions"}
+            )
+            self._assert_pauk_source(result)
+            self.assertFalse(result.structuredContent["items"][0]["implements"])
+            self.assertEqual(result.structuredContent["items"][0]["verdict"], "rejected")
 
     async def test_safe_errors_sdk_validation_unknown_alias_backend_and_timeout(self) -> None:
         async with (
@@ -157,6 +179,11 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                 ("get_repository", {"repository_id": "missing"}, "NOT_FOUND"),
                 ("get_repository", {"repository_id": "ambiguous-repo"}, "AMBIGUOUS_ID"),
                 ("search_publications", {"doi": "x", "cursor": "PRIVATE_CANARY"}, "CURSOR"),
+                ("search_repositories", {"url": "https://private.example.org/PRIVATE_CANARY"}, "INPUT"),
+                ("search_repositories", {"query": "abc", "cursor": "PRIVATE_CANARY"}, "CURSOR"),
+                ("get_repository_publications", {"repository_id": "PRIVATE_CANARY" * 100}, "INPUT"),
+                ("get_repository_publications", {"repository_id": "missing"}, "NOT_FOUND"),
+                ("get_repository_publications", {"repository_id": "r-code", "cursor": "PRIVATE_CANARY"}, "CURSOR"),
             ]
             for name, arguments, code in cases:
                 result = await session.call_tool(name, arguments)
@@ -304,6 +331,8 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                     return []
                 if "MATCH (n:Repository) WHERE n.id" in query or "merged_ids" in query:
                     return []
+                if "r.name IS NOT NULL AND r.name IS :: STRING" in query:
+                    return []
                 return []
 
         manager = live_server(create_app(Service(LiteralStringReader(), b"key"), TEST_TOKEN))
@@ -326,6 +355,9 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                     result = await session.call_tool("search_publications", arguments)
                     self._assert_pauk_source(result)
                     self.assertEqual(result.structuredContent["items"], [])
+                repo_null = await session.call_tool("search_repositories", {"query": "null"})
+                self._assert_pauk_source(repo_null)
+                self.assertEqual(repo_null.structuredContent["items"], [])
                 missing = await session.call_tool("get_repository", {"repository_id": "null"})
                 self.assertTrue(missing.isError)
                 self.assertEqual(missing.content[0].text, "NOT_FOUND")

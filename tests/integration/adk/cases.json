@@ -507,6 +507,251 @@
           }
         ]
       }
+    },
+    {
+      "name": "repository_url_normalized",
+      "tool": "search_repositories",
+      "args": {
+        "url": "http://www.github.com/PAUK-TEST/code.git/"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "repository_id": "r-code",
+              "url": "https://github.com/pauk-test/code"
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/items/0/repository_id",
+          "value": "r-code"
+        }
+      ]
+    },
+    {
+      "name": "repository_query_empty",
+      "tool": "search_repositories",
+      "args": {
+        "query": "unmatched synthetic repo"
+      },
+      "kind": "empty",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "repository_unapproved_url",
+      "tool": "search_repositories",
+      "args": {
+        "url": "https://private.example.org/org/repo"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "reverse_implements_via_alias",
+      "tool": "get_repository_publications",
+      "args": {
+        "repository_id": "old-code"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "repository_id": "r-code",
+          "relation": "implements",
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "implements": true,
+              "verdict": null
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/repository_id",
+          "value": "r-code"
+        }
+      ]
+    },
+    {
+      "name": "reverse_mentions_rejected_dependency",
+      "tool": "get_repository_publications",
+      "args": {
+        "repository_id": "r-dependency",
+        "relation": "mentions"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "repository_id": "r-dependency",
+          "relation": "mentions",
+          "items": [
+            {
+              "publication_id": "p-paper",
+              "implements": false,
+              "verdict": "rejected"
+            }
+          ],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "reverse_unknown_repository",
+      "tool": "get_repository_publications",
+      "args": {
+        "repository_id": "synthetic-missing"
+      },
+      "kind": "not_found",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "NOT_FOUND"
+          }
+        ]
+      }
+    },
+    {
+      "name": "reverse_invalid_relation",
+      "tool": "get_repository_publications",
+      "args": {
+        "repository_id": "r-code",
+        "relation": "cites"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repository_query_valid",
+      "tool": "search_repositories",
+      "args": {
+        "query": "Dependency"
+      },
+      "kind": "valid",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "items": [
+            {
+              "repository_id": "r-dependency"
+            }
+          ],
+          "next_cursor": null
+        }
+      },
+      "expected_ids": [
+        {
+          "pointer": "/structuredContent/items/0/repository_id",
+          "value": "r-dependency"
+        }
+      ]
+    },
+    {
+      "name": "reverse_implements_empty",
+      "tool": "get_repository_publications",
+      "args": {
+        "repository_id": "r-dependency",
+        "relation": "implements"
+      },
+      "kind": "empty",
+      "is_error": false,
+      "result_subset": {
+        "structuredContent": {
+          "repository_id": "r-dependency",
+          "relation": "implements",
+          "items": [],
+          "next_cursor": null
+        }
+      }
+    },
+    {
+      "name": "repository_missing_mode",
+      "tool": "search_repositories",
+      "args": {},
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repository_both_modes",
+      "tool": "search_repositories",
+      "args": {
+        "url": "https://github.com/pauk-test/code",
+        "query": "code"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repository_root_url",
+      "tool": "search_repositories",
+      "args": {
+        "url": "https://github.com/"
+      },
+      "kind": "invalid_args",
+      "is_error": true,
+      "result_subset": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "INPUT"
+          }
+        ]
+      }
     }
   ]
 }

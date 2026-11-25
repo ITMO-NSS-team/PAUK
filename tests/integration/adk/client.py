@@ -25,7 +25,16 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.adk.tools.tool_context import ToolContext
 
-TOOLS = frozenset({"search_publications", "get_publication_repositories", "get_repository", "explain_link"})
+TOOLS = frozenset(
+    {
+        "search_publications",
+        "get_publication_repositories",
+        "get_repository",
+        "explain_link",
+        "search_repositories",
+        "get_repository_publications",
+    }
+)
 KINDS = frozenset({"valid", "empty", "not_found", "invalid_args"})
 LOGGER = logging.getLogger("pauk_adk_harness")
 
@@ -179,7 +188,7 @@ async def run_cases(url: str, token: str, cases: list[dict[str, Any]]) -> int:
         async with asyncio.timeout(40):
             discovered = await client.get_tools(readonly_context=None)
         names = [tool.name for tool in discovered]
-        assert len(names) == 4 and set(names) == TOOLS, "Expected exactly four PAUK tools"
+        assert len(names) == len(TOOLS) and set(names) == TOOLS, "Expected exact PAUK tool set"
         tools = {tool.name: tool for tool in discovered}
         tool_context = await context()
         for case in cases:

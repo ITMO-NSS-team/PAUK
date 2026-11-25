@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 Identifier = Annotated[str, StringConstraints(min_length=1, max_length=256, strip_whitespace=True)]
 DOI = Annotated[str, StringConstraints(min_length=1, max_length=512, strip_whitespace=True)]
 TitleQuery = Annotated[str, StringConstraints(min_length=3, max_length=300, strip_whitespace=True)]
+RepoURLQuery = Annotated[str, StringConstraints(min_length=1, max_length=2000, strip_whitespace=True)]
+RepositoryRelation = Literal["implements", "mentions"]
 Cursor = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 PageSize = Annotated[int, Field(strict=True, ge=1, le=25)]
 EvidenceSize = Annotated[int, Field(strict=True, ge=1, le=10)]
@@ -73,6 +75,34 @@ class ExplainRequest(Contract):
     publication_id: Identifier
     repository_id: Identifier
     page_size: EvidenceSize = 5
+    cursor: Cursor | None = None
+
+
+class SearchRepositoriesRequest(Contract):
+    """Exactly one bounded repository lookup by normalized URL or text tokens."""
+
+    url: RepoURLQuery | None = None
+    query: TitleQuery | None = None
+    page_size: PageSize = 10
+    cursor: Cursor | None = None
+
+    @model_validator(mode="after")
+    def one_query(self) -> "SearchRepositoriesRequest":
+        """Require exactly one repository search mode and a valid approved URL when given."""
+        provided = sum(value is not None for value in (self.url, self.query))
+        if provided != 1:
+            raise ValueError("Exactly one query is required")
+        if self.url is not None and normalize_repo_url_query(self.url) is None:
+            raise ValueError("Repository URL must use an approved host without credentials or query parameters")
+        return self
+
+
+class RepositoryPublicationsRequest(Contract):
+    """Bounded publications page for one repository (authored IMPLEMENTS or MENTIONS_LINK)."""
+
+    repository_id: Identifier
+    relation: RepositoryRelation = "implements"
+    page_size: PageSize = 10
     cursor: Cursor | None = None
 
 
@@ -196,6 +226,42 @@ class Explanation(Contract):
     )
 
 
+class RepositorySearchPage(Contract):
+    """Stable-order repository continuation from the cached PAUK graph."""
+
+    source_system: Literal["PAUK"] = "PAUK"
+    retrieval_mode: Literal["cached_prepared_graph"] = "cached_prepared_graph"
+    items: Annotated[list[RepositoryLink], Field(max_length=25)]
+    next_cursor: Cursor | None
+
+
+class RepositoryPublication(Publication):
+    """Publication linked to a repository, separating confirmed code from mentions/reuse."""
+
+    implements: bool
+    verdict: Literal["accepted", "rejected", "unknown"] | None = None
+
+
+class RepositoryPublicationsPage(Contract):
+    """Publications linked to one repository as authored code or mentions/reuse."""
+
+    source_system: Literal["PAUK"] = "PAUK"
+    retrieval_mode: Literal["cached_prepared_graph"] = "cached_prepared_graph"
+    repository_id: Identifier
+    relation: RepositoryRelation
+    items: Annotated[list[RepositoryPublication], Field(max_length=25)]
+    next_cursor: Cursor | None
+    coverage: Literal[
+        "Cached PAUK links only: relation='implements' returns confirmed author-code links; "
+        "relation='mentions' includes rejected and unclassified mentions. "
+        "Empty means unknown in PAUK, not absence of related publications globally."
+    ] = (
+        "Cached PAUK links only: relation='implements' returns confirmed author-code links; "
+        "relation='mentions' includes rejected and unclassified mentions. "
+        "Empty means unknown in PAUK, not absence of related publications globally."
+    )
+
+
 def normalize_doi(value: str) -> str:
     """Normalize only DOI wrappers and case, never perform substring matching."""
     normalized = value.strip().lower()
@@ -219,26 +285,54 @@ APPROVED_REPO_HOSTS = frozenset(
 )
 
 
-def safe_url(value: object) -> str | None:
-    """Withhold local, credential-bearing, signed or malformed URLs without rewriting them."""
-    if not isinstance(value, str) or len(value) > 2000 or any(ord(c) < 33 for c in value):
+def _split_approved_url(value: str) -> tuple[str, str] | None:
+    """Validate an approved public repository URL and return (canonical_host, path)."""
+    if (
+        not value
+        or len(value) > 2000
+        or any(ord(c) < 33 for c in value)
+        or any(ch in value for ch in ("@", "?", "#"))
+    ):
         return None
     try:
         parsed = urlsplit(value)
-        host = parsed.hostname or ""
-        if (
-            parsed.scheme not in ("https", "http")
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            return None
-        if host not in APPROVED_REPO_HOSTS or parsed.port not in (None, 80, 443):
-            return None
-        return value
     except ValueError:
         return None
+    if (
+        parsed.scheme not in ("https", "http")
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.netloc.endswith(":")
+    ):
+        return None
+    valid_port = (parsed.scheme == "https" and parsed.port in (None, 443)) or (
+        parsed.scheme == "http" and parsed.port in (None, 80)
+    )
+    canonical_host = (parsed.hostname or "").lower().removeprefix("www.")
+    if not valid_port or canonical_host not in APPROVED_REPO_HOSTS:
+        return None
+    return canonical_host, parsed.path
+
+
+def safe_url(value: object) -> str | None:
+    """Withhold local, credential-bearing, signed or malformed URLs without rewriting them."""
+    if not isinstance(value, str):
+        return None
+    return value if _split_approved_url(value) is not None else None
+
+
+def normalize_repo_url_query(value: object) -> str | None:
+    """Normalize an approved repository URL lookup query without trusting unsafe URLs."""
+    if not isinstance(value, str):
+        return None
+    parts = _split_approved_url(value.strip())
+    if parts is None:
+        return None
+    canonical_host, raw_path = parts
+    path = raw_path.rstrip("/").lower().removesuffix(".git").rstrip("/")
+    if not path:
+        return None
+    return f"https://{canonical_host}{path}"
 
 
 class Cursors:

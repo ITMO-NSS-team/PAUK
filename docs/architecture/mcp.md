@@ -66,6 +66,20 @@ repository APIs. They do not imply a current snapshot/access-check timestamp.
   reports `implements` separately from actual `MENTIONS_LINK` evidence,
   including rejected and unclassified mentions. Two existing objects without
   a relation return `false` and empty evidence.
+- `search_repositories(url=None, query=None, page_size=10, cursor=None)`:
+  exactly one search mode: exact normalized approved-host repository URL (ignoring
+  `www.`, HTTP/HTTPS, `.git`, case and trailing slash) or literal case-insensitive
+  conjunctive tokens over repository `name` and approved-host `url` (never `description`).
+  Exact name matches, exact phrases and `IMPLEMENTS`-linked repositories sort first.
+- `get_repository_publications(repository_id, relation="implements", page_size=10, cursor=None)`:
+  reverse lookup from a canonical or alias repository ID. `relation="implements"`
+  returns only confirmed `(:Repository)-[:IMPLEMENTS]->(:Publication)` links (with
+  `verdict=null`, because `MENTIONS_LINK` is not queried in this mode);
+  `relation="mentions"` returns `(:Publication)-[:MENTIONS_LINK]->(:Repository)`
+  entries including downstream reuse and unclassified/rejected mentions, with
+  `implements` and aggregated `verdict` (`accepted`/`rejected`/`unknown`).
+  Because `relation="mentions"` reads stored `MENTIONS_LINK` edges only, a
+  manual `IMPLEMENTS` edge without a mention edge does not appear in `mentions`.
 
 Repository `metadata_note` and `verification_note` describe this call's limits:
 `last_updated` is a cached upstream update date, not an access check or proof
@@ -152,12 +166,13 @@ For a separate client's local contract check, `tests.mcp_support` exports
 `SyntheticReader`, `TEST_TOKEN` and `live_server(app)`. Build the app with
 `create_app(Service(SyntheticReader(), b'synthetic-key'), TEST_TOKEN)`.
 Fixture IDs are `p-paper`, `r-code`, `r-dependency`; `old-paper` resolves to
-`p-paper`, and `ambiguous-repo` is deliberately ambiguous. The fixture DOI is
-`10.1234/pauk-test`. This proves the local protocol contract only, not agent
-reasoning quality, production permissions or deployed-client compatibility.
+`p-paper`, `old-code` resolves to `r-code`, and `ambiguous-repo` is deliberately
+ambiguous. The fixture DOI is `10.1234/pauk-test`. This proves the local
+protocol contract only, not agent reasoning quality, production permissions or
+deployed-client compatibility.
 
 The separate [ADK compatibility gate](../../tests/integration/adk/README.md)
-reproduces 24 synthetic fixture cases through the actual ADK client in its own
+reproduces 36 synthetic fixture cases through the actual ADK client in its own
 environment. It does not exercise a complete CoScientist workflow, models or
 production. That README is authoritative for client setup and commands.
 
@@ -189,7 +204,8 @@ def make_pauk_toolset() -> McpToolset:
             headers={"Authorization": "Bearer " + os.environ["PAUK_MCP_TOKEN"]},
         ),
         tool_filter=["search_publications", "get_publication_repositories",
-                     "get_repository", "explain_link"],
+                     "get_repository", "explain_link",
+                     "search_repositories", "get_repository_publications"],
     )
 
 
@@ -204,6 +220,11 @@ REGISTRY.register_tool(ToolEntry(
         ToolDoc("get_repository", "get_repository(repository_id)", "Get cached repository metadata."),
         ToolDoc("explain_link", "explain_link(publication_id, repository_id, page_size=5, cursor=None)",
                 "Separate IMPLEMENTS from stored mentions without inferred PDF provenance."),
+        ToolDoc("search_repositories", "search_repositories(url=None, query=None, page_size=10, cursor=None)",
+                "Find repositories by normalized approved URL or literal name/URL tokens."),
+        ToolDoc("get_repository_publications",
+                "get_repository_publications(repository_id, relation='implements', page_size=10, cursor=None)",
+                "List publications implemented by a repository or mentioning/reusing it."),
     ),
 ))
 ```

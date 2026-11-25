@@ -52,10 +52,12 @@ Assertions are acceptance checks, so optimized Python execution is refused.
 
 Checks include:
 
-- Exactly four PAUK tools and `tool_filter` discovery of `search_publications`.
-- All 24 synthetic cases in `cases.json`: DOI/title/repository search, DOI
-  normalization, canonical aliases, repository metadata, accepted author-code
-  links, and rejected dependency mentions that must not become author-code links.
+- All six PAUK tools and `tool_filter` discovery of `search_publications`.
+- All 36 synthetic cases in `cases.json`: DOI/title/publication-repository search,
+  DOI normalization, repository search by URL/query, reverse publication lookup
+  (`implements` and `mentions`), canonical aliases, repository metadata,
+  accepted author-code links, and rejected dependency mentions that must not
+  become author-code links.
 - Empty search, unknown/ambiguous identifiers, missing/extra/malformed arguments,
   strict page-size types, evidence bounds and tampered cursors.
 - The full MCP envelope (`content`, `structuredContent`, `isError`), recursive

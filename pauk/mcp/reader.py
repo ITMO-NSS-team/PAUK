@@ -8,14 +8,17 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 
 from pauk.mcp.contracts import APPROVED_REPO_HOSTS, MCPError
 
-NODE_ID = "CASE WHEN size(n.id) <= 256 THEN n.id ELSE null END AS id"
+NODE_ID = "CASE WHEN n.id IS NOT NULL AND n.id IS :: STRING AND size(n.id) <= 256 THEN n.id ELSE null END AS id"
 PUBLICATION = (
-    NODE_ID + ", substring(n.title, 0, 1001) AS title, "
-    "CASE WHEN size(n.doi) <= 512 THEN n.doi ELSE null END AS doi, n.year AS year"
+    NODE_ID
+    + ", CASE WHEN n.title IS NOT NULL AND n.title IS :: STRING THEN substring(n.title, 0, 1001) ELSE null END AS title, "
+    "CASE WHEN n.doi IS NOT NULL AND n.doi IS :: STRING AND size(n.doi) <= 512 THEN n.doi ELSE null END AS doi, "
+    "n.year AS year"
 )
 REPOSITORY_LINK = (
-    "CASE WHEN size(r.id) <= 256 THEN r.id ELSE null END AS id, "
-    "CASE WHEN size(r.url) <= 2000 THEN r.url ELSE null END AS url, substring(r.name, 0, 1001) AS name"
+    "CASE WHEN r.id IS NOT NULL AND r.id IS :: STRING AND size(r.id) <= 256 THEN r.id ELSE null END AS id, "
+    "CASE WHEN r.url IS NOT NULL AND r.url IS :: STRING AND size(r.url) <= 2000 THEN r.url ELSE null END AS url, "
+    "CASE WHEN r.name IS NOT NULL AND r.name IS :: STRING THEN substring(r.name, 0, 1001) ELSE null END AS name"
 )
 RESOLVE = {
     "Publication": (
@@ -39,12 +42,13 @@ SEARCH_DOI = (
     f"MATCH (n:Publication) WITH n, {DOI_VALUE} AS d WHERE {NORMALIZED_DOI} = $query "
     f"RETURN {PUBLICATION} ORDER BY id SKIP $offset LIMIT $limit"
 )
-_APPROVED_REPO_ORIGINS = [
-    f"{scheme}://{host}{port}"
+_APPROVED_REPO_ORIGIN_MAP = [
+    [f"{scheme}://{prefix}{host}{port}", host]
     for host in sorted(APPROVED_REPO_HOSTS)
-    for scheme, ports in (("https", ("", ":443")), ("http", ("", ":80")))
-    for port in ports
+    for prefix in ("", "www.")
+    for scheme, port in (("https", ""), ("https", ":443"), ("http", ""), ("http", ":80"))
 ]
+_APPROVED_REPO_ORIGINS = [origin for origin, _ in _APPROVED_REPO_ORIGIN_MAP]
 SAFE_REPO_URL = (
     "CASE WHEN r.url IS NOT NULL AND r.url IS :: STRING AND size(r.url) <= 2000 "
     "AND NOT (r.url CONTAINS '@' OR r.url CONTAINS '?' OR r.url CONTAINS '#' "
@@ -79,10 +83,55 @@ REPOSITORIES = (
 )
 REPOSITORY = (
     "MATCH (r:Repository {id: $repository_id}) RETURN " + REPOSITORY_LINK + ", "
-    "CASE WHEN $text THEN substring(r.description, 0, 1001) ELSE null END AS description, "
+    "CASE WHEN $text AND r.description IS NOT NULL AND r.description IS :: STRING "
+    "THEN substring(r.description, 0, 1001) ELSE null END AS description, "
     "r.description IS NOT NULL AS description_present, "
-    "substring(r.language, 0, 1001) AS language, substring(r.license, 0, 1001) AS license, "
+    "CASE WHEN r.language IS NOT NULL AND r.language IS :: STRING THEN substring(r.language, 0, 1001) ELSE null END AS language, "
+    "CASE WHEN r.license IS NOT NULL AND r.license IS :: STRING THEN substring(r.license, 0, 1001) ELSE null END AS license, "
     "r.archived AS archived, toString(r.last_updated) AS last_updated LIMIT 2"
+)
+SEARCH_REPOSITORIES_URL = (
+    f"MATCH (r:Repository) WITH r, ({SAFE_REPO_URL}) AS safe_url "
+    "WHERE safe_url <> '' "
+    f"WITH r, safe_url, head([pair IN {_APPROVED_REPO_ORIGIN_MAP!r} "
+    "WHERE safe_url = pair[0] OR safe_url STARTS WITH pair[0] + '/']) AS origin_pair "
+    "WHERE origin_pair IS NOT NULL "
+    "WITH r, origin_pair[1] AS canonical_host, substring(safe_url, size(origin_pair[0])) AS raw_path "
+    "WITH r, canonical_host, "
+    "left(raw_path, reduce(end_idx = 0, idx IN range(0, size(raw_path) - 1) | "
+    "CASE WHEN substring(raw_path, idx, 1) <> '/' THEN idx + 1 ELSE end_idx END)) AS s1 "
+    "WITH r, canonical_host, CASE WHEN s1 ENDS WITH '.git' THEN left(s1, size(s1) - 4) ELSE s1 END AS s2 "
+    "WITH r, canonical_host, "
+    "left(s2, reduce(end_idx = 0, idx IN range(0, size(s2) - 1) | "
+    "CASE WHEN substring(s2, idx, 1) <> '/' THEN idx + 1 ELSE end_idx END)) AS clean_path "
+    "WHERE clean_path <> '' AND ('https://' + canonical_host + clean_path) = $query "
+    f"RETURN {REPOSITORY_LINK} ORDER BY id ASC SKIP $offset LIMIT $limit"
+)
+SEARCH_REPOSITORIES_QUERY = (
+    "MATCH (r:Repository) "
+    "WITH r, CASE WHEN r.name IS NOT NULL AND r.name IS :: STRING THEN toLower(r.name) ELSE '' END AS repo_name, "
+    f"({SAFE_REPO_URL}) AS repo_url "
+    "WITH r, repo_name, repo_name + ' ' + repo_url AS repo_text "
+    "WHERE ALL(token IN split($query, ' ') WHERE token = '' OR repo_text CONTAINS token) "
+    "WITH r, CASE WHEN repo_name = $query THEN 1 ELSE 0 END AS exact_name, "
+    "CASE WHEN repo_text CONTAINS $query THEN 1 ELSE 0 END AS exact_phrase, "
+    "EXISTS { (r)-[:IMPLEMENTS]->(:Publication) } AS has_implements "
+    f"RETURN {REPOSITORY_LINK} ORDER BY exact_name DESC, exact_phrase DESC, has_implements DESC, id ASC "
+    "SKIP $offset LIMIT $limit"
+)
+REPOSITORY_IMPLEMENTS_PUBLICATIONS = (
+    "MATCH (r:Repository {id: $repository_id})-[:IMPLEMENTS]->(n:Publication) "
+    f"RETURN DISTINCT {PUBLICATION}, true AS implements, null AS relevant "
+    "ORDER BY id ASC SKIP $offset LIMIT $limit"
+)
+REPOSITORY_MENTIONS_PUBLICATIONS = (
+    "MATCH (n:Publication)-[m:MENTIONS_LINK]->(r:Repository {id: $repository_id}) "
+    "WITH n, EXISTS { (r)-[:IMPLEMENTS]->(n) } AS implements, collect(m.is_relevant) AS verdicts "
+    "WITH n, implements, "
+    "CASE WHEN ANY(v IN verdicts WHERE v = true) THEN true "
+    "WHEN ANY(v IN verdicts WHERE v = false) THEN false ELSE null END AS relevant "
+    f"RETURN {PUBLICATION}, implements, relevant "
+    "ORDER BY implements DESC, id ASC SKIP $offset LIMIT $limit"
 )
 IMPLEMENTS = (
     "MATCH (r:Repository {id: $repository_id})-[:IMPLEMENTS]->(p:Publication {id: $publication_id}) "

@@ -1,4 +1,4 @@
-"""Four bounded read operations over the published graph."""
+"""Six bounded read operations over the published graph."""
 
 import json
 import math
@@ -19,10 +19,16 @@ from pauk.mcp.contracts import (
     Repository,
     RepositoryLink,
     RepositoryPage,
+    RepositoryPublication,
+    RepositoryPublicationsPage,
+    RepositoryPublicationsRequest,
     RepositoryRequest,
+    RepositorySearchPage,
+    SearchRepositoriesRequest,
     SearchRequest,
     Text,
     normalize_doi,
+    normalize_repo_url_query,
     safe_url,
 )
 
@@ -61,6 +67,15 @@ def _identifier(value: object) -> str:
 
 def _doi(value: object) -> str | None:
     return value if isinstance(value, str) and 0 < len(value) <= 512 else None
+
+
+def _publication_fields(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "publication_id": _identifier(row.get("id")),
+        "title": text(row.get("title")),
+        "doi": _doi(row.get("doi")),
+        "year": row.get("year") if type(row.get("year")) is int else None,
+    }
 
 
 def _repository_link(row: dict[str, Any]) -> RepositoryLink:
@@ -151,15 +166,7 @@ class Service:
             parameters["query"] = binding["repository_contains"]
             query = queries.SEARCH_REPOSITORY
         rows = await self.reader.query(query, parameters)
-        candidates = [
-            Publication(
-                publication_id=_identifier(row.get("id")),
-                title=text(row.get("title")),
-                doi=_doi(row.get("doi")),
-                year=row.get("year") if type(row.get("year")) is int else None,
-            )
-            for row in rows[: request.page_size]
-        ]
+        candidates = [Publication(**_publication_fields(row)) for row in rows[: request.page_size]]
         return self._fit_page(
             binding,
             parameters,
@@ -170,8 +177,10 @@ class Service:
 
     async def get_publication_repositories(self, request: PublicationRequest) -> RepositoryPage:
         """Return only canonical repositories linked by IMPLEMENTS, not mentions."""
-        binding, parameters = self._page({"tool": "repositories", **request.model_dump()})
         publication_id = _identifier(await queries.resolve(self.reader, "Publication", request.publication_id))
+        binding, parameters = self._page(
+            {"tool": "repositories", **request.model_dump(), "publication_id": publication_id}
+        )
         rows = await self.reader.query(queries.REPOSITORIES, {**parameters, "publication_id": publication_id})
         candidates = [_repository_link(r) for r in rows[: request.page_size]]
         return self._fit_page(
@@ -213,10 +222,10 @@ class Service:
 
     async def explain_link(self, request: ExplainRequest) -> Explanation:
         """Keep author-code claims separate from bounded, genuinely stored mention evidence."""
-        binding, parameters = self._page({"tool": "explain", **request.model_dump()})
         publication_id = _identifier(await queries.resolve(self.reader, "Publication", request.publication_id))
         repository_id = _identifier(await queries.resolve(self.reader, "Repository", request.repository_id))
         pair = {"publication_id": publication_id, "repository_id": repository_id}
+        binding, parameters = self._page({"tool": "explain", **request.model_dump(), **pair})
         implements = bool(await self.reader.query(queries.IMPLEMENTS, pair))
         rows = await self.reader.query(queries.EVIDENCE, {**pair, **parameters, "text": self.safe_synthetic_text})
         candidates = [_evidence(r, self.safe_synthetic_text) for r in rows[: request.page_size]]
@@ -229,6 +238,68 @@ class Service:
                 **pair,
                 implements=implements,
                 evidence=page_items,
+                next_cursor=next_cursor,
+            ),
+        )
+
+    async def search_repositories(self, request: SearchRepositoriesRequest) -> RepositorySearchPage:
+        """Search repositories by normalized URL or literal name/URL tokens."""
+        normalized = request.model_dump()
+        normalized["url"] = normalize_repo_url_query(request.url) if request.url is not None else None
+        normalized["query"] = _normalize_tokens(request.query)
+        binding, parameters = self._page({"tool": "search_repositories", **normalized})
+        if request.url is not None:
+            parameters["query"] = binding["url"]
+            query = queries.SEARCH_REPOSITORIES_URL
+        else:
+            parameters["query"] = binding["query"]
+            query = queries.SEARCH_REPOSITORIES_QUERY
+        rows = await self.reader.query(query, parameters)
+        candidates = [_repository_link(row) for row in rows[: request.page_size]]
+        return self._fit_page(
+            binding,
+            parameters,
+            rows,
+            candidates,
+            lambda page_items, next_cursor: RepositorySearchPage(items=page_items, next_cursor=next_cursor),
+        )
+
+    async def get_repository_publications(self, request: RepositoryPublicationsRequest) -> RepositoryPublicationsPage:
+        """Return publications linked by IMPLEMENTS or MENTIONS_LINK for one canonical repository."""
+        repository_id = _identifier(await queries.resolve(self.reader, "Repository", request.repository_id))
+        binding, parameters = self._page(
+            {"tool": "repository_publications", **request.model_dump(), "repository_id": repository_id}
+        )
+        query = (
+            queries.REPOSITORY_IMPLEMENTS_PUBLICATIONS
+            if request.relation == "implements"
+            else queries.REPOSITORY_MENTIONS_PUBLICATIONS
+        )
+        rows = await self.reader.query(query, {**parameters, "repository_id": repository_id})
+        candidates: list[RepositoryPublication] = []
+        for row in rows[: request.page_size]:
+            relevant = row.get("relevant")
+            verdict = (
+                None
+                if request.relation == "implements"
+                else ("accepted" if relevant is True else "rejected" if relevant is False else "unknown")
+            )
+            candidates.append(
+                RepositoryPublication(
+                    **_publication_fields(row),
+                    implements=row.get("implements") is True,
+                    verdict=verdict,
+                )
+            )
+        return self._fit_page(
+            binding,
+            parameters,
+            rows,
+            candidates,
+            lambda page_items, next_cursor: RepositoryPublicationsPage(
+                repository_id=repository_id,
+                relation=request.relation,
+                items=page_items,
                 next_cursor=next_cursor,
             ),
         )

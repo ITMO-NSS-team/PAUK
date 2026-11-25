@@ -17,7 +17,15 @@ import unittest
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
-from pauk.mcp.contracts import ExplainRequest, MCPError, PublicationRequest, RepositoryRequest, SearchRequest
+from pauk.mcp.contracts import (
+    ExplainRequest,
+    MCPError,
+    PublicationRequest,
+    RepositoryPublicationsRequest,
+    RepositoryRequest,
+    SearchRepositoriesRequest,
+    SearchRequest,
+)
 from pauk.mcp.reader import Neo4jReader
 from pauk.mcp.service import Service
 
@@ -40,10 +48,28 @@ CREATE (p:Publication {id:'p-paper', merged_ids:['old-paper'], title:'Synthetic 
                       archived:false, last_updated:datetime('2026-01-02T00:00:00Z')}),
        (d:Repository {id:'r-dependency', merged_ids:['ambiguous'], name:'Dependency'}),
        (nameless:Repository {id:'r-url-only', url:'https://github.com/pauk-test/nameless-repo'}),
+       (multi:Repository {id:'r-multi', merged_ids:['old-multi'], url:'https://github.com/pauk-test/multi',
+                          name:'Multi framework'}),
+       (messy:Repository {id:'r-messy', url:'http://www.github.com:80/PAUK-TEST/messy.GIT///', name:42}),
+       (doipath:Repository {id:'r-doi-port', url:'https://doi.org/10.1234/foo:80/bar', name:'DOI path port'}),
+       (priv:Repository {id:'r-private', url:'https://private.example.org/secret', name:'PrivateHost'}),
+       (pm1:Publication {id:'p-multi-1', title:'Framework paper one', year:2024}),
+       (pm2:Publication {id:'p-multi-2', title:'Framework paper two', year:2025}),
+       (pz:Publication {id:'p-z-impl', title:'Alphabetically late implemented', year:2026}),
+       (pa:Publication {id:'p-a-reuse', title:'Alphabetically early reuse', year:2026}),
+       (pn:Publication {id:'p-unknown-mention', title:'Unclassified mention', year:2026}),
+       (pmix:Publication {id:'p-mixed-mention', title:'Mixed mention', year:2026}),
        (u:Repository {id:'r-unknown'}), (s:Repository {id:'r-scalar'}),
        (m:Repository {id:'r-misaligned'}), (n:Repository {id:'r-no-relation'}),
        (short:Repository {id:'r-short-source'}), (long:Repository {id:'r-long-source'}),
        (r)-[:IMPLEMENTS]->(p), (nameless)-[:IMPLEMENTS]->(p2),
+       (multi)-[:IMPLEMENTS]->(pm1), (multi)-[:IMPLEMENTS]->(pm2), (multi)-[:IMPLEMENTS]->(pz),
+       (pm1)-[:MENTIONS_LINK {context:['Author release'], page_number:[1], pdf_id:['m1'], is_relevant:true}]->(multi),
+       (pz)-[:MENTIONS_LINK {context:['Late id implements'], page_number:[2], pdf_id:['m2'], is_relevant:true}]->(multi),
+       (pa)-[:MENTIONS_LINK {context:['Early id reuse'], page_number:[3], pdf_id:['m3'], is_relevant:false}]->(multi),
+       (pn)-[:MENTIONS_LINK {context:['Unclassified'], page_number:[4], pdf_id:['m4']}]->(multi),
+       (pmix)-[:MENTIONS_LINK {context:['Rejected edge'], page_number:[1], pdf_id:['m5'], is_relevant:false}]->(multi),
+       (pmix)-[:MENTIONS_LINK {context:['Unknown edge'], page_number:[2], pdf_id:['m6']}]->(multi),
        (p)-[:MENTIONS_LINK {context:['Synthetic abstract','Synthetic PDF'], page_number:[0,3], pdf_id:['','pdf-1'],
           context_source:['abstract','pdf_text'], candidate_urls:['https://github.com/unrelated/candidate'],
           is_relevant:true, classification_status:'classified', llm_confidence:0.0, llm_reason:'Synthetic reason'}]->(r),
@@ -213,3 +239,69 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(0.05)
         self.assertEqual(rows, [], "Cancelled synthetic query still has an active server transaction")
+
+    async def test_repository_search_and_reverse_publication_lookup(self) -> None:
+        by_url = await self.service.search_repositories(
+            SearchRepositoriesRequest(url="http://www.github.com/PAUK-TEST/code.git/")
+        )
+        self.assertEqual([item.repository_id for item in by_url.items], ["r-code"])
+        messy = await self.service.search_repositories(
+            SearchRepositoriesRequest(url="https://github.com/pauk-test/messy")
+        )
+        self.assertEqual([item.repository_id for item in messy.items], ["r-messy"])
+        self.assertIsNone(messy.items[0].name.value)
+        doi_port = await self.service.search_repositories(
+            SearchRepositoriesRequest(url="https://doi.org/10.1234/foo:80/bar")
+        )
+        self.assertEqual([item.repository_id for item in doi_port.items], ["r-doi-port"])
+        priv = await self.service.search_repositories(SearchRepositoriesRequest(query="PrivateHost"))
+        self.assertEqual([item.repository_id for item in priv.items], ["r-private"])
+        self.assertIsNone(priv.items[0].url)
+        nameless = await self.service.search_repositories(
+            SearchRepositoriesRequest(url="https://github.com/pauk-test/nameless-repo")
+        )
+        self.assertEqual([item.repository_id for item in nameless.items], ["r-url-only"])
+        dep = await self.service.search_repositories(SearchRepositoriesRequest(query="Dependency"))
+        self.assertEqual([item.repository_id for item in dep.items], ["r-dependency"])
+
+        page1 = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="old-multi", relation="implements", page_size=1)
+        )
+        self.assertEqual(page1.repository_id, "r-multi")
+        self.assertEqual([item.publication_id for item in page1.items], ["p-multi-1"])
+        self.assertIsNotNone(page1.next_cursor)
+        page2 = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-multi", relation="implements", cursor=page1.next_cursor)
+        )
+        self.assertEqual([item.publication_id for item in page2.items], ["p-multi-2", "p-z-impl"])
+        self.assertTrue(all(item.implements and item.verdict is None for item in [*page1.items, *page2.items]))
+
+        mentions = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-multi", relation="mentions")
+        )
+        self.assertEqual(
+            [(item.publication_id, item.implements, item.verdict) for item in mentions.items],
+            [
+                ("p-multi-1", True, "accepted"),
+                ("p-z-impl", True, "accepted"),
+                ("p-a-reuse", False, "rejected"),
+                ("p-mixed-mention", False, "rejected"),
+                ("p-unknown-mention", False, "unknown"),
+            ],
+        )
+
+        dep_impl = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-dependency", relation="implements")
+        )
+        self.assertEqual(dep_impl.items, [])
+        dep_mentions = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-dependency", relation="mentions")
+        )
+        self.assertEqual(
+            [(item.publication_id, item.implements, item.verdict) for item in dep_mentions.items],
+            [("p-paper", False, "rejected")],
+        )
+        empty_mentions = await self.service.get_repository_publications(
+            RepositoryPublicationsRequest(repository_id="r-no-relation", relation="mentions")
+        )
+        self.assertEqual(empty_mentions.items, [])

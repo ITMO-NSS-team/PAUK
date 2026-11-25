@@ -33,7 +33,13 @@ from pauk.mcp.contracts import (
     PublicationRequest,
     Repository,
     RepositoryPage,
+    RepositoryPublicationsPage,
+    RepositoryPublicationsRequest,
+    RepositoryRelation,
     RepositoryRequest,
+    RepositorySearchPage,
+    RepoURLQuery,
+    SearchRepositoriesRequest,
     SearchRequest,
     TitleQuery,
 )
@@ -48,6 +54,8 @@ REQUESTS: dict[str, type[Contract]] = {
     "get_publication_repositories": PublicationRequest,
     "get_repository": RepositoryRequest,
     "explain_link": ExplainRequest,
+    "search_repositories": SearchRepositoriesRequest,
+    "get_repository_publications": RepositoryPublicationsRequest,
 }
 
 
@@ -68,6 +76,10 @@ class SafeMCP(FastMCP):
             return await self.service.get_repository(request)
         if name == "explain_link" and isinstance(request, ExplainRequest):
             return await self.service.explain_link(request)
+        if name == "search_repositories" and isinstance(request, SearchRepositoriesRequest):
+            return await self.service.search_repositories(request)
+        if name == "get_repository_publications" and isinstance(request, RepositoryPublicationsRequest):
+            return await self.service.get_repository_publications(request)
         raise ToolError("INPUT")
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
@@ -97,7 +109,7 @@ class SafeMCP(FastMCP):
 
 
 def register_tools(mcp: FastMCP, service: Service) -> None:
-    """Register exactly four flat-input tools with structured output schemas."""
+    """Register exactly six flat-input tools with structured output schemas."""
     _register_publication_tools(mcp, service)
     _register_repository_tools(mcp, service)
 
@@ -157,6 +169,35 @@ def _register_repository_tools(mcp: FastMCP, service: Service) -> None:
             ExplainRequest(
                 publication_id=publication_id,
                 repository_id=repository_id,
+                page_size=page_size,
+                cursor=cursor,
+            )
+        )
+
+    @mcp.tool(structured_output=True)
+    async def search_repositories(
+        url: RepoURLQuery | None = None,
+        query: TitleQuery | None = None,
+        page_size: PageSize = 10,
+        cursor: Cursor | None = None,
+    ) -> RepositorySearchPage:
+        """Find repositories by normalized approved URL or literal name/URL tokens."""
+        return await service.search_repositories(
+            SearchRepositoriesRequest(url=url, query=query, page_size=page_size, cursor=cursor)
+        )
+
+    @mcp.tool(structured_output=True)
+    async def get_repository_publications(
+        repository_id: Identifier,
+        relation: RepositoryRelation = "implements",
+        page_size: PageSize = 10,
+        cursor: Cursor | None = None,
+    ) -> RepositoryPublicationsPage:
+        """List publications implemented by a repository or mentioning/reusing it."""
+        return await service.get_repository_publications(
+            RepositoryPublicationsRequest(
+                repository_id=repository_id,
+                relation=relation,
                 page_size=page_size,
                 cursor=cursor,
             )
