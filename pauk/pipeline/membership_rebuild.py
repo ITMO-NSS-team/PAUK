@@ -267,13 +267,11 @@ def rebuild_from_global_sources(
                 complete = False
         for source_id in inventory.orcid_ids or []:
             envelope = orcids.get(source_id)
-            employments = (((envelope or {}).get("payload") or {}).get("activities-summary") or {}).get("employments")
-            if not isinstance(employments, dict) or not isinstance(employments.get("affiliation-group"), list):
-                complete = False
-                continue
             try:
-                affiliations = _orcid_affiliations(envelope["payload"])
+                affiliations = _orcid_affiliations(envelope["payload"]) if envelope else None
             except (ValueError, TypeError, AttributeError):
+                affiliations = None
+            if affiliations is None:
                 complete = False
                 continue
             observed_at = source_observed_at(envelope["fetched_at"])

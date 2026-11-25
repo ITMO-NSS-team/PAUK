@@ -91,6 +91,7 @@ from pauk.pipeline.publication_components import publication_merge_components
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.storage.identity_refs import repoint_person_references
+from pauk.storage.person_identity import openalex_orcid_references, person_orcid_references
 from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import deduplicate_repo_urls, normalize_repo_url
@@ -1570,15 +1571,8 @@ class DedupStage(EnrichmentStage):
         OpenAlex author record was fetched it overrides the prepared value,
         including with None when OpenAlex knows no ORCID.
         """
-        from pauk.graph.person_resolution import _normalize_orcid
-
-        raw_orcids: dict[str, str | None] = {}
-        for envelope in self.raw.read("openalex_authors"):
-            payload = envelope.get("payload") or {}
-            author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
-            if author_id:
-                raw_orcids[author_id] = _normalize_orcid(payload.get("orcid")) or None
-        return {person.id: _normalize_orcid(raw_orcids.get(person.id, person.orcid)) or None for person in people}
+        raw_orcids = openalex_orcid_references(self.raw.db, group=self.raw.group)
+        return person_orcid_references(people, raw_orcids)
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
         """Person ids the selection allows to participate in merging."""

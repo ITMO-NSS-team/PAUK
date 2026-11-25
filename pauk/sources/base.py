@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 import time
+from concurrent.futures import CancelledError
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -62,12 +64,17 @@ class HttpClient:
         self, timeout: int, headers: dict[str, str] | None = None, *,
         rate_limits: dict[str, RateLimit] | None = None,
         rate_limiter: HostRateLimiter | None = None,
+        cancel: threading.Event | None = None,
     ) -> None:
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update(headers or {})
         self.rate_limits = PUBLIC_LIMITS | (rate_limits or {})
         self.rate_limiter = rate_limiter if rate_limiter is not None else RATE_LIMITER
+        self._cancel = cancel
+
+    def close(self) -> None:
+        self.session.close()
 
     def get_json(self, url: str, *, params: dict[str, Any] | None = None, retries: int = 3) -> dict[str, Any]:
         """Send a GET request and return its decoded JSON object."""
@@ -94,6 +101,7 @@ class HttpClient:
 
     def _request(
         self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None,
+        data: dict[str, Any] | None = None, allow_redirects: bool = True,
         retries: int = 3, timeout: int | None = None,
     ) -> requests.Response:
         method = method.upper()
@@ -103,6 +111,10 @@ class HttpClient:
             request_kwargs["params"] = params
         if json is not None:
             request_kwargs["json"] = json
+        if data is not None:
+            request_kwargs["data"] = data
+        if not allow_redirects:
+            request_kwargs["allow_redirects"] = False
 
         for attempt in range(retries + 1):
             try:
@@ -110,12 +122,13 @@ class HttpClient:
             except requests.RequestException as exc:
                 if attempt == retries:
                     raise HttpRequestError(method, safe_url, cause_type=type(exc).__name__) from None
-                self._wait(self._backoff_delay(attempt), type(exc).__name__, method, safe_url, attempt, retries)
+                self._wait(self._backoff_delay(attempt), type(exc).__name__, method, safe_url, attempt, retries,
+                           cancel=self._cancel)
                 continue
 
             delay = self._retry_delay(response, attempt)
             if delay is not None and attempt < retries:
-                self._wait(delay, self._retry_reason(response), method, safe_url, attempt, retries)
+                self._wait(delay, self._retry_reason(response), method, safe_url, attempt, retries, cancel=self._cancel)
                 continue
             try:
                 response.raise_for_status()
@@ -134,6 +147,8 @@ class HttpClient:
         prepared = None
         history = []
         while True:
+            if self._cancel is not None and self._cancel.is_set():
+                raise CancelledError
             current_url = prepared.url if prepared is not None else url
             try:
                 host = urlsplit(current_url).hostname or ""
@@ -148,9 +163,9 @@ class HttpClient:
                     limit = limit.stricter(PUBLIC_LIMITS[host])
             if prepared is None and limit is None:
                 return self.session.request(method, url, **kwargs)
-            with self.rate_limiter.slot(host, limit):
+            with self.rate_limiter.slot(host, limit, cancel=self._cancel):
                 if prepared is None:
-                    response = self.session.request(method, url, allow_redirects=False, **kwargs)
+                    response = self.session.request(method, url, **(kwargs | {"allow_redirects": False}))
                 else:
                     send_kwargs = self.session.merge_environment_settings(prepared.url, {}, None, None, None)
                     response = self.session.send(
@@ -158,7 +173,8 @@ class HttpClient:
                     )
                 if limit is not None:
                     self._observe_limit(host, response, attempt)
-            following = getattr(response, "next", None) if getattr(response, "is_redirect", False) else None
+            following = (getattr(response, "next", None)
+                         if kwargs.get("allow_redirects", True) and getattr(response, "is_redirect", False) else None)
             if following is None:
                 if history:
                     response.history = history
@@ -208,7 +224,8 @@ class HttpClient:
             return redact_url(url)
 
     @staticmethod
-    def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int) -> None:
+    def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int, *,
+              cancel: threading.Event | None = None) -> None:
         """Sleep before a retry, logging any wait of LONG_WAIT_SECONDS or more."""
         if delay >= LONG_WAIT_SECONDS:
             resume_at = (datetime.now().astimezone() + timedelta(seconds=delay)).isoformat(timespec="seconds")
@@ -216,7 +233,10 @@ class HttpClient:
                 "waiting %.0fs until %s before retrying %s %s (%s, retry %d/%d)",
                 delay, resume_at, method, safe_url, reason, attempt + 1, retries,
             )
-        time.sleep(delay)
+        if cancel is None:
+            time.sleep(delay)
+        elif cancel.wait(delay):
+            raise CancelledError
 
     def _retry_reason(self, response: requests.Response) -> str:
         return f"HTTP {response.status_code}"

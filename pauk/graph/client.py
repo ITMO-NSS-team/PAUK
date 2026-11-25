@@ -720,7 +720,8 @@ class Neo4jClient:
             MATCH (p:Person)
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
-            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
+            RETURN p.id AS id, p.openalex_id AS openalex_id, p.identifiers AS identifiers,
+                   p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.other_names AS other_names,
                    p.surname_ru AS surname_ru, p.surname_en AS surname_en,
                    p.first_name_ru AS first_name_ru, p.first_name_en AS first_name_en,
