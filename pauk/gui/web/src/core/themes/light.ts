@@ -20,7 +20,7 @@ export const lightTheme = new Theme({
   },
   map: {
     background: "#f6f6f4",
-    dimNode: "rgba(74, 74, 74, 0.3)",
+    dimNode: "#878787",
     labelHalo: "#ffffff",
     edge: "rgba(60, 60, 60, 0.5)",
     edgeSelected: "rgba(30, 30, 30, 0.85)",

@@ -332,7 +332,7 @@ function applyGraphStyling(
       }
     }
 
-    if (selKey !== null && !isSelected && !isNeighborOfSelection) res.label = "";
+    if (selKey !== null && !isSelected && !isNeighborOfSelection && !isHoveredNode) res.label = "";
     return res;
   });
 

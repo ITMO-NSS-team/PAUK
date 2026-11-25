@@ -718,7 +718,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
       forceLabel: true, // selection neighbour: forced label
     });
     expect(edgeReducer(edgeA1A2, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // selection edge still visible
-    expect(nodeReducer("A4", NODE_BASE)).toMatchObject({ label: "" });
+    expect(nodeReducer("A4", NODE_BASE)).toMatchObject({ label: NODE_BASE.label });
     const a3 = nodeReducer("A3", NODE_BASE); // hover neighbour (A4) is lit too
     expect(a3).toMatchObject({ label: "" });
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });

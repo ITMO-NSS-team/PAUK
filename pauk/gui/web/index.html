@@ -82,9 +82,6 @@
         vertical-align: middle;
         flex: none;
       }
-      input[type="checkbox"]:checked {
-        border-color: var(--accent);
-      }
       input[type="checkbox"]:checked::before {
         content: "";
         display: block;
@@ -173,6 +170,9 @@
       }
       .sidebar-section-label {
         padding: 16px 16px 0;
+      }
+      .sidebar-section-label,
+      .filter-settings summary {
         color: var(--muted);
         font-size: 12px;
         font-weight: 600;
@@ -381,9 +381,7 @@
         padding-top: 10px;
       }
       .filter-settings summary {
-        color: var(--muted);
         cursor: pointer;
-        font-size: 11px;
       }
       .filter-settings[open] summary {
         margin-bottom: 12px;
@@ -839,8 +837,11 @@
         right: 0;
         top: 48px;
         width: 126px;
-        image-rendering: pixelated;
+        aspect-ratio: 21 / 19;
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
         filter: hue-rotate(235deg);
+        image-rendering: pixelated;
+        pointer-events: none;
       }
       .menu-badge {
         display: inline-flex;
@@ -892,8 +893,14 @@
         font: inherit;
         cursor: pointer;
       }
-      .menu-lang button:hover, .menu-lang button.menu-lang--active {
+      .menu-lang button:hover {
+        box-shadow: inset 0 0 0 1px var(--muted);
         background: var(--surface-2);
+        color: var(--text);
+      }
+      .menu-lang button.menu-lang--active {
+        box-shadow: inset 0 0 0 1px var(--accent);
+        background: var(--accent-soft);
         color: var(--text);
       }
       #menu :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1024,7 +1031,7 @@
     <!-- hidden only until JS runs; features/start.ts drives it. -->
     <div id="menu" hidden>
       <div class="menu-hero">
-        <img class="menu-mark" src="./src/assets/icons/pauk-frame-accent.png" alt="" />
+        <span class="menu-mark" aria-hidden="true"></span>
         <a
           class="menu-badge"
           href="https://github.com/ITMO-NSS-team/PAUK"
