@@ -233,6 +233,8 @@ function applyGraphStyling(
   store: Store<AppState>,
   pubDetails: PubDetailsByKey,
   proximitySize: (key: string) => number | undefined,
+  roots: Set<string>,
+  neighborhood: Set<string>,
 ): { setHoveredNode: (key: string | null) => void; setCameraRatio: (ratio: number) => void } {
   const graph = renderer.getGraph();
   let hoveredNode: string | null = null;
@@ -294,10 +296,11 @@ function applyGraphStyling(
       res.size = MAP_CONFIG.node.radiusSelected;
     }
 
-    if (!isSelected) res.size = proximitySize(nodeKey) ?? data.size;
+    if (roots.has(nodeKey)) res.size = MAP_CONFIG.node.radiusSelected;
+    else if (!isSelected) res.size = proximitySize(nodeKey) ?? data.size;
 
     const selKey = selectionFocusKey();
-    const isNeighborOfSelection = isNeighborOf(selKey, nodeKey);
+    const isNeighborOfSelection = neighborhood.has(nodeKey) || isNeighborOf(selKey, nodeKey);
     const isHoveredNode = hoveredNode !== null && hoveredNode === nodeKey;
     const isNeighborOfHover = isNeighborOf(hoveredNode, nodeKey);
     // Neighbours of either endpoint of the selected edge stay bright, since
@@ -307,6 +310,7 @@ function applyGraphStyling(
       (isNeighborOf(edgeEndpoints[0], nodeKey) || isNeighborOf(edgeEndpoints[1], nodeKey));
     // Global: any focus dims every other node.
     const anyFocusActive =
+      roots.size > 0 ||
       selKey !== null ||
       hoveredNode !== null ||
       selection?.kind === "edge" ||
@@ -358,12 +362,13 @@ function applyGraphStyling(
     // A selected edge also shows all other edges of its endpoints.
     const selKey = selectionFocusKey();
     const edgeEndpoints = selectionEdgeEndpoints();
-    const touchesSelection = selKey !== null && (s === selKey || t === selKey);
+    const touchesSelection = roots.has(s) || roots.has(t) || (selKey !== null && (s === selKey || t === selKey));
     const touchesEdgeSelectionEndpoint =
       edgeEndpoints !== null && (edgeEndpoints.includes(s) || edgeEndpoints.includes(t));
     const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
     // A selected department has no node whose edges could be highlighted.
     const anyFocusActive =
+      roots.size > 0 ||
       selKey !== null ||
       hoveredNode !== null ||
       edgeEndpoints !== null ||
@@ -441,7 +446,48 @@ export function mountReactiveGraph(
   proximitySize: (key: string) => number | undefined = () => undefined,
 ): () => void {
   const graph = renderer.getGraph();
-  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails, proximitySize);
+  const roots = new Set<string>();
+  const neighborhood = new Set<string>();
+  const toggle = document.getElementById("expand-toggle");
+  const clear = document.getElementById("expand-clear");
+  const count = document.getElementById("expand-count");
+  function syncExpansion(rebuild: boolean) {
+    const { selection, expandSelection, lang } = store.get();
+    if (!expandSelection || !selection) {
+      roots.clear();
+      neighborhood.clear();
+    }
+    if (rebuild) {
+      neighborhood.clear();
+      for (const key of roots) {
+        if (!graph.hasNode(key)) { roots.delete(key); continue; }
+        neighborhood.add(key);
+        graph.forEachNeighbor(key, neighbor => neighborhood.add(neighbor));
+      }
+    }
+    if (expandSelection && selection?.kind === "node" && graph.hasNode(selection.key) && !roots.has(selection.key)) {
+      if (roots.size && !neighborhood.has(selection.key)) {
+        roots.clear();
+        neighborhood.clear();
+      }
+      roots.add(selection.key);
+      neighborhood.add(selection.key);
+      graph.forEachNeighbor(selection.key, neighbor => neighborhood.add(neighbor));
+    }
+    if (toggle) {
+      toggle.textContent = lang === "ru" ? "Сохранять ветви" : "Keep branches";
+      toggle.setAttribute("aria-pressed",String(!!expandSelection));
+    }
+    if (count) count.textContent = expandSelection ? (lang === "ru" ? "Раскрыто: " : "Expanded: ") + roots.size : "";
+    if (clear) {
+      clear.hidden = !roots.size;
+      clear.textContent = lang === "ru" ? "Сбросить" : "Clear";
+    }
+  }
+  if (toggle) toggle.onclick = () => store.set({expandSelection: !store.get().expandSelection});
+  if (clear) clear.onclick = () => store.set({selection:null});
+  syncExpansion(false);
+  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails, proximitySize, roots, neighborhood);
 
   function onEnterNode({ node }: { node: string }): void {
     // In region mode the region under the cursor is highlighted instead.
@@ -468,6 +514,7 @@ export function mountReactiveGraph(
     // Tab and selection can change in one patch (global search), so both
     // checks below run.
     const { tab: prevTab, lang: prevLang, filters: prevFilters, selection: prevSelection } = prev;
+    const previousExpansion = prev.expandSelection;
     prev = state;
 
     if (state.tab !== prevTab || state.lang !== prevLang || state.filters !== prevFilters) {
@@ -479,6 +526,10 @@ export function mountReactiveGraph(
         return; // the nested notify() already handled it
       }
     }
+
+    if (prevTab !== state.tab) { roots.clear(); neighborhood.clear(); }
+    syncExpansion(state.filters !== prevFilters || state.tab !== prevTab);
+    if (state.expandSelection !== previousExpansion || roots.size) renderer.refresh();
 
     if (pubDetails.size !== detailCount) {
       detailCount = pubDetails.size;

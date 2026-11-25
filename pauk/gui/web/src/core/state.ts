@@ -26,6 +26,7 @@ export type Selection =
 export type Screen = "menu" | "app";
 
 export interface AppState {
+  expandSelection?: boolean;
   screen: Screen;
   /** Meaningful only when `screen === "app"`. */
   tab: TabId;

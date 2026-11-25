@@ -44,6 +44,25 @@ export function mountSelection(
   }
 
   function onClickStage({ event }: SigmaStageEventPayload): void {
+    if (!regionMode() && store.get().selection?.kind === "node") {
+      // Small peripheral nodes can fall between pixels in the picking buffer.
+      let nearest: string | null = null;
+      let bestDistance = 7;
+      graph.forEachNode(key => {
+        const node = renderer.getNodeDisplayData(key);
+        if (!node || node.hidden || node.size <= 0) return;
+        const point = renderer.framedGraphToViewport(node);
+        const distance = Math.hypot(point.x - event.x, point.y - event.y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          nearest = key;
+        }
+      });
+      if (nearest !== null) {
+        store.set({ selection: { kind: "node", key: nearest } });
+        return;
+      }
+    }
     selectRegionAt(event);
   }
 
