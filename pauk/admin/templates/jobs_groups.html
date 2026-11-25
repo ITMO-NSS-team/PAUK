@@ -1,0 +1,8 @@
+<div id="jobs-groups" class="row">
+          <div class="grow"><label for="group">группа</label>
+            <select id="group" name="group" required>
+              {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select></div>
+          <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
+        {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
+</div>

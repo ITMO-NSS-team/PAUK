@@ -1,15 +1,5 @@
 {% extends "base.html" %}
 
-{% macro numbers(rows) %}{% for name, value in rows %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}{% endmacro %}
-{% macro result(rows, open_upto) %}
-{%- if rows|length > open_upto %}
-<details>
-  <summary class="muted">итог: {{ rows|length }} {{ rows|length|plural("показатель", "показателя", "показателей") }}</summary>
-  <div style="margin-top:6px">{{ numbers(rows) }}</div>
-</details>
-{%- else %}{{ numbers(rows) }}{% endif %}
-{% endmacro %}
-
 {% block content %}
 <h1>Пайплайн</h1>
 
@@ -100,13 +90,8 @@
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="publish">
-          <div class="grow"><label for="group">группа</label>
-            <select id="group" name="group" required>
-              {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-            </select></div>
-          <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
+          {% include "jobs_groups.html" %}
         </form>
-        {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
       </div>
     </div>
 
@@ -204,60 +189,9 @@
 </div>
 {% endif %}
 
-{% if under_way %}
-<div class="card live">
-  <b><span class="pulse"></span>Сейчас идёт</b>
-  <table style="margin-top:12px">
-    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>последний сигнал</th><th>где сейчас</th>
-      {% if user.can_run %}<th></th>{% endif %}</tr>
-    {% for job in under_way %}
-    <tr>
-      <td><b>{{ job.kind }}</b>
-        {% if job.payload %}
-        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
-        {% endif %}
-      </td>
-      <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
-      <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
-      <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "–" }}
-        {% if job.stale %}<br><span class="kind kind-deleted">не отвечает</span>
-        {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
-      </td>
-      <td>
-        {% if job.phases %}
-        <div class="phases" aria-hidden="true">
-          {% for state in job.phases %}<span class="{{ state }}"></span>{% endfor %}
-        </div>
-        {% endif %}
-        {% if job.progress %}
-          {{ job.progress.step }}
-          {% if job.progress.total %}<br><span class="muted">этап
-            {{ job.progress.done + 1 }} из {{ job.progress.total }}</span>{% endif %}
-        {% else %}<span class="muted">–</span>{% endif %}
-      </td>
-      {% if user.can_run %}
-      <td style="width:1%">
-        {% if not job.cancel_requested %}
-        <form method="post" action="/jobs/cancel">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="job_id" value="{{ job.id }}">
-          <button type="submit" class="ghost">отменить</button>
-        </form>
-        {% endif %}
-        {% if job.stale %}
-        <form method="post" action="/jobs/give-up" style="margin-top:6px">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="job_id" value="{{ job.id }}">
-          <button type="submit" class="ghost">закрыть</button>
-        </form>
-        {% endif %}
-      </td>
-      {% endif %}
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
+<div id="jobs-fragment" data-active="{{ 'true' if has_active_jobs else 'false' }}" data-page="{{ page }}" data-groups-active="{{ groups_active }}"></div>
+<p id="jobs-refresh-status" role="status" hidden></p>
+<div id="jobs-active">{% include "jobs_active.html" %}</div>
 
 <h2 class="section-title">История</h2>
 <form method="get" class="filters" id="filters">
@@ -298,57 +232,6 @@
   {% endif %}
 </form>
 
-{% if not rows %}
-  <p class="muted">Таких задач ещё не было.
-  {% if user.can_run %}Поставьте первую задачу формой выше.
-  {% else %}Запускать пайплайн может учётная запись с ролью admin.{% endif %}</p>
-{% else %}
-<p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
-<div class="card">
-  <table>
-    <tr><th>когда</th><th>что</th><th>кто</th><th>состояние</th><th>итог</th></tr>
-    {% for job in rows %}
-    <tr>
-      <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
-      <td>{{ job.kind }}
-        {% if job.payload %}
-        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
-        {% endif %}
-      </td>
-      <td>{{ job.actor }}</td>
-      <td>{{ job.state_ru }}
-        {% if job.state in final and job.finished_at %}<br><span class="muted">{{ job.finished_at|moment }}</span>{% endif %}
-      </td>
-      <td>
-        {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
-        {% elif job.result %}{{ result(job.result, result_open_upto) }}
-        {% else %}<span class="muted">–</span>{% endif %}
-        {% if user.can_run and job.state not in final and not job.cancel_requested %}
-        <form method="post" action="/jobs/cancel" style="margin-top:6px">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="job_id" value="{{ job.id }}">
-          <button type="submit" class="ghost">отменить</button>
-        </form>
-        {% endif %}
-        {% if user.can_run and job.state in final %}
-        <form method="post" action="/jobs/repeat" style="margin-top:6px">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="job_id" value="{{ job.id }}">
-          <button type="submit" class="ghost">повторить</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-
-{% if pages > 1 %}
-<p style="margin-top:14px">
-  {% set qs = "&kind=" ~ filters.kind|urlencode ~ "&state=" ~ filters.state|urlencode ~ "&actor=" ~ filters.actor|urlencode %}
-  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
-  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
-</p>
-{% endif %}
-{% endif %}
+<div id="jobs-history">{% include "jobs_history.html" %}</div>
+<script src="/static/jobs.js" defer></script>
 {% endblock %}

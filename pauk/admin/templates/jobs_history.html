@@ -1,0 +1,63 @@
+{% macro numbers(rows) %}{% for name, value in rows %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}{% endmacro %}
+{% macro result(rows, open_upto, job_id) %}
+{%- if rows|length > open_upto %}
+<details data-job-details="{{ job_id }}">
+  <summary class="muted">итог: {{ rows|length }} {{ rows|length|plural("показатель", "показателя", "показателей") }}</summary>
+  <div style="margin-top:6px">{{ numbers(rows) }}</div>
+</details>
+{%- else %}{{ numbers(rows) }}{% endif %}
+{% endmacro %}
+
+{% if not rows %}
+  <p class="muted">Таких задач ещё не было.
+  {% if user.can_run %}Поставьте первую задачу формой выше.
+  {% else %}Запускать пайплайн может учётная запись с ролью admin.{% endif %}</p>
+{% else %}
+<p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
+<div class="card">
+  <table>
+    <tr><th>когда</th><th>что</th><th>кто</th><th>состояние</th><th>итог</th></tr>
+    {% for job in rows %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
+      <td>{{ job.kind }}
+        {% if job.payload %}
+        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
+        {% endif %}
+      </td>
+      <td>{{ job.actor }}</td>
+      <td>{{ job.state_ru }}
+        {% if job.state in final and job.finished_at %}<br><span class="muted">{{ job.finished_at|moment }}</span>{% endif %}
+      </td>
+      <td>
+        {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
+        {% elif job.result %}{{ result(job.result, result_open_upto, job.id) }}
+        {% else %}<span class="muted">–</span>{% endif %}
+        {% if user.can_run and job.state not in final and not job.cancel_requested %}
+        <form method="post" action="/jobs/cancel" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+        {% if user.can_run and job.state in final %}
+        <form method="post" action="/jobs/repeat" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">повторить</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% set qs = "&kind=" ~ filters.kind|urlencode ~ "&state=" ~ filters.state|urlencode ~ "&actor=" ~ filters.actor|urlencode %}
+  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
+  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
+</p>
+{% endif %}
+{% endif %}

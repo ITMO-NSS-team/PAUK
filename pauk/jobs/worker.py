@@ -319,9 +319,15 @@ class Worker:
             current = store.read(self.db, job.id)
             return bool(current and current.cancel_requested)
 
+        last_progress = None
+
         def report(step: str, done: int = 0, total: int = 0,
                    phase: int | None = None) -> None:
-            store.progress(self.db, job.id, step, done, total, phase)
+            nonlocal last_progress
+            current = (step, done, total, phase)
+            if current != last_progress:
+                store.progress(self.db, job.id, step, done, total, phase)
+                last_progress = current
             # Between two parts nothing is half written: the seam for a cancel.
             if stop():
                 raise Cancelled(f"остановлено перед шагом «{step}»")
