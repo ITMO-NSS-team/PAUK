@@ -20,7 +20,10 @@ IMPLEMENTS_PATH = DATA / "implements.jsonl"
 AUTHORED_PATH = DATA / "authored.jsonl"
 PERSON_DEPARTMENTS_PATH = DATA / "person_departments.jsonl"
 MENTIONS_PATH = DATA / "mentions.jsonl"
+REPO_LINKS_PATH = DATA / "repo_links.jsonl"
+GRAPH_PERSONS_GITHUB_PATH = DATA / "graph_persons_github.jsonl"
 FORK_OWNERS_PATH = DATA / "fork_owners.json"
+FORK_COMPARE_PATH = DATA / "fork_compare.json"
 FORKS_BY_REPO_PATH = DATA / "forks_by_repo.json"
 GRAPH_PROFILES_PATH = DATA / "graph_profiles.jsonl"
 GITHUB_PROFILES_PATH = DATA / "github_profiles.jsonl"
@@ -60,6 +63,16 @@ REPO_FEATURES = (
     "owner_profile_name_present",
     "owner_github_profile_fetched",
     "owner_github_repo_count",
+    "owner_github_email_count",
+    "owner_github_commit_name_count",
+    "owner_github_group_count",
+    "upstream_github_forks_count",
+    "upstream_github_pages",
+    "upstream_github_api_ok",
+    "upstream_pushed_lag_days",
+    "repo_is_itmo",
+    "repo_access_lag_days",
+    "repo_last_update_lag_days",
 )
 GRAPH_FEATURES = (
     "publication_count_to_year",
@@ -77,6 +90,14 @@ GRAPH_FEATURES = (
     "null_mention_share",
     "ambiguous_mention_count_to_year",
     "llm_confidence_mean",
+    "publication_link_count_to_year",
+    "relevant_publication_link_share",
+    "github_publication_link_share",
+    "author_github_match_share",
+    "publication_doi_share",
+    "mention_first_year",
+    "mention_last_year",
+    "mention_candidate_urls_mean",
 )
 FORK_FEATURES = (
     "fork_ahead_by_sum",
@@ -101,6 +122,17 @@ FORK_FEATURES = (
     "fork_language_diversity",
     "fork_age_days_mean",
     "fork_days_to_last_push_mean",
+    "fork_total_commits_sum",
+    "fork_commit_authors_mean",
+    "fork_compare_status_ok_count",
+    "fork_pr_open_count_sum",
+    "fork_pr_closed_unmerged_count_sum",
+    "fork_owner_bio_present_mean",
+    "fork_owner_blog_present_mean",
+    "fork_owner_email_present_mean",
+    "fork_owner_api_ok_count",
+    "fork_first_own_commit_lag_days_mean",
+    "fork_commit_recency_days_mean",
 )
 FORK_CUMULATIVE_FEATURES = (
     "forks_to_year",
@@ -134,6 +166,12 @@ MEAN_FORK_FEATURES = frozenset({
     "fork_stars_num_mean",
     "fork_age_days_mean",
     "fork_days_to_last_push_mean",
+    "fork_commit_authors_mean",
+    "fork_owner_bio_present_mean",
+    "fork_owner_blog_present_mean",
+    "fork_owner_email_present_mean",
+    "fork_first_own_commit_lag_days_mean",
+    "fork_commit_recency_days_mean",
 })
 
 
@@ -192,10 +230,11 @@ def fork_year(row: dict) -> int | None:
     return None if value is None else int(value)
 
 
-def build_publication_index(pubs: list[dict]) -> tuple[dict, dict]:
+def build_publication_index(pubs: list[dict]) -> tuple[dict, dict, dict]:
     years = {row["id"]: as_int(row.get("year")) for row in pubs}
     code = {row["id"]: as_bool(row.get("has_code")) for row in pubs}
-    return years, code
+    doi = {row["id"]: as_bool(row.get("doi")) for row in pubs}
+    return years, code, doi
 
 
 def build_repository_publications(implements: list[dict], pub_years: dict) -> dict:
@@ -217,6 +256,33 @@ def build_mentions(mentions: list[dict], pub_years: dict) -> dict:
     return result
 
 
+def build_publication_links(links: list[dict]) -> dict:
+    result = defaultdict(list)
+    for row in links:
+        result[row["publication_id"]].append(row)
+    return result
+
+
+def build_person_github(rows: list[dict]) -> set:
+    return {row["id"] for row in rows if row.get("github")}
+
+
+def build_fork_compares(rows: list[dict]) -> dict:
+    result = {}
+    for row in rows:
+        key = (
+            row.get("repo_id"),
+            as_text(row.get("fork_owner")).casefold(),
+            as_text(row.get("fork_name")).casefold(),
+        )
+        result[key] = row
+    return result
+
+
+def build_upstreams(rows: list[dict]) -> dict:
+    return {row["repo_id"]: row for row in rows}
+
+
 def graph_features(
     repo_id: str,
     year: int,
@@ -225,6 +291,9 @@ def graph_features(
     authors: dict,
     departments: dict,
     pub_code: dict,
+    pub_doi: dict,
+    pub_links: dict,
+    github_ids: set,
 ) -> dict:
     pubs = [pub_id for pub_year, pub_id in publications.get(repo_id, []) if pub_year <= year]
     pub_years = [pub_year for pub_year, pub_id in publications.get(repo_id, []) if pub_year <= year]
@@ -236,6 +305,7 @@ def graph_features(
         author_departments.update(departments.get(person_id, ()))
 
     items = [row for mention_year, row in mentions.get(repo_id, []) if mention_year <= year]
+    mention_years = [mention_year for mention_year, _ in mentions.get(repo_id, []) if mention_year <= year]
     relevant = sum(1 for row in items if row.get("is_relevant") is True)
     false_mentions = sum(1 for row in items if row.get("is_relevant") is False)
     null_mentions = sum(1 for row in items if row.get("is_relevant") is None)
@@ -245,9 +315,14 @@ def graph_features(
         if row.get("llm_reason") == AMBIGUOUS_REASON or len(row.get("candidate_urls") or []) > 1
     )
     confidences = [float(row["llm_confidence"]) for row in items if row.get("llm_confidence") is not None]
+    links = [link for pub_id in pubs for link in pub_links.get(pub_id, ())]
+    github_links = sum(1 for link in links if as_text(link.get("host")).casefold() == "github.com")
+    github_authors = sum(1 for person_id in authors_set if person_id in github_ids)
 
     first_year = min(pub_years) if pub_years else 0
     last_year = max(pub_years) if pub_years else 0
+    first_mention = min(mention_years) if mention_years else 0
+    last_mention = max(mention_years) if mention_years else 0
     return {
         "publication_count_to_year": len(pubs),
         "publication_first_year": first_year,
@@ -266,6 +341,16 @@ def graph_features(
         "null_mention_share": ratio(null_mentions, len(items)),
         "ambiguous_mention_count_to_year": ambiguous,
         "llm_confidence_mean": mean(confidences),
+        "publication_link_count_to_year": len(links),
+        "relevant_publication_link_share": ratio(
+            sum(1 for link in links if link.get("is_relevant") is True), len(links)
+        ),
+        "github_publication_link_share": ratio(github_links, len(links)),
+        "author_github_match_share": ratio(github_authors, len(authors_set)),
+        "publication_doi_share": ratio(sum(pub_doi.get(pub_id, 0) for pub_id in pubs), len(pubs)),
+        "mention_first_year": first_mention,
+        "mention_last_year": last_mention,
+        "mention_candidate_urls_mean": mean([len(row.get("candidate_urls") or []) for row in items]),
     }
 
 
@@ -282,7 +367,7 @@ def build_fork_details(rows: list[dict]) -> dict:
     return result
 
 
-def fork_aggregates(forks: list[dict], owners: dict, details: dict) -> dict:
+def fork_aggregates(forks: list[dict], owners: dict, details: dict, compares: dict) -> dict:
     result = defaultdict(lambda: defaultdict(list))
     for row in forks:
         year = fork_year(row)
@@ -300,6 +385,10 @@ def fork_aggregates(forks: list[dict], owners: dict, details: dict) -> dict:
         pulls = row.get("prs") or []
         values["fork_pr_count_sum"].append(len(pulls))
         values["fork_pr_merged_count"].append(as_bool(row.get("pr_merged")))
+        values["fork_pr_open_count_sum"].append(sum(1 for pull in pulls if pull.get("state") == "open"))
+        values["fork_pr_closed_unmerged_count_sum"].append(
+            sum(1 for pull in pulls if pull.get("state") == "closed" and not pull.get("merged_at"))
+        )
         values["fork_independent_count"].append(int(row.get("independence") in INDEPENDENT))
         values["fork_bot_count"].append(as_bool(row.get("is_bot")))
         for pull in pulls:
@@ -308,9 +397,14 @@ def fork_aggregates(forks: list[dict], owners: dict, details: dict) -> dict:
             if created is not None and merged is not None:
                 values["fork_pr_days_to_merge_mean"].append(max(0, (merged - created).days))
 
-        owner = (owners.get(as_text(row.get("fork_owner")).casefold()) or {}).get("user") or {}
+        owner_row = owners.get(as_text(row.get("fork_owner")).casefold()) or {}
+        owner = owner_row.get("user") or {}
+        values["fork_owner_api_ok_count"].append(as_int(owner_row.get("status")) == 200)
         values["fork_owner_followers_mean"].append(as_int(owner.get("followers")))
         values["fork_owner_public_repos_mean"].append(as_int(owner.get("public_repos")))
+        values["fork_owner_bio_present_mean"].append(as_bool(owner.get("bio")))
+        values["fork_owner_blog_present_mean"].append(as_bool(owner.get("blog")))
+        values["fork_owner_email_present_mean"].append(as_bool(owner.get("email")))
         age = age_days(owner.get("created_at"), year_end(year))
         if age is not None:
             values["fork_owner_account_age_days_mean"].append(age)
@@ -328,6 +422,27 @@ def fork_aggregates(forks: list[dict], owners: dict, details: dict) -> dict:
         push_lag = age_days(detail.get("pushed_at"), year_end(year))
         if push_lag is not None:
             values["fork_days_to_last_push_mean"].append(push_lag)
+
+        compare = compares.get(
+            (row["repo_id"], as_text(row.get("fork_owner")).casefold(), as_text(row.get("fork_name")).casefold()),
+            {},
+        )
+        values["fork_total_commits_sum"].append(as_int(compare.get("total_commits")))
+        commit_authors = {
+            as_text(commit.get("login")).casefold()
+            for commit in compare.get("commits") or []
+            if commit.get("login")
+        }
+        values["fork_commit_authors_mean"].append(len(commit_authors))
+        values["fork_compare_status_ok_count"].append(as_int(compare.get("status")) == 200)
+        for commit in compare.get("commits") or []:
+            commit_day = parse_day(commit.get("date"))
+            if commit_day is not None:
+                values["fork_commit_recency_days_mean"].append(age_days(commit_day, year_end(year)))
+        first_own = parse_day(row.get("first_own_commit"))
+        fork_created = parse_day(row.get("fork_created_at"))
+        if first_own is not None and fork_created is not None:
+            values["fork_first_own_commit_lag_days_mean"].append(max(0, (first_own - fork_created).days))
 
     result = {
         key: {
@@ -383,10 +498,11 @@ def target_counts(forks: list[dict]) -> dict:
     return result
 
 
-def repo_features(meta: dict, graph_profiles: dict, github_profiles: dict) -> dict:
+def repo_features(meta: dict, graph_profiles: dict, github_profiles: dict, upstreams: dict) -> dict:
     owner = as_text(meta.get("owner_login")).casefold()
     profile = graph_profiles.get(owner, {})
     github = github_profiles.get(owner, {})
+    upstream = upstreams.get(meta.get("id"), {})
     return {
         "created_at": as_text(meta.get("created_at")),
         "last_updated": as_text(meta.get("last_updated")),
@@ -408,6 +524,16 @@ def repo_features(meta: dict, graph_profiles: dict, github_profiles: dict) -> di
         "owner_profile_name_present": as_bool(profile.get("name")),
         "owner_github_profile_fetched": as_bool(github.get("profile_fetched")),
         "owner_github_repo_count": len(github.get("repos") or []),
+        "owner_github_email_count": len(github.get("emails") or []),
+        "owner_github_commit_name_count": len(github.get("commit_names") or []),
+        "owner_github_group_count": len(github.get("groups") or []),
+        "upstream_github_forks_count": as_int(upstream.get("api_forks")),
+        "upstream_github_pages": as_int(upstream.get("pages")),
+        "upstream_github_api_ok": int(as_int(upstream.get("api_status")) == 200),
+        "upstream_pushed_lag_days": as_int(age_days(upstream.get("pushed_at"), SNAPSHOT_DATE) or 0),
+        "repo_is_itmo": as_bool(meta.get("is_itmo")),
+        "repo_access_lag_days": as_int(age_days(meta.get("created_at"), SNAPSHOT_DATE) or 0),
+        "repo_last_update_lag_days": as_int(age_days(meta.get("last_updated"), SNAPSHOT_DATE) or 0),
     }
 
 
@@ -420,12 +546,15 @@ def build_rows(
     authors: list[dict],
     person_departments: list[dict],
     mentions: list[dict],
+    repo_links: list[dict],
+    graph_persons_github: list[dict],
     fork_owners: list[dict],
+    fork_compares: list[dict],
     forks_by_repo: list[dict],
     graph_profiles: list[dict],
     github_profiles: list[dict],
 ) -> list[dict]:
-    pub_years, pub_code = build_publication_index(pubs)
+    pub_years, pub_code, pub_doi = build_publication_index(pubs)
     publications = build_repository_publications(implements, pub_years)
     mention_index = build_mentions(mentions, pub_years)
     authors_by_pub = defaultdict(set)
@@ -434,15 +563,19 @@ def build_rows(
     departments_by_person = defaultdict(set)
     for row in person_departments:
         departments_by_person[row["person_id"]].add(row["department_id"])
-    owners = {
-        as_text(row.get("login")).casefold(): row
-        for row in fork_owners
-        if row.get("status") == 200
-    }
+    owners = {as_text(row.get("login")).casefold(): row for row in fork_owners}
     profiles = {as_text(row.get("login")).casefold(): row for row in graph_profiles}
     gh_profiles = {as_text(row.get("login")).casefold(): row for row in github_profiles}
+    upstreams = build_upstreams(forks_by_repo)
+    pub_links = build_publication_links(repo_links)
+    github_ids = build_person_github(graph_persons_github)
 
-    aggregates = fork_aggregates(forks, owners, build_fork_details(forks_by_repo))
+    aggregates = fork_aggregates(
+        forks,
+        owners,
+        build_fork_details(forks_by_repo),
+        build_fork_compares(fork_compares),
+    )
     yearly = cumulative_fork_counts(forks)
     targets = target_counts(forks)
     meta = {row["id"]: row for row in ownership}
@@ -459,10 +592,19 @@ def build_rows(
             "year": year,
         }
         row.update({name: as_int(item.get(name)) for name in PANEL_FEATURES})
-        row.update(repo_features(meta.get(repo_id, {}), profiles, gh_profiles))
+        row.update(repo_features(meta.get(repo_id, {}), profiles, gh_profiles, upstreams))
         row.update(
             graph_features(
-                repo_id, year, publications, mention_index, authors_by_pub, departments_by_person, pub_code
+                repo_id,
+                year,
+                publications,
+                mention_index,
+                authors_by_pub,
+                departments_by_person,
+                pub_code,
+                pub_doi,
+                pub_links,
+                github_ids,
             )
         )
         row.update(aggregates.get((repo_id, year), {}))
@@ -508,8 +650,10 @@ def write_readme(rows: list[dict]) -> None:
         "- `data/publications.jsonl`, `data/implements.jsonl`: годы публикаций и связь публикаций с репозиториями.",
         "- `data/authored.jsonl`, `data/person_departments.jsonl`: авторы публикаций и их отделы в графе.",
         "- `data/mentions.jsonl`: упоминания репозиториев в публикациях, решения классификации и уверенность.",
+        "- `data/repo_links.jsonl`, `data/graph_persons_github.jsonl`: ссылки в публикациях и совпадения авторов с GitHub.",
         "- `data/fork_owners.json`: числовые признаки аккаунтов владельцев форков.",
-        "- `data/forks_by_repo.json`: размер, звёзды, язык, даты создания и последнего push форков.",
+        "- `data/fork_compare.json`: сравнение форков с исходной веткой, коммиты и авторы коммитов.",
+        "- `data/forks_by_repo.json`: метаданные исходных репозиториев, размер, звёзды, язык, даты создания и последнего push форков.",
         "- `data/graph_profiles.jsonl`, `data/github_profiles.jsonl`: факты заполнения профиля владельца репозитория.",
         "",
         "## Идентификаторы",
@@ -528,7 +672,9 @@ def write_readme(rows: list[dict]) -> None:
         "- `created_at`, `last_updated`, `stars_num`, `forks_num`, `is_fork`, `archived`, `has_readme`, `language`, `license`, `owner_login`, `owner_type`, `implements_count`: из `repo_ownership.json`.",
         "- `contributors_count`, `cited_urls_count`, `itmo_source_count`: длины списков из `repo_ownership.json`.",
         "- `owner_profile_company_present`, `owner_profile_location_present`, `owner_profile_name_present`: факты заполнения полей профиля из `graph_profiles.jsonl`, без самих значений.",
-        "- `owner_github_profile_fetched`, `owner_github_repo_count`: факт загрузки профиля и число репозиториев из `github_profiles.jsonl`.",
+        "- `owner_github_profile_fetched`, `owner_github_repo_count`, `owner_github_email_count`, `owner_github_commit_name_count`, `owner_github_group_count`: факт загрузки профиля и длины его списков из `github_profiles.jsonl`.",
+        "- `upstream_github_forks_count`, `upstream_github_pages`, `upstream_github_api_ok`, `upstream_pushed_lag_days`: число форков, число страниц API, успешность запроса и давность последнего push из `forks_by_repo.json`.",
+        "- `repo_is_itmo`, `repo_access_lag_days`, `repo_last_update_lag_days`: признак отбора в граф, давность даты доступа из `created_at` и давность последнего обновления по дате снимка 2026-11-20.",
         "",
         "Эти поля повторяются во всех годах репозитория и взяты из локального снимка 2026-11-20.",
         "",
@@ -542,6 +688,10 @@ def write_readme(rows: list[dict]) -> None:
         "- `relevant_mention_count_to_year`, `relevant_mention_share`, `false_mention_share`, `null_mention_share`: числа и доли по `is_relevant`.",
         "- `ambiguous_mention_count_to_year`: упоминания с причиной `ambiguous_url_extraction` или с несколькими `candidate_urls`.",
         "- `llm_confidence_mean`: среднее `llm_confidence` там, где оно заполнено.",
+        "- `publication_link_count_to_year`, `relevant_publication_link_share`, `github_publication_link_share`: число ссылок в публикациях репозитория и доли релевантных ссылок и ссылок на GitHub из `repo_links.jsonl`.",
+        "- `author_github_match_share`: доля авторов публикаций репозитория с совпадением в `graph_persons_github.jsonl`.",
+        "- `publication_doi_share`: доля публикаций с заполненным `doi`.",
+        "- `mention_first_year`, `mention_last_year`, `mention_candidate_urls_mean`: границы лет упоминаний и среднее число кандидатных ссылок в упоминаниях.",
         "",
         "## Признаки GitHub по форкам года `year`",
         "",
@@ -550,6 +700,10 @@ def write_readme(rows: list[dict]) -> None:
         "- `fork_independent_count`, `fork_bot_count`: числа форков с независимым происхождением и ботов.",
         "- `fork_owner_followers_mean`, `fork_owner_public_repos_mean`, `fork_owner_account_age_days_mean`, `fork_owner_is_org_count`: средние и счётчик по аккаунтам владельцев из `fork_owners.json`, возраст считается на конец года `year`.",
         "- `fork_size_kb_mean`, `fork_stars_num_mean`, `fork_language_diversity`, `fork_age_days_mean`, `fork_days_to_last_push_mean`: размер, звёзды, число языков, возраст форка и число дней до последнего push из `forks_by_repo.json`.",
+        "- `fork_total_commits_sum`, `fork_commit_authors_mean`, `fork_compare_status_ok_count`: сумма коммитов в сравнении, среднее число авторов коммитов и число успешных сравнений из `fork_compare.json`.",
+        "- `fork_pr_open_count_sum`, `fork_pr_closed_unmerged_count_sum`: открытые PR и закрытые PR без слияния из `forks_classified.json`.",
+        "- `fork_owner_bio_present_mean`, `fork_owner_blog_present_mean`, `fork_owner_email_present_mean`, `fork_owner_api_ok_count`: заполненность полей профиля и успешность запроса аккаунта владельца из `fork_owners.json`.",
+        "- `fork_first_own_commit_lag_days_mean`, `fork_commit_recency_days_mean`: число дней от создания форка до первого собственного коммита и давность коммитов из `fork_compare.json`.",
         "",
         "Даты возраста и давности push ограничены датой локального снимка 2026-11-20.",
         "",
@@ -587,7 +741,10 @@ def main() -> None:
         load_lines(AUTHORED_PATH),
         load_lines(PERSON_DEPARTMENTS_PATH),
         load_lines(MENTIONS_PATH),
+        load_lines(REPO_LINKS_PATH),
+        load_lines(GRAPH_PERSONS_GITHUB_PATH),
         load_json(FORK_OWNERS_PATH),
+        load_json(FORK_COMPARE_PATH),
         load_json(FORKS_BY_REPO_PATH),
         load_lines(GRAPH_PROFILES_PATH),
         load_lines(GITHUB_PROFILES_PATH),
