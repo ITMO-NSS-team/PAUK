@@ -6,6 +6,8 @@ import requests
 
 from pauk.sources.base import HttpClient, HttpRequestError
 from pauk.sources.github import GitHubClient
+from pauk.sources.rate_limit import HostRateLimiter
+from tests.unit.test_rate_limit import _Clock
 
 
 class _Resp:
@@ -37,9 +39,12 @@ class _FakeSession:
         self._responses = list(responses)
         self.calls = 0
         self.headers: dict[str, str] = {}
+        self.queries: list[str] = []
 
     def request(self, method: str, url: str, **kwargs) -> _Resp:
         self.calls += 1
+        if "query" in kwargs.get("json", {}):
+            self.queries.append(kwargs["json"]["query"])
         item = self._responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -98,6 +103,8 @@ class WaitLogTest(unittest.TestCase):
     def _github(self, responses: list[_Resp]) -> GitHubClient:
         client = GitHubClient(timeout=5)
         client.session = _FakeSession(responses)
+        client.rate_limiter = HostRateLimiter()
+        self.enterContext(mock.patch.object(client.rate_limiter, "pause"))
         return client
 
     @mock.patch("pauk.sources.base.time.sleep")
@@ -196,6 +203,68 @@ class GitHubBatchTest(unittest.TestCase):
     @staticmethod
     def user():
         return {"login": "Alice", "url": "https://github.com/Alice", "__typename": "User"}
+
+    def test_graphql_primary_limit_retries_after_reset_without_pausing_rest(self):
+        reset = str(int(time.time()) + 90)
+        throttled = _Resp(200, url=self.client.GRAPHQL_URL, payload={"errors": [{"type": "RATE_LIMITED"}]},
+                          headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset})
+        ready = _Resp(200, url=self.client.GRAPHQL_URL, payload={"data": {"item0": self.user()}})
+        self.client.session = _FakeSession([throttled, ready])
+        self.client.rate_limiter = HostRateLimiter()
+        with (mock.patch("pauk.sources.base.time.sleep") as sleep,
+              mock.patch.object(self.client.rate_limiter, "pause") as pause):
+            profiles = self.client.get_users(["alice"])
+        self.assertEqual(profiles["alice"]["login"], "Alice")
+        self.assertEqual(self.client.session.calls, 2)
+        self.assertGreater(sleep.call_args.args[0], 88)
+        pause.assert_not_called()
+
+    def test_secondary_graphql_limit_pauses_rest_after_exhausted_retries_and_keeps_partial_data(self):
+        clock = _Clock()
+        limiter = HostRateLimiter(clock=clock)
+        self.client.rate_limiter = limiter
+        throttled = _Resp(200, url=self.client.GRAPHQL_URL, payload={
+            "data": {"item0": self.user()},
+            "errors": [{"type": "RATE_LIMITED", "message": "secondary rate limit"}],
+        })
+        failed = _Resp(200, url=self.client.GRAPHQL_URL, payload={
+            "data": {"item1": None},
+            "errors": [{"type": "RATE_LIMITED", "path": ["item2"]}],
+        })
+        self.client.session = _FakeSession([throttled, failed, failed, failed])
+
+        def sleep(seconds):
+            clock.now += seconds
+
+        with mock.patch("pauk.sources.base.time.sleep", side_effect=sleep) as wait:
+            result = self.client.get_users(["alice", "bob", "charlie"])
+            later = self.client.get_users(["later"])
+        self.assertEqual([call.args[0] for call in wait.call_args_list], [60., 120., 240.])
+        self.assertEqual(self.client.session.calls, 4)
+        self.assertIn("item0:", self.client.session.queries[0])
+        self.assertTrue(all("item0:" not in query and "item1:" in query for query in self.client.session.queries[1:]))
+        self.assertEqual(result["alice"]["login"], "Alice")
+        self.assertEqual(result["bob"].status_code, 429)
+        self.assertEqual(result["charlie"].status_code, 429)
+        self.assertEqual(later["later"].status_code, 429)
+
+        rest = GitHubClient(timeout=5)
+        self.addCleanup(rest.session.close)
+        rest.rate_limiter = limiter
+        rest.session = _FakeSession([_Resp(200, payload={"login": "alice"})])
+        state = limiter._hosts[self.client.API_HOST]
+        with mock.patch.object(state.condition, "wait", side_effect=clock.wait) as wait:
+            self.assertEqual(rest.get_user("alice")["login"], "alice")
+        wait.assert_called_once_with(timeout=480.)
+
+    def test_graphql_secondary_limit_uses_retry_after_for_http_200_and_403(self):
+        for status in (200, 403):
+            with self.subTest(status=status):
+                response = _Resp(status, url=self.client.GRAPHQL_URL, headers={"Retry-After": "17"},
+                                 payload={"errors": [{"type": "RATE_LIMITED"}]})
+                self.assertEqual(self.client._retry_delay(response, 2), 17.)
+        denied = _Resp(403, url=self.client.GRAPHQL_URL, payload={"message": "Resource not accessible"})
+        self.assertIsNone(self.client._retry_delay(denied, 0))
 
     def test_repository_batches_deduplicate_keys_and_keep_canonical_metadata(self):
         data = {"item" + str(i): self.repository() for i in range(25)}

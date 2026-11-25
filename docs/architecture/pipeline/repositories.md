@@ -63,9 +63,9 @@ which has its own `processing` status; the reasoning is in
 stub: the nested `owner` object in the GitHub response carries a login, a type
 and a URL, and these fill in the existing `GitHubProfile` instead of replacing
 it, which would erase addresses and names the same person left on other
-repositories. For an owner of type `organization` it additionally makes one
-`GET /users/{login}` call per organization per run, filling name, description,
-location and company, which `social_graph` reads to recognize an ITMO lab.
+repositories. Organization owners are deduplicated and fetched in batches of
+50 with a token. Their profiles help `social_graph` recognize an ITMO lab.
+Incomplete profiles are retried even if repository metadata is complete.
 
 ## Two sources of work
 

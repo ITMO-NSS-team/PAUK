@@ -7,11 +7,14 @@ from collections.abc import Iterable, Iterator
 import requests
 
 from .base import HttpClient, HttpRequestError
+from .rate_limit import RateLimit
 
 
 class GitHubClient(HttpClient):
-    API_URL = "https://api.github.com"
+    API_HOST = "api.github.com"
+    API_URL = f"https://{API_HOST}"
     GRAPHQL_URL = f"{API_URL}/graphql"
+    SECONDARY_RETRY_SECONDS = 60.0
     REPOSITORIES_PER_QUERY = 25
     USERS_PER_QUERY = 50
     REPOSITORY_TOPIC_LIMIT = 20
@@ -24,59 +27,79 @@ class GitHubClient(HttpClient):
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        super().__init__(timeout, headers)
+        super().__init__(timeout, headers, rate_limits={self.API_HOST: RateLimit()})
         self._has_token = bool(token)
         self._graphql_blocked: HttpRequestError | None = None
         self._prefetched_repositories: dict[tuple[str, str], tuple[dict, bool] | HttpRequestError] = {}
 
     @staticmethod
-    def _error_message(response: requests.Response) -> str:
+    def _error_kind(error: dict) -> str | None:
+        extensions = error.get("extensions")
+        kind = error.get("type") or (extensions.get("type") if isinstance(extensions, dict) else None)
+        message = str(error.get("message") or "").casefold()
+        if "rate limit" in message or "abuse detection" in message:
+            return "RATE_LIMITED"
+        return kind if isinstance(kind, str) else None
+
+    @staticmethod
+    def _response_payload(response: requests.Response) -> dict:
         try:
             payload = response.json()
         except ValueError:
-            return ""
-        return str(payload.get("message", "") if isinstance(payload, dict) else "").casefold()
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
-    @classmethod
-    def _rate_limit_message(cls, response: requests.Response) -> bool:
-        message = cls._error_message(response)
-        return "rate limit" in message or "abuse detection" in message
+    def _limit_kind(self, response: requests.Response) -> str | None:
+        status = response.status_code
+        if status not in (403, 429) and (status != 200 or response.url != self.GRAPHQL_URL):
+            return None
+        payload = self._response_payload(response)
+        errors = payload.get("errors")
+        graphql_errors = [error for error in errors if isinstance(error, dict)] if isinstance(errors, list) else []
+        limited = any(self._error_kind(error) == "RATE_LIMITED" for error in (payload, *graphql_errors))
+        if status == 200 and not limited:
+            return None
+        messages = (str(error.get("message") or "").casefold() for error in (payload, *graphql_errors))
+        if any("secondary rate limit" in message or "abuse detection" in message for message in messages):
+            return "secondary"
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            return "primary"
+        if limited or self._parse_retry_after(response.headers.get("Retry-After")) is not None:
+            return "secondary"
+        return None
 
     def _retry_reason(self, response: requests.Response) -> str:
-        status = f"HTTP {response.status_code}"
-        if response.status_code not in (403, 429):
-            return status
-        message = self._error_message(response)
-        if "secondary rate limit" in message or "abuse detection" in message:
-            return f"{status}, GitHub secondary rate limit"
-        if response.headers.get("X-RateLimit-Remaining") == "0":
-            return f"{status}, GitHub rate limit exhausted"
-        if response.headers.get("Retry-After") is not None:
-            return f"{status}, GitHub secondary rate limit"
-        if "rate limit" in message:
-            return f"{status}, GitHub rate limit"
-        return status
+        reason = super()._retry_reason(response)
+        match self._limit_kind(response):
+            case "primary":
+                return f"{reason}, GitHub rate limit exhausted"
+            case "secondary":
+                return f"{reason}, GitHub secondary rate limit"
+        return reason
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
-        if response.status_code not in (403, 429):
+        kind = self._limit_kind(response)
+        if kind is None:
             return super()._retry_delay(response, attempt)
-
         retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
+        if kind == "primary":
+            reset = self._positive_header(response, "X-RateLimit-Reset")
+            return max(retry_after or 0, (reset or 0) - time.time(), self._backoff_delay(attempt))
         if retry_after is not None:
             return retry_after
-
         if response.headers.get("X-RateLimit-Remaining") == "0":
-            try:
-                reset_at = float(response.headers["X-RateLimit-Reset"])
-            except (KeyError, TypeError, ValueError):
-                return self._backoff_delay(attempt)
-            return max(reset_at - time.time(), self._backoff_delay(attempt))
+            reset = self._positive_header(response, "X-RateLimit-Reset")
+            if reset is not None and reset > time.time():
+                return reset - time.time()
+        return self.SECONDARY_RETRY_SECONDS * 2**attempt
 
-        if self._rate_limit_message(response):
-            return max(60.0, self._backoff_delay(attempt))
-        if response.status_code == 429:
-            return self._backoff_delay(attempt)
-        return None
+    def _observe_limit(self, host: str, response: requests.Response, attempt: int) -> None:
+        if host != self.API_HOST:
+            super()._observe_limit(host, response, attempt)
+        elif self._limit_kind(response) == "secondary":
+            delay = self._retry_delay(response, attempt)
+            if delay is not None:
+                self.rate_limiter.pause(host, delay)
 
     def _graphql_error(self, kind: str | None) -> HttpRequestError:
         status = {"FORBIDDEN": 403, "RATE_LIMITED": 429}.get(kind)
@@ -87,14 +110,50 @@ class GitHubClient(HttpClient):
         if self._graphql_blocked is not None:
             raise self._graphql_blocked.with_traceback(None)
         selections = [f"item{i}: {field}" for i, field in enumerate(fields)]
+        body = {"query": "query { " + " ".join(selections) + " }"}
+        partial: dict[int, dict] = {}
+        rate_error = None
+
+        def remember_partial(response: requests.Response) -> None:
+            nonlocal rate_error
+            rate_error = None
+            if response.status_code != 200 or self._limit_kind(response) is None:
+                return
+            rate_error = self._graphql_error("RATE_LIMITED")
+            try:
+                nodes, _ = self._parse_graphql_nodes(self._response_payload(response), len(selections))
+            except HttpRequestError:
+                return
+            partial.update((i, node) for i, node in enumerate(nodes) if isinstance(node, dict))
+            missing = [field for i, field in enumerate(selections) if i not in partial]
+            if missing:
+                body["query"] = "query { " + " ".join(missing) + " }"
+
         try:
-            payload = self.request_json("POST", self.GRAPHQL_URL, json={"query": "query { " + " ".join(selections) + " }"})
-        except HttpRequestError as error:
-            if error.status_code in {401, 403, 429}:
-                self._graphql_blocked = error
-            raise
+            payload = self.request_json("POST", self.GRAPHQL_URL, json=body, on_response=remember_partial)
+            nodes, global_error = self._parse_graphql_nodes(payload, len(selections))
         except ValueError:
-            raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL JSON") from None
+            error = HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL JSON")
+        except HttpRequestError as exc:
+            error = exc
+        else:
+            failure = rate_error or global_error
+            if failure is not None and failure.status_code in {403, 429}:
+                self._graphql_blocked = failure
+            return [
+                node if isinstance(node, dict) else partial.get(i, rate_error if node is None else node)
+                for i, node in enumerate(nodes)
+            ]
+
+        if error.status_code in {401, 403, 429}:
+            self._graphql_blocked = error
+        if partial:
+            return [partial.get(i, error) for i in range(len(selections))]
+        raise error
+
+    def _parse_graphql_nodes(
+        self, payload: dict, size: int,
+    ) -> tuple[list[dict | HttpRequestError | None], HttpRequestError | None]:
         if not isinstance(payload, dict):
             raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL response")
         data = payload.get("data")
@@ -107,8 +166,7 @@ class GitHubClient(HttpClient):
         for error in errors:
             if not isinstance(error, dict):
                 raise HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Invalid GraphQL error")
-            extensions = error.get("extensions")
-            kind = error.get("type") or (extensions.get("type") if isinstance(extensions, dict) else None)
+            kind = self._error_kind(error)
             path = error.get("path")
             if isinstance(path, list) and path and isinstance(path[0], str):
                 if kind == "NOT_FOUND" and len(path) == 1:
@@ -120,13 +178,8 @@ class GitHubClient(HttpClient):
                 failure = self._graphql_error(kind)
                 if global_error is None or failure.status_code is not None:
                     global_error = failure
-        if global_error is not None:
-            if global_error.status_code in {403, 429}:
-                self._graphql_blocked = global_error
-            if not data:
-                raise global_error
         results: list[dict | HttpRequestError | None] = []
-        for i in range(len(selections)):
+        for i in range(size):
             alias = f"item{i}"
             node = data.get(alias)
             if alias in field_errors:
@@ -139,7 +192,7 @@ class GitHubClient(HttpClient):
                 results.append(None)
             else:
                 results.append(HttpRequestError("POST", self.GRAPHQL_URL, cause_type="Missing GraphQL result"))
-        return results
+        return results, global_error
 
     def prefetch_repositories(self, pairs: Iterable[tuple[str, str]]) -> None:
         """Fetch metadata and common README paths for repositories in scope."""

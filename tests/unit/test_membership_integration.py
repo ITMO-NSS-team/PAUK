@@ -104,7 +104,7 @@ class MembershipIntegrationTest(unittest.TestCase):
         with patch("pauk.pipeline.stages.persons.OpenAlexClient") as oa, \
                 patch("pauk.pipeline.stages.persons.OrcidClient") as oc, \
                 patch("pauk.pipeline.stages.persons.CrossrefClient"):
-            oa.return_value.get_author.return_value = author or {}
+            oa.return_value.get_author.return_value = {"id": "A1", **(author or {})}
             oc.return_value.get_record.return_value = orcid or {}
             if error:
                 oc.return_value.get_record.side_effect = error
@@ -300,7 +300,7 @@ class MembershipIntegrationTest(unittest.TestCase):
         self.prepared.write_models("persons", [person])
         graph = FakePanelGraph()
         load_prepared_rows(graph, {"persons.jsonl": [person.model_dump(mode="json")]})
-        result = self.profile_stage(orcid={})
+        result = self.profile_stage(orcid={"activities-summary": {"employments": {"affiliation-group": []}}})
         self.assertEqual(result.membership_evidence, [])
         self.assertEqual(result.name_raw, person.name_raw)
         self.assertEqual(result.email, person.email)

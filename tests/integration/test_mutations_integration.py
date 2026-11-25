@@ -341,6 +341,17 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(len(json.loads(survivor["affiliations"])), 3)
         self.assertEqual(survivor["biography"], "Profile 1")
 
+    def test_graph_person_dedup_reads_openalex_identifier_json(self):
+        from pauk.graph.dedup import dedup_graph_persons
+
+        rows = [Person(id=f"per_{i}", is_itmo=True, name_raw="Ivan Petrov", identifiers=[
+            {"scheme": "openalex", "value": f"A{i}"},
+        ]).model_dump(mode="json") for i in (1, 2)]
+        load_prepared_rows(_client, {"persons.jsonl": rows})
+        orcid = "0000-0002-1825-0097"
+        self.assertEqual(dedup_graph_persons(_client, {"A1": orcid, "A2": orcid})[0], 1)
+        self.assertEqual(len(json.loads(_client.fetch_node_properties("Person", "per_1")["identifiers"])), 2)
+
     def test_publication_fold_preserves_source_identity_and_provenance(self):
         _client.upsert_nodes_batch("Publication", [
             ("pub_1", {

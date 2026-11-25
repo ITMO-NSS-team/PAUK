@@ -26,6 +26,7 @@ import logging
 from collections.abc import Collection, Iterable
 
 from pauk.models import GitHubProfile, Person, Repository
+from pauk.redaction import redact_text, redact_url
 from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
@@ -145,7 +146,9 @@ class SocialGraphStage(EnrichmentStage):
                 payload = client.get_repository(owner, name)
             contributors = client.contributors(owner, name)
             identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
-        except Exception:
+        except Exception as exc:
+            logger.warning("social_graph: could not collect participants for %s: %s",
+                           redact_url(url), redact_text(exc) or type(exc).__name__)
             return 0
         self.raw.append("github", payload, {"repository": url})
 
@@ -194,14 +197,13 @@ class SocialGraphStage(EnrichmentStage):
         # those the repositories stage fetched and those this walk visited
         # (named on the profiles it collected). Reading only the first would
         # re-walk the same repositories on every run.
-        known_urls = {repository.url for repository in repositories}
-        visited = known_urls | {url for profile in profiles.values() for url in profile.repos}
+        visited = {repository.url for repository in repositories}
+        visited.update(url for profile in profiles.values() for url in profile.repos)
         walked = added_profiles = rings = 0
         walked_seeds: set[str] = set()
         attempted_profiles: set[str] = set()
         # The repositories are already visited even if their profile requests failed.
-        retry_profiles = (profile for profile in profiles.values()
-                          if any(url not in known_urls for url in profile.repos))
+        retry_profiles = (profile for profile in profiles.values() if profile.repos)
         if self._fetch_profiles(client, retry_profiles, attempted_profiles):
             people, profiles = self._match_candidates(profiles)
 

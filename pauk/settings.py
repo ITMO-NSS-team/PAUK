@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +18,7 @@ CROSSREF_RPS = 10
 CROSSREF_CONCURRENCY = 3
 CROSSREF_PUBLIC_RPS = 5
 CROSSREF_PUBLIC_CONCURRENCY = 1
+PERSONS_CONCURRENCY = 8
 SEMANTIC_SCHOLAR_RPS = 1
 ARXIV_RPS = 1 / 15
 
@@ -36,6 +37,9 @@ class Settings:
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
     openalex_rps: float = float(os.getenv("PAUK_OPENALEX_RPS") or OPENALEX_RPS)
     orcid_rps: float = float(os.getenv("PAUK_ORCID_RPS") or ORCID_RPS)
+    orcid_client_id: str = os.getenv("ORCID_CLIENT_ID", "")
+    orcid_client_secret: str = field(default=os.getenv("ORCID_CLIENT_SECRET", ""), repr=False)
+    persons_concurrency: int = int(os.getenv("PAUK_PERSONS_CONCURRENCY") or PERSONS_CONCURRENCY)
     crossref_rps: float = float(os.getenv("PAUK_CROSSREF_RPS") or CROSSREF_RPS)
     crossref_concurrency: int = int(os.getenv("PAUK_CROSSREF_CONCURRENCY") or CROSSREF_CONCURRENCY)
     crossref_mailto: str = os.getenv("CROSSREF_MAILTO", "")
@@ -87,6 +91,10 @@ class Settings:
     # Official ITMO staff records (personal data, never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.persons_concurrency, bool) or not isinstance(self.persons_concurrency, int) or self.persons_concurrency < 1:
+            raise ValueError("persons_concurrency must be a positive integer")
 
     def provider_for(self, stage: str) -> str:
         """LLM provider for a stage: its own setting, else PAUK_LLM_PROVIDER; dedup only by its own.

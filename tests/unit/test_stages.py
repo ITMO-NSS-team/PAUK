@@ -1199,7 +1199,9 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = []
         github_client.return_value.commits.return_value = []
-        github_client.return_value.get_user.return_value = user_payload or {}
+        github_client.return_value.get_users.side_effect = lambda logins: {
+            login: user_payload or {} for login in logins
+        }
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         prepared.write_models("repo_links", [
@@ -1227,15 +1229,57 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
     def test_the_organization_is_fetched_once_however_many_repositories(self, github_client):
         client, _ = self.run_stage(github_client, "Organization", repos=3,
                                    user_payload={"name": "Some Lab"})
-        self.assertEqual(client.get_user.call_count, 1)
+        client.get_users.assert_called_once()
+        self.assertEqual(list(client.get_users.call_args.args[0]), ["some-lab"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_organization_batch_retries_only_the_unfilled_owner(self, github_client):
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared, raw = PreparedStore(db, "sample"), RawStore(db, "sample")
+        owners = ["first-lab", "second-lab", "first-lab"]
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id=f"W{i}", links=[CodeLink(url=f"https://github.com/{owner}/tool{i}")])
+            for i, owner in enumerate(owners)
+        ])
+        client = github_client.return_value
+        client.get_repository.side_effect = [
+            {"html_url": f"https://github.com/{owner}/tool{i}", "name": f"tool{i}", "id": i + 1,
+             "owner": {"login": owner, "type": "Organization"}}
+            for i, owner in enumerate(owners)
+        ]
+        client.has_readme.return_value = True
+        failure = HttpRequestError("POST", "https://api.github.com/graphql", status_code=502)
+        requested = []
+
+        def profiles(logins):
+            requested.append(list(logins))
+            return ({"first-lab": {"name": "First Lab"}, "second-lab": failure}
+                    if len(requested) == 1 else {"second-lab": {"name": "Second Lab"}})
+
+        client.get_users.side_effect = profiles
+        stage = RepositoriesStage(prepared, raw)
+        with self.assertLogs("pauk.pipeline.stages.repositories", level="WARNING"):
+            stage.run()
+        before = {row.login: row for row in prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(before["first-lab"].profile_fetched)
+        self.assertFalse(before["second-lab"].profile_fetched)
+
+        stage.run()
+
+        self.assertEqual(requested, [["first-lab", "second-lab"], ["second-lab"]])
+        self.assertEqual(client.get_repository.call_count, 3)
+        after = {row.login: row for row in prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(after["second-lab"].profile_fetched)
+        self.assertEqual(after["second-lab"].name, "Second Lab")
+        self.assertEqual(len(list(raw.read("github_user"))), 2)
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
         # Only organizations are fetched here. A user owning the repository is
         # a contributor candidate, and RepoPeopleStage fetches them with
-        # everyone else - this stage does not call get_user for them at all.
+        # everyone else.
         client, _ = self.run_stage(github_client, "User")
-        self.assertEqual([call.args for call in client.get_user.call_args_list], [])
+        client.get_users.assert_not_called()
 
 
 class OwnerProfileIsFetchedTest(unittest.TestCase):

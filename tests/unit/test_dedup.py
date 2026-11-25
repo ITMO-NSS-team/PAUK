@@ -980,14 +980,29 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_raw_orcids_veto_graph_merges_too(self):
         client = RecordingNeo4jClient()
+        orcid = "0000-0002-1825-0097"
         self.load_new_group(client, "q1", [publication("W1", "Paper one")],
-                            [person("X1", "Julia Borisova", ["W1"])])
+                            [person("A1", "Julia Borisova", ["W1"], orcid=orcid)])
         self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
-                            [person("Y1", "Julia Borisova", ["W2"])])
-        removed, _report = dedup_graph_persons(client, {"X1": "0000-0002-1825-0097", "Y1": "0000-0001-5109-3700"})
+                            [person("A2", "Julia Borisova", ["W2"], orcid=orcid)])
+        removed, _report = dedup_graph_persons(client, {"A1": orcid, "A2": "0000-0001-5109-3700"})
         self.assertEqual(removed, 0)
-        self.assertIn("X1", client.nodes["Person"])
-        self.assertIn("Y1", client.nodes["Person"])
+        self.assertIn("A1", client.nodes["Person"])
+        self.assertIn("A2", client.nodes["Person"])
+
+    def test_graph_dedup_decodes_openalex_identifiers_from_published_people(self):
+        client = RecordingNeo4jClient()
+        people = [
+            Person(id=f"per_{i}", name_raw="Julia Borisova", is_itmo=True, identifiers=[
+                {"scheme": "openalex", "value": f"A{i}"},
+            ]) for i in (1, 2)
+        ]
+        self.load_new_group(client, "q1", [], people[:1])
+        self.load_new_group(client, "q2", [], people[1:])
+        orcid = "0000-0002-1825-0097"
+        removed, report = dedup_graph_persons(client, {"A1": orcid, "A2": orcid})
+        self.assertEqual(removed, 1)
+        self.assertEqual(report[0]["rules"], ["orcid"])
 
     def test_cross_group_publication_records_fold_in_graph(self):
         client = RecordingNeo4jClient()

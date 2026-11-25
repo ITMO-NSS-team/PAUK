@@ -4,7 +4,7 @@ import os
 import threading
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from unittest import mock
@@ -113,6 +113,30 @@ class HttpRateLimitTest(unittest.TestCase):
         client.get_record("one")
         client.get_record("two")
         self.assertAlmostEqual(starts[1] - starts[0], 1 / 6)
+
+    def test_cancellation_interrupts_host_admission(self):
+        stop = threading.Event()
+        client = self.attach(OpenAlexClient(5, "key", cancel=stop), lambda _: (200, {}, {}))
+        client.get_author("A1")
+        self.clock.before_wait = stop.set
+        with self.assertRaises(CancelledError):
+            client.get_author("A2")
+
+    def test_cancellation_interrupts_retry_waits(self):
+        stop = threading.Event()
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            stop.set()
+            return 503, {"Retry-After": "300"}, {}
+
+        client = self.attach(OrcidClient(5, cancel=stop), handler)
+        before = self.clock()
+        with self.assertRaises(CancelledError):
+            client.get_record("one")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(self.clock(), before)
 
     def test_crossref_contact_is_sent_and_public_fallback_is_conservative(self):
         seen = []

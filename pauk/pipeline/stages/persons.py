@@ -1,7 +1,16 @@
 import re
+import threading
+from collections.abc import Callable, Iterator
+from concurrent.futures import FIRST_COMPLETED, CancelledError, ThreadPoolExecutor, wait
+from contextlib import closing
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import batched
+from time import monotonic
+from typing import Self
 
 from pauk.models import Affiliation, Person, Publication
+from pauk.models.identity import verified_orcid
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.membership import (
     apply_membership,
@@ -12,10 +21,14 @@ from pauk.pipeline.membership import (
 )
 from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
+from pauk.sources.base import HttpRequestError
 from pauk.sources.crossref import CrossrefClient
-from pauk.sources.orcid import OrcidClient
+from pauk.sources.openalex import AUTHOR_BATCH_SIZE, normalize_author_id
+from pauk.sources.orcid import OrcidAuthenticationError, OrcidClient
 
 from .base import EnrichmentStage
+
+PERSONS_POLL_SECONDS = 0.1
 
 
 def _openalex_affiliations(payload: dict) -> list[Affiliation]:
@@ -97,27 +110,37 @@ def _orcid_profiles(record: dict) -> dict[str, str]:
     return found
 
 
-def _orcid_other_names(record: dict, known: list[str]) -> list[str]:
+def _orcid_other_names(record: dict) -> set[str]:
     """Every alternative spelling ORCID holds for the author."""
     person = record.get("person") or {}
     name = person.get("name") or {}
     found = {(name.get("credit-name") or {}).get("value")}
     found |= {entry.get("content")
               for entry in (person.get("other-names") or {}).get("other-name", [])}
-    return sorted({value.strip() for value in {*known, *found} if value and value.strip()})
+    return {value.strip() for value in found if value and value.strip()}
 
 
-def _orcid_affiliations(record: dict) -> list[Affiliation]:
-    """Employments the author listed on their own ORCID profile."""
-    employments = ((record.get("activities-summary") or {}).get("employments") or {})
+def _orcid_affiliations(record: dict) -> list[Affiliation] | None:
+    """Return listed employments, or None when the response omits them."""
+    activities = record.get("activities-summary")
+    if activities is not None and not isinstance(activities, dict):
+        raise ValueError("Invalid ORCID activities summary")
+    employments = (activities or {}).get("employments")
+    if employments is None:
+        return None
+    if not isinstance(employments, dict) or not isinstance(employments.get("affiliation-group"), list):
+        raise ValueError("Invalid ORCID employments")
     affiliations = []
-    for group in employments.get("affiliation-group") or []:
-        for summary in group.get("summaries") or []:
+    for group in employments["affiliation-group"]:
+        summaries = group.get("summaries")
+        if not isinstance(summaries, list) or not summaries:
+            raise ValueError("Invalid ORCID employment group")
+        for summary in summaries:
             employment = summary.get("employment-summary") or {}
             organization = employment.get("organization") or {}
             name = organization.get("name")
-            if not name:
-                continue
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Missing ORCID employer name")
             disambiguated = organization.get("disambiguated-organization") or {}
             ror = None
             if (disambiguated.get("disambiguation-source") or "").upper() == "ROR":
@@ -165,6 +188,71 @@ def _affiliation_for_year(affiliations: list[Affiliation], year: int | None) -> 
     if dated:
         return max(dated, key=lambda a: max(a.years))
     return affiliations[0]
+
+
+@dataclass
+class _OpenAlexProfile:
+    name: str | None
+    variants: list[str]
+    orcid: str | None
+    affiliations: list[Affiliation]
+
+    @classmethod
+    def parse(cls, payload: dict) -> Self:
+        normalize_author_id(payload.get("id"))
+        name = payload.get("display_name")
+        variants = payload.get("display_name_alternatives", [])
+        if variants is None:
+            variants = []
+        if (name is not None and not isinstance(name, str)
+                or not isinstance(variants, list) or any(not isinstance(value, str) for value in variants)):
+            raise ValueError("Invalid OpenAlex author name fields")
+        orcid = payload.get("orcid")
+        if orcid is not None and not isinstance(orcid, str):
+            raise ValueError("Invalid OpenAlex author ORCID")
+        return cls(name, variants, verified_orcid(orcid), _openalex_affiliations(payload))
+
+    def apply(self, person: Person) -> None:
+        person.name_raw = self.name or person.name_raw
+        person.name_variants = list(dict.fromkeys([*person.name_variants, *self.variants]))
+        person.orcid = person.orcid or self.orcid
+        extend_owner_sources(person, orcid_source_owner(person, person.orcid or ""), orcid_id=person.orcid)
+        person.affiliations = _merge_affiliations(person.affiliations, self.affiliations)
+
+
+@dataclass
+class _OrcidProfile:
+    emails: list[str]
+    names: set[str]
+    profiles: dict[str, str]
+    affiliations: list[Affiliation] | None
+
+    @classmethod
+    def parse(cls, payload: dict) -> Self:
+        person = payload.get("person")
+        activities = payload.get("activities-summary")
+        if not isinstance(person, dict) and not isinstance(activities, dict):
+            raise ValueError("Invalid ORCID record")
+        if person is not None and not isinstance(person, dict):
+            raise ValueError("Invalid ORCID person section")
+        emails = ((person or {}).get("emails") or {}).get("email") or []
+        stated = [item["email"].strip().lower() for item in emails if item.get("email")]
+        return cls(stated, _orcid_other_names(payload), _orcid_profiles(payload), _orcid_affiliations(payload))
+
+    def apply(self, person: Person, key: str, observed_at: datetime | None) -> None:
+        person.emails = sorted(set(person.emails) | set(self.emails))
+        if not person.email and self.emails:
+            person.email = self.emails[0]
+        person.other_names = sorted(self.names | {name.strip() for name in person.other_names if name.strip()})
+        for field, url in self.profiles.items():
+            value = _github_login(url) if field == "github" else url
+            if value and not getattr(person, field):
+                setattr(person, field, value)
+            if (field == "github" and value and person.github_match
+                    and person.github and value.casefold() == person.github.casefold()):
+                person.github_match.github = None
+        if self.affiliations is not None:
+            refresh_orcid_membership(person, self.affiliations, orcid_source_owner(person, key), key, observed_at=observed_at)
 
 
 class PersonsStage(EnrichmentStage):
@@ -218,6 +306,167 @@ class PersonsStage(EnrichmentStage):
     def _save_person(self, person: Person) -> None:
         self.prepared.upsert_models("persons", [person])
 
+    def _complete_source(self, person: Person, source: str, key: str, publications: dict[str, Publication], *,
+                         profile: _OpenAlexProfile | _OrcidProfile | None = None, observed_at: datetime | None = None,
+                         error: Exception | None = None) -> None:
+        state = person.processing.get(source)
+        if error is None and profile is not None:
+            try:
+                if isinstance(profile, _OpenAlexProfile):
+                    profile.apply(person)
+                else:
+                    profile.apply(person, key, observed_at)
+            except Exception as exc:
+                error = exc
+        status = (ProcessingStatus.FAILED if error is not None else
+                  ProcessingStatus.COMPLETED if key else ProcessingStatus.NOT_APPLICABLE)
+        person.processing[source] = ProcessingState(
+            status=status, request_key=key, attempts=self._next_attempt(state), finished_at=datetime.now(UTC),
+            result_count=0 if status == ProcessingStatus.NOT_APPLICABLE else None,
+            error=redact_text(error) if error is not None else None,
+        )
+        apply_membership(person)
+        self._fill_missing_affiliations(person, publications)
+        self._save_person(person)
+
+    def _requests(self, source: str, jobs: list[tuple[str, ...]], heartbeat: Callable[[], None]
+                  ) -> Iterator[tuple[tuple[str, ...], dict[str, dict] | None, Exception | None]]:
+        """Keep a bounded request window; sessions belong to individual workers."""
+        if not jobs:
+            return
+        stop = threading.Event()
+        local = threading.local()
+        clients = []
+        lock = threading.Lock()
+
+        def client():
+            if stop.is_set():
+                raise CancelledError
+            if not hasattr(local, "client"):
+                if source == self.openalex_name:
+                    local.client = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key,
+                                                  requests_per_second=self.config.openalex_rps, cancel=stop)
+                else:
+                    local.client = OrcidClient(self.config.request_timeout, self.config.orcid_client_id,
+                                               self.config.orcid_client_secret,
+                                               requests_per_second=self.config.orcid_rps, cancel=stop)
+                with lock:
+                    clients.append(local.client)
+            return local.client
+
+        def fetch(keys):
+            request = client()
+            if source == self.openalex_name:
+                return request.get_authors(keys) if len(keys) > 1 else {keys[0]: request.get_author(keys[0])}
+            return {keys[0]: request.get_record(keys[0])}
+
+        def prepare():
+            request = client()
+            if source == self.orcid_name:
+                request.authorize()
+
+        pool = ThreadPoolExecutor(max_workers=self.config.persons_concurrency, thread_name_prefix="pauk-persons")
+        pending = {}
+        remaining = iter(jobs)
+
+        def submit():
+            if (keys := next(remaining, None)) is not None:
+                pending[pool.submit(fetch, keys)] = keys
+
+        try:
+            startup = pool.submit(prepare)
+            while not startup.done():
+                heartbeat()
+                wait((startup,), timeout=PERSONS_POLL_SECONDS)
+            startup.result()
+            for _ in range(min(self.config.persons_concurrency, len(jobs))):
+                submit()
+            while pending:
+                heartbeat()
+                ready, _ = wait(pending, timeout=PERSONS_POLL_SECONDS, return_when=FIRST_COMPLETED)
+                for future in ready:
+                    keys = pending.pop(future)
+                    try:
+                        records = future.result()
+                    except (CancelledError, OrcidAuthenticationError):
+                        raise
+                    except Exception as error:
+                        records, failure = None, error
+                    else:
+                        failure = None
+                    submit()
+                    yield keys, records, failure
+        finally:
+            stop.set()
+            pool.shutdown(wait=True, cancel_futures=True)
+            for request in clients:
+                request.close()
+
+    def _enrich_source(self, source: str, people: list[Person], publications: dict[str, Publication]) -> int:
+        openalex = source == self.openalex_name
+        raw_source, request_key = ("openalex_authors", "author_id") if openalex else ("orcid", "orcid")
+        candidates = []
+        for person in people:
+            try:
+                key = (person.openalex_author_id() if openalex else person.orcid) or ""
+            except ValueError as error:
+                candidates.append((person, "", error))
+            else:
+                if self._needs_source(person.processing.get(source), key):
+                    candidates.append((person, key, None))
+        groups: dict[str, list[Person]] = {}
+        done, reported = 0, 0.0
+        label = "Authors: OpenAlex" if openalex else "Authors: ORCID"
+
+        def heartbeat():
+            nonlocal reported
+            if self.on_progress is not None and monotonic() - reported >= self.REPORT_SECONDS:
+                reported = monotonic()
+                self.on_progress(label, done, len(candidates))
+
+        with self.progress_bar(total=len(candidates), label=label, unit="author") as bar:
+            def complete(person, key, **kwargs):
+                nonlocal done
+                self._complete_source(person, source, key, publications, **kwargs)
+                done += 1
+                bar.update()
+                heartbeat()
+
+            for person, key, error in candidates:
+                if not key:
+                    complete(person, key, error=error)
+                else:
+                    groups.setdefault(key, []).append(person)
+            size = AUTHOR_BATCH_SIZE if openalex else 1
+            jobs = list(batched(groups, size))
+            while jobs:
+                fallbacks = []
+                with closing(self._requests(source, jobs, heartbeat)) as responses:
+                    for keys, records, error in responses:
+                        if len(keys) > 1 and isinstance(error, HttpRequestError) and error.status_code == 400:
+                            fallbacks.extend((key,) for key in keys)
+                            continue
+                        for key in keys:
+                            if len(keys) > 1 and records is not None and key not in records:
+                                fallbacks.append((key,))
+                                continue
+                            observed_at = None
+                            profile = None
+                            payload = records.get(key) if records is not None else None
+                            failure = error
+                            if failure is None:
+                                try:
+                                    if not isinstance(payload, dict):
+                                        raise ValueError("Invalid author record response")
+                                    profile = (_OpenAlexProfile if openalex else _OrcidProfile).parse(payload)
+                                    observed_at = self.raw.append(raw_source, payload, {request_key: key})
+                                except Exception as exc:
+                                    failure = exc
+                            for person in groups[key]:
+                                complete(person, key, profile=profile, observed_at=observed_at, error=failure)
+                jobs = fallbacks
+        return done
+
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
         publications = {row.id: row for row in self.prepared.read_models("publications", Publication)}
@@ -269,74 +518,9 @@ class PersonsStage(EnrichmentStage):
             self.prepared.upsert_models("persons", authors)
             crossref_changed += 1
 
-        changed = 0
-        openalex = OpenAlexClient(self.config.request_timeout, self.config.openalex_api_key,
-                                 requests_per_second=self.config.openalex_rps)
-        orcid = OrcidClient(self.config.request_timeout, requests_per_second=self.config.orcid_rps)
-        for person in self.progress(eligible_people, total=len(eligible_people), label="Authors: OpenAlex and ORCID"):
-            for source, request in ((self.openalex_name, openalex), (self.orcid_name, orcid)):
-                # OpenAlex can supply an ORCID, so calculate the second key
-                # after the first source has completed rather than up front.
-                key = person.openalex_id or "" if source == self.openalex_name else person.orcid or ""
-                state = person.processing.get(source)
-                if not self._needs_source(state, key):
-                    continue
-                if not key:
-                    person.processing[source] = ProcessingState(status=ProcessingStatus.NOT_APPLICABLE, request_key="",
-                        attempts=self._next_attempt(state), finished_at=datetime.now(UTC), result_count=0)
-                else:
-                    try:
-                        if source == self.openalex_name:
-                            payload = request.get_author(key)
-                            self.raw.append("openalex_authors", payload, {"author_id": key})
-                            person.name_raw = payload.get("display_name") or person.name_raw
-                            person.name_variants = list(dict.fromkeys([*person.name_variants,
-                                                                       *(payload.get("display_name_alternatives") or [])]))
-                            person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
-                            extend_owner_sources(person, orcid_source_owner(person, person.orcid or ""),
-                                                 orcid_id=person.orcid)
-                            person.affiliations = _merge_affiliations(person.affiliations, _openalex_affiliations(payload))
-                        else:
-                            payload = request.get_record(key)
-                            observed_at = self.raw.append("orcid", payload, {"orcid": key})
-                            emails = (((payload.get("person") or {}).get("emails") or {}).get("email") or [])
-                            # Every address ORCID lists is kept: a third of the
-                            # people who list any list more than one, and the
-                            # matcher recognises an account by whichever it used.
-                            stated = [item["email"].strip().lower() for item in emails if item.get("email")]
-                            person.emails = sorted(set(person.emails) | set(stated))
-                            if not person.email and stated:
-                                person.email = stated[0]
-                            # Names the author publishes under besides the one
-                            # ORCID shows: a credit name they prefer, and the
-                            # spellings they registered themselves. A commit
-                            # signed "Dangana, RS" is only recognisable through
-                            # these.
-                            person.other_names = _orcid_other_names(payload, person.other_names)
-                            for field, url in _orcid_profiles(payload).items():
-                                value = _github_login(url) if field == "github" else url
-                                if value and not getattr(person, field):
-                                    setattr(person, field, value)
-                                if (field == "github" and value and person.github_match
-                                        and person.github and value.casefold() == person.github.casefold()):
-                                    # ORCID now confirms this independently of account matching.
-                                    person.github_match.github = None
-                            refresh_orcid_membership(
-                                person, _orcid_affiliations(payload), orcid_source_owner(person, key), key,
-                                observed_at=observed_at,
-                            )
-                        person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
-                            attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
-                    except Exception as exc:
-                        person.processing[source] = ProcessingState(status=ProcessingStatus.FAILED, request_key=key,
-                            attempts=self._next_attempt(state), finished_at=datetime.now(UTC), error=redact_text(exc))
-                apply_membership(person)
-                self._fill_missing_affiliations(person, publications)
-                self._save_person(person)
-                changed += 1
-
-            # Completed source requests must not skip a newer membership policy.
+        changed = self._enrich_source(self.openalex_name, eligible_people, publications)
+        changed += self._enrich_source(self.orcid_name, eligible_people, publications)
+        for person in self.progress(eligible_people, total=len(eligible_people), label="Authors: refreshing membership"):
             apply_membership(person)
             self._save_person(person)
-
         return {"persons": changed, "crossref": crossref_changed}

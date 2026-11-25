@@ -25,6 +25,8 @@ reserved URI characters must be percent-encoded there. Root credentials
 remain the original values passed to the Mongo image. The server
 account uses `sudo docker`; locally use whichever Docker access is configured.
 
+For registered ORCID access, set both `ORCID_CLIENT_ID` and `ORCID_CLIENT_SECRET`.
+
 The worker accepts the model, person resolution, concurrency and request
 timeout settings listed in `.env.example`. `PAUK_PERSON_RESOLUTION_ENABLED=false`
 disables person resolution. The logreg model path is inside the container;

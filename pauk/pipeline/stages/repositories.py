@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
 
+logger = logging.getLogger(__name__)
 GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 def _payload_date(value: str | None) -> date | None:
@@ -87,16 +89,14 @@ class RepositoriesStage(EnrichmentStage):
     def _enrich_repository(self, client: GitHubClient, repo: Repository, owner: str,
                            name: str, source_url: str, profiles: dict[str, GitHubProfile],
                            state: ProcessingState | None,
-                           fetched_orgs: set[str]) -> tuple[str, str | None]:
+                           pending_orgs: set[str]) -> tuple[str, str | None]:
         """One repository's metadata, README status and owner profile stub.
 
         The people behind it are collected by repo_people.py.
 
         `source_url` is the URL the repository was reached by (the cited one
         when a publication led here). It is what the raw store records and the
-        fallback when the payload carries no html_url. `fetched_orgs` is the
-        run's set of organizations already looked up, keeping the owner-profile
-        call to one per organization.
+        fallback when the payload carries no html_url.
         """
         fetched = False
         try:
@@ -138,23 +138,8 @@ class RepositoriesStage(EnrichmentStage):
                 # serves explicit nulls, which .get(key, "") passes on.
                 known.html_url = owner_data.get("html_url") or known.html_url
                 known.type = (owner_data.get("type") or "").lower() or known.type
-                # The people stage skips organizations, so the stub above would be
-                # all their profile gets, leaving social_graph nothing to
-                # recognise an ITMO lab by. One call per organization fills it.
-                if known.type == "organization" and profile_id not in fetched_orgs:
-                    fetched_orgs.add(profile_id)
-                    try:
-                        org = client.get_user(repo.owner_login)
-                    except Exception:
-                        org = {}
-                    self.raw.append("github_user", org, {"login": repo.owner_login})
-                    known.profile_fetched = known.profile_fetched or bool(org)
-                    # Organizations carry `description`; users carry `bio`.
-                    known.name = org.get("name") or known.name
-                    known.description = (org.get("description") or org.get("bio")
-                                         or known.description)
-                    known.location = org.get("location") or known.location
-                    known.company = org.get("company") or known.company
+                if known.type == "organization":
+                    pending_orgs.add(profile_id)
             repo.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED,
                 attempts=(state.attempts if state else 0) + 1,
@@ -174,6 +159,32 @@ class RepositoriesStage(EnrichmentStage):
                 return "available", None
             status = "not_found" if isinstance(exc, HttpRequestError) and exc.status_code == 404 else "failed"
             return status, redact_text(exc)
+
+    @staticmethod
+    def _queue_unfilled_organization(repo: Repository, profiles: dict[str, GitHubProfile],
+                                     pending_orgs: set[str]) -> None:
+        if repo.owner_login:
+            profile_id = f"github_{repo.owner_login.lower()}"
+            profile = profiles.get(profile_id)
+            if profile and (profile.type or "").casefold() == "organization" and not profile.profile_fetched:
+                pending_orgs.add(profile_id)
+
+    def _refresh_organizations(self, client: GitHubClient, profiles: dict[str, GitHubProfile],
+                               pending_orgs: set[str]) -> None:
+        pending = {profiles[key].login.lower(): profiles[key] for key in sorted(pending_orgs)}
+        if not pending:
+            return
+        for login, org in client.get_users(pending).items():
+            profile = pending[login]
+            if isinstance(org, HttpRequestError):
+                logger.warning("repositories: could not fetch GitHub organization %s: %s", login, org)
+                continue
+            self.raw.append("github_user", org, {"login": profile.login})
+            profile.name = org.get("name") or profile.name
+            profile.description = org.get("description") or org.get("bio") or profile.description
+            profile.location = org.get("location") or profile.location
+            profile.company = org.get("company") or profile.company
+            profile.profile_fetched = True
 
     def _pending_repository_urls(
         self, rows: list[RepoLink], repositories: dict[str, Repository],
@@ -260,9 +271,11 @@ class RepositoriesStage(EnrichmentStage):
         # link pass would key the same row under its new URL, miss it in
         # `attempted_repo_ids` and fetch it a second time.
         unlinked = self._unlinked_repositories(repositories)
-        # Organizations fetched this run, shared across both passes so the
-        # extra call happens once per organization and not once per repository.
-        fetched_orgs: set[str] = set()
+        pending_orgs: set[str] = set()
+        if self.selection is None or self.selection.entity == "repositories":
+            for repo in repositories.values():
+                if self.in_scope("repositories", repo.id):
+                    self._queue_unfilled_organization(repo, profiles, pending_orgs)
         selected_repository_ids = (
             self.selection.ids
             if self.selection is not None and self.selection.entity == "repositories"
@@ -323,6 +336,7 @@ class RepositoriesStage(EnrichmentStage):
                         repo.cited_urls.append(url)
                     state = repo.processing.get(self.name)
                     if not self.needs_attempt(state):
+                        self._queue_unfilled_organization(repo, profiles, pending_orgs)
                         if state.status == ProcessingStatus.COMPLETED:
                             availability[repo_id] = ("available", None)
                         continue
@@ -349,7 +363,7 @@ class RepositoriesStage(EnrichmentStage):
                 # that, so claim it here, before the fetch rewrites it.
                 attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
                 availability[repo_id] = self._enrich_repository(
-                    client, repo, owner, name, url, profiles, state, fetched_orgs,
+                    client, repo, owner, name, url, profiles, state, pending_orgs,
                 )
                 progress.update()
                 changed += 1
@@ -365,10 +379,11 @@ class RepositoriesStage(EnrichmentStage):
             owner, name = _github_owner_name(repo.url)
             self._enrich_repository(client, repo, owner, name, repo.url,
                                     profiles, repo.processing.get(self.name),
-                                    fetched_orgs)
+                                    pending_orgs)
             progress.update()
             changed += 1
         progress.close()
+        self._refresh_organizations(client, profiles, pending_orgs)
         updated_rows = []
         for row in rows:
             if not self._row_in_scope(row):

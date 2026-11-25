@@ -26,6 +26,7 @@ which runs a local CLI, inherit from `base.py::HttpClient`.
   long, until when, the redacted request and the reason. Shorter waits stay
   silent. `OpenRouterClient` has its own retry loop and logs its waits the
   same way.
+- The optional `cancel` event interrupts waits for retries or host limits.
 - `retries` is a parameter so a caller can tune how aggressive retrying is.
   For example, the crawler health check in `code_links.py` runs with
   `retries=0`, so a dead service does not delay the whole run.
@@ -90,22 +91,27 @@ Settings:
 | `PAUK_CROSSREF_RPS` | `10` | Crossref requests/s; capped at 5 without a contact |
 | `PAUK_CROSSREF_CONCURRENCY` | `3` | Crossref requests in flight; one without a contact |
 | `CROSSREF_MAILTO` | empty | Contact email for Crossref polite-pool access |
+| `ORCID_CLIENT_ID` / `ORCID_CLIENT_SECRET` | empty | Set both for registered Public API access, leave both empty for anonymous reads |
 | `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
 | `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Optional Semantic Scholar pace override: lower it or match a higher quota assigned to the key |
 
-## GitHub GraphQL
+## GitHub limits
 
-A failed batch can be retried on the next run. Request-wide authentication and
-rate limit errors stop subsequent GraphQL requests from the same client.
+GitHub can report GraphQL throttling in an HTTP 200 response. Both APIs reuse
+the HTTP retry budget. An exhausted primary quota waits for `X-RateLimit-Reset`
+on that API. Secondary throttling pauses REST and GraphQL in the process. It
+uses `Retry-After`, the reset time if the quota is exhausted, or exponential
+backoff starting at one minute. Successful entries from a partial GraphQL
+response survive failed retries.
 
 ## Clients
 
 | File | Class | What it provides |
 |---|---|---|
-| `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author` |
-| `github.py` | `GitHubClient` | `prefetch_repositories` and `get_users` use GraphQL with a token. Single-repository, README, contributor, commit and profile endpoints are available over REST. For HTTP `403` or `429` rate limits, retries use `Retry-After`, then `X-RateLimit-Reset` for an exhausted primary limit, then a wait of at least 60 seconds for a secondary limit reported in the body. |
+| `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author`, `get_authors` |
+| `github.py` | `GitHubClient` | `prefetch_repositories` and `get_users` batch metadata and profiles via GraphQL with a token. REST supplies individual lookups, README fallback, contributor lists, commit history and repositories of an owner. |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname; optional contact email selects polite-pool limits |
-| `orcid.py` | `OrcidClient` | `get_record(orcid)` |
+| `orcid.py` | `OrcidClient` | `get_record(orcid)`. Sessions with the same credentials share a `/read-public` token until expiry or HTTP 401. |
 | `semantic_scholar.py` | `SemanticScholarClient` | `papers_by_doi(dois)`: up to 500 DOIs per `POST /graph/v1/paper/batch`, one record or `None` per DOI in request order, retried up to eight times; `arxiv_id(record)` reads `externalIds.ArXiv`. Used by `ArxivVersionsStage` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 | `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude:<model>`, `codex:<model>`; a bare CLI name gets `Settings.claude_cli_model` or `Settings.codex_cli_model`), `check_providers` parses every stage's setting and looks for its CLI when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage and refuses new ones until `resume_clis`. A CLI reports a spent limit with `SubscriptionLimitError` and a lost login or 20 failures in a row with `CliUnusableError`; both stop the command |

@@ -288,14 +288,39 @@ class SocialGraphStageTest(unittest.TestCase):
         self.assertFalse(profiles["github_colleague"].profile_fetched)
         self.assertEqual(profiles["github_colleague"].emails, ["commit@example.org"])
 
+        self.prepared.upsert_models("repositories", [repository("ipetrov", "lab-tool")])
+        api.get_users.reset_mock()
         api.get_users.return_value = {"colleague": {"login": "Colleague", "email": "profile@example.org"}}
         result = stage.run()
         self.assertEqual(result["social_repositories"], 0)
         api.contributors.assert_called_once()
+        api.commits.assert_called_once()
+        api.get_users.assert_called_once()
         self.assertEqual(list(api.get_users.call_args.args[0]), ["colleague"])
         profiles = {p.id: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertTrue(profiles["github_colleague"].profile_fetched)
         self.assertEqual(profiles["github_colleague"].emails, ["commit@example.org", "profile@example.org"])
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_failed_repository_harvest_logs_the_repository_and_reason(self, client):
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")], [], [])
+        url = "https://github.com/ipetrov/lab-tool"
+        api = client.return_value
+        api.user_repositories.return_value = [{
+            "html_url": url, "owner": {"login": "ipetrov", "type": "User"},
+        }]
+        api.contributors.side_effect = HttpRequestError(
+            "GET", "https://api.github.com/repos/ipetrov/lab-tool/contributors", status_code=503,
+        )
+
+        with self.assertLogs("pauk.pipeline.stages.social_graph", level="WARNING") as logs:
+            result = SocialGraphStage(self.prepared, self.raw, self.config).run()
+
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn(url, logs.output[0])
+        self.assertIn("HTTP 503", logs.output[0])
+        self.assertEqual(result["social_accounts"], 0)
+        api.get_users.assert_not_called()
 
     @patch("pauk.pipeline.stages.social_graph.GitHubClient")
     def test_repositories_walked_by_an_earlier_run_are_not_walked_again(self, client):

@@ -7,21 +7,25 @@ import math
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 LONG_WAIT_SECONDS = 10.0
+POLL_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
 class RateLimit:
-    requests_per_second: float
+    requests_per_second: float | None = None
     max_concurrent: int | None = None
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.requests_per_second) or self.requests_per_second <= 0:
+        if self.requests_per_second is not None and (
+            not math.isfinite(self.requests_per_second) or self.requests_per_second <= 0
+        ):
             raise ValueError("requests_per_second must be positive and finite")
         if self.max_concurrent is not None and (
             isinstance(self.max_concurrent, bool)
@@ -31,9 +35,10 @@ class RateLimit:
             raise ValueError("max_concurrent must be a positive integer or None")
 
     def stricter(self, other: RateLimit) -> RateLimit:
+        rates = [rate for rate in (self.requests_per_second, other.requests_per_second) if rate is not None]
         caps = [cap for cap in (self.max_concurrent, other.max_concurrent) if cap is not None]
         return RateLimit(
-            min(self.requests_per_second, other.requests_per_second),
+            min(rates) if rates else None,
             min(caps) if caps else None,
         )
 
@@ -63,7 +68,7 @@ class HostRateLimiter:
         if combined == state.limit:
             return
         state.limit = combined
-        if state.last_started is not None:
+        if state.last_started is not None and combined.requests_per_second is not None:
             state.next_at = max(state.next_at, state.last_started + 1 / combined.requests_per_second)
         state.condition.notify_all()
 
@@ -77,7 +82,7 @@ class HostRateLimiter:
         return state
 
     @contextmanager
-    def slot(self, host: str, limit: RateLimit | None) -> Iterator[None]:
+    def slot(self, host: str, limit: RateLimit | None, *, cancel: threading.Event | None = None) -> Iterator[None]:
         """Hold a host's concurrency slot until the request has finished."""
         if limit is None:
             yield
@@ -85,16 +90,22 @@ class HostRateLimiter:
         state = self._state(host, limit)
         with state.condition:
             while True:
+                if cancel is not None and cancel.is_set():
+                    raise CancelledError
                 now = self._clock()
                 ready_at = max(state.next_at, state.paused_until)
                 capacity = state.limit.max_concurrent
                 if (capacity is None or state.in_flight < capacity) and now >= ready_at:
                     state.in_flight += 1
                     state.last_started = now
-                    state.next_at = now + 1 / state.limit.requests_per_second
+                    rate = state.limit.requests_per_second
+                    state.next_at = now + 1 / rate if rate is not None else now
                     break
                 delay = ready_at - now
-                state.condition.wait(timeout=min(delay, threading.TIMEOUT_MAX) if delay > 0 else None)
+                timeout = min(delay, threading.TIMEOUT_MAX) if delay > 0 else None
+                if cancel is not None:
+                    timeout = min(timeout, POLL_SECONDS) if timeout is not None else POLL_SECONDS
+                state.condition.wait(timeout=timeout)
         try:
             yield
         finally:
