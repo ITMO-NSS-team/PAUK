@@ -14,10 +14,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra mcp
       - name: Run unit and bench tests
-        run: uv run --with pytest pytest tests/ -q
+        run: uv run --extra mcp --with pytest pytest tests/ -q
       - name: Run integration tests against a real Neo4j
         run: >
-          uv run --with pytest --with mongomock --with "testcontainers[neo4j]"
+          uv run --extra mcp --with pytest --with mongomock --with "testcontainers[neo4j]"
           pytest tests/integration -q
