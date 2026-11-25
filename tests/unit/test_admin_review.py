@@ -7,11 +7,12 @@ from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.exceptions import ServiceUnavailable
 
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
-from pauk.admin.review_routes import _reason_words
+from pauk.admin.review_routes import PAGE, TABS, _reason_words
 from pauk.aliases import MergeAliasConflict, flatten_merges
 from pauk.graph.alias_review import record_alias_conflict
 from pauk.graph.jsonl_loader import load_prepared_rows
@@ -1469,6 +1470,73 @@ class VersionQuestionTest(unittest.TestCase):
         self.assertIn("отложил user:original", skipped)
         self.assertEqual(self.db[review.COLLECTION].find_one({"_id": source["_id"]}), source)
         self.assertNotIn("skipped_by", self.db[review.COLLECTION].find_one({"members": ["W1", "W2"]}))
+
+    def test_without_aliases_the_page_reuses_counts_without_loading_versions(self):
+        for error in (None, ServiceUnavailable("aliases unavailable")):
+            with (
+                self.subTest(error=error),
+                patch.object(self.graph, "fetch_merged_id_map", return_value={}, side_effect=error),
+                patch.object(review, "version_snapshot", wraps=review.version_snapshot) as snapshot,
+                patch.object(review, "version_queue_state", wraps=review.version_queue_state) as projection,
+                patch.object(review, "count", wraps=review.count) as counts,
+            ):
+                response = self.client.get("/review", params={"tab": "versions"})
+                self.assertEqual(response.status_code, 200)
+                snapshot.assert_not_called()
+                projection.assert_not_called()
+                self.assertEqual(counts.call_count, len(TABS))
+                self.assertEqual(response.context["total"], response.context["counts"]["versions"])
+
+    def test_an_empty_version_projection_keeps_other_kinds_in_the_open_queue(self):
+        review.record_held(self.db, [held_pair()])
+        with (
+            patch.object(self.graph, "fetch_merged_id_map", return_value={"W1": "W2"}),
+            patch.object(review, "version_snapshot", wraps=review.version_snapshot) as snapshot,
+            patch.object(review, "version_queue_state", wraps=review.version_queue_state) as projection,
+        ):
+            response = self.client.get("/review", params={"tab": "open"})
+        self.assertEqual(response.status_code, 200)
+        snapshot.assert_called_once_with(self.db)
+        self.assertEqual(projection.call_count, 1)
+        self.assertEqual(response.context["counts"]["versions"], 0)
+        self.assertEqual(response.context["total"], 1)
+        self.assertEqual([row["kind"] for row in response.context["rows"]], [review.PAIR])
+
+    def test_version_pagination_counts_the_effective_alias_question_only_once(self):
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W9"]
+        review.record_held(self.db, [{"status": "held", "entity": "publication",
+                                      "record_a": "W1", "record_b": "W9"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        review.record_held(self.db, [
+            {"status": "held", "entity": "publication", "record_a": f"W{index + 100}",
+             "record_b": f"W{index + 200}"} for index in range(PAGE + 1)
+        ])
+        response = self.client.get("/review", params={"tab": "versions", "page": 2})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["counts"]["versions"], PAGE + 1)
+        self.assertEqual(response.context["total"], PAGE + 1)
+        self.assertEqual(response.context["pages"], 2)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(response.context["counts"]["skipped"], 1)
+
+    def test_each_tab_reuses_one_version_projection_and_its_pagination_count(self):
+        self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W9"]
+        for tab in TABS:
+            with (
+                self.subTest(tab=tab),
+                patch.object(self.graph, "fetch_merged_id_map", wraps=self.graph.fetch_merged_id_map) as aliases,
+                patch.object(review, "version_snapshot", wraps=review.version_snapshot) as snapshot,
+                patch.object(review, "version_queue_state", wraps=review.version_queue_state) as projection,
+                patch.object(review, "count", wraps=review.count) as counts,
+            ):
+                response = self.client.get("/review", params={"tab": tab})
+                self.assertEqual(response.status_code, 200)
+                aliases.assert_called_once_with("Publication")
+                snapshot.assert_called_once_with(self.db)
+                self.assertEqual(projection.call_count, 1)
+                self.assertEqual(counts.call_count, len(TABS))
+                self.assertEqual(response.context["total"], response.context["counts"][tab])
+                self.assertEqual(response.context["pages"], 1)
 
     def test_newer_answer_and_withdrawal_do_not_resurface_the_old_alias_skip(self):
         self.graph.nodes["Publication", "W2"]["merged_ids"] = ["W9"]

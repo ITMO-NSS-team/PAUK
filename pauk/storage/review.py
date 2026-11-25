@@ -1058,7 +1058,7 @@ PRESSING_REASONS = ("identical name with nothing corroborating it",)
 
 def _query(*, pressing: bool = False, answered: bool | None = None,
            skipped: bool | None = None, disputed: bool | None = None,
-           kind: str = "", reason: str = "") -> dict:
+           kind: str | None = "", reason: str = "") -> dict:
     """The filter behind both the queue and its counter.
 
     Built in one place so a tab and the number on it can never disagree.
@@ -1084,32 +1084,42 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     return query
 
 
-def _queue_query(db: Database, aliases: dict[str, str] | None, filters: dict) -> dict:
+def _queue_query(db: Database, aliases: dict[str, str] | None, filters: dict, *,
+                 active_version_ids: set[str] | None = None) -> dict:
     query = _query(**filters)
-    if aliases is None or filters.get("answered") is True or filters.get("kind", "") not in ("", PUB_VERSION):
+    kind = filters.get("kind")
+    if filters.get("answered") is True or (kind and kind != PUB_VERSION):
         return query
-    selected = [row["_id"] for row in version_queue_state(version_snapshot(db), aliases).values()]
-    return {"$and": [query, {"$or": [{"kind": {"$ne": PUB_VERSION}}, {"_id": {"$in": selected}}]}]}
+    if active_version_ids is None:
+        if aliases is None:
+            return query
+        active_version_ids = {row["_id"] for row in version_queue_state(version_snapshot(db), aliases).values()}
+    return {"$and": [query, {"$or": [{"kind": {"$ne": PUB_VERSION}}, {"_id": {"$in": sorted(active_version_ids)}}]}]}
 
 
 def questions(db: Database, *, limit: int = 50, skip: int = 0,
-              aliases: dict[str, str] | None = None, **filters) -> list[dict]:
+              aliases: dict[str, str] | None = None,
+              active_version_ids: set[str] | None = None, **filters) -> list[dict]:
     """One page of the queue, the longest-waiting first.
 
     Args:
         limit: How many to return.
         skip: How many to pass over, for paging.
+        aliases: Publication aliases used when no precomputed selection is supplied.
+        active_version_ids: Effective original question IDs shared by a caller's
+            queries. An empty set excludes versions without hiding other kinds.
         **filters: See `_query`. `pressing` narrows to the reasons worth a
             person's time, `answered` and `skipped` take True, False or
             None for both, `kind` and `reason` match exactly.
     """
-    rows = db[COLLECTION].find(_queue_query(db, aliases, filters)).sort(
+    rows = db[COLLECTION].find(_queue_query(db, aliases, filters, active_version_ids=active_version_ids)).sort(
         [("seen_at", 1), ("_id", 1)]).skip(skip).limit(limit)
     return list(rows)
 
 
-def count(db: Database, *, aliases: dict[str, str] | None = None, **filters) -> int:
-    return db[COLLECTION].count_documents(_queue_query(db, aliases, filters))
+def count(db: Database, *, aliases: dict[str, str] | None = None,
+          active_version_ids: set[str] | None = None, **filters) -> int:
+    return db[COLLECTION].count_documents(_queue_query(db, aliases, filters, active_version_ids=active_version_ids))
 
 
 def reasons(db: Database) -> list[str]:

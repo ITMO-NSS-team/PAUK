@@ -272,16 +272,21 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
             aliases = graph.fetch_merged_id_map("Publication")
         except (ServiceUnavailable, SessionExpired, AuthError):
             logger.warning("version aliases unavailable while showing review queue")
-    alias_options = {"aliases": aliases} if aliases else {}
-    total = review.count(db, **TABS[tab], **alias_options)
+    queue_options = {}
+    if aliases:
+        queue_options["active_version_ids"] = {
+            row["_id"] for row in review.version_queue_state(review.version_snapshot(db), aliases).values()
+        }
+    counts = {name: review.count(db, **filters, **queue_options) for name, filters in TABS.items()}
+    total = counts[tab]
     back = f"/review?tab={tab}&page={page}"
     return templates.TemplateResponse(request, "review.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((total + PAGE - 1) // PAGE, 1), "total": total,
         "rows": _with_facts(graph, _splittable(db, [
             _shown(row, back) for row in
-            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab], **alias_options)])),
-        "counts": {name: review.count(db, **filters, **alias_options) for name, filters in TABS.items()},
+            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab], **queue_options)])),
+        "counts": counts,
     })
 
 

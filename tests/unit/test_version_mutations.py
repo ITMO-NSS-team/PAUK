@@ -435,6 +435,7 @@ class VersionRepairProjectionTest(_MutationTest):
             self.run_repair(document_id, intent)
         pending = version_repair.load(self.db, "review_pairs", document_id, intent["token"])
         self.assertIn("question sync failed", pending["last_error"])
+        self.assertEqual(pending["failures"], 1)
         self.assertEqual(self.graph.relationships[EDGE]["status"], "held")
         self.assertEqual(self.run_repair(document_id, intent)["version_repairs"], 1)
         self.assertNotIn("confirmation_source", self.graph.relationships[EDGE])

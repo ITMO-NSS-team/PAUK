@@ -170,6 +170,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         store.request_cancel(self.db, first.id)
         self.assertFalse(self.worker.run_once())
         self.assertEqual(self.pending()["token"], intent["token"])
+        self.assertEqual(self.pending().get("failures", 0), 0)
         self.advance()
         self.assertTrue(self.worker.run_once())
         self.assertIsNone(self.pending())
@@ -184,6 +185,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         self.assertTrue(self.worker.run_once())
         self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
         self.assertIsNotNone(self.pending())
+        self.assertEqual(self.pending().get("failures", 0), 0)
         self.assertFalse(self.worker.run_once())
         self.reconcile.assert_not_called()
         self.advance()
@@ -203,6 +205,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         job = store.recent(self.db)[0]
         self.assertEqual(job.state, JobState.CANCELLED)
         self.assertIsNotNone(self.pending())
+        self.assertEqual(self.pending().get("failures", 0), 0)
         self.assertFalse(self.worker.run_once())
         self.advance()
         self.assertTrue(self.worker.run_once())
@@ -236,6 +239,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         first = store.recent(self.db)[0]
         self.assertEqual(first.state, JobState.QUEUED)
         self.assertIn("graph offline", self.pending()["last_error"])
+        self.assertEqual(self.pending()["failures"], 1)
         self.assertFalse(self.worker.run_once())
         self.advance()
         self.assertTrue(self.worker.run_once())
@@ -251,6 +255,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         self.assertEqual(first.state, JobState.FAILED)
         self.assertIn("publication authority is invalid", first.error)
         self.assertIn("publication authority is invalid", self.pending()["last_error"])
+        self.assertEqual(self.pending()["failures"], 1)
         self.assertFalse(self.worker.run_once())
         self.assertEqual(store.count(self.db), 1)
         self.advance()
@@ -259,6 +264,57 @@ class VersionRepairWorkerTest(unittest.TestCase):
         self.assertEqual(store.count(self.db), 2)
         self.assertEqual(store.read(self.db, first.id).state, JobState.FAILED)
         self.assertIsNone(self.pending())
+
+    def test_each_failed_execution_increments_its_intent_once(self):
+        for collection in ("graph_overrides", "review_pairs"):
+            with self.subTest(collection=collection):
+                intent = self.intent(collection=collection)
+                self.reconcile.side_effect = ServiceUnavailable("graph offline")
+                for failures in (1, 2):
+                    self.assertTrue(self.worker.run_once())
+                    pending = self.pending(collection)
+                    self.assertEqual(pending["token"], intent["token"])
+                    self.assertEqual(pending["failures"], failures)
+                    self.advance()
+                self.reconcile.side_effect = None
+                self.assertTrue(self.worker.run_once())
+                self.assertIsNone(self.pending(collection))
+
+    def test_client_creation_failure_is_counted_before_reconciliation(self):
+        intent = self.intent()
+        self.client.side_effect = ServiceUnavailable("client unavailable")
+        self.assertTrue(self.worker.run_once())
+        pending = self.pending()
+        self.assertEqual(pending["token"], intent["token"])
+        self.assertEqual(pending["failures"], 1)
+        self.assertIn("client unavailable", pending["last_error"])
+        self.assertEqual(store.recent(self.db)[0].state, JobState.QUEUED)
+        self.reconcile.assert_not_called()
+
+    def test_snapshot_alias_failure_is_counted_before_reconciliation(self):
+        intent = self.intent()
+        self.db.graph_overrides.update_one({"_id": "decision"}, {
+            "$set": {"snapshot": {}, "src_id": "W2", "target_id": "W1"},
+        })
+        with patch.object(graph_repair, "resolve_folded_id", side_effect=ServiceUnavailable("aliases unavailable")):
+            self.assertTrue(self.worker.run_once())
+        pending = self.pending()
+        self.assertEqual(pending["token"], intent["token"])
+        self.assertEqual(pending["failures"], 1)
+        self.assertIn("aliases unavailable", pending["last_error"])
+        self.reconcile.assert_not_called()
+        self.client.return_value.close.assert_called_once()
+
+    def test_graph_contention_after_claim_defers_without_counting_a_failure(self):
+        self.intent()
+        with patch.object(graph_repair, "held", side_effect=locks.Busy("another graph writer")):
+            self.assertFalse(self.worker.run_once())
+        pending = self.pending()
+        self.assertEqual(pending.get("failures", 0), 0)
+        self.assertNotIn("last_error", pending)
+        self.assertEqual(store.recent(self.db)[0].state, JobState.QUEUED)
+        self.client.assert_not_called()
+        self.reconcile.assert_not_called()
 
     def test_an_invalid_intent_mode_is_visible_and_kept_for_retry(self):
         self.intent()
@@ -320,6 +376,7 @@ class VersionRepairWorkerTest(unittest.TestCase):
         pending = self.pending()
         self.assertEqual(pending["token"], newer[0]["token"])
         self.assertNotIn("last_error", pending)
+        self.assertEqual(pending.get("failures", 0), 0)
         self.assertEqual(len(list(version_repair.pending(self.db, due_only=True))), 1)
         self.assertTrue(self.worker.run_once())
         self.assertIsNone(self.pending())
@@ -381,5 +438,5 @@ class VersionsDispatchModeTest(unittest.TestCase):
             patch("pauk.graph.version_link.run_version_pair") as pair,
         ):
             self.perform({"members": ["old", "members"], "repair": repair, "mode": "reopen", "llm": True})
-        pending.assert_called_once_with(self.config, self.db, "review_pairs", "question", "token")
+        pending.assert_called_once_with(self.config, self.db, "review_pairs", "question", "token", defer_on_error=False)
         pair.assert_not_called()

@@ -829,6 +829,9 @@ class VersionSnapshotTest(unittest.TestCase):
     def row(self):
         return self.collection.find_one({"_id": self.key})
 
+    def queue_ids(self):
+        return {row["_id"] for row in review.version_queue_state(review.version_snapshot(self.db), self.aliases).values()}
+
     def test_every_version_mutation_advances_token_even_within_one_millisecond(self):
         moment = datetime(2026, 1, 1, tzinfo=UTC)
         tokens = {self.row()["write_id"]}
@@ -929,6 +932,84 @@ class VersionSnapshotTest(unittest.TestCase):
         self.assertIn(review.VERSION_RETIRED, row)
         self.assertEqual(row["withdrawn_answer"]["verdict"], review.SAME)
         self.assertEqual(review.count(self.db), 1)
+
+    def test_precomputed_ids_match_alias_queries_without_rebuilding_the_selection(self):
+        review.record_held(self.db, [held_pair(), {**self.report, "record_b": "W9"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        selected = self.queue_ids()
+        self.assertEqual(selected, {review.question_id(review.PUB_VERSION, ["W1", "W9"])})
+        for filters in (
+            {}, {"answered": False, "skipped": False}, {"answered": False, "skipped": True},
+            {"pressing": True}, {"disputed": True}, {"kind": review.PUB_VERSION},
+            {"kind": review.PAIR}, {"kind": None},
+        ):
+            expected = review.questions(self.db, aliases=self.aliases, **filters)
+            total = review.count(self.db, aliases=self.aliases, **filters)
+            for options in ({}, {"aliases": self.aliases}):
+                with (
+                    self.subTest(filters=filters, options=options),
+                    patch.object(review, "version_snapshot", side_effect=AssertionError("unexpected snapshot")),
+                    patch.object(review, "version_queue_state", side_effect=AssertionError("unexpected projection")),
+                ):
+                    self.assertEqual(review.questions(self.db, active_version_ids=selected, **options, **filters), expected)
+                    self.assertEqual(review.count(self.db, active_version_ids=selected, **options, **filters), total)
+
+    def test_an_empty_selection_excludes_versions_but_keeps_other_kinds(self):
+        review.record_held(self.db, [held_pair()])
+        for options in ({}, {"aliases": self.aliases}):
+            with (
+                self.subTest(options=options),
+                patch.object(review, "version_snapshot", side_effect=AssertionError("unexpected snapshot")),
+                patch.object(review, "version_queue_state", side_effect=AssertionError("unexpected projection")),
+            ):
+                rows = review.questions(self.db, active_version_ids=set(), **options)
+                self.assertEqual([row["kind"] for row in rows], [review.PAIR])
+                self.assertEqual(review.count(self.db, active_version_ids=set(), **options), 1)
+                self.assertEqual(review.count(self.db, kind=review.PUB_VERSION, active_version_ids=set(), **options), 0)
+
+    def test_answer_history_ignores_precomputed_ids_and_keeps_retired_answers(self):
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W9"], review.SAME)
+        review.record_verdict(self.db, review.PUB_VERSION, ["W1", "W2"], review.DIFFERENT)
+        self.collection.update_one({"_id": self.key}, {"$set": {review.VERSION_RETIRED: datetime(2026, 1, 1)}})
+        with (
+            patch.object(review, "version_snapshot", side_effect=AssertionError("unexpected snapshot")),
+            patch.object(review, "version_queue_state", side_effect=AssertionError("unexpected projection")),
+        ):
+            rows = review.questions(self.db, answered=True, aliases=self.aliases, active_version_ids=set())
+            self.assertCountEqual([row["members"] for row in rows], [["W1", "W9"], ["W1", "W2"]])
+            self.assertEqual(review.count(self.db, answered=True, aliases=self.aliases, active_version_ids=set()), 2)
+
+    def test_a_retired_alias_winner_does_not_reveal_the_open_duplicate(self):
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        source_id = review.question_id(review.PUB_VERSION, ["W1", "W9"])
+        self.collection.update_one({"_id": source_id}, {"$set": {review.VERSION_RETIRED: datetime(2026, 1, 1)}})
+        selected = self.queue_ids()
+        self.assertEqual(selected, {source_id})
+        self.assertEqual(review.questions(self.db, answered=False, active_version_ids=selected), [])
+        self.assertEqual(review.count(self.db, answered=False, active_version_ids=selected), 0)
+        self.assertIsNotNone(self.row())
+
+    def test_missing_empty_and_none_kind_all_project_the_mixed_queue(self):
+        review.record_held(self.db, [{**self.report, "record_b": "W9"}])
+        review.skip(self.db, review.PUB_VERSION, ["W1", "W9"])
+        for filters in ({}, {"kind": ""}, {"kind": None}):
+            with self.subTest(filters=filters):
+                self.assertEqual(review.questions(self.db, aliases=self.aliases, answered=False, skipped=False,
+                                                  **filters), [])
+                self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=False, **filters), 0)
+                self.assertEqual(review.count(self.db, aliases=self.aliases, answered=False, skipped=True, **filters), 1)
+
+    def test_precomputed_selection_keeps_stable_page_boundaries_at_equal_times(self):
+        review.record_held(self.db, [held_pair(), {**self.report, "record_b": "W3"},
+                                    {**self.report, "record_b": "W4"}])
+        self.collection.update_many({}, {"$set": {"seen_at": datetime(2026, 1, 1)}})
+        selected = self.queue_ids()
+        expected = sorted(row["_id"] for row in self.collection.find())
+        pages = [row["_id"] for offset in range(0, len(expected), 2)
+                 for row in review.questions(self.db, limit=2, skip=offset, active_version_ids=selected)]
+        self.assertEqual(pages, expected)
 
     def test_skipped_alias_is_the_source_and_an_open_duplicate_is_retired(self):
         original = {**self.report, "record_b": "W9"}

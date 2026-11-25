@@ -35,9 +35,12 @@ def version_mutation_lock(db, triple):
 
 
 def apply_pending_version_repair_locked(
-    client, db, collection_name: str, document_id: str, token: str
+    client, db, collection_name: str, document_id: str, token: str, *, defer_on_error: bool = True
 ) -> tuple[str, dict[str, int]]:
-    """Apply the latest authority while the caller holds GRAPH; never replay a verdict."""
+    """Apply current authority under GRAPH, never replaying a stored verdict.
+
+    Set defer_on_error=False when the caller records failed attempts itself.
+    """
     intent = version_repair.load(db, collection_name, document_id, token)
     if intent is None:
         return "version_obsolete", {"version_repairs_obsolete": 1}
@@ -63,12 +66,13 @@ def apply_pending_version_repair_locked(
             raise NotFound("a manually claimed version endpoint is missing")
         acknowledged = version_repair.ack(db, collection_name, document_id, token)
     except Exception as error:
-        # Keeping the obligation is more important than recording a retry time
-        # during an outage of the very database that owns it.
-        try:
-            version_repair.defer(db, collection_name, document_id, token, error=f"{type(error).__name__}: {error}")
-        except PyMongoError:
-            logger.warning("could not postpone version repair %s/%s", collection_name, document_id)
+        if defer_on_error:
+            # Keeping the obligation is more important than recording a retry time
+            # during an outage of the very database that owns it.
+            try:
+                version_repair.defer(db, collection_name, document_id, token, error=f"{type(error).__name__}: {error}")
+            except PyMongoError:
+                logger.warning("could not postpone version repair %s/%s", collection_name, document_id)
         raise
     return (done if acknowledged else "version_waiting"), {
         "version_edges": written,
@@ -94,14 +98,16 @@ def try_apply_version_override_locked(client, db, src_id: str, tgt_id: str) -> b
 
 
 def run_pending_version_repair(
-    config: Settings, db, collection_name: str, document_id: str, token: str
+    config: Settings, db, collection_name: str, document_id: str, token: str, *, defer_on_error: bool = True
 ) -> dict[str, int]:
-    """Worker entry point: stale deliveries are no-ops and failed deliveries remain durable."""
+    """Apply a durable intent; a worker can take ownership of failure accounting."""
     with held(db, GRAPH), actor_context("etl-pipeline", source="versions-repair"):
         if version_repair.load(db, collection_name, document_id, token) is None:
             return {"version_repairs_obsolete": 1}
         client = audited_client(config, db)
         try:
-            return apply_pending_version_repair_locked(client, db, collection_name, document_id, token)[1]
+            return apply_pending_version_repair_locked(
+                client, db, collection_name, document_id, token, defer_on_error=defer_on_error,
+            )[1]
         finally:
             client.close()

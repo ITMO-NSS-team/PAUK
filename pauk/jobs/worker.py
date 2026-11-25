@@ -84,7 +84,7 @@ def _versions(config: Settings, db: Database, payload, stop: Stop,
         report("применение сохранённого решения о версиях")
         repair = payload.repair
         return run_pending_version_repair(config, db, repair.collection_name,
-                                          repair.document_id, repair.token)
+                                          repair.document_id, repair.token, defer_on_error=False)
     from pauk.graph.version_link import run_version_link, run_version_pair
     if payload.members is not None:
         report("сверка связи версий публикаций")
