@@ -86,7 +86,7 @@ describe("authorsTab", () => {
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
     expect(listItems(container).map((el) => el.textContent)).toEqual(
-      sorted.map((a) => `${a.label}${a.pubs_count}`),
+      sorted.slice(0, 5).map((a) => `${a.label}${a.pubs_count}`),
     );
 
     const first = sorted[0];
@@ -123,7 +123,7 @@ describe("authorsTab", () => {
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
     expect(listItems(container).map((el) => el.textContent)).toEqual(
-      sorted.map((a) => `${a.label_en}${a.pubs_count}`),
+      sorted.slice(0, 5).map((a) => `${a.label_en}${a.pubs_count}`),
     );
   });
 
@@ -168,7 +168,7 @@ describe("authorsTab", () => {
     search.value = "";
     search.dispatchEvent(new Event("input"));
 
-    expect(listItems(container)).toHaveLength(data.authors.length);
+    expect(listItems(container)).toHaveLength(5);
   });
 
   it("a query with no matches shows 'Ничего не найдено' instead of an empty list", async () => {
@@ -220,7 +220,7 @@ describe("mountTabs tab switching", () => {
 
     mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    expect(listItems(content)).toHaveLength(data.authors.length);
+    expect(listItems(content)).toHaveLength(5);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(
       true,
     );
@@ -282,9 +282,10 @@ describe("pubsTab", () => {
 
     pubsTab.mount(container, store, fakeRenderer(), data, pubDetails, NO_REPO_DETAILS);
 
-    const labels = Array.from(container.querySelectorAll(".tab-list-item__label")).map(
-      (el) => el.textContent,
-    );
+    const readLabels = () => Array.from(container.querySelectorAll(".tab-list-item__label"), el => el.textContent);
+    const labels = readLabels();
+    container.querySelector<HTMLButtonElement>('.tab-pagination__button[aria-label="Следующая страница"]')?.click();
+    labels.push(...readLabels());
     for (const pub of data.pubs) {
       expect(labels).toContain(pubDetails.get(pub.key)?.label);
     }
@@ -311,9 +312,9 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
 
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    expect(listItems(container)).toHaveLength(10);
+    expect(listItems(container)).toHaveLength(5);
     expect(listItems(container)[0]?.textContent).toContain("Автор 00");
-    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 3"); // 25 / 10 = 3 pages
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 5");
 
     const next = container.querySelector<HTMLButtonElement>(
       '.tab-pagination__button[aria-label="Следующая страница"]',
@@ -321,9 +322,9 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
     if (!next) throw new Error("there must be a 'next page' button");
     next.click();
 
-    expect(listItems(container)).toHaveLength(10);
-    expect(listItems(container)[0]?.textContent).toContain("Автор 10");
-    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("2 / 3");
+    expect(listItems(container)).toHaveLength(5);
+    expect(listItems(container)[0]?.textContent).toContain("Автор 05");
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("2 / 5");
 
     const prev = container.querySelector<HTMLButtonElement>(
       '.tab-pagination__button[aria-label="Предыдущая страница"]',
@@ -332,7 +333,7 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
     prev.click();
 
     expect(listItems(container)[0]?.textContent).toContain("Автор 00");
-    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 3");
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 5");
   });
 
   it("a new search query resets the page to the first", () => {
@@ -344,21 +345,20 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
     container
       .querySelector<HTMLButtonElement>('.tab-pagination__button[aria-label="Следующая страница"]')
       ?.click();
-    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("2 / 3");
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("2 / 5");
 
     const search = container.querySelector<HTMLInputElement>(".tab-search");
     if (!search) throw new Error("the tab must contain a search field");
-    // Exactly "Автор 10".."Автор 19": one full page.
+    // Ten matching authors span two pages.
     search.value = "Автор 1";
     search.dispatchEvent(new Event("input"));
 
-    expect(listItems(container)).toHaveLength(10);
-    // One page: no pagination controls at all.
-    expect(container.querySelector(".tab-pagination")?.children).toHaveLength(0);
+    expect(listItems(container)).toHaveLength(5);
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 2");
   });
 
   it("a short list (less than pageSize) shows no pagination at all", async () => {
-    const data = await loadSampleGraphData(); // 8 authors, fewer than pageSize
+    const data = manyAuthorsData(4);
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 

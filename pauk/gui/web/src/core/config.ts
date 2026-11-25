@@ -113,7 +113,7 @@ export const PANEL_CONFIG = {
   chartBars: 8,
 } as const;
 
-export const TAB_LIST_CONFIG = { pageSize: 10 } as const;
+export const TAB_LIST_CONFIG = { pageSize: 5 } as const;
 
 // Larger than listLimit: search filters by substring and does not rank.
 export const SEARCH_CONFIG = {
