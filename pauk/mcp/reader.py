@@ -51,8 +51,7 @@ _APPROVED_REPO_ORIGIN_MAP = [
 _APPROVED_REPO_ORIGINS = [origin for origin, _ in _APPROVED_REPO_ORIGIN_MAP]
 SAFE_REPO_URL = (
     "CASE WHEN r.url IS NOT NULL AND r.url IS :: STRING AND size(r.url) <= 2000 "
-    "AND NOT (r.url CONTAINS '@' OR r.url CONTAINS '?' OR r.url CONTAINS '#' "
-    "OR r.url CONTAINS ' ' OR r.url CONTAINS '\\t' OR r.url CONTAINS '\\n' OR r.url CONTAINS '\\r') "
+    "AND r.url =~ '\\\\A[A-Za-z]+://[A-Za-z0-9.:-]+(/[^\\\\x00-\\\\x20@?#]*)?\\\\z' "
     f"AND ANY(origin IN {_APPROVED_REPO_ORIGINS!r} "
     "WHERE toLower(r.url) = origin OR toLower(r.url) STARTS WITH origin + '/') "
     "THEN toLower(r.url) ELSE '' END"

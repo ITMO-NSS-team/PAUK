@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 Identifier = Annotated[str, StringConstraints(min_length=1, max_length=256, strip_whitespace=True)]
 DOI = Annotated[str, StringConstraints(min_length=1, max_length=512, strip_whitespace=True)]
 TitleQuery = Annotated[str, StringConstraints(min_length=3, max_length=300, strip_whitespace=True)]
-RepoURLQuery = Annotated[str, StringConstraints(min_length=1, max_length=2000, strip_whitespace=True)]
+RepoURLQuery = Annotated[str, StringConstraints(min_length=1, max_length=2000)]
 RepositoryRelation = Literal["implements", "mentions"]
 Cursor = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 PageSize = Annotated[int, Field(strict=True, ge=1, le=25)]
@@ -302,14 +302,12 @@ def _split_approved_url(value: str) -> tuple[str, str] | None:
         parsed.scheme not in ("https", "http")
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.netloc.endswith(":")
+        or not parsed.netloc.isascii()
     ):
         return None
-    valid_port = (parsed.scheme == "https" and parsed.port in (None, 443)) or (
-        parsed.scheme == "http" and parsed.port in (None, 80)
-    )
-    canonical_host = (parsed.hostname or "").lower().removeprefix("www.")
-    if not valid_port or canonical_host not in APPROVED_REPO_HOSTS:
+    default_port = ":443" if parsed.scheme == "https" else ":80"
+    canonical_host = parsed.netloc.lower().removesuffix(default_port).removeprefix("www.")
+    if canonical_host not in APPROVED_REPO_HOSTS:
         return None
     return canonical_host, parsed.path
 
@@ -325,7 +323,7 @@ def normalize_repo_url_query(value: object) -> str | None:
     """Normalize an approved repository URL lookup query without trusting unsafe URLs."""
     if not isinstance(value, str):
         return None
-    parts = _split_approved_url(value.strip())
+    parts = _split_approved_url(value.strip(" \t\n\r"))
     if parts is None:
         return None
     canonical_host, raw_path = parts

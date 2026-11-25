@@ -53,6 +53,10 @@ CREATE (p:Publication {id:'p-paper', merged_ids:['old-paper'], title:'Synthetic 
        (messy:Repository {id:'r-messy', url:'http://www.github.com:80/PAUK-TEST/messy.GIT///', name:42}),
        (doipath:Repository {id:'r-doi-port', url:'https://doi.org/10.1234/foo:80/bar', name:'DOI path port'}),
        (priv:Repository {id:'r-private', url:'https://private.example.org/secret', name:'PrivateHost'}),
+       (ctrl:Repository {id:'r-ctrl-url', url:'https://github.com/pauk-test/ctrl-url\\u000b', name:'CtrlUrl'}),
+       (nl:Repository {id:'r-nl-url', url:'https://github.com/pauk-test/nl-url\\n', name:'NewlineUrl'}),
+       (zport:Repository {id:'r-zero-port', url:'https://github.com:0443/pauk-test/zero-port', name:'ZeroPort'}),
+       (kelvin:Repository {id:'r-kelvin', url:'https://bitbuc\\u212aet.org/pauk-test/kelvin-host', name:'KelvinHost'}),
        (pm1:Publication {id:'p-multi-1', title:'Framework paper one', year:2024}),
        (pm2:Publication {id:'p-multi-2', title:'Framework paper two', year:2025}),
        (pz:Publication {id:'p-z-impl', title:'Alphabetically late implemented', year:2026}),
@@ -257,6 +261,16 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
         priv = await self.service.search_repositories(SearchRepositoriesRequest(query="PrivateHost"))
         self.assertEqual([item.repository_id for item in priv.items], ["r-private"])
         self.assertIsNone(priv.items[0].url)
+        for token, name, expected_id in (
+            ("ctrl-url", "CtrlUrl", "r-ctrl-url"),
+            ("nl-url", "NewlineUrl", "r-nl-url"),
+            ("zero-port", "ZeroPort", "r-zero-port"),
+            ("kelvin-host", "KelvinHost", "r-kelvin"),
+        ):
+            self.assertEqual((await self.service.search_repositories(SearchRepositoriesRequest(query=token))).items, [])
+            found = await self.service.search_repositories(SearchRepositoriesRequest(query=name))
+            self.assertEqual([item.repository_id for item in found.items], [expected_id])
+            self.assertIsNone(found.items[0].url)
         nameless = await self.service.search_repositories(
             SearchRepositoriesRequest(url="https://github.com/pauk-test/nameless-repo")
         )

@@ -86,6 +86,11 @@ class ContractsTests(unittest.TestCase):
             {"url": "https://github.com:/a/b"},
             {"url": "http://github.com:443/a/b"},
             {"url": "https://github.com:80/a/b"},
+            {"url": "https://github.com:0443/a/b"},
+            {"url": "http://github.com:080/a/b"},
+            {"url": "https://github.com/a/b\x0b"},
+            {"url": "https://github.com/a/b\x00"},
+            {"url": "https://bitbuc\u212aet.org/a/b"},
             {"query": "ab"},
             {"query": "abc", "extra": True},
             {"url": "https://github.com/a/b", "page_size": 26},
@@ -111,6 +116,15 @@ class ContractsTests(unittest.TestCase):
             normalize_repo_url_query("https://doi.org/10.1234/foo:80/bar"),
             "https://doi.org/10.1234/foo:80/bar",
         )
+        for bad_url in (
+            "https://github.com:0443/a/b",
+            "http://github.com:080/a/b",
+            "https://github.com/a/b\x0b",
+            "https://github.com/a/b\x00",
+            "https://bitbuc\u212aet.org/a/b",
+        ):
+            self.assertIsNone(safe_url(bad_url))
+            self.assertIsNone(normalize_repo_url_query(bad_url))
         self.assertEqual(RepositoryPublicationsRequest(repository_id="r").relation, "implements")
 
     def test_text_invariants(self) -> None:
@@ -581,6 +595,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
         alias_reader = StubReader(
             [
+                [],
                 [{"id": "r-multi"}],
                 [
                     {"id": "p1", "title": "First", "doi": None, "year": 2025, "implements": True, "relevant": None},
@@ -588,7 +603,6 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 [{"id": "r-multi"}],
                 [{"id": "p2", "title": "Second", "doi": None, "year": 2024, "implements": True, "relevant": None}],
-                [{"id": "r-multi"}],
             ]
         )
         alias_service = Service(alias_reader, b"synthetic-key")
@@ -603,6 +617,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual([item.publication_id for item in canonical_page2.items], ["p2"])
+        self.assertEqual(alias_reader.results, [])
 
         url_reader = StubReader(
             [
