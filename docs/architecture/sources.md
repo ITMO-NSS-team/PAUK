@@ -42,13 +42,10 @@ closes the session. PDF timeouts and cancellation limits are documented in
 all HTTP clients in the process. It spaces requests without catch-up bursts
 and caps concurrency per host. Retries and redirects from a limited API
 request each pass through the limiter. Separate processes are not coordinated.
-PDF limits are shared across `PdfDownloader` instances separately from API
-quotas. Server limits and pauses use the common limiter, including on redirects.
-PDF requests count against both limits when both admit the request.
-
-Clients sharing a host use the stricter profile within each limiter.
-Server headers only tighten common limits; raising a limit requires a process
-restart.
+PDF requests share publisher rates and the lowest cap of the active downloaders.
+Closing a downloader removes its cap. Server limits and pauses use the common
+limiter, including on redirects. Server ceilings stay in effect until restart.
+Each PDF request takes a slot only when both limiters admit it.
 
 Default profiles (`pauk/settings.py`):
 

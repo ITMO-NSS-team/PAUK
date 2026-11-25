@@ -927,6 +927,33 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertNotIn(url, reset.pdf_urls)
 
     @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_arxiv_cache_write_failure_leaves_crawler_for_a_later_run(self, http: mock.Mock) -> None:
+        source = "https://arxiv.org/pdf/2201.06114"
+        crawler = "https://crawler.example"
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="Journal", doi="10.1/journal", arxiv_sources=[ArxivSource(url=source)],
+        )])
+        pdf = _pdf("Our code: https://github.com/org/preprint")
+        http.return_value.get_bytes.return_value = b"ok"
+        http.return_value.get_bytes_with_url.return_value = (pdf, source)
+        config = replace(self.config, pdf_crawler_url=crawler)
+        stage = CodeLinksStage(self.prepared, self.raw, config=config)
+        with mock.patch.object(PdfStore, "save_source", side_effect=OSError("cache unavailable")) as save:
+            stage.run()
+
+        self.assertEqual(save.call_args_list, [mock.call(source, pdf)] * 2)
+        self.assertEqual(http.return_value.get_bytes.call_args.args, (f"{crawler}/health",))
+        http.return_value.get_bytes.assert_called_once()
+        self.assertEqual(self._source_state(source).status, ProcessingStatus.FAILED)
+        self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.FAILED)
+        self.assertEqual(self._links(), {})
+
+        stage.run()
+        self.assertEqual(self._source_state(source).status, ProcessingStatus.COMPLETED)
+        self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertIn("https://github.com/org/preprint", self._links())
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_textless_arxiv_pdf_does_not_block_crawler_or_clear_primary_error(self, http: mock.Mock) -> None:
         publisher = "https://publisher.example/paper.pdf"
         arxiv_url = "https://arxiv.org/pdf/2201.06114"

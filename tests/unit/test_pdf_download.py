@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 import mongomock
 import pymupdf
 import requests
+from pymongo.errors import AutoReconnect
 
 from pauk.models import CodeLink, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -277,28 +278,44 @@ class PdfTransportTest(LocalPdfTest):
         finally:
             downloader.close()
         self.assertEqual(api.rate_limiter._hosts[host].limit, RateLimit(100, 5))
-        self.assertEqual(pdf_limiter._hosts[host].limit, RateLimit(10, 2))
+        self.assertEqual(pdf_limiter._hosts[host].limit, RateLimit(10))
 
     def test_pdf_server_headers_apply_to_a_later_api_client(self):
         downloader = PdfDownloader(Settings(pdf_retries=0), client_factory=_client)
         self.addCleanup(downloader.close)
         self.assertEqual(downloader.get_bytes(self.url + "/limited"), self.server.pdf)
+        downloader.close()
         host = urlsplit(self.url).hostname
         api = _client(1, rate_limits={host: RateLimit(100, 5)})
         self.addCleanup(api.close)
         api.get_bytes(self.url + "/pdf", retries=0)
         self.assertEqual(api.rate_limiter._hosts[host].limit, RateLimit(2, 1))
 
-    def test_separate_downloaders_share_the_pdf_host_cap(self):
-        config = Settings(pdf_host_concurrency=1, pdf_retries=0)
-        downloaders = [PdfDownloader(config, client_factory=_client) for _ in range(2)]
-        for downloader in downloaders:
-            self.addCleanup(downloader.close)
+    def test_downloaders_share_the_strictest_active_host_cap(self):
+        strict = PdfDownloader(Settings(pdf_host_concurrency=1, pdf_retries=0), client_factory=_client)
+        relaxed = PdfDownloader(Settings(pdf_host_concurrency=2, pdf_retries=0), client_factory=_client)
+        self.addCleanup(strict.close)
+        self.addCleanup(relaxed.close)
+        self.assertEqual(strict.get_bytes(self.url + "/pdf"), self.server.pdf)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(lambda downloader: downloader.get_bytes(self.url + "/headers?delay=0.05"),
-                                    downloaders))
-        self.assertTrue(all(data == self.server.pdf for data in results))
-        self.assertEqual(self.server.peak["127.0.0.1"], 1)
+            first = pool.submit(relaxed.get_bytes, self.url + "/held")
+            try:
+                self.assertTrue(self.server.held.wait(1))
+                with self.assertRaises(RequestDeferred):
+                    relaxed.get_bytes(self.url + "/pdf", state=DownloadState())
+                self.assertEqual(self.server.counts["/pdf"], 1)
+                strict.close()
+                second = pool.submit(relaxed.get_bytes, self.url + "/held")
+                until = time.monotonic() + 1
+                while self.server.counts["/held"] < 2 and time.monotonic() < until:
+                    time.sleep(0.005)
+                self.assertEqual(self.server.counts["/held"], 2)
+                with self.assertRaises(RequestDeferred):
+                    relaxed.get_bytes(self.url + "/pdf", state=DownloadState())
+            finally:
+                self.server.release.set()
+            self.assertEqual(first.result(timeout=1), self.server.pdf)
+            self.assertEqual(second.result(timeout=1), self.server.pdf)
 
     def test_pdf_responses_keep_server_pauses_shared_with_api_clients(self):
         host = urlsplit(self.url).hostname
@@ -426,7 +443,7 @@ class PdfTransportTest(LocalPdfTest):
             result = list(pool.map(downloader.get_bytes, urls))
         self.assertTrue(all(data == self.server.pdf for data in result))
         self.assertEqual(self.server.peak["localhost"], 1)
-        self.assertEqual(pdf_limiter._hosts["localhost"].limit, RateLimit(20, 1))
+        self.assertEqual(pdf_limiter._hosts["localhost"].limit, RateLimit(20))
         self.assertGreaterEqual(len(downloader._clients), 2)
         self.assertEqual(len({id(client.session) for client in downloader._clients}), len(downloader._clients))
 
@@ -689,9 +706,10 @@ class PdfStageTest(LocalPdfTest):
         stage.REPORT_SECONDS = 0
         self.assertEqual(stage.run()["publications"], 3)
 
-    def test_cache_write_errors_follow_the_source_fallback_and_failure_rules(self):
+    def test_cache_write_retries_reuse_the_same_pdf_without_trying_another_url(self):
         for recover in (True, False):
             with self.subTest(recover=recover):
+                self.server.counts.clear()
                 identifier = "W-recover" if recover else "W-fail"
                 self.prepared.write_models("publications", [Publication(
                     id=identifier, title="paper", abstract="Code: https://github.com/org/abstract",
@@ -702,16 +720,20 @@ class PdfStageTest(LocalPdfTest):
                 attempts = []
 
                 def save(publication_id, data, *, attempts=attempts, recover=recover, original_save=original_save):
-                    attempts.append(publication_id)
-                    if not recover or len(attempts) == 1:
+                    attempts.append((publication_id, data))
+                    if not recover:
                         raise OSError("cache unavailable")
+                    if len(attempts) == 1:
+                        raise AutoReconnect("cache unavailable")
                     return original_save(publication_id, data)
 
                 with patch("pauk.pipeline.stages.code_links.PdfStore", return_value=store), patch.object(
                     store, "save", side_effect=save,
                 ):
                     CodeLinksStage(self.prepared, self.raw, config=self.config).run()
-                self.assertEqual(attempts, [identifier, identifier])
+                self.assertEqual(attempts, [(identifier, self.server.pdf)] * 2)
+                self.assertEqual(self.server.counts["/pdf"], 1)
+                self.assertEqual(self.server.counts["/chunked-gzip"], 0)
                 publication = next(self.prepared.read_models("publications", Publication))
                 expected = ProcessingStatus.COMPLETED if recover else ProcessingStatus.FAILED
                 self.assertEqual(publication.processing["code_links"].status, expected)

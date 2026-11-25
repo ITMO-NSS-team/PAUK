@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from concurrent.futures import CancelledError
+from contextlib import ExitStack
 from typing import TypedDict
 
 from pauk.settings import PDF_HOST_RPS, Settings
@@ -31,6 +32,9 @@ class PdfDownloader:
         self._clients: list[HttpClient] = []
         self._lock = threading.Lock()
         self._cancelled = threading.Event()
+        self._limiter = PDF_RATE_LIMITER
+        self._limits = ExitStack()
+        self._limits.enter_context(self._limiter.limit_concurrency(config.pdf_host_concurrency))
 
     @property
     def cancelled(self) -> bool:
@@ -41,8 +45,7 @@ class PdfDownloader:
             raise CancelledError
         if not hasattr(self._local, "client"):
             client = self._factory(self.config.request_timeout,
-                                   default_rate_limit=RateLimit(max_concurrent=self.config.pdf_host_concurrency),
-                                   default_rate_limiter=PDF_RATE_LIMITER)
+                                   default_rate_limit=RateLimit(), default_rate_limiter=self._limiter)
             with self._lock:
                 if self.cancelled:
                     client.close()
@@ -78,5 +81,7 @@ class PdfDownloader:
 
     def close(self) -> None:
         self.cancel()
-        for client in self._clients:
-            client.close()
+        with self._lock, self._limits:
+            for client in self._clients:
+                client.close()
+            self._clients.clear()

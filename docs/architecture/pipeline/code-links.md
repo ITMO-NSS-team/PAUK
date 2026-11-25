@@ -27,11 +27,9 @@ the title.
 All sources are merged in `_collect_occurrences()`: one `CodeLink` per
 canonical URL, with `occurrences: list[LinkOccurrence]` listing every place it
 appeared. The order is stable: archive, abstract, then PDF pages.
-`code_links` itself no longer treats a found link as author code and does not
-set `has_code`/`code_url` from it; the next stage, `link_relevance`,
-recomputes those fields. A repeat `code_links` run removes its old processing
-status, because a verdict on the earlier contexts is invalid once the
-occurrence list is replaced.
+`link_relevance` computes `has_code` and `code_url` from the collected evidence.
+`code_links` clears that stage's status when it replaces links or changes
+automatic evidence.
 
 ## The regex `GITHUB_URL`
 
@@ -55,9 +53,8 @@ GITHUB_URL = re.compile(
   preprocessing of the whole text. A break is handled only while the regex
   engine is still parsing `github.com/owner/repo`, not after it. The next
   line's continuation may be ordinary text, so the joined result is kept as a
-  candidate. The break is required inside the repeated segment; making it
-  optional causes exponential backtracking on a long owner without a repo.
-  The atomic owner group avoids retrying shorter prefixes when `/` is absent.
+  candidate. The atomic owner group avoids retrying shorter prefixes when
+  `/` is absent.
 - **A break after `_` is also recognized**: both the short address and the one
   with the next line's continuation are kept. Other ordinary line breaks are not
   joined; blank lines and page boundaries are not crossed.
@@ -207,11 +204,12 @@ Settings in `pauk/settings.py`:
 | `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
 | `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
 
+Concurrent downloaders share the lowest active per-host cap.
 Read timeout limits silence on the socket, not total download time.
 If a retry or host pause exceeds `PAUK_PDF_MAX_RETRY_WAIT`, that URL fails
 without waiting; the shared host pause remains in force. `0` rejects any
-positive pause. If no source succeeds, the publication stays `FAILED` for a
-later `enrich` run. The crawler has no retries and uses a 180-second read
+positive pause. A failed extraction stays eligible for a later `enrich` run.
+The crawler has no retries and uses a 180-second read
 timeout and deadline.
 
 Results are saved as they finish. Before replacing links, the stage clears
@@ -227,7 +225,9 @@ Sessions close after workers finish.
 downloads do not prove an arXiv revision). Legacy `W….pdf` files remain
 readable without renaming. The write is atomic (temporary file plus `os.replace`)
 and happens only after the PDF parsed successfully, so HTML error pages never
-reach the cache. If an old cached file cannot be read, direct links and the
+reach the cache. A cache write error retries the same bytes once. If that write
+also fails, the stage records the error and stops processing that PDF.
+If an old cached file cannot be read, direct links and the
 crawler are tried, and a successful PDF replaces the corrupt file. A valid
 cache is not downloaded again. Normalized page texts are joined into
 `Publication.full_text` with `"\n\n"`.

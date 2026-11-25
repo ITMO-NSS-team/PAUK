@@ -17,6 +17,7 @@ from typing import cast
 from urllib.parse import urlencode, urlparse
 
 import pymupdf as fitz
+from pymongo.errors import PyMongoError
 
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, PublicationSourceRecord, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -79,6 +80,7 @@ _BODY_HEADING = re.compile(r"(?im)^[ \t]*(?:abstract|аннотация)(?=[\s:.
 CONTEXT_WINDOW = 500
 CRAWLER_DOWNLOAD_TIMEOUT = 180
 PDF_POLL_SECONDS = 0.05
+PDF_CACHE_WRITE_ATTEMPTS = 2
 
 
 def _normalize_ligatures(text: str) -> str:
@@ -602,6 +604,10 @@ def _archived_repository_url(publication: Publication) -> str | None:
     return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
+class _PdfCacheWriteError(RuntimeError):
+    """A parsed PDF could not be stored."""
+
+
 @dataclass
 class _PdfResult:
     pages: list[str]
@@ -609,6 +615,7 @@ class _PdfResult:
     error: str | None
     parsed_ids: set[str]
     run_main: bool = True
+    cache_write_failed: bool = False
     supplemental_text: list[list[str]] = field(default_factory=list)
     supplemental_evidence: dict[str, list[LinkOccurrence]] = field(default_factory=dict)
     arxiv_states: dict[str, ProcessingState] = field(default_factory=dict)
@@ -854,7 +861,6 @@ class CodeLinksStage(EnrichmentStage):
         links_by_publication = {
             row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
-        self.http = PdfDownloader(self.config, client_factory=HttpClient)
         self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
         candidates = [
             publication
@@ -866,21 +872,29 @@ class CodeLinksStage(EnrichmentStage):
         self.preprints = (
             arxiv_preprints(self._all_arxiv_publications()) if any(pub.arxiv_sources for pub in candidates) else {}
         )
-        with closing(self._fetch_all(candidates, links_by_publication)) as results:
+        self.http = PdfDownloader(self.config, client_factory=HttpClient)
+        with closing(self.http), closing(self._fetch_all(candidates, links_by_publication)) as results:
             return self._apply_results(results, links_by_publication)
 
     def _perform_pdf_io(self, task: _PdfTask) -> _PdfResponse:
         if isinstance(task, _PdfSave):
-            if task.by_source:
-                self.pdf_store.save_source(task.record_key, task.data)
-            elif task.source_url is not None:
-                self.pdf_store.save(task.record_key, task.data, source_url=task.source_url)
-            else:
-                self.pdf_store.save(task.record_key, task.data)
+            self._save_pdf(task)
             return None
         if _canonical_arxiv_pdf(task.url):
             return self.http.get_bytes_with_url(task.url, state=task.state, **task.options)
         return self.http.get_bytes(task.url, state=task.state, **task.options)
+
+    def _save_pdf(self, task: _PdfSave) -> None:
+        save = self.pdf_store.save_source if task.by_source else self.pdf_store.save
+        options = {"source_url": task.source_url} if task.source_url is not None else {}
+        for attempt in range(PDF_CACHE_WRITE_ATTEMPTS):
+            try:
+                save(task.record_key, task.data, **options)
+                return
+            except (OSError, PyMongoError) as error:
+                if attempt + 1 == PDF_CACHE_WRITE_ATTEMPTS:
+                    reason = redact_text(error) or type(error).__name__
+                    raise _PdfCacheWriteError(f"PDF cache write failed: {reason}") from None
 
     def _group_by_primary_host(self, candidates: list[Publication]) -> dict[str, deque[Publication]]:
         groups: dict[str, deque[Publication]] = {}
@@ -1066,7 +1080,6 @@ class CodeLinksStage(EnrichmentStage):
             pool.shutdown(wait=True, cancel_futures=True)
             for workflow in workflows:
                 workflow.close()
-            self.http.close()
 
     def _missing_pdf_ids(self, previous: RepoLink | None, parsed_ids: Collection[str]) -> set[str]:
         missing = {
@@ -1204,7 +1217,7 @@ class CodeLinksStage(EnrichmentStage):
         download_url = url + target.revision if target and not revision else url
         try:
             return (yield from self._read_or_download_arxiv(pub, download_url, target_key))
-        except CancelledError:
+        except (CancelledError, _PdfCacheWriteError):
             raise
         except Exception as exc:
             return [], [], None, redact_text(exc) or type(exc).__name__
@@ -1249,13 +1262,20 @@ class CodeLinksStage(EnrichmentStage):
         result = (yield from self._primary_pdf_workflow(pub, previous)) if run_main else _PdfResult(
             [], [], None, set(), run_main=False,
         )
-        if not pub.arxiv_sources:
+        if not pub.arxiv_sources or result.cache_write_failed:
             return result
 
         for source in pub.arxiv_sources:
             if not self.needs_attempt(source.state):
                 continue
-            pages, page_evidence, pdf_id, error = yield from self._arxiv_pdf_pages(pub, source.url)
+            try:
+                pages, page_evidence, pdf_id, error = yield from self._arxiv_pdf_pages(pub, source.url)
+            except _PdfCacheWriteError as exc:
+                cache_error = str(exc)
+                result.arxiv_states[source.url] = self._extraction_state(source.state, 0, cache_error)
+                if run_main and not result.pages:
+                    result.error = "; ".join(filter(None, (result.error, cache_error)))
+                return result
             evidence = _collect_occurrences("", page_evidence)
             result.arxiv_states[source.url] = self._extraction_state(source.state, len(evidence), error)
             if pdf_id is not None:
@@ -1280,7 +1300,11 @@ class CodeLinksStage(EnrichmentStage):
     ) -> Generator[_PdfTask, _PdfResponse, None]:
         targets = [(record.key, record.doi) for record in pub.source_records if record.doi]
         for key, doi in targets or [(pub.id, pub.doi)]:
-            pages, occurrences, error = yield from self._download_primary_pdf(pub, key, self._crawler_sources(doi))
+            try:
+                pages, occurrences, error = yield from self._download_primary_pdf(pub, key, self._crawler_sources(doi))
+            except _PdfCacheWriteError as exc:
+                result.error = "; ".join(filter(None, (result.error, str(exc))))
+                return
             if pages:
                 _tag_pdf_occurrences(occurrences, key)
                 result.pages, result.occurrences, result.error = pages, occurrences, None
@@ -1317,13 +1341,19 @@ class CodeLinksStage(EnrichmentStage):
                 errors[key] = f"{key}: {redact_text(exc)}"
 
         download_errors = []
+        cache_write_failed = False
         missing = self._missing_pdf_ids(previous, parsed.keys())
         records = [record for record in pub.source_records if record.pdf_urls or record.doi]
         for record in records or [None]:
             key = record.key if record else pub.id
             if parsed and key not in errors and key not in missing:
                 continue
-            pages, occurrences, error = yield from self._download_record(pub, record)
+            try:
+                pages, occurrences, error = yield from self._download_record(pub, record)
+            except _PdfCacheWriteError as exc:
+                errors[key] = str(exc)
+                cache_write_failed = True
+                break
             if pages:
                 parsed[key] = pages, occurrences
                 errors.pop(key, None)
@@ -1348,7 +1378,8 @@ class CodeLinksStage(EnrichmentStage):
             messages.append(f"PDF evidence unavailable: {', '.join(sorted(missing))}")
         if not parsed:
             messages.extend(download_errors)
-        return _PdfResult(pages, occurrences, "; ".join(messages) or None, set(parsed))
+        return _PdfResult(pages, occurrences, "; ".join(messages) or None, set(parsed),
+                          cache_write_failed=cache_write_failed)
 
     def _download_record(
         self, pub: Publication, record: PublicationSourceRecord | None,
@@ -1392,12 +1423,13 @@ class CodeLinksStage(EnrichmentStage):
                 else:
                     data = cast(bytes, (yield _PdfRequest(pub, source_url, options)))
                 pages, occurrences = _extract_pdf(data)
-                yield _PdfSave(pub, key, data, source_url=provenance)
-                return pages, occurrences, None
             except CancelledError:
                 raise
             except Exception as exc:
                 errors.append(redact_text(exc) or type(exc).__name__)
+                continue
+            yield _PdfSave(pub, key, data, source_url=provenance)
+            return pages, occurrences, None
         return [], [], "; ".join(errors) or None
 
     def _request_arxiv_pdf(

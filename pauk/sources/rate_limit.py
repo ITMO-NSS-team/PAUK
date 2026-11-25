@@ -6,6 +6,7 @@ import logging
 import math
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError
 from contextlib import ExitStack, contextmanager
@@ -76,7 +77,33 @@ class HostRateLimiter:
         self._clock = clock
         self._host_limits = dict(host_limits or {})
         self._hosts: dict[str, _HostState] = {}
+        self._concurrency_caps: Counter[int] = Counter()
         self._lock = threading.Lock()
+
+    @contextmanager
+    def limit_concurrency(self, cap: int) -> Iterator[None]:
+        """Apply a client cap per host for the lifetime of the client."""
+        RateLimit(max_concurrent=cap)
+        with self._lock:
+            self._concurrency_caps[cap] += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._concurrency_caps[cap] -= 1
+                if self._concurrency_caps[cap] == 0:
+                    del self._concurrency_caps[cap]
+                hosts = tuple(self._hosts.values())
+            for state in hosts:
+                with state.condition:
+                    state.condition.notify_all()
+
+    def _at_capacity(self, state: _HostState) -> bool:
+        cap = state.limit.max_concurrent
+        if cap is not None and state.in_flight >= cap:
+            return True
+        with self._lock:
+            return bool(self._concurrency_caps and state.in_flight >= min(self._concurrency_caps))
 
     @staticmethod
     def _tighten(state: _HostState, limit: RateLimit) -> None:
@@ -114,10 +141,10 @@ class HostRateLimiter:
             scoped = None
         states = []
         if (state := self._configured_state(host, limit)) is not None:
-            states.append((state, self._clock))
+            states.append((state, self))
         if scoped is not None:
             limiter, profile = scoped
-            states.append((limiter._configured_state(host, profile), limiter._clock))
+            states.append((limiter._configured_state(host, profile), limiter))
         if not states:
             yield
             return
@@ -126,20 +153,19 @@ class HostRateLimiter:
         condition = states[0][0].condition
         while True:
             with ExitStack() as locks:
-                for state, _clock in states:
+                for state, _limiter in states:
                     locks.enter_context(state.condition)
                 now = self._clock()
                 if cancel is not None and cancel.is_set():
                     raise CancelledError
                 if deadline is not None and now >= deadline:
                     raise TimeoutError("host admission deadline exceeded")
-                starts = [(state, clock()) for state, clock in states]
+                starts = [(state, limiter._clock()) for state, limiter in states]
                 pause = max(state.paused_until - started for state, started in starts)
                 if max_wait is not None and pause > max_wait:
                     raise HostPaused(pause)
                 delay = max(pause, *(state.next_at - started for state, started in starts))
-                at_capacity = any(state.limit.max_concurrent is not None
-                                  and state.in_flight >= state.limit.max_concurrent for state, _ in starts)
+                at_capacity = any(limiter._at_capacity(state) for state, limiter in states)
                 if not at_capacity and delay <= 0:
                     for state, started in starts:
                         state.in_flight += 1
@@ -164,7 +190,7 @@ class HostRateLimiter:
         try:
             yield
         finally:
-            for state, _clock in states:
+            for state, _limiter in states:
                 with state.condition:
                     state.in_flight -= 1
                     state.condition.notify_all()
