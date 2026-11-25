@@ -23,12 +23,14 @@ class MergeAliasConflict(ValueError):
         self.aliases = sorted({pair for pair in merges if pair[0] in members and pair[0] != pair[1]})
 
 
-def flatten_merges(merges: list[tuple[str, str]], *, label: str | None = None) -> list[tuple[str, str]]:
+def flatten_merges(merges: list[tuple[str, str]], *, label: str | None = None,
+                   ambiguous: set[str] | None = None) -> list[tuple[str, str]]:
     """Resolve aliases to one terminal survivor in dependency order.
 
     Overlapping historical aliases may name both an intermediate node and
     its survivor. They are safe only when all paths reach the same node.
-    Cycles and competing survivors are rejected without choosing a winner.
+    By default, a conflict raises MergeAliasConflict. Pass a set to collect
+    ambiguous IDs and resolve the rest (for individual API lookups).
     """
     targets: dict[str, set[str]] = defaultdict(set)
     parents: dict[str, set[str]] = defaultdict(set)
@@ -46,11 +48,17 @@ def flatten_merges(merges: list[tuple[str, str]], *, label: str | None = None) -
             depth[parent] = max(depth[parent], depth[node] + 1)
             root = roots.setdefault(parent, roots[node])
             if root != roots[node]:
-                raise MergeAliasConflict(f"Conflicting merge targets for {parent}", merges, parent, label)
+                if ambiguous is None:
+                    raise MergeAliasConflict(f"Conflicting merge targets for {parent}", merges, parent, label)
+                ambiguous.add(parent)
+            if ambiguous is not None and node in ambiguous:
+                ambiguous.add(parent)
             remaining[parent] -= 1
             if remaining[parent] == 0:
                 ready.append(parent)
     if unresolved := sorted(node for node, count in remaining.items() if count):
-        raise MergeAliasConflict("Cyclic merge aliases cannot be applied", merges, unresolved[0], label)
+        if ambiguous is None:
+            raise MergeAliasConflict("Cyclic merge aliases cannot be applied", merges, unresolved[0], label)
+        ambiguous.update(unresolved)
     # A nearer survivor's scalar values take precedence over the records it had swallowed.
-    return [(node, roots[node]) for node in sorted(targets, key=depth.__getitem__)]
+    return [(node, roots[node]) for node in sorted(targets, key=depth.__getitem__) if ambiguous is None or node not in ambiguous]

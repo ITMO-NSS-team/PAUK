@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 
+from pydantic import ValidationError
 from pymongo.database import Database
 
 from pauk.aliases import MergeAliasConflict
@@ -18,7 +19,7 @@ from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, Resolve
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
-from pauk.models import Authorship, Person
+from pauk.models import Authorship, ExternalIdentifier, Person
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.person_resolution import ResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
@@ -38,7 +39,7 @@ from pauk.pipeline.stages.dedup import (
 from pauk.settings import Settings
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
-from pauk.storage.person_identity import openalex_orcid_references
+from pauk.storage.person_identity import openalex_orcid_references, person_orcid_references
 from pauk.urls import normalize_repo_url
 
 from .alias_review import record_alias_conflict, retire_alias_conflicts
@@ -162,6 +163,24 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
     return openalex_orcid_references(mongo_db)
 
 
+def _person_identifiers(value) -> list[ExternalIdentifier]:
+    """Decode the identifier ledger without discarding valid entries in an older node."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(value, list):
+        return []
+    identifiers = []
+    for item in value:
+        try:
+            identifiers.append(ExternalIdentifier.model_validate(item))
+        except ValidationError:
+            continue
+    return identifiers
+
+
 def dedup_graph_persons(
     client,
     raw_orcids: dict[str, str | None],
@@ -196,7 +215,8 @@ def dedup_graph_persons(
     people = [
         Person(
             id=row["id"],
-            openalex_id=row.get("openalex_id") or row["id"],
+            openalex_id=row.get("openalex_id"),
+            identifiers=_person_identifiers(row.get("identifiers")),
             is_itmo=bool(row.get("is_itmo")),
             name_raw=row.get("name_raw"),
             name_variants=list(row.get("name_variants") or []),
@@ -218,7 +238,7 @@ def dedup_graph_persons(
         )
         for row in client.fetch_persons_for_dedup()
     ]
-    trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+    trusted_orcid = person_orcid_references(people, raw_orcids)
     planner = plan_person_merges_resolved if models is not None else plan_person_merges
     options = (
         {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}

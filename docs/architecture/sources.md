@@ -26,6 +26,7 @@ a local CLI. `PdfDownloader` manages a separate HTTP client per download thread.
   long, until when, the redacted request and the reason. Shorter waits stay
   silent. `OpenRouterClient` has its own retry loop and logs its waits the
   same way.
+- The optional `cancel` event interrupts waits for retries or host limits.
 - `retries` is a parameter so a caller can tune how aggressive retrying is.
   For example, the crawler health check in `code_links.py` runs with
   `retries=0`, so a dead service does not delay the whole run.
@@ -97,6 +98,7 @@ Settings:
 | `PAUK_CROSSREF_RPS` | `10` | Crossref requests/s; capped at 5 without a contact |
 | `PAUK_CROSSREF_CONCURRENCY` | `3` | Crossref requests in flight; one without a contact |
 | `CROSSREF_MAILTO` | empty | Contact email for Crossref polite-pool access |
+| `ORCID_CLIENT_ID` / `ORCID_CLIENT_SECRET` | empty | Set both for registered Public API access, leave both empty for anonymous reads |
 | `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
 | `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Optional Semantic Scholar pace override: lower it or match a higher quota assigned to the key |
 
@@ -104,10 +106,10 @@ Settings:
 
 | File | Class | What it provides |
 |---|---|---|
-| `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author` |
+| `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author`, `get_authors` |
 | `github.py` | `GitHubClient` | `get_repository`, `has_readme` (a separate call: the repository payload does not say whether a README exists), `contributors`, `commits`, `get_user`, `user_repositories`. It also retries rate limits sent as `403` or `429`: `Retry-After` first, then `X-RateLimit-Reset` for an exhausted primary limit, then at least 60 seconds for a secondary limit named only in the response body. The wait log line says which limit it was |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname; optional contact email selects polite-pool limits |
-| `orcid.py` | `OrcidClient` | `get_record(orcid)` |
+| `orcid.py` | `OrcidClient` | `get_record(orcid)`. Sessions with the same credentials share a `/read-public` token until expiry or HTTP 401. |
 | `semantic_scholar.py` | `SemanticScholarClient` | `papers_by_doi(dois)`: up to 500 DOIs per `POST /graph/v1/paper/batch`, one record or `None` per DOI in request order, retried up to eight times; `arxiv_id(record)` reads `externalIds.ArXiv`. Used by `ArxivVersionsStage` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call. `usage()`: dollars the key has spent so far, read by `pauk reports build` before and after a run |
 | `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude:<model>`, `codex:<model>`; a bare CLI name gets `Settings.claude_cli_model` or `Settings.codex_cli_model`), `check_providers` parses every stage's setting and looks for its CLI when `run`, `enrich` or `dedup` starts, `kill_running_clis` kills the CLIs of an interrupted stage and refuses new ones until `resume_clis`. A CLI reports a spent limit with `SubscriptionLimitError` and a lost login or 20 failures in a row with `CliUnusableError`; both stop the command |
