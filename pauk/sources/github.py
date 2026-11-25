@@ -1,11 +1,51 @@
 from __future__ import annotations
 
+import base64
+import logging
+import re
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Literal
 
 import requests
+from pydantic import BaseModel, ConfigDict
 
 from .base import HttpClient, HttpRequestError
+
+MAX_README_BYTES = 2 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+class Readme(BaseModel):
+    """A README can exist even when the Contents API omits its bytes."""
+
+    model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
+    status: Literal["available", "empty", "missing", "too_large", "unavailable", "invalid"]
+    path: str = ""
+    sha: str = ""
+    body: bytes = b""
+
+
+def _decode_readme(payload: dict, path: str, sha: str) -> Readme:
+    content = payload.get("content")
+    size = payload.get("size")
+    meta = {"path": path, "sha": sha}
+    if isinstance(size, int) and size > MAX_README_BYTES:
+        return Readme(status="too_large", **meta)
+    if payload.get("encoding") != "base64" or not isinstance(content, str) or (not content and size != 0):
+        return Readme(status="unavailable", **meta)
+    encoded = "".join(content.split())
+    if len(encoded) > 4 * ((MAX_README_BYTES + 2) // 3):
+        return Readme(status="too_large", **meta)
+    try:
+        body = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        return Readme(status="invalid", **meta)
+    if len(body) > MAX_README_BYTES:
+        return Readme(status="too_large", **meta)
+    if isinstance(size, int) and len(body) != size:
+        return Readme(status="invalid", **meta)
+    return Readme(status="available" if body else "empty", body=body, **meta)
 
 
 class GitHubClient(HttpClient):
@@ -69,18 +109,39 @@ class GitHubClient(HttpClient):
     def get_repository(self, owner: str, name: str) -> dict:
         return self.get_json(f"{self.API_URL}/repos/{owner}/{name}")
 
-    def has_readme(self, owner: str, name: str) -> bool:
-        """Check for a README via GET .../readme (200 = yes, 404 = no).
-
-        Not exposed by the repository payload itself, needs its own call.
-        """
+    def get_readme(self, owner: str, name: str, *, allow_blob: bool = False) -> Readme:
+        """Read the Contents response. Only corpus backfill requests the optional blob."""
+        root = f"{self.API_URL}/repos/{owner}/{name}"
         try:
-            self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
+            payload = self.get_json(f"{root}/readme")
         except HttpRequestError as exc:
             if exc.status_code == 404:
-                return False
+                return Readme(status="missing")
             raise
-        return True
+        if not isinstance(payload, dict):
+            return Readme(status="invalid")
+        path = payload.get("path") or payload.get("name") or ""
+        sha = payload.get("sha") or ""
+        if not isinstance(path, str) or not isinstance(sha, str):
+            return Readme(status="invalid")
+        result = _decode_readme(payload, path, sha)
+        size = payload.get("size")
+        if (allow_blob and result.status == "unavailable" and isinstance(size, int)
+                and 0 < size <= MAX_README_BYTES and re.fullmatch(r"[0-9a-f]{40}", sha)):
+            blob = self.get_json(f"{root}/git/blobs/{sha}")
+            if not isinstance(blob, dict) or blob.get("sha") != sha or blob.get("size") != size:
+                return Readme(status="invalid", path=path, sha=sha)
+            return _decode_readme(blob, path, sha)
+        return result
+
+    def has_readme(self, owner: str, name: str, *, on_result: Callable[[Readme], None] | None = None) -> bool:
+        result = self.get_readme(owner, name)
+        if on_result is not None:
+            try:
+                on_result(result)
+            except OSError as exc:
+                logger.warning("Could not cache README for %s/%s: %s", owner, name, exc)
+        return result.status != "missing"
 
     def _paged(self, url: str, pages: int, **params) -> Iterator[dict]:
         """Items from a paged endpoint, stopping at `pages` or the last page.

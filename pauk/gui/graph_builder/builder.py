@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
+from hashlib import sha256
 from pathlib import Path
 
 from pauk.cache import read_snapshot
@@ -39,7 +41,8 @@ class GraphDataBuilder:
     `build()` is called exactly once per run.
     """
 
-    def __init__(self, db: dict[str, list[dict]], seed: int) -> None:
+    def __init__(self, db: dict[str, list[dict]], seed: int,
+                 similarity: dict[tuple[str, str], float] | None = None) -> None:
         """Stores the input; the actual build only happens in `build()`.
 
         Args:
@@ -48,6 +51,7 @@ class GraphDataBuilder:
         """
         self.db = db
         self.seed = seed
+        self.similarity = similarity
 
     def build(self) -> tuple[dict, dict[str, list[dict]]]:
         """Builds the whole graph from the snapshot.
@@ -82,7 +86,7 @@ class GraphDataBuilder:
         assignment = assigner.assign(dept_name)
         table = assigner.build_table(dept_name, dept_name_en, assignment)
         groups = repo_groups(db, assignment, table)
-        layout = GraphLayoutBuilder(db, authorship, assignment).build(self.seed)
+        layout = GraphLayoutBuilder(db, authorship, assignment, self.similarity).build(self.seed)
 
         # The three node kinds are built independently but all need table
         # (dept/color) and their own slice of layout (positions).
@@ -118,7 +122,39 @@ def dump_json(data, path: Path) -> None:
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
-def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
+def _similar_repositories(snapshot_digest: str, db: dict, path: Path) -> dict[str, list[dict]]:
+    """Validate derived candidates against the exact snapshot before publishing."""
+    data = json.loads(path.read_bytes())
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise ValueError("unsupported similarity result")
+    if data.get("snapshot_sha256") != snapshot_digest:
+        raise ValueError("similarity result belongs to a different snapshot")
+    pairs = data.get("pairs")
+    if not isinstance(pairs, list):
+        raise ValueError("similarity result is missing pairs")
+    ids = {row["id"] for row in db["repositories"]}
+    neighbors: dict[str, list[dict]] = {}
+    seen = set()
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise ValueError("invalid similarity pair")
+        a, b, score = pair.get("a"), pair.get("b"), pair.get("score")
+        if not isinstance(a, str) or not isinstance(b, str) or a not in ids or b not in ids or a >= b:
+            raise ValueError("similarity pair has invalid endpoints")
+        if (a, b) in seen:
+            raise ValueError("duplicate similarity pair")
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score) or not -1 <= score <= 1:
+            raise ValueError("invalid similarity score")
+        seen.add((a, b))
+        neighbors.setdefault(a, []).append({"key": b, "score": score})
+        neighbors.setdefault(b, []).append({"key": a, "score": score})
+    for items in neighbors.values():
+        items.sort(key=lambda row: (-row["score"], row["key"]))
+    return neighbors
+
+
+def write_site_data(snapshot: Path, out_dir: Path, seed: int, *, similarity: Path | None = None,
+                    similarity_layout: bool = False) -> dict[str, int]:
     """Builds the site data from a snapshot and writes it into `out_dir`; what `pauk gui build` runs.
 
     Args:
@@ -130,16 +166,33 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
         What went onto the map - `map_authors`/`map_pubs`/`map_repos`/
         `map_departments`/`map_edges` (the admin panel shows these after a rebuild).
     """
+    t0 = time.time()
+    if similarity_layout and not similarity:
+        raise ValueError("--similarity-layout requires --similarity")
+    if similarity:
+        raw_snapshot = snapshot.read_bytes()
+        db = json.loads(raw_snapshot)
+        if not isinstance(db, dict):
+            raise ValueError("graph snapshot is not a JSON object")
+        similar = _similar_repositories(sha256(raw_snapshot).hexdigest(), db, similarity)
+        del raw_snapshot
+    else:
+        db = read_snapshot(snapshot)
+        similar = {}
+    layout_pairs = {(a, row["key"]): row["score"] for a, items in similar.items() for row in items
+                    if a < row["key"]} if similarity_layout else {}
+    if any(score <= 0 for score in layout_pairs.values()):
+        raise ValueError("similarity layout requires positive scores")
+    summary, detail = GraphDataBuilder(db, seed=seed, similarity=layout_pairs).build()
+    for row in detail["repos"]:
+        if row["key"] in similar:
+            row["similar_repos"] = similar[row["key"]]
+    public_summary, public_detail = to_public(summary, detail, db["persons"])
+
     public_dir = out_dir / "public"
     private_dir = out_dir / "private"
     public_dir.mkdir(parents=True, exist_ok=True)
     private_dir.mkdir(parents=True, exist_ok=True)
-
-    t0 = time.time()
-    db = read_snapshot(snapshot)
-    summary, detail = GraphDataBuilder(db, seed=seed).build()
-    public_summary, public_detail = to_public(summary, detail, db["persons"])
-
     for folder, (graph, details) in ((private_dir, (summary, detail)), (public_dir, (public_summary, public_detail))):
         dump_json(graph, folder / "graph-data.json")
         for kind, rows in details.items():

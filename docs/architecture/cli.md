@@ -266,6 +266,124 @@ tables from Neo4j, taking the rest from the newest snapshot.
 rows from it. The snapshot defaults to the newest in `cache_dir`. See
 [cache.md](cache.md).
 
+## `similarity collect`
+
+```
+pauk similarity collect --snapshot <graph_snapshot.json> --out <corpus-dir> [--refresh]
+```
+
+Builds a standalone corpus for repository similarity. The input supplies
+canonical repository IDs, URLs and metadata. Collection uses the README
+response cache populated by repository enrichment and backfills missing
+entries through GitHub. The snapshot's historical `has_readme` value is
+informational. A 404 is cached until refresh or a later enrichment.
+Transient failures and unusable payloads are retried on the next run.
+Backfill may request a Git blob by SHA for files whose inline bytes are
+omitted and whose declared size is within the 2 MiB limit.
+
+The output contains `blobs/<sha256>` with the original bytes, immutable
+`versions/<sha256>.json` manifests and the latest complete
+`manifest.json`. Each record contains its acquisition status, source path
+and SHA, prepared text, text digest, source fragments (README line numbers
+are one-based) and any skip reason. Counts include failed fetches even
+when a description yielded usable text. Use a private output directory:
+original READMEs can include personal information. Markdown, RST, AsciiDoc
+and plain UTF-8 prose are handled by a line-based cleaner. Other encodings
+and binary input are flagged and the description remains available.
+
+## `similarity index`
+
+```
+uv sync --extra similarity
+pauk similarity index --corpus <corpus-dir-or-version.json> --out <index-dir> [--batch-size 8] [--max-tokens 512] [--text-variant cleaned|fork]
+```
+
+The command encodes prepared corpus texts with the pinned BGE-M3 revision
+`5617a9f61b028005a4858fdac845db406aefb181`, with 512 input tokens by
+default. The first use downloads the model. `--max-tokens` accepts 3–8192
+and changes the cache identity; longer inputs increase memory requirements.
+The model and optional dependencies must run on the chosen machine.
+
+The manifest records the corpus and snapshot fingerprints, model revision,
+runtime versions, row IDs and text hashes. The matrix is a normalized
+float32 NumPy array under `matrices/`, with immutable version manifests in
+`versions/`. Per-text checkpoints in `cache/` resume interrupted builds.
+The latest manifest is replaced atomically only after the matrix and version
+manifest are written. Empty or skipped corpus records have no vector.
+This command does not calculate repository pairs or change the map.
+`--text-variant fork` uses name, description, topics and the first 4000
+characters of the original README, matching the comparison input from
+the search prototype. It uses the same eligible IDs as the cleaned corpus
+and validates the original README blob digest. This is an experimental
+comparison, not a quality judgment.
+
+## `similarity neighbors`
+
+```
+pauk similarity neighbors --index <index-dir-or-version.json> --out <neighbors-dir> --top-k 3 [--min-score 0.5] [--mutual]
+```
+
+Checks the index manifest, matrix digest, dimensions, numeric values and
+normalization before comparing every pair with a float64 dot product.
+The output `manifest.json` and immutable `versions/<sha256>.json` contain
+the index, corpus and snapshot digests. For each indexed repository,
+`candidates` retains its directed top-K with scores and ranks before the
+threshold. A pair passes the threshold inclusively and is emitted once when
+it occurs in either directed list, or both with `--mutual`. Pair records
+include the rank in each direction (null if outside that list) and both text
+digests, which identify the source records in the corpus manifest. Ties
+are resolved by repository ID. A top-K union can give a repository more
+than K undirected neighbors. An empty index yields an empty result. The
+default threshold is -1. Choose a display threshold after evaluation.
+This command does not modify the graph.
+
+## `similarity pool`
+
+```
+pauk similarity pool --corpus <corpus-dir> --index <index-dir> --graph <graph-data.json> --out <new-dir> [--sample-size 60] [--top-k 3] [--seed 42] [--fork-index <index-dir>]
+```
+
+Creates a blinded review CSV and separate ranking metadata. The corpus and
+index must match exactly. The graph's repository ID set is checked against
+the corpus and its SHA-256 is recorded; the caller must supply a GUI build
+made from the same snapshot. A seeded sample attempts to select equal numbers
+of isolated and linked repositories, then combines the top-K dense and
+TF-IDF results for each. TF-IDF uses the same prepared texts, sublinear
+term frequency, unigrams and bigrams, and a 35% maximum document frequency.
+It does not include zero-score candidates. Only candidate generation is
+performed; the output has no automatic quality judgments.
+`--fork-index` adds results from a fork-style index built from the same
+corpus; its input hashes are checked against the original README blobs.
+
+`review.csv` contains pairs, prepared texts, original README excerpts and
+their paths and blob SHAs, without method, scores or
+existing-edge labels. Mark `judgment` as `same_function`, `related`,
+`unrelated` or `insufficient`, describe the shared function, and mark
+duplicates or forks separately. `pool.json` records methods, ranks, scores,
+existing edges, selected repository IDs, parameters and input digests. Keep
+it away from reviewers during blind labeling. Both files can contain README
+text and must be handled as private working data. Existing `review.csv` is
+never replaced: use a new output directory for another run. CSV text cells
+are capped at 32,000 characters for spreadsheet compatibility and flagged
+when truncated; the complete prepared text and original README blobs remain
+in the corpus. Prepared text is displayed in full up to the CSV limit, while
+the dense model sees only the configured maximum number of tokens.
+
+## `similarity score`
+
+```
+pauk similarity score --pool <pool.json> --review <review.csv> --out <new-report.json>
+```
+
+Reports precision and Wilson 95% intervals for each method over judged
+new pairs whose duplicate/fork status is explicitly `no`. Empty judgments
+and undecided duplicate status are counted separately. `insufficient` is
+judged but does not count as a match. Reports also retain hashes of the
+pool and review file. This is precision on the labeled pool, not recall
+over all possible repository pairs. The Wilson interval treats judgments
+as independent, although pairs can share repositories; use it as a rough
+descriptive interval rather than a definitive confidence guarantee.
+
 ## `reports build`
 
 ```
@@ -284,7 +402,7 @@ See [reports.md](reports.md).
 ## `gui build`
 
 ```
-pauk gui build [--cache <snapshot>] [--out-dir <folder>] [--seed 42]
+pauk gui build [--cache <snapshot>] [--out-dir <folder>] [--seed 42] [--similarity <neighbors.json>] [--similarity-layout]
 ```
 
 Snapshot to layout to JSON for the `pauk/gui/web` site

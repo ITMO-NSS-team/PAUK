@@ -50,7 +50,8 @@ class EdgeBuilder:
             {"s": a, "t": b, "w": w} for (a, b), w in layout.pub_pair_w.items() if w >= EDGE_THRESHOLDS.pub_edge_min_w
         ]
         repo_edges = [
-            {"s": a, "t": b, "w": round(w, 2), "via": layout.repo_edge_via[(a, b)]}
+            {"s": a, "t": b, "w": round(w, 2), "via": layout.repo_edge_via[(a, b)],
+             **({"semantic_score": layout.repo_similarity[(a, b)]} if (a, b) in layout.repo_similarity else {})}
             for (a, b), w in layout.repo_edge_w.items()
         ]
 

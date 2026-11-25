@@ -321,6 +321,14 @@ export function mountPanel(
       [`${edge.t}\u0000${edge.s}`, edge.via ?? []],
     ]),
   );
+  const repoSemanticScores = new Map(
+    data.repo_edges.flatMap((edge) =>
+      edge.semantic_score === undefined ? [] : [
+        [`${edge.s}\u0000${edge.t}`, edge.semantic_score] as const,
+        [`${edge.t}\u0000${edge.s}`, edge.semantic_score] as const,
+      ],
+    ),
+  );
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
   const coauthIndex = buildCoauthIndex(data);
   const authorRepoIndex = buildAuthorRepoIndex(data);
@@ -340,7 +348,7 @@ export function mountPanel(
   function entityRefsOf(keys: string[], lang: AppState["lang"]): PanelEntityRef[] {
     return keys.map((key) => {
       const node = index.get(key);
-      const label = node ? nodeLabel(node, lang, pubDetails) : key;
+      const label = (node ? nodeLabel(node, lang, pubDetails) : "") || key;
       return { kind: "ref", selection: { kind: "node", key }, label };
     });
   }
@@ -759,6 +767,13 @@ export function mountPanel(
             rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
           if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
           if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
+          if (repoDetail?.similar_repos?.length) {
+            const scores = new Map(repoDetail.similar_repos.map((item) => [item.key, item.score]));
+            const refs = entityRefsOf(repoDetail.similar_repos.map((item) => item.key), lang).map(
+              (ref) => ({ ...ref, meta: (scores.get(refKey(ref)) ?? 0).toFixed(3) }),
+            );
+            rows.push([t("field.similarRepos", lang), { kind: "list", items: refs }]);
+          }
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
@@ -854,6 +869,8 @@ export function mountPanel(
       ];
 
       const via = repoEdgeVia.get(`${from.key}\u0000${to.key}`) ?? [];
+      const semanticScore = repoSemanticScores.get(`${from.key}\u0000${to.key}`);
+      if (semanticScore !== undefined) rows.push([t("field.semanticScore", lang), semanticScore.toFixed(3)]);
       if (via.length > 0)
         rows.push([
           t("field.repoVia", lang),

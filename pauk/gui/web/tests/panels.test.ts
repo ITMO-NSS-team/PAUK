@@ -973,6 +973,41 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(repoDetail.description);
   });
 
+  it("shows a selectable similarity candidate with its score", async () => {
+    const data = await loadSampleGraphData();
+    const details = indexDetailsByKey(await loadSampleRepoDetails());
+    const detail = details.get("R1");
+    if (!detail) throw new Error("missing R1");
+    detail.similar_repos = [{ key: "R2", score: 0.71234 }];
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, details);
+    expect(panel.textContent).toContain("Возможно похожие по описанию");
+    expect(panel.textContent).toContain("0.712");
+    const target = data.repos.find((repo) => repo.key === "R2");
+    expect(panel.textContent).toContain(target?.label);
+    const button = [...panel.querySelectorAll<HTMLButtonElement>("button.panel-entity-ref")].find(
+      (item) => item.textContent === target?.label,
+    );
+    expect(button).toBeDefined();
+    button?.click();
+    expect(store.get().selection).toEqual({ kind: "node", key: "R2" });
+  });
+
+  it("shows the repository key when a candidate has no label", async () => {
+    const data = await loadSampleGraphData();
+    const target = data.repos.find((repo) => repo.key === "R2");
+    if (!target) throw new Error("missing R2");
+    target.label = "";
+    const details = indexDetailsByKey(await loadSampleRepoDetails());
+    const detail = details.get("R1");
+    if (!detail) throw new Error("missing R1");
+    detail.similar_repos = [{ key: "R2", score: 0.819 }];
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, details);
+    expect([...panel.querySelectorAll<HTMLButtonElement>("button.panel-entity-ref")]
+      .some((button) => button.textContent === "R2")).toBe(true);
+  });
+
   it("the repository card shows the owner type, license and README presence", async () => {
     const data = await loadSampleGraphData();
     // R1: has_readme=true, license="MIT", owner_type="organization".
@@ -1178,6 +1213,18 @@ describe("mountPanel", () => {
 
     expect(panel.hidden).toBe(false);
     expect(panel.textContent).toContain(String(edge.w));
+  });
+
+  it("explains a semantic repository edge and its raw cosine", async () => {
+    const data = await loadSampleGraphData();
+    data.repo_edges.push({ s: "R1", t: "R2", w: 0.35, via: ["semantic"], semantic_score: 0.7012 });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "R2", t: "R1", w: 0.35 },
+    });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    expect(panel.textContent).toContain("сходство описаний (эксперимент)");
+    expect(panel.textContent).toContain("0.701");
   });
 
   it("clicking 'От'/'К' in the edge card goes to that node", async () => {

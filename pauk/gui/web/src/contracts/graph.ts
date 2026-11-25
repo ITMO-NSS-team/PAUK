@@ -77,6 +77,7 @@ export interface RepoDetail {
   license: string;
   contributors: string[];
   owner_type: string;
+  similar_repos?: { key: string; score: number }[];
 }
 
 export type ReportsIndex = Record<string, string[]>;
@@ -128,9 +129,10 @@ export interface Edge {
   t: string;
   w: number;
   via?: RepoEdgeSignal[];
+  semantic_score?: number;
 }
 
-export type RepoEdgeSignal = "pub" | "person" | "coauthor" | "owner";
+export type RepoEdgeSignal = "pub" | "person" | "coauthor" | "owner" | "semantic";
 
 export interface RepoGroup extends Department {
   kind: "org" | "field";

@@ -23,6 +23,9 @@ dependencies = [
     "python-multipart>=0.0.32",
 ]
 
+[project.optional-dependencies]
+similarity = ["scikit-learn>=1.5", "sentence-transformers>=5.1,<6", "torch>=2.6"]
+
 [project.scripts]
 pauk = "pauk.cli:main"
 
