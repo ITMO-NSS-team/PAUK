@@ -53,6 +53,17 @@ class FakeGraph:
         found = self.nodes.get((label, node_id))
         return dict(found) if found else None
 
+    def fetch_repositories_by_url_path(self, path_fragment):
+        needle = path_fragment.lower()
+        found = []
+        for (node_label, _node_id), props in sorted(self.nodes.items()):
+            if node_label != "Repository":
+                continue
+            candidates = [props.get("url"), *(props.get("cited_urls") or [])]
+            if any(isinstance(candidate, str) and needle in candidate.lower() for candidate in candidates):
+                found.append(dict(props))
+        return found
+
     def upsert_nodes_batch(self, labels, nodes):
         self.calls.append("upsert_nodes_batch")
         label = labels if isinstance(labels, str) else ":".join(labels)

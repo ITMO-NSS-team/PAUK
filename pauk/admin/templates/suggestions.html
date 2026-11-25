@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Предложения по связям</h1>
+
+{% set problem = request.query_params.get("problem") %}
+{% if problem %}<p class="note bad">{{ problem }}</p>{% endif %}
+
+{% set done = request.query_params.get("done") %}
+{% if done == "approved" %}
+<p class="note">Предложение одобрено и записано в граф и ручные решения.</p>
+{% elif done == "rejected" %}
+<p class="note">Предложение отклонено. Граф не изменён.</p>
+{% endif %}
+
+{% if not graph_up %}
+<p class="note bad">Граф не отвечает: контекст записей не подгружен, применить предложения сейчас нельзя.</p>
+{% endif %}
+
+<div class="tabs">
+  <a href="/suggestions?tab=pending" {% if tab == "pending" %}class="on"{% endif %}>
+    Ожидают {{ counts.pending }}</a>
+  <a href="/suggestions?tab=approved" {% if tab == "approved" %}class="on"{% endif %}>
+    Одобренные{% if counts.approved %} {{ counts.approved }}{% endif %}</a>
+  <a href="/suggestions?tab=rejected" {% if tab == "rejected" %}class="on"{% endif %}>
+    Отклонённые{% if counts.rejected %} {{ counts.rejected }}{% endif %}</a>
+</div>
+
+{% if not rows %}
+  <p class="muted">
+  {% if tab == "pending" %}Ожидающих предложений нет.
+  {% elif tab == "approved" %}Пока ни одно предложение не одобрено.
+  {% else %}Отклонённых предложений нет.{% endif %}</p>
+{% else %}
+<div class="card scroll">
+  <table class="fixed">
+    <colgroup>
+      <col style="width:18rem"><col style="width:14rem"><col><col style="width:16rem">
+    </colgroup>
+    <tr>
+      <th>публикация и цель</th>
+      <th>состояние в графе</th>
+      <th>свидетельства агента</th>
+      <th>решение</th>
+    </tr>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <div class="kind kind-bulk" style="margin-bottom:6px">от агента · требует проверки</div>
+        <div><b>{{ row.relation_label }}</b></div>
+        <div style="margin-top:6px">
+          <a href="{{ row.pub_href }}">{{ row.pub_title or row.pub_id_display }}</a>
+          <br><span class="muted val">{{ row.pub_id_display }}{% if row.pub_doi %} · {{ row.pub_doi }}{% endif %}{% if row.pub_year %} · {{ row.pub_year }}{% endif %}</span>
+        </div>
+        {% if row.proposed_relation != "full_text" %}
+        <div style="margin-top:8px">
+          {% if row.repo_href %}
+          <a href="{{ row.repo_href }}">{{ row.repo_name or row.repo_id_display }}</a>
+          <br><span class="muted val">{{ row.repo_id_display }}</span>
+          {% elif row.safe_repository_url %}
+          <a href="{{ row.safe_repository_url }}" target="_blank" rel="noopener noreferrer">{{ row.safe_repository_url }}</a>
+          {% elif row.repository_url %}
+          <span class="val">{{ row.repository_url }}</span>
+          {% else %}
+          <span class="val muted">{{ row.repository_id or "–" }}</span>
+          {% endif %}
+          {% if row.repo_graph_url %}
+          <div class="muted val"><a href="{{ row.repo_graph_url }}" target="_blank" rel="noopener noreferrer">{{ row.repo_graph_url }}</a></div>
+          {% elif row.safe_repository_url and row.repo_href %}
+          <div class="muted val"><a href="{{ row.safe_repository_url }}" target="_blank" rel="noopener noreferrer">{{ row.safe_repository_url }}</a></div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if row.submission_count > 1 %}
+        <div class="muted" style="margin-top:4px">повторных отправок: {{ row.submission_count }}</div>
+        {% endif %}
+      </td>
+      <td>
+        {% if not row.graph_up %}
+          <span class="muted">нет связи с графом</span>
+        {% elif row.pub_missing %}
+          <span class="kind kind-deleted">публикация не найдена</span>
+        {% elif row.repo_ambiguous %}
+          <span class="kind kind-deleted">найдено несколько репозиториев — свяжите вручную</span>
+        {% elif row.proposed_relation == "full_text" %}
+          <span class="muted">добавит ссылку в Publication.pdf_urls</span>
+        {% elif row.implements_exists %}
+          <span class="kind kind-created">IMPLEMENTS уже есть</span>
+        {% elif row.repo_href %}
+          <span class="muted">репозиторий есть в графе, IMPLEMENTS нет</span>
+        {% elif row.proposed_relation == "implements" %}
+          <span class="muted">нового репозитория нет в графе — будет создан</span>
+        {% elif row.proposed_relation == "mentions" %}
+          <span class="muted">будет создан LinkCandidate</span>
+        {% else %}
+          <span class="muted">репозитория нет в графе</span>
+        {% endif %}
+        {% if row.prior %}
+        <div class="muted" style="margin-top:8px">
+          ранее {{ "одобрено" if row.prior.status == "approved" else "отклонено" }}
+          ({{ row.prior.reviewed_by }}{% if row.prior.reviewed_at %} · {{ row.prior.reviewed_at|moment }}{% endif %})
+        </div>
+        {% endif %}
+      </td>
+      <td>
+        <div class="clip{% if row.rationale|is_long %} clipped{% endif %}">{{ row.rationale }}</div>
+        {% if row.quote %}
+        <div class="muted" style="margin-top:6px">
+          <b>Цитата:</b>
+          <span class="clip{% if row.quote|is_long %} clipped{% endif %}">{{ row.quote }}</span>
+        </div>
+        {% endif %}
+        {% if row.safe_evidence_url %}
+        <div class="val" style="margin-top:6px">
+          <a href="{{ row.safe_evidence_url }}" target="_blank" rel="noopener noreferrer">{{ row.safe_evidence_url }}</a>
+        </div>
+        {% elif row.evidence_url %}
+        <div class="val muted" style="margin-top:6px">{{ row.evidence_url }}</div>
+        {% endif %}
+        <div class="muted" style="margin-top:6px">
+          источник: {{ row.submitted_by }} · {{ row.submitted_at|moment }}
+        </div>
+      </td>
+      <td>
+        {% if row.status == "approved" %}
+          <span class="kind kind-created">одобрено</span>
+          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} · {{ row.reviewed_at|moment }}{% endif %}</span>
+          {% if row.review_note %}<div class="muted">{{ row.review_note }}</div>{% endif %}
+        {% elif row.status == "rejected" %}
+          <span class="kind kind-deleted">отклонено</span>
+          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} · {{ row.reviewed_at|moment }}{% endif %}</span>
+          {% if row.review_note %}<div class="muted">{{ row.review_note }}</div>{% endif %}
+        {% elif user.can_write %}
+          {% if row.status == "applying" %}
+          <div class="muted" style="margin-bottom:6px">обрабатывается ({{ row.applying_by }})</div>
+          {% endif %}
+          <form method="post" action="/suggestions/{{ row.id }}/approve" class="verdicts">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <input type="text" name="note" placeholder="комментарий" aria-label="комментарий">
+            <div class="row" style="margin:0">
+              <button type="submit">Одобрить</button>
+              <button type="submit" formaction="/suggestions/{{ row.id }}/reject" class="ghost">Отклонить</button>
+            </div>
+          </form>
+        {% else %}
+          <span class="muted">только просмотр</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% if page > 1 %}<a href="/suggestions?tab={{ tab }}&page={{ page - 1 }}">{% if tab == "pending" %}<- старее{% else %}<- новее{% endif %}</a>{% endif %}
+  <span class="muted" style="margin:0 12px">страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a href="/suggestions?tab={{ tab }}&page={{ page + 1 }}">{% if tab == "pending" %}новее ->{% else %}старее ->{% endif %}</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

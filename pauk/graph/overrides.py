@@ -277,10 +277,19 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
 
     def build(existing: dict) -> dict:
+        preserved_snapshot = (
+            dict(snapshot)
+            if snapshot is not None
+            else (
+                dict(existing.get("snapshot") or {})
+                if op == DELETE and existing.get("active") and existing.get("op") == DELETE
+                else {}
+            )
+        )
         return {"$set": {
             "kind": "rel", "src_label": src_label, "rel_type": rel_type,
             "tgt_label": tgt_label, "src_id": src_id, "target_id": tgt_id,
-            "op": op, "snapshot": dict(snapshot or {}) if op == DELETE else {},
+            "op": op, "snapshot": preserved_snapshot if op == DELETE else {},
             "actor": actor, "note": note or existing.get("note", ""), "active": True,
         }, "$setOnInsert": {"created_at": _now()}}
 

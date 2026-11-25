@@ -1,4 +1,4 @@
-"""Six bounded read operations over the published graph."""
+"""Six bounded read operations plus optional opt-in evidence submission."""
 
 import json
 import math
@@ -12,6 +12,7 @@ from pauk.mcp.contracts import (
     Evidence,
     ExplainRequest,
     Explanation,
+    LinkSuggestionReceipt,
     MCPError,
     Publication,
     PublicationPage,
@@ -26,11 +27,14 @@ from pauk.mcp.contracts import (
     RepositorySearchPage,
     SearchRepositoriesRequest,
     SearchRequest,
+    SubmitLinkEvidenceRequest,
     Text,
     normalize_doi,
     normalize_repo_url_query,
+    safe_evidence_url,
     safe_url,
 )
+from pauk.mcp.submissions import SuggestionStore
 
 SOURCES = {"abstract", "pdf_text", "pdf_annotation", "reference", "citation", "deposit_title"}
 WIRE_RESPONSE_LIMIT = 65536
@@ -111,10 +115,23 @@ def _evidence(row: dict[str, Any], allowed: bool) -> Evidence:
 class Service:
     """Expose only approved fields; private free text is disabled by default."""
 
-    def __init__(self, reader: queries.Reader, cursor_key: bytes, *, safe_synthetic_text: bool = False) -> None:
+    def __init__(
+        self,
+        reader: queries.Reader,
+        cursor_key: bytes,
+        *,
+        safe_synthetic_text: bool = False,
+        suggestion_store: SuggestionStore | None = None,
+    ) -> None:
         self.reader = reader
         self.cursors = Cursors(cursor_key)
         self.safe_synthetic_text = safe_synthetic_text
+        self.suggestion_store = suggestion_store
+
+    @property
+    def submissions_enabled(self) -> bool:
+        """Whether agent link-evidence submissions are explicitly configured."""
+        return self.suggestion_store is not None
 
     def _page(self, request: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         cursor = request.pop("cursor")
@@ -302,4 +319,50 @@ class Service:
                 items=page_items,
                 next_cursor=next_cursor,
             ),
+        )
+
+    async def submit_link_evidence(self, request: SubmitLinkEvidenceRequest) -> LinkSuggestionReceipt:
+        """Queue agent-found repository or full-text evidence for manual PAUK human review."""
+        if self.suggestion_store is None:
+            raise MCPError("INPUT")
+        publication_id = _identifier(await queries.resolve(self.reader, "Publication", request.publication_id))
+        evidence_url = safe_evidence_url(request.evidence_url) if request.evidence_url is not None else None
+        if request.proposed_relation == "full_text":
+            repository_id = None
+            repository_url = None
+        else:
+            repository_url = (
+                normalize_repo_url_query(request.repository_url) if request.repository_url is not None else None
+            )
+            if request.repository_id is not None:
+                repository_id = _identifier(await queries.resolve(self.reader, "Repository", request.repository_id))
+                rows = await self.reader.query(queries.REPOSITORY, {"repository_id": repository_id, "text": False})
+                if len(rows) != 1:
+                    raise MCPError("BACKEND")
+                stored_url = normalize_repo_url_query(rows[0].get("url"))
+                if repository_url is not None and repository_url != stored_url:
+                    raise MCPError("INPUT")
+                if repository_url is None:
+                    repository_url = stored_url
+            else:
+                matches = await self.reader.query(
+                    queries.SEARCH_REPOSITORIES_URL, {"query": repository_url, "offset": 0, "limit": 2}
+                )
+                repository_id = _identifier(matches[0].get("id")) if len(matches) == 1 else None
+        suggestion_id, status = await self.suggestion_store.submit(
+            publication_id=publication_id,
+            proposed_relation=request.proposed_relation,
+            rationale=request.rationale,
+            repository_id=repository_id,
+            repository_url=repository_url,
+            quote=request.quote,
+            evidence_url=evidence_url,
+        )
+        return LinkSuggestionReceipt(
+            suggestion_id=suggestion_id,
+            status=status,
+            publication_id=publication_id,
+            proposed_relation=request.proposed_relation,
+            repository_id=repository_id,
+            repository_url=repository_url,
         )

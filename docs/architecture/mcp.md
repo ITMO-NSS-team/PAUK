@@ -1,9 +1,10 @@
 # Local MCP prototype
 
-`pauk/mcp/` is an optional, read-only Streamable HTTP interface to an
-**isolated test graph**. It is not deployed, does not run an LLM and does not
-integrate with a working CoScientist instance. Install only in the prototype's
-own environment:
+`pauk/mcp/` is an optional Streamable HTTP interface to an
+**isolated test graph** (with six read-only graph tools and an optional opt-in
+suggestion submission tool backed by an isolated MongoDB collection). It is not
+deployed, does not run an LLM and does not integrate with a working CoScientist
+instance. Install only in the prototype's own environment:
 
 ```bash
 uv sync --extra mcp
@@ -81,6 +82,31 @@ repository APIs. They do not imply a current snapshot/access-check timestamp.
   Because `relation="mentions"` reads stored `MENTIONS_LINK` edges only, a
   manual `IMPLEMENTS` edge without a mention edge does not appear in `mentions`.
 
+### Opt-in submission tool
+
+- `submit_link_evidence(publication_id, proposed_relation, rationale, repository_id=None, repository_url=None, quote=None, evidence_url=None)`:
+  registered and callable **only** when `PAUK_MCP_SUBMISSIONS_ENABLED=true`
+  together with an isolated loopback MongoDB configuration
+  (`PAUK_MCP_MONGO_URI=mongodb://127.0.0.1:<non-default-port>` or
+  `mongodb://localhost:<non-default-port>` and `PAUK_MCP_MONGO_DB`, never falling
+  back to `MONGO_URI`/`MONGO_DB`).
+  - `proposed_relation` is one of `implements`, `not_implements`, `mentions`,
+    or `full_text`.
+  - Repository relations (`implements`, `not_implements`, `mentions`) require
+    `repository_id` or an approved-host `repository_url`; if `repository_url`
+    uniquely matches an existing Neo4j `Repository.url` (not `cited_urls`),
+    `repository_id` is resolved.
+  - `full_text` requires a public HTTP(S) `evidence_url` (no loopback/private/IP
+    literals or credentials) and forbids `repository_id`/`repository_url`.
+  - `rationale` is 10–1,000 characters; optional `quote` is 1–1,000 characters;
+    disallowed control characters are rejected (`INPUT`).
+  - Duplicate active claims return `status="already_queued"`, identical
+    previously reviewed submissions return `status="already_reviewed"`, and queue
+    saturation returns `QUEUE_FULL`.
+  - **Never mutates Neo4j**: submissions land solely in MongoDB
+    (`link_suggestions`) and take effect only after explicit human approval on the
+    admin panel's `/suggestions` page.
+
 Repository `metadata_note` and `verification_note` describe this call's limits:
 `last_updated` is a cached upstream update date, not an access check or proof
 of current maintenance/abandonment. `language` is an upstream label, not a code
@@ -90,7 +116,8 @@ reproducibility. Cache/access-check timestamps are not reported.
 
 An existing direct ID wins over `merged_ids`. Missing IDs return `NOT_FOUND`;
 multiple alias survivors return `AMBIGUOUS_ID`. Other public tool errors are
-`INPUT`, `CURSOR`, `TIMEOUT`, `BACKEND` and `INTERNAL`, never exception text.
+`INPUT`, `CURSOR`, `QUEUE_FULL`, `TIMEOUT`, `BACKEND` and `INTERNAL`, never
+exception text.
 
 Free-text fields use `{value, status, truncated}`. `withheld` differs from
 `unavailable`; neither can carry a value. Text is capped at 1,000 characters,

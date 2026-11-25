@@ -418,3 +418,131 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLessEqual(len(response.content), 65536)
                 self.assertEqual(response.status_code, 200 if size == 65536 else 500)
                 json.loads(response.content)
+
+
+@unittest.skipUnless(HAS_MCP, "Install the optional mcp extra for submission protocol tests")
+class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_opt_in_submission_tool_boundary_and_configuration(self) -> None:
+        import mongomock
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        from pauk.mcp.server import SafeMCP, _check_configuration, register_tools
+        from pauk.mcp.submissions import MongoSuggestionStore
+        from pauk.settings import Settings
+        from pauk.storage import link_suggestions
+
+        # SafeMCP directly (without Boundary) refuses submit_link_evidence when disabled.
+        disabled_service = Service(SyntheticReader(), b"key")
+        safe_mcp = SafeMCP(disabled_service, name="disabled-test")
+        register_tools(safe_mcp, disabled_service)
+        with self.assertRaises(ToolError) as direct_err:
+            await safe_mcp.call_tool(
+                "submit_link_evidence",
+                {
+                    "publication_id": "p-paper",
+                    "proposed_relation": "implements",
+                    "repository_id": "r-code",
+                    "rationale": "Direct SafeMCP call must reject when disabled.",
+                },
+            )
+        self.assertEqual(str(direct_err.exception), "INPUT")
+
+        # Default server refuses submit_link_evidence cleanly at the boundary with INPUT.
+        async with httpx.AsyncClient(headers={"Authorization": "Bearer " + TEST_TOKEN}, timeout=5) as http:
+            with live_server(create_app(Service(SyntheticReader(), b"key"), TEST_TOKEN)) as url:
+                disabled_resp = await http.post(
+                    url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 9,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "submit_link_evidence",
+                            "arguments": {
+                                "publication_id": "p-paper",
+                                "proposed_relation": "implements",
+                                "repository_id": "r-code",
+                                "rationale": "Should be rejected when disabled.",
+                            },
+                        },
+                    },
+                )
+                self.assertEqual(disabled_resp.status_code, 200)
+                self.assertEqual(
+                    disabled_resp.json()["result"],
+                    {"content": [{"type": "text", "text": "INPUT"}], "isError": True},
+                )
+
+            # With suggestion_store enabled, 7 tools are exposed and calls persist into Mongo.
+            db = mongomock.MongoClient()["pauk_mcp_server_submit"]
+            app = create_app(
+                Service(SyntheticReader(), b"key", suggestion_store=MongoSuggestionStore(db)),
+                TEST_TOKEN,
+            )
+            with live_server(app) as url:
+                async with (
+                    streamable_http_client(url, http_client=http) as (rx, tx, _),
+                    ClientSession(rx, tx) as session,
+                ):
+                    await session.initialize()
+                    tools = (await session.list_tools()).tools
+                    self.assertIn("submit_link_evidence", {t.name for t in tools})
+                    self.assertEqual(len(tools), 7)
+                    result = await session.call_tool(
+                        "submit_link_evidence",
+                        {
+                            "publication_id": "old-paper",
+                            "proposed_relation": "implements",
+                            "repository_url": "https://github.com/org/new-repo",
+                            "rationale": "Found author code link in official abstract.",
+                        },
+                    )
+                    self.assertFalse(result.isError)
+                    self.assertEqual(result.structuredContent["status"], "queued")
+                    self.assertEqual(result.structuredContent["publication_id"], "p-paper")
+                    self.assertEqual(result.structuredContent["repository_url"], "https://github.com/org/new-repo")
+                    self.assertEqual(link_suggestions.count(db, status=link_suggestions.PENDING), 1)
+
+        base_kwargs = {
+            "mcp_neo4j_uri": "bolt://127.0.0.1:7688",
+            "mcp_neo4j_user": "neo4j",
+            "mcp_neo4j_password": "secret",
+            "mcp_neo4j_database": "neo4j",
+            "mcp_dataset_policy": "isolated",
+            "mcp_token": TEST_TOKEN,
+        }
+        _check_configuration(Settings(**base_kwargs))  # Disabled submissions needs no Mongo settings.
+
+        for bad_mongo in (
+            {},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27017", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:027018", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018\n", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:0", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://@127.0.0.1:27018", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://evil.example:27018", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://user:pass@127.0.0.1:27018", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018/path", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018?authSource=admin", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018#frag", "mcp_mongo_db": "pauk"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018", "mcp_mongo_db": ""},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018", "mcp_mongo_db": " pauk "},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018", "mcp_mongo_db": "bad/db"},
+            {"mcp_mongo_uri": "mongodb://127.0.0.1:27018", "mcp_mongo_db": "bad\x7fdb"},
+        ):
+            with self.subTest(bad_mongo=bad_mongo), self.assertRaises(SystemExit):
+                _check_configuration(Settings(**base_kwargs, mcp_submissions_enabled=True, **bad_mongo))
+
+        with self.assertRaises(SystemExit):
+            _check_configuration(Settings(**{**base_kwargs, "mcp_neo4j_uri": "bolt://127.0.0.1:07688"}))
+        with self.assertRaises(SystemExit):
+            _check_configuration(Settings(**{**base_kwargs, "mcp_neo4j_uri": "bolt://127.0.0.1:7688\n"}))
+
+        _check_configuration(
+            Settings(
+                **base_kwargs,
+                mcp_submissions_enabled=True,
+                mcp_mongo_uri="mongodb://127.0.0.1:27018",
+                mcp_mongo_db="pauk_isolated",
+            )
+        )

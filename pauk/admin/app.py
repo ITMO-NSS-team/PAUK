@@ -34,6 +34,7 @@ from pauk.admin import (
     job_routes,
     nodes,
     review_routes,
+    suggestion_routes,
     summary,
 )
 from pauk.admin.auth import (
@@ -261,5 +262,6 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     app.include_router(decision_routes.router)
     app.include_router(job_routes.router)
     app.include_router(review_routes.router)
+    app.include_router(suggestion_routes.router)
     app.include_router(health_routes.router)
     return app

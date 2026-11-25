@@ -3,22 +3,38 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
+import socket
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from pauk.urls import (
+    APPROVED_REPO_HOSTS as APPROVED_REPO_HOSTS,
+)
+from pauk.urls import (
+    normalize_repo_url_query as normalize_repo_url_query,
+)
+from pauk.urls import (
+    safe_url as safe_url,
+)
 
 Identifier = Annotated[str, StringConstraints(min_length=1, max_length=256, strip_whitespace=True)]
 DOI = Annotated[str, StringConstraints(min_length=1, max_length=512, strip_whitespace=True)]
 TitleQuery = Annotated[str, StringConstraints(min_length=3, max_length=300, strip_whitespace=True)]
 RepoURLQuery = Annotated[str, StringConstraints(min_length=1, max_length=2000)]
 RepositoryRelation = Literal["implements", "mentions"]
+ProposedRelation = Literal["implements", "not_implements", "mentions", "full_text"]
+SubmissionText = Annotated[str, StringConstraints(min_length=10, max_length=1000, strip_whitespace=True)]
+SubmissionQuote = Annotated[str, StringConstraints(min_length=1, max_length=1000, strip_whitespace=True)]
+EvidenceURL = Annotated[str, StringConstraints(min_length=1, max_length=1000)]
 Cursor = Annotated[str, StringConstraints(min_length=1, max_length=1024)]
 PageSize = Annotated[int, Field(strict=True, ge=1, le=25)]
 EvidenceSize = Annotated[int, Field(strict=True, ge=1, le=10)]
 Status = Literal["available", "unavailable", "withheld"]
-ErrorCode = Literal["INPUT", "CURSOR", "NOT_FOUND", "AMBIGUOUS_ID", "TIMEOUT", "BACKEND", "INTERNAL"]
+ErrorCode = Literal["INPUT", "CURSOR", "NOT_FOUND", "AMBIGUOUS_ID", "QUEUE_FULL", "TIMEOUT", "BACKEND", "INTERNAL"]
 
 
 class MCPError(Exception):
@@ -104,6 +120,55 @@ class RepositoryPublicationsRequest(Contract):
     relation: RepositoryRelation = "implements"
     page_size: PageSize = 10
     cursor: Cursor | None = None
+
+
+def _has_disallowed_control_chars(value: str) -> bool:
+    """Reject C0 controls (except tab, LF, CR), DEL and C1 controls."""
+    return any((ord(ch) < 32 and ch not in "\t\n\r") or 0x7F <= ord(ch) <= 0x9F for ch in value)
+
+
+class SubmitLinkEvidenceRequest(Contract):
+    """Queue candidate repository/full-text evidence for PAUK human moderation."""
+
+    publication_id: Identifier
+    proposed_relation: ProposedRelation
+    rationale: SubmissionText
+    repository_id: Identifier | None = None
+    repository_url: RepoURLQuery | None = None
+    quote: SubmissionQuote | None = None
+    evidence_url: EvidenceURL | None = None
+
+    @model_validator(mode="after")
+    def validate_target_and_text(self) -> "SubmitLinkEvidenceRequest":
+        """Enforce target requirements, safe URLs and safe control characters."""
+        if _has_disallowed_control_chars(self.rationale) or (
+            self.quote is not None and _has_disallowed_control_chars(self.quote)
+        ):
+            raise ValueError("Text fields cannot contain control characters")
+        if self.repository_url is not None and normalize_repo_url_query(self.repository_url) is None:
+            raise ValueError("Repository URL must use an approved host without credentials or query parameters")
+        if self.evidence_url is not None and safe_evidence_url(self.evidence_url) is None:
+            raise ValueError("Evidence URL must use a public http(s) hostname without credentials")
+        if self.proposed_relation == "full_text":
+            if self.evidence_url is None or self.repository_id is not None or self.repository_url is not None:
+                raise ValueError("full_text suggestions require evidence_url and forbid repository fields")
+        elif self.repository_id is None and self.repository_url is None:
+            raise ValueError("Repository link suggestions require repository_id or repository_url")
+        return self
+
+
+class LinkSuggestionReceipt(Contract):
+    """Safe confirmation returned to agents after queuing evidence for human review."""
+
+    source_system: Literal["PAUK"] = "PAUK"
+    retrieval_mode: Literal["cached_prepared_graph"] = "cached_prepared_graph"
+    suggestion_id: str
+    status: Literal["queued", "already_queued", "already_reviewed"]
+    publication_id: str
+    proposed_relation: ProposedRelation
+    repository_id: str | None = None
+    repository_url: str | None = None
+    review_note: str = "Queued for manual PAUK human review; the published graph was not modified."
 
 
 class Text(Contract):
@@ -271,31 +336,44 @@ def normalize_doi(value: str) -> str:
     return normalized
 
 
-APPROVED_REPO_HOSTS = frozenset(
-    {
-        "github.com",
-        "gitlab.com",
-        "bitbucket.org",
-        "codeberg.org",
-        "sourceforge.net",
-        "huggingface.co",
-        "zenodo.org",
-        "doi.org",
-    }
+_EVIDENCE_HOST_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789.-")
+_RESERVED_HOST_SUFFIXES = (
+    ".local",
+    ".localhost",
+    ".localdomain",
+    ".internal",
+    ".lan",
+    ".arpa",
+    ".invalid",
+    ".test",
+    ".example",
+    ".home",
+    ".corp",
+    ".intranet",
+    ".private",
 )
 
 
-def _split_approved_url(value: str) -> tuple[str, str] | None:
-    """Validate an approved public repository URL and return (canonical_host, path)."""
+def _valid_public_tld(tld: str) -> bool:
+    return (tld.isalpha() and len(tld) >= 2) or (
+        tld.startswith("xn--") and len(tld) > 4 and tld[4:].replace("-", "").isalnum()
+    )
+
+
+def safe_evidence_url(value: object) -> str | None:
+    """Validate a public http(s) evidence/PDF URL without accepting local hosts, IPs or credentials."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip(" \t\n\r")
     if (
-        not value
-        or len(value) > 2000
-        or any(ord(c) < 33 for c in value)
-        or any(ch in value for ch in ("@", "?", "#"))
+        not stripped
+        or len(stripped) > 1000
+        or any(ord(ch) < 33 or 0x7F <= ord(ch) <= 0x9F for ch in stripped)
+        or "@" in stripped
     ):
         return None
     try:
-        parsed = urlsplit(value)
+        parsed = urlsplit(stripped)
     except ValueError:
         return None
     if (
@@ -303,34 +381,38 @@ def _split_approved_url(value: str) -> tuple[str, str] | None:
         or parsed.username is not None
         or parsed.password is not None
         or not parsed.netloc.isascii()
+        or parsed.netloc.endswith(":")
     ):
         return None
     default_port = ":443" if parsed.scheme == "https" else ":80"
-    canonical_host = parsed.netloc.lower().removesuffix(default_port).removeprefix("www.")
-    if canonical_host not in APPROVED_REPO_HOSTS:
+    host = parsed.netloc.lower().removesuffix(default_port)
+    if (
+        not host
+        or ":" in host
+        or host.startswith(".")
+        or host.endswith(".")
+        or ".." in host
+        or "." not in host
+        or not parsed.path.strip("/")
+        or any(ch not in _EVIDENCE_HOST_CHARS for ch in host)
+        or any(not label or label.startswith("-") or label.endswith("-") for label in host.split("."))
+        or host.endswith(_RESERVED_HOST_SUFFIXES)
+        or not _valid_public_tld(host.rsplit(".", 1)[-1])
+    ):
         return None
-    return canonical_host, parsed.path
-
-
-def safe_url(value: object) -> str | None:
-    """Withhold local, credential-bearing, signed or malformed URLs without rewriting them."""
-    if not isinstance(value, str):
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
         return None
-    return value if _split_approved_url(value) is not None else None
-
-
-def normalize_repo_url_query(value: object) -> str | None:
-    """Normalize an approved repository URL lookup query without trusting unsafe URLs."""
-    if not isinstance(value, str):
+    try:
+        socket.inet_aton(host)
+    except OSError:
+        pass
+    else:
         return None
-    parts = _split_approved_url(value.strip(" \t\n\r"))
-    if parts is None:
-        return None
-    canonical_host, raw_path = parts
-    path = raw_path.rstrip("/").lower().removesuffix(".git").rstrip("/")
-    if not path:
-        return None
-    return f"https://{canonical_host}{path}"
+    return urlunsplit((parsed.scheme, host, parsed.path, parsed.query, parsed.fragment))
 
 
 class Cursors:

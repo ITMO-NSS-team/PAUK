@@ -12,7 +12,7 @@ from pymongo.errors import PyMongoError
 from pauk.admin import health
 from pauk.jobs import store
 from pauk.jobs.models import FINAL, JobKind, JobState
-from pauk.storage import review
+from pauk.storage import link_suggestions, review
 
 
 def _last_run(db: Database) -> dict | None:
@@ -38,6 +38,7 @@ def collect(db: Database) -> dict:
             "workers": store.workers_present(db),
             "pressing": review.count(db, pressing=True, answered=False, skipped=False),
             "open": review.count(db, answered=False, skipped=False),
+            "suggestions_pending": link_suggestions.count(db, status=link_suggestions.PENDING),
             "last_run": _last_run(db),
             "health": _health(db),
         }

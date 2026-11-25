@@ -432,6 +432,7 @@ in "Ручные решения" (Manual decisions); delete the record instead.
 | "Ручные решения" (Manual decisions) | what is currently applied over the pipeline, each with "отменить" (undo) |
 | "Расхождения" (Discrepancies) | where the source started saying something different from what it said before the edit |
 | "Спорные случаи" (Review) | everything the pipeline is unsure about: person duplicates, GitHub accounts, namesakes in the catalog |
+| "Предложения" (Link suggestions) | queue of agent-submitted code-link and full-text evidence (`link_suggestions`) waiting for human approval or rejection |
 | "Здоровье БД" (DB health) | 32 cheap graph checks (gaps, suspicious names, duplicates, contradictions); per check, the records behind it and a CSV export |
 | "Пайплайн" (Pipeline) | queue and run history, full pipeline or single step, a three-phase bar for full runs |
 
@@ -510,6 +511,30 @@ uv run pauk admin trim --apply    # removes it
 180 days are kept by default (`--keep-days`). Restoring a deleted record is
 unaffected: its field snapshot is in the decision, and decisions are not
 trimmed.
+
+### Agent link suggestions (`/suggestions`)
+
+When the opt-in MCP submission tool (`submit_link_evidence`) is enabled, candidate
+evidence from CoScientist arrives in the `link_suggestions` Mongo collection
+(read by the panel from its configured MongoDB in shared test/ops setups)
+without modifying Neo4j. Editors review each submission against live graph state:
+
+- **`implements`**: creates the `Repository` node if missing (`CREATE` claim in
+  `graph_overrides`) and adds `(:Repository)-[:IMPLEMENTS]->(:Publication)` with a
+  protecting `LINK` claim so subsequent sync passes keep it.
+- **`not_implements`**: removes an existing `IMPLEMENTS` edge (saving its
+  snapshot), records a `DELETE` tombstone in `graph_overrides` if the edge is
+  already absent on an existing `Repository`, or marks the suggestion approved
+  as a no-op when the `Repository` node does not exist in Neo4j.
+- **`mentions`**: adds `(:Publication)-[:MENTIONS_LINK]->(:Repository)` (or
+  creates a `LinkCandidate` when no repository exists yet) with a protecting
+  `LINK` claim.
+- **`full_text`**: appends the validated public PDF URL to
+  `Publication.pdf_urls` as a manual `set` override.
+
+Rejecting a suggestion marks it rejected in Mongo without writing to Neo4j or
+`graph_overrides`. Both viewers and editors can browse the queue (`pending`,
+`approved`, `rejected`); only `editor` or `admin` accounts can approve or reject.
 
 ### Mongo compression
 

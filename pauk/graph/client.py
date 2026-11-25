@@ -748,6 +748,20 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
+    def fetch_repositories_by_url_path(self, path_fragment: str) -> list[dict]:
+        """Return Repository properties whose URL or cited URLs match a lowercased path fragment."""
+        query = """
+            MATCH (r:Repository)
+            WHERE (r.url IS NOT NULL AND r.url IS :: STRING AND toLower(r.url) CONTAINS $fragment)
+               OR ANY(u IN coalesce(r.cited_urls, []) WHERE u IS :: STRING AND toLower(u) CONTAINS $fragment)
+            RETURN properties(r) AS props
+            ORDER BY r.id ASC
+        """
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(
+                lambda tx: [dict(record["props"]) for record in tx.run(query, fragment=path_fragment)]
+            )
+
     def fetch_node_ids(self, label: str) -> set[str]:
         """Return all ids for a label for set-based graph/source comparisons."""
         query = cast(LiteralString, f"MATCH (n:{label}) RETURN n.id AS id")

@@ -90,6 +90,16 @@
     {% if summary.open %}<span class="foot">Всего нерешённых: {{ summary.open }}</span>{% endif %}
   </a>
 
+  <a class="card" href="/suggestions">
+    <span class="label">Предложения по связям</span>
+    <b class="headline{% if not summary.suggestions_pending %} quiet{% endif %}">{{
+      summary.suggestions_pending if summary.suggestions_pending else "разобраны" }}</b>
+    <span class="under">
+      {%- if summary.suggestions_pending %}{{ summary.suggestions_pending|plural("предложение ждёт", "предложения ждут",
+        "предложений ждут") }} проверки
+      {%- else %}новых предложений нет{% endif %}</span>
+  </a>
+
   <a class="card" href="/health">
     <span class="label">Здоровье БД</span>
     {% set health = summary.health %}

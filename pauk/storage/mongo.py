@@ -6,6 +6,7 @@ from pymongo import MongoClient
 from pymongo.database import Database
 
 from pauk.settings import Settings
+from pauk.storage import link_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +102,4 @@ def ensure_indexes(db: Database) -> None:
     # Without these, every tab count walks the collection that grows fastest.
     db.review_pairs.create_index([("kind", 1), ("verdict", 1)])
     db.review_pairs.create_index([("evidence.held_because", 1), ("verdict", 1)])
+    link_suggestions.ensure_indexes(db)

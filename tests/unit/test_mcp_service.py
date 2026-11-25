@@ -5,6 +5,7 @@ import unittest
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import mongomock
 from pydantic import ValidationError
 
 from pauk.mcp import reader as queries
@@ -18,13 +19,16 @@ from pauk.mcp.contracts import (
     RepositoryRequest,
     SearchRepositoriesRequest,
     SearchRequest,
+    SubmitLinkEvidenceRequest,
     Text,
     normalize_doi,
     normalize_repo_url_query,
+    safe_evidence_url,
     safe_url,
 )
 from pauk.mcp.reader import Neo4jReader, resolve
 from pauk.mcp.service import Service
+from pauk.mcp.submissions import MongoSuggestionStore
 
 
 class StubReader:
@@ -730,3 +734,258 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await Neo4jReader(driver, "synthetic").query(queries.IMPLEMENTS, {})
         session.cancel.assert_called_once()
+
+
+class SubmissionTests(unittest.IsolatedAsyncioTestCase):
+    def test_submit_link_evidence_request_validation_and_evidence_urls(self) -> None:
+        for bad_url in (
+            "ftp://example.org/file.pdf",
+            "http://localhost/file.pdf",
+            "http://127.0.0.1/file.pdf",
+            "http://169.254.169.254/latest",
+            "https://[::1]/file.pdf",
+            "https://intranet/file.pdf",
+            "https://internal.local/file.pdf",
+            "https://user:pass@arxiv.org/pdf/1.pdf",
+            "https://arxiv.org:8443/pdf/1.pdf",
+            "https://arxiv.org:0443/pdf/1.pdf",
+            "https://arxiv.org/pdf/1.pdf\x0b",
+            "https://arxiv.org/pdf/1.pdf\x7f",
+            "https://arxiv.org/pdf/1.pdf\x85",
+            "http://0x7f.0.0.1/a.pdf",
+            "http://0177.0.0.1/a.pdf",
+            "http://127.1/a.pdf",
+            "http://169.254.43518/a.pdf",
+            "https://localhost.localdomain/a.pdf",
+            "https://1.0.0.127.in-addr.arpa/a.pdf",
+            "https://internal.test/a.pdf",
+            "https://example.example/a.pdf",
+            "https://arxiv.org",
+            "https://arxiv.org/",
+            "https://arxiv.org?a=1",
+        ):
+            self.assertIsNone(safe_evidence_url(bad_url), bad_url)
+        self.assertEqual(
+            safe_evidence_url("HTTPS://ArXiv.org:443/pdf/2501.00001.pdf?download=1#page=2"),
+            "https://arxiv.org/pdf/2501.00001.pdf?download=1#page=2",
+        )
+
+        for bad_args in (
+            {"publication_id": "p", "proposed_relation": "bogus", "repository_id": "r", "rationale": "x" * 12},
+            {"publication_id": "p", "proposed_relation": "implements", "rationale": "x" * 12},
+            {"publication_id": "p", "proposed_relation": "implements", "repository_id": "r", "rationale": "short"},
+            {
+                "publication_id": "p",
+                "proposed_relation": "implements",
+                "repository_id": "r",
+                "rationale": "valid rationale \x00 control",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "implements",
+                "repository_id": "r",
+                "rationale": "valid rationale \x7f DEL",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "implements",
+                "repository_id": "r",
+                "rationale": "valid rationale text",
+                "quote": "bad \x0b quote",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "implements",
+                "repository_url": "https://private.example.org/org/repo",
+                "rationale": "valid rationale text",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "full_text",
+                "rationale": "valid rationale text",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "full_text",
+                "evidence_url": "https://arxiv.org/pdf/1.pdf",
+                "repository_id": "r",
+                "rationale": "valid rationale text",
+            },
+            {
+                "publication_id": "p",
+                "proposed_relation": "full_text",
+                "evidence_url": "http://127.0.0.1/secret.pdf",
+                "rationale": "valid rationale text",
+            },
+        ):
+            with self.subTest(bad_args=bad_args), self.assertRaises(ValidationError):
+                SubmitLinkEvidenceRequest.model_validate(bad_args)
+
+        req = SubmitLinkEvidenceRequest(
+            publication_id="p",
+            proposed_relation="implements",
+            repository_url="http://www.github.com/Org/Repo.git/",
+            rationale="Found code link in section 3.",
+            quote="Code: github.com/Org/Repo",
+            evidence_url="https://arxiv.org/abs/2501.00001",
+        )
+        self.assertEqual(req.proposed_relation, "implements")
+
+    async def test_submit_disabled_resolution_dedup_mismatch_and_errors(self) -> None:
+        from tests.mcp_support import SyntheticReader
+
+        disabled = Service(SyntheticReader(), b"key")
+        with self.assertRaises(MCPError) as caught:
+            await disabled.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="implements",
+                    repository_id="r-code",
+                    rationale="Valid length rationale text.",
+                )
+            )
+        self.assertEqual(caught.exception.code, "INPUT")
+
+        db = mongomock.MongoClient()["pauk_mcp_submit_unit"]
+        store = MongoSuggestionStore(db, max_pending=2, max_per_publication=2)
+        service = Service(SyntheticReader(), b"key", suggestion_store=store)
+
+        receipt = await service.submit_link_evidence(
+            SubmitLinkEvidenceRequest(
+                publication_id="old-paper",
+                proposed_relation="mentions",
+                repository_url="http://www.github.com/PAUK-TEST/code.git/",
+                rationale="PRIVATE_CANARY_RATIONALE paper cites this codebase.",
+                quote="PRIVATE_CANARY_QUOTE",
+            )
+        )
+        self.assertEqual(receipt.status, "queued")
+        self.assertEqual(receipt.publication_id, "p-paper")
+        self.assertEqual(receipt.repository_id, "r-code")
+        self.assertEqual(receipt.repository_url, "https://github.com/pauk-test/code")
+        self.assertNotIn("PRIVATE_CANARY", receipt.model_dump_json())
+
+        # Alias + brand new repository URL stays queued with repository_id=None.
+        new_repo = await service.submit_link_evidence(
+            SubmitLinkEvidenceRequest(
+                publication_id="p-paper",
+                proposed_relation="implements",
+                repository_url="https://github.com/NewOrg/FreshRepo",
+                rationale="Found author repo in GitHub profile.",
+            )
+        )
+        self.assertEqual(new_repo.status, "queued")
+        self.assertIsNone(new_repo.repository_id)
+        self.assertEqual(new_repo.repository_url, "https://github.com/neworg/freshrepo")
+
+        # Duplicate active submission bumps counter and returns already_queued even if cap reached.
+        dup = await service.submit_link_evidence(
+            SubmitLinkEvidenceRequest(
+                publication_id="p-paper",
+                proposed_relation="implements",
+                repository_url="https://github.com/neworg/freshrepo",
+                rationale="Re-submitting same author repo.",
+            )
+        )
+        self.assertEqual(dup.status, "already_queued")
+        self.assertEqual(dup.suggestion_id, new_repo.suggestion_id)
+
+        # Third distinct submission hits QUEUE_FULL.
+        with self.assertRaises(MCPError) as full_err:
+            await service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="full_text",
+                    evidence_url="https://arxiv.org/pdf/2501.00001.pdf",
+                    rationale="Full text PDF link for the paper.",
+                )
+            )
+        self.assertEqual(full_err.exception.code, "QUEUE_FULL")
+
+        # Mismatched repository_id and repository_url (including URL-less repository_id) yields INPUT.
+        with self.assertRaises(MCPError) as mismatch_err:
+            await service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="implements",
+                    repository_id="r-code",
+                    repository_url="https://github.com/other/repo",
+                    rationale="Mismatched id and url should fail.",
+                )
+            )
+        self.assertEqual(mismatch_err.exception.code, "INPUT")
+        with self.assertRaises(MCPError) as null_url_mismatch_err:
+            await service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="mentions",
+                    repository_id="r-dependency",
+                    repository_url="https://github.com/other/spoofed",
+                    rationale="URL-less repository paired with spoofed URL must fail.",
+                )
+            )
+        self.assertEqual(null_url_mismatch_err.exception.code, "INPUT")
+
+        # Missing or ambiguous targets propagate NOT_FOUND / AMBIGUOUS_ID.
+        with self.assertRaises(MCPError) as not_found_err:
+            await service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="missing-pub",
+                    proposed_relation="implements",
+                    repository_id="r-code",
+                    rationale="Missing publication test.",
+                )
+            )
+        self.assertEqual(not_found_err.exception.code, "NOT_FOUND")
+        with self.assertRaises(MCPError) as amb_err:
+            await service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="implements",
+                    repository_id="ambiguous-repo",
+                    rationale="Ambiguous repository alias test.",
+                )
+            )
+        self.assertEqual(amb_err.exception.code, "AMBIGUOUS_ID")
+
+        # Mongo errors map cleanly to BACKEND.
+        class FailingStore:
+            async def submit(self, **kwargs: object) -> tuple[str, str]:
+                raise MCPError("BACKEND")
+
+        broken_service = Service(SyntheticReader(), b"key", suggestion_store=FailingStore())  # type: ignore[arg-type]
+        with self.assertRaises(MCPError) as backend_err:
+            await broken_service.submit_link_evidence(
+                SubmitLinkEvidenceRequest(
+                    publication_id="p-paper",
+                    proposed_relation="full_text",
+                    evidence_url="https://arxiv.org/pdf/2501.00001.pdf",
+                    rationale="Backend failure handling test.",
+                )
+            )
+        self.assertEqual(backend_err.exception.code, "BACKEND")
+
+        # MongoSuggestionStore does not permanently latch _indexed=True when ensure_indexes fails.
+        from pymongo.errors import AutoReconnect
+
+        retry_db = mongomock.MongoClient()["pauk_mcp_retry_index"]
+        retry_store = MongoSuggestionStore(retry_db)
+        with unittest.mock.patch(
+            "pauk.storage.link_suggestions.ensure_indexes", side_effect=AutoReconnect("temp down")
+        ):
+            sid_first, status_first = await retry_store.submit(
+                publication_id="p-paper",
+                proposed_relation="full_text",
+                evidence_url="https://arxiv.org/pdf/2501.11111.pdf",
+                rationale="Index initialization failed on first try.",
+            )
+        self.assertEqual(status_first, "queued")
+        self.assertTrue(sid_first.startswith("sug_"))
+        self.assertFalse(retry_store._indexed)
+        await retry_store.submit(
+            publication_id="p-paper",
+            proposed_relation="full_text",
+            evidence_url="https://arxiv.org/pdf/2501.22222.pdf",
+            rationale="Index initialization succeeds on second try.",
+        )
+        self.assertTrue(retry_store._indexed)

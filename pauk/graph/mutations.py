@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlsplit
+
+from pauk.urls import normalize_repo_url_query
 
 from .client import Neo4jClient
 from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
@@ -172,6 +175,22 @@ def read_node(client: Neo4jClient, label: str, node_id: str) -> dict:
     if props is None:
         raise NotFound(f"{label} {node_id} does not exist")
     return props
+
+
+def find_repositories_by_url(client: Neo4jClient, url: str) -> list[dict]:
+    """Find Repository nodes matching a normalized approved URL via url or cited_urls."""
+    normalized = normalize_repo_url_query(url)
+    if normalized is None:
+        return []
+    fragment = urlsplit(normalized).path
+    if not fragment:
+        return []
+    matches: list[dict] = []
+    for props in client.fetch_repositories_by_url_path(fragment):
+        candidates = [props.get("url"), *(props.get("cited_urls") or [])]
+        if any(isinstance(candidate, str) and normalize_repo_url_query(candidate) == normalized for candidate in candidates):
+            matches.append(props)
+    return sorted(matches, key=lambda props: str(props.get("id") or ""))
 
 
 def person_facts(client: Neo4jClient, node_ids: list[str]) -> dict[str, dict]:
