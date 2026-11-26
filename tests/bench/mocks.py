@@ -469,6 +469,21 @@ class RecordingNeo4jClient:
             })
         return rows
 
+    def fetch_person_publications_for_dedup(self) -> list[dict]:
+        """Mirror the graph's single bulk publication evidence read."""
+        authored_ids = {
+            target_id for (source_label, relation, _target_label, source_id, target_id) in self.edges
+            if source_label == "Person" and relation == "AUTHORED"
+            and source_id in self.nodes.get("Person", {})
+        }
+        return [
+            {"id": publication_id, **{field: props.get(field) for field in (
+                "doi", "title", "year", "merged_ids", "versions", "fields",
+            )}}
+            for publication_id, props in self.nodes.get("Publication", {}).items()
+            if publication_id in authored_ids
+        ]
+
     def fetch_publication_fields(self) -> dict[str, set[str]]:
         """Mirror of Neo4jClient.fetch_publication_fields."""
         return {

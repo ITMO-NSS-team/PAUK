@@ -22,9 +22,13 @@ class GraphDedupIngressTest(unittest.TestCase):
         self.assertEqual(client.fetch_persons_for_dedup(), [])
         query = transaction.run.call_args.args[0]
         self.assertIn("p.emails AS emails", query)
-        self.assertIn("doi: w.doi", query)
-        self.assertIn("merged_ids: w.merged_ids", query)
-        self.assertIn("versions: w.versions", query)
+        self.assertNotIn("publication_details", query)
+        self.assertNotIn("w.versions", query)
+        self.assertEqual(client.fetch_person_publications_for_dedup(), [])
+        publication_query = transaction.run.call_args.args[0]
+        self.assertIn("w.doi AS doi", publication_query)
+        self.assertIn("w.merged_ids AS merged_ids", publication_query)
+        self.assertIn("w.versions AS versions", publication_query)
 
     def test_secondary_email_overlap_has_the_same_result_as_prepared(self):
         rows = [
@@ -44,7 +48,7 @@ class GraphDedupIngressTest(unittest.TestCase):
             with self.subTest(resolved=resolved):
                 client = Mock()
                 client.fetch_persons_for_dedup.return_value = copy.deepcopy(rows)
-                client.fetch_publication_fields.return_value = {}
+                client.fetch_person_publications_for_dedup.return_value = []
                 client.merge_person_nodes_batch.side_effect = len
                 with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.995):
                     removed, _ = dedup_graph_persons(client, {}, models=Judge() if resolved else None)
@@ -61,7 +65,7 @@ class GraphDedupIngressTest(unittest.TestCase):
                         ]), "authorships": [{
                             "publication_id": "W1", "position": position,
                             "affiliation": "Physics", "affiliation_source": "openalex",
-                            "is_corresponding": "false", "title": "Useful paper", "year": 2025,
+                            "is_corresponding": "false",
                         }]}
                         for person_id in ("A1", "A2")
                     ]
@@ -80,8 +84,8 @@ class GraphDedupIngressTest(unittest.TestCase):
                         def fetch_person_authorships_for_dedup(self):
                             return self.rows
 
-                        def fetch_publication_fields(self):
-                            return {}
+                        def fetch_person_publications_for_dedup(self):
+                            return [{"id": "W1", "title": "Useful paper", "year": 2025}]
 
                     class Judge:
                         def __init__(self):
@@ -118,7 +122,7 @@ class GraphDedupIngressTest(unittest.TestCase):
                 client.fetch_persons_for_dedup.return_value = [{
                     "id": "A", "authorships": [{"publication_id": "W1", "position": position}],
                 }]
-                client.fetch_publication_fields.return_value = {}
+                client.fetch_person_publications_for_dedup.return_value = []
                 with patch("pauk.graph.dedup.plan_person_merges_resolved", return_value=([], [])) as planner:
                     dedup_graph_persons(client, {}, models=Mock())
                 self.assertEqual(planner.call_args.args[0][0].authored[0].position, 2)

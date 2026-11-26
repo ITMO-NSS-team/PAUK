@@ -33,16 +33,17 @@ class EagerJudge:
 
 
 class RecordingGraph:
-    def __init__(self, rows):
+    def __init__(self, rows, publications):
         self.rows = rows
+        self.publications = publications
         self.updates = []
         self.merges = []
 
     def fetch_persons_for_dedup(self):
         return self.rows
 
-    def fetch_publication_fields(self):
-        return {}
+    def fetch_person_publications_for_dedup(self):
+        return self.publications
 
     def upsert_person_nodes_batch(self, rows):
         self.updates.extend(rows)
@@ -63,8 +64,7 @@ class GraphVersionIdentityTest(unittest.TestCase):
     def rows(self, details):
         return [
             {"id": person_id, "name_raw": name, "is_itmo": True, "email": email,
-             "department_ids": ["D"], "publication_ids": works,
-             "publication_details": [copy.deepcopy(details[work]) for work in works]}
+             "department_ids": ["D"], "publication_ids": works}
             for person_id, name, email, works in (
                 ("A", "Ivan Petrov", "a@example.org", ["W1"]),
                 ("B", "Ivan Petrov", "b@example.org", ["W2"]),
@@ -76,11 +76,14 @@ class GraphVersionIdentityTest(unittest.TestCase):
         rows = self.rows(details)
         rows = [rows[index] for index in order]
         saved = copy.deepcopy(rows)
-        client = RecordingGraph(rows)
+        publications = list(copy.deepcopy(details).values())
+        saved_publications = copy.deepcopy(publications)
+        client = RecordingGraph(rows, publications)
         judge = EagerJudge()
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
             removed, report = dedup_graph_persons(client, {}, models=judge if resolved else None)
         self.assertEqual(rows, saved)
+        self.assertEqual(publications, saved_publications)
         return removed, report, judge, client
 
     def assert_same_work(self, details, *, resolved=False, order=(0, 1, 2)):
@@ -105,7 +108,9 @@ class GraphVersionIdentityTest(unittest.TestCase):
         session = client.driver.session.return_value.__enter__.return_value
         session.execute_read.side_effect = lambda read: read(transaction)
         self.assertEqual(client.fetch_persons_for_dedup(), [])
-        self.assertIn("versions: w.versions", transaction.run.call_args.args[0])
+        self.assertNotIn("w.versions", transaction.run.call_args.args[0])
+        self.assertEqual(client.fetch_person_publications_for_dedup(), [])
+        self.assertIn("w.versions AS versions", transaction.run.call_args.args[0])
 
     def test_historical_doi_blocks_false_independent_coauthor_in_both_modes(self):
         for resolved, order in itertools.product((False, True), itertools.permutations(range(3))):
@@ -221,12 +226,13 @@ class GraphVersionIdentityTest(unittest.TestCase):
         class GraphWithAuthorships(RecordingGraph):
             def fetch_person_authorships_for_dedup(self):
                 return [{"person_id": row["id"], "authorships": [
-                    {"publication_id": work, "year": 2030 if work == "W1" else 2024,
-                     "doi": details[work]["doi"], "title": "Paper"}
+                    {"publication_id": work}
                     for work in row["publication_ids"]
                 ]} for row in self.rows]
 
-        client = GraphWithAuthorships(rows)
+        publications = [{**work, "year": 2030 if work["id"] == "W1" else 2024, "title": "Paper"}
+                        for work in details.values()]
+        client = GraphWithAuthorships(rows, publications)
         judge = EagerJudge()
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.5):
             removed, _ = dedup_graph_persons(client, {}, models=judge)

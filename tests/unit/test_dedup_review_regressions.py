@@ -72,7 +72,7 @@ class DedupReviewRegressionTest(unittest.TestCase):
         }
         client = Mock()
         client.fetch_persons_for_dedup.return_value = [{"id": "A", "name_raw": "Ivanov Petr Sergeevich", **fields}]
-        client.fetch_publication_fields.return_value = {}
+        client.fetch_person_publications_for_dedup.return_value = []
         with patch("pauk.graph.dedup.plan_person_merges_resolved", return_value=([], [])) as planner:
             dedup_graph_persons(client, {}, models=Mock())
         person = planner.call_args.args[0][0]

@@ -529,10 +529,46 @@ class PersonResolutionContextAgainstRealGraphTest(unittest.TestCase):
         self.assertEqual(rows["A1"]["authorships"], [{
             "publication_id": "W1", "position": 2, "affiliation": "Lab A",
             "affiliation_source": None, "is_corresponding": True,
-            "doi": "10.123/test", "title": "Shared paper", "year": 2025,
         }])
+        publications = _client.fetch_person_publications_for_dedup()
+        self.assertEqual(len(publications), 1)
+        self.assertEqual(
+            {key: publications[0][key] for key in ("id", "doi", "title", "year")},
+            {"id": "W1", "doi": "10.123/test", "title": "Shared paper", "year": 2025},
+        )
         self.assertEqual(rows["A1"]["affiliations"], '[{"name":"Lab A","source":"openalex"}]')
         self.assertEqual(rows["A2"]["authorships"], [])
+
+    def test_publication_versions_are_loaded_once_regardless_of_author_count(self):
+        versions = '[{"openalex_id":"W0","doi":"10.1234/old","authors":[{"person_id":"A0"}]}]'
+        _client.upsert_nodes_batch("Publication", [("W1", {
+            "doi": "10.1234/new", "merged_ids": ["W0"], "versions": versions,
+        })])
+        for count in (1, 132, 133):
+            with self.subTest(authors=count):
+                _client.upsert_nodes_batch("Person", [(f"A{i}", {}) for i in range(count)])
+                _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", [
+                    (f"A{i}", "W1", {}) for i in range(count)
+                ])
+                people = _client.fetch_persons_for_dedup()
+                self.assertEqual(len(people), count)
+                self.assertTrue(all(row["publication_ids"] == ["W1"] for row in people))
+                self.assertTrue(all("publication_details" not in row for row in people))
+                works = _client.fetch_person_publications_for_dedup()
+                self.assertEqual(len(works), 1)
+                self.assertEqual(works[0]["versions"], versions)
+
+    def test_unrelated_orphan_publication_aliases_do_not_block_person_dedup(self):
+        from pauk.graph.dedup import dedup_graph_persons
+
+        _client.upsert_nodes_batch("Person", [("A", {"name_raw": "Solo Person"})])
+        _client.upsert_nodes_batch("Publication", [
+            ("W1", {}), ("unrelated1", {"merged_ids": ["orphan"]}),
+            ("unrelated2", {"merged_ids": ["orphan"]}),
+        ])
+        _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", [("A", "W1", {})])
+        self.assertEqual([row["id"] for row in _client.fetch_person_publications_for_dedup()], ["W1"])
+        self.assertEqual(dedup_graph_persons(_client, {}), (0, []))
 
 
 if __name__ == "__main__":

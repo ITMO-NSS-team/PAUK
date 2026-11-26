@@ -693,10 +693,19 @@ class Neo4jClient:
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,
-                   collect(DISTINCT CASE WHEN w IS NULL THEN NULL ELSE {
-                       id: w.id, doi: w.doi, merged_ids: w.merged_ids, versions: w.versions
-                   } END) AS publication_details,
                    collect(DISTINCT d.id) AS department_ids
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_person_publications_for_dedup(self) -> list[dict]:
+        """Read work identity and context once per publication, not per author."""
+        query = """
+            MATCH (w:Publication)
+            WHERE EXISTS { MATCH (:Person)-[:AUTHORED]->(w) }
+            RETURN w.id AS id, w.doi AS doi, w.title AS title, w.year AS year,
+                   w.merged_ids AS merged_ids, w.versions AS versions, w.fields AS fields
         """
         with self.driver.session() as session:
             return session.execute_read(
@@ -712,8 +721,7 @@ class Neo4jClient:
                        publication_id: w.id, position: authored.position,
                        affiliation: authored.affiliation,
                        affiliation_source: authored.affiliation_source,
-                       is_corresponding: authored.is_corresponding,
-                       doi: w.doi, title: w.title, year: w.year
+                       is_corresponding: authored.is_corresponding
                    } END) AS authorships
         """
         with self.driver.session() as session:

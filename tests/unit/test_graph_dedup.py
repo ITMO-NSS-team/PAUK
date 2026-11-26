@@ -87,8 +87,8 @@ class GraphSourceContextTest(unittest.TestCase):
             def fetch_person_authorships_for_dedup(self):
                 raise AssertionError("context query must not run in rule-only mode")
 
-            def fetch_publication_fields(self):
-                return {}
+            def fetch_person_publications_for_dedup(self):
+                return []
 
         removed, report = dedup_graph_persons(Client(), {})
         self.assertEqual((removed, report), (0, []))
@@ -112,8 +112,7 @@ class GraphSourceContextTest(unittest.TestCase):
                         "authorships": [{
                             "publication_id": "W1", "position": position,
                             "affiliation": affiliation, "affiliation_source": "openalex",
-                            "is_corresponding": False, "doi": "10.123/test",
-                            "title": "Shared paper", "year": 2025,
+                            "is_corresponding": False,
                         }],
                     }
                     for person_id, position, affiliation in (
@@ -122,8 +121,8 @@ class GraphSourceContextTest(unittest.TestCase):
                     )
                 ]
 
-            def fetch_publication_fields(self):
-                return {}
+            def fetch_person_publications_for_dedup(self):
+                return [{"id": "W1", "doi": "10.123/test", "title": "Shared paper", "year": 2025}]
 
         class Judge:
             def __init__(self):
@@ -162,8 +161,8 @@ class GraphSourceContextTest(unittest.TestCase):
                     )
                 ]
 
-            def fetch_publication_fields(self):
-                return {}
+            def fetch_person_publications_for_dedup(self):
+                return []
 
         class Judge:
             def __init__(self):

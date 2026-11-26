@@ -149,13 +149,20 @@ versions; their provenance remains unknown and is flagged in the model context.
 Documents expose source years and conflict flags instead of assigning the first
 record's year to both people.
 Missing historical years remain unknown. Graph reads include the stored
-publication version ledger in both rule-only and model passes. Both paths
+publication version ledger in both rule-only and model passes. The graph loads
+publication metadata once per work in a bulk query; person and
+authorship rows carry work IDs and relationship data, without repeating the
+publication ledger. The same bulk result supplies research fields.
+Both prepared and graph paths
 expand source records through the same helper: only the
 publication's own ID or a recorded merged ID can contribute a historical DOI.
 Live source records take precedence over copied ledger entries, and conflicting
 historical candidates cannot establish a DOI match. Malformed ledger entries
 without a source ID are omitted with a warning. Invalid optional metadata does
-not discard a valid historical DOI or source author ID. Invalid author positions
+not discard a valid historical DOI or source author ID. Individual version
+authors without a valid ID are filtered independently:
+an invalid author entry does not remove other confirmed authors of that version.
+Invalid author positions
 become unknown and malformed affiliation years are omitted with a warning.
 This does not rewrite the stored graph data.
 

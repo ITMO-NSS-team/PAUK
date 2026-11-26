@@ -186,6 +186,8 @@ def dedup_graph_persons(
         marked "held").
     """
     person_rows = client.fetch_persons_for_dedup()
+    if not person_rows:
+        return 0, []
     context_owner = getattr(client, "_client", client)
     supports_context = callable(getattr(type(context_owner), "fetch_person_authorships_for_dedup", None))
     if models is not None and supports_context:
@@ -249,13 +251,17 @@ def dedup_graph_persons(
     }
     stored_publications = {
         detail["id"]: detail
-        for row in person_rows
-        for detail in row.get("publication_details") or ()
+        for detail in client.fetch_person_publications_for_dedup()
         if isinstance(detail, dict) and isinstance(detail.get("id"), str) and detail["id"]
     }
     publication_details = {
-        work_id: {"doi": detail.get("doi"), "merged_ids": detail.get("merged_ids")}
+        work_id: {key: detail.get(key) for key in ("doi", "title", "year", "merged_ids")}
         for work_id, detail in stored_publications.items()
+    }
+    fields_of = {
+        work_id: {field for field in detail["fields"] if isinstance(field, str) and field}
+        for work_id, detail in stored_publications.items()
+        if isinstance(detail.get("fields"), (list, tuple))
     }
     publication_versions: dict[str, list[PublicationVersion]] = {}
     for work_id, detail in stored_publications.items():
@@ -290,11 +296,15 @@ def dedup_graph_persons(
             elif year is not None:
                 logger.warning("graph dedup: ignoring invalid version year for publication %s", work_id)
             authors = version.get("authors", [])
-            if isinstance(authors, list) and all(
-                isinstance(author, dict) and isinstance(author.get("person_id"), str)
-                and author["person_id"].strip() for author in authors
-            ):
-                source["authors"] = [{"person_id": author["person_id"]} for author in authors]
+            if isinstance(authors, list):
+                valid_authors = []
+                for author in authors:
+                    if (isinstance(author, dict) and isinstance(author.get("person_id"), str)
+                            and author["person_id"].strip()):
+                        valid_authors.append({"person_id": author["person_id"]})
+                    else:
+                        logger.warning("graph dedup: ignoring invalid version author for publication %s", work_id)
+                source["authors"] = valid_authors
             else:
                 logger.warning("graph dedup: ignoring invalid version authors for publication %s", work_id)
             versions.append(PublicationVersion(**source))
@@ -313,9 +323,6 @@ def dedup_graph_persons(
             if not isinstance(publication_id, str) or not publication_id:
                 logger.warning("graph dedup: ignoring invalid authorship publication id for person %s", row["id"])
                 continue
-            details = publication_details.setdefault(publication_id, {})
-            details.update({key: authorship.get(key) for key in ("doi", "title", "year")
-                            if authorship.get(key) is not None})
             corresponding = authorship.get("is_corresponding")
             if corresponding is not None and type(corresponding) is not bool:
                 logger.warning("graph dedup: ignoring invalid corresponding flag for person %s", row["id"])
@@ -387,7 +394,7 @@ def dedup_graph_persons(
     groups, report = planner(
         people,
         trusted_orcid,
-        fields_of=client.fetch_publication_fields(),
+        fields_of=fields_of,
         staff_ids=staff_identities(catalog, people, chosen),
         **options,
     )
