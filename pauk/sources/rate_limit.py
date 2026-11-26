@@ -6,15 +6,31 @@ import logging
 import math
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 LONG_WAIT_SECONDS = 10.0
 POLL_SECONDS = 0.1
+
+
+class HostPaused(TimeoutError):
+    """The server's shared pause exceeds the caller's wait budget."""
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+        super().__init__(f"host paused for {seconds:.0f}s")
+
+
+class RequestDeferred(Exception):
+    def __init__(self, ready_at: float, *, host: str | None = None) -> None:
+        self.ready_at = ready_at
+        self.host = host
+        super().__init__("request is not ready")
 
 
 @dataclass(frozen=True)
@@ -56,10 +72,38 @@ class _HostState:
 class HostRateLimiter:
     """Share the strictest host limits and server pauses within one process."""
 
-    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic,
+                 host_limits: dict[str, RateLimit] | None = None) -> None:
         self._clock = clock
+        self._host_limits = dict(host_limits or {})
         self._hosts: dict[str, _HostState] = {}
+        self._concurrency_caps: Counter[int] = Counter()
         self._lock = threading.Lock()
+
+    @contextmanager
+    def limit_concurrency(self, cap: int) -> Iterator[None]:
+        """Apply a client cap per host for the lifetime of the client."""
+        RateLimit(max_concurrent=cap)
+        with self._lock:
+            self._concurrency_caps[cap] += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._concurrency_caps[cap] -= 1
+                if self._concurrency_caps[cap] == 0:
+                    del self._concurrency_caps[cap]
+                hosts = tuple(self._hosts.values())
+            for state in hosts:
+                with state.condition:
+                    state.condition.notify_all()
+
+    def _at_capacity(self, state: _HostState) -> bool:
+        cap = state.limit.max_concurrent
+        if cap is not None and state.in_flight >= cap:
+            return True
+        with self._lock:
+            return bool(self._concurrency_caps and state.in_flight >= min(self._concurrency_caps))
 
     @staticmethod
     def _tighten(state: _HostState, limit: RateLimit) -> None:
@@ -81,37 +125,75 @@ class HostRateLimiter:
             self._tighten(state, limit)
         return state
 
+    def _configured_state(self, host: str, limit: RateLimit | None) -> _HostState | None:
+        configured = self._host_limits.get(host)
+        if configured is not None:
+            limit = limit.stricter(configured) if limit is not None else configured
+        return self._state(host, limit) if limit is not None else None
+
     @contextmanager
-    def slot(self, host: str, limit: RateLimit | None, *, cancel: threading.Event | None = None) -> Iterator[None]:
-        """Hold a host's concurrency slot until the request has finished."""
-        if limit is None:
+    def slot(self, host: str, limit: RateLimit | None, *, cancel=None,
+             deadline: float | None = None, max_wait: float | None = None, defer: bool = False,
+             scoped: tuple[HostRateLimiter, RateLimit] | None = None) -> Iterator[None]:
+        """Record the request start only when all applicable limits admit it."""
+        if scoped is not None and scoped[0] is self:
+            limit = limit.stricter(scoped[1]) if limit is not None else scoped[1]
+            scoped = None
+        states = []
+        if (state := self._configured_state(host, limit)) is not None:
+            states.append((state, self))
+        if scoped is not None:
+            limiter, profile = scoped
+            states.append((limiter._configured_state(host, profile), limiter))
+        if not states:
             yield
             return
-        state = self._state(host, limit)
-        with state.condition:
-            while True:
+        # Requests can share the scoped limiter and acquire the same pair in either order.
+        states.sort(key=lambda entry: id(entry[0]))
+        condition = states[0][0].condition
+        while True:
+            with ExitStack() as locks:
+                for state, _limiter in states:
+                    locks.enter_context(state.condition)
+                now = self._clock()
                 if cancel is not None and cancel.is_set():
                     raise CancelledError
-                now = self._clock()
-                ready_at = max(state.next_at, state.paused_until)
-                capacity = state.limit.max_concurrent
-                if (capacity is None or state.in_flight < capacity) and now >= ready_at:
-                    state.in_flight += 1
-                    state.last_started = now
-                    rate = state.limit.requests_per_second
-                    state.next_at = now + 1 / rate if rate is not None else now
+                if deadline is not None and now >= deadline:
+                    raise TimeoutError("host admission deadline exceeded")
+                starts = [(state, limiter._clock()) for state, limiter in states]
+                pause = max(state.paused_until - started for state, started in starts)
+                if max_wait is not None and pause > max_wait:
+                    raise HostPaused(pause)
+                delay = max(pause, *(state.next_at - started for state, started in starts))
+                at_capacity = any(limiter._at_capacity(state) for state, limiter in states)
+                if not at_capacity and delay <= 0:
+                    for state, started in starts:
+                        state.in_flight += 1
+                        state.last_started = started
+                        rate = state.limit.requests_per_second
+                        state.next_at = started + 1 / rate if rate is not None else started
                     break
-                delay = ready_at - now
+                if defer:
+                    resume = now + (delay if delay > 0 else POLL_SECONDS)
+                    raise RequestDeferred(min(resume, deadline) if deadline is not None else resume, host=host)
                 timeout = min(delay, threading.TIMEOUT_MAX) if delay > 0 else None
+                if deadline is not None:
+                    timeout = min(timeout, deadline - now) if timeout is not None else deadline - now
                 if cancel is not None:
                     timeout = min(timeout, POLL_SECONDS) if timeout is not None else POLL_SECONDS
-                state.condition.wait(timeout=timeout)
+                if len(states) == 1:
+                    condition.wait(timeout=timeout)
+                    continue
+            # Waiting with both locks held would block admissions and releases.
+            with condition:
+                condition.wait(timeout=min(timeout, POLL_SECONDS) if timeout is not None else POLL_SECONDS)
         try:
             yield
         finally:
-            with state.condition:
-                state.in_flight -= 1
-                state.condition.notify_all()
+            for state, _limiter in states:
+                with state.condition:
+                    state.in_flight -= 1
+                    state.condition.notify_all()
 
     def pause(self, host: str, seconds: float) -> None:
         """Delay future admissions, including callers already waiting."""

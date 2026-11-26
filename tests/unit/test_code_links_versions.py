@@ -15,7 +15,7 @@ from pauk.models import (
 from pauk.pipeline.stages.code_links import CodeLinksStage
 from pauk.pipeline.stages.dedup import _merge_code_link
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PdfStore, PreparedStore, RawStore
 from tests.unit.test_code_links_pdf import _make_pdf_bytes
 
 
@@ -72,7 +72,8 @@ class CodeLinksVersionsTest(unittest.TestCase):
         with patch("pauk.pipeline.stages.code_links.HttpClient") as http:
             http.return_value.get_bytes.return_value = _make_pdf_bytes("https://github.com/org/recovered")
             CodeLinksStage(self.prepared, RawStore(self.db, "sample"), self.config).run()
-            http.return_value.get_bytes.assert_called_once_with("https://example.org/main.pdf")
+            http.return_value.get_bytes.assert_called_once()
+            self.assertEqual(http.return_value.get_bytes.call_args.args, ("https://example.org/main.pdf",))
         [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
         self.assertEqual(link.url, "https://github.com/org/recovered")
         self.assertEqual(link.occurrences[0].pdf_id, "W1")
@@ -110,11 +111,13 @@ class CodeLinksVersionsTest(unittest.TestCase):
             CodeLinksStage(
                 self.prepared, RawStore(self.db, "sample"), self.config,
             ).run()
-            http.return_value.get_bytes.assert_called_once_with(
-                "https://example.org/preprint.pdf"
-            )
+            http.return_value.get_bytes.assert_called_once()
+            self.assertEqual(http.return_value.get_bytes.call_args.args, ("https://example.org/preprint.pdf",))
         [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
         self.assertEqual(link.occurrences[0].pdf_id, "archive:preprint")
+        store = PdfStore(self.db, self.config.pdf_dir)
+        self.assertTrue(store.exists("archive:preprint"))
+        self.assertFalse(store.exists("pub_1"))
 
     def test_partial_failure_preserves_failed_version_not_replaced_main_evidence(self):
         for missing in (False, True):
@@ -137,6 +140,81 @@ class CodeLinksVersionsTest(unittest.TestCase):
                 publication = next(self.prepared.read_models("publications", Publication))
                 self.assertEqual(publication.processing["code_links"].status, "failed")
                 self.assertEqual(publication.full_text, "Previously complete text")
+
+    def test_corrupt_preprint_is_replaced_even_when_another_version_is_readable(self):
+        preprint = "archive:preprint"
+        url = "https://example.org/preprint.pdf"
+        store = PdfStore(self.db, self.config.pdf_dir)
+        recovered = _make_pdf_bytes("https://github.com/org/recovered")
+        for cached_article in (False, True):
+            with self.subTest(cached_article=cached_article):
+                self.prepared.write_models("publications", [Publication(
+                    id="pub_1", title="paper", schema_version=2, source_records=[
+                        {"source": "catalog", "source_id": "article", "doi": "10.1/article"},
+                        {"source": "archive", "source_id": "preprint", "pdf_urls": [url]},
+                    ],
+                )])
+                store.save(preprint, b"broken")
+                if cached_article:
+                    store.save("catalog:article", _make_pdf_bytes("Article without code"))
+                with patch("pauk.pipeline.stages.code_links.HttpClient") as http:
+                    http.return_value.get_bytes.return_value = recovered
+                    CodeLinksStage(self.prepared, RawStore(self.db, "sample"), self.config).run()
+                    self.assertEqual([call.args for call in http.return_value.get_bytes.call_args_list], [(url,)])
+                self.assertEqual(store.read(preprint), recovered)
+                publication = next(self.prepared.read_models("publications", Publication))
+                self.assertEqual(publication.processing["code_links"].status, "completed")
+                [link] = self.run_stage().links
+                self.assertEqual([occ.pdf_id for occ in link.occurrences], [preprint])
+
+    def test_redownloads_a_missing_version_that_previously_supplied_links(self):
+        preprint = "archive:preprint"
+        url = "https://example.org/preprint.pdf"
+        store = PdfStore(self.db, self.config.pdf_dir)
+        pub = Publication(id="pub_1", title="paper", schema_version=2, source_records=[
+            {"source": "catalog", "source_id": "article", "doi": "10.1/article"},
+            {"source": "archive", "source_id": "preprint", "pdf_urls": [url]},
+        ])
+        self.prepared.write_models("publications", [pub])
+        store.save("catalog:article", _make_pdf_bytes("Article without code"))
+        self.prepared.write_models("repo_links", [RepoLink(publication_id=pub.id, links=[
+            CodeLink(url="https://github.com/org/stale",
+                     occurrences=[LinkOccurrence(page_number=1, pdf_id=preprint)]),
+        ])])
+        with patch("pauk.pipeline.stages.code_links.HttpClient") as http:
+            http.return_value.get_bytes.return_value = _make_pdf_bytes("https://github.com/org/recovered")
+            CodeLinksStage(self.prepared, RawStore(self.db, "sample"), self.config).run()
+            self.assertEqual([call.args for call in http.return_value.get_bytes.call_args_list], [(url,)])
+        [link] = next(self.prepared.read_models("repo_links", RepoLink)).links
+        self.assertEqual(link.url, "https://github.com/org/recovered")
+        self.assertEqual(link.occurrences[0].pdf_id, preprint)
+        publication = next(self.prepared.read_models("publications", Publication))
+        self.assertEqual(publication.processing["code_links"].status, "completed")
+
+    def test_legacy_evidence_is_replaced_only_when_the_same_file_was_read(self):
+        store = PdfStore(self.db, self.config.pdf_dir)
+        store.save("W1", _make_pdf_bytes("https://github.com/org/current"))
+        for separate_files, broken_legacy in ((False, False), (True, False), (True, True)):
+            with self.subTest(separate_files=separate_files, broken_legacy=broken_legacy):
+                self.prepared.write_models("publications", [Publication(
+                    id="pub_1", title="paper", schema_version=2,
+                    source_records=[{"source": "openalex", "source_id": "W1", "doi": "10.1/article"}],
+                )])
+                self.prepared.write_models("repo_links", [RepoLink(publication_id="pub_1", links=[CodeLink(
+                    url="https://github.com/org/old", occurrences=[LinkOccurrence(pdf_id="W1", page_number=1)],
+                )])])
+                if separate_files:
+                    store.save("openalex:W1", _make_pdf_bytes("https://github.com/org/current"))
+                if broken_legacy:
+                    store.save("W1", b"broken")
+                links = self.run_stage().links
+                evidence = {(link.url, occ.pdf_id) for link in links for occ in link.occurrences}
+                expected = {("https://github.com/org/current", "openalex:W1")}
+                if separate_files:
+                    expected.add(("https://github.com/org/old" if broken_legacy else "https://github.com/org/current", "W1"))
+                self.assertEqual(evidence, expected)
+                publication = next(self.prepared.read_models("publications", Publication))
+                self.assertEqual(publication.processing["code_links"].status, "failed" if broken_legacy else "completed")
 
     def test_identical_context_in_two_versions_keeps_both_provenances(self):
         self.prepared.write_models("publications", [Publication(id="W1", title="paper", merged_ids=["W2"])])

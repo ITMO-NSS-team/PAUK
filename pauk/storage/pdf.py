@@ -91,9 +91,8 @@ class PdfStore:
     def save(self, record_key: str, data: bytes, *, source_url: str | None = None) -> None:
         """Write the PDF atomically, then record the pointer and provenance digest.
 
-        The order matters: if the process dies between the two steps, the next
-        run sees a file without a pointer and re-saves it, instead of a pointer
-        promising a file that was never written.
+        Writing bytes first leaves a readable file if the pointer write fails.
+        Its source remains unverified until the matching digest is recorded.
         """
         filename = self._filename(record_key)
         atomic_write_bytes(self.pdf_dir / filename, data)

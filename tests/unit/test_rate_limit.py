@@ -2,10 +2,10 @@ import math
 import threading
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from unittest import mock
 
-from pauk.sources.rate_limit import HostRateLimiter, RateLimit
+from pauk.sources.rate_limit import HostPaused, HostRateLimiter, RateLimit
 
 
 class _Clock:
@@ -41,6 +41,8 @@ class RateLimitTest(unittest.TestCase):
             (RateLimit(10), RateLimit(5), RateLimit(5)),
             (RateLimit(2, 3), RateLimit(5, 1), RateLimit(2, 1)),
             (RateLimit(2), RateLimit(5, 1), RateLimit(2, 1)),
+            (RateLimit(max_concurrent=2), RateLimit(5, 1), RateLimit(5, 1)),
+            (RateLimit(max_concurrent=2), RateLimit(max_concurrent=4), RateLimit(max_concurrent=2)),
         )
         for first, second, expected in cases:
             with self.subTest(first=first, second=second):
@@ -66,6 +68,46 @@ class HostRateLimiterTest(unittest.TestCase):
                 times.append(self.clock())
         self.assertAlmostEqual(times[1] - times[0], 0.2)
         self.assertAlmostEqual(times[2] - times[1], 0.2)
+
+    def test_concurrency_only_limit_does_not_invent_a_request_rate(self):
+        before = self.clock()
+        for _ in range(3):
+            with self.limiter.slot("pdf.test", RateLimit(max_concurrent=2)):
+                self.assertEqual(self.clock(), before)
+
+    def test_host_profiles_combine_with_callers_and_leave_other_hosts_unchanged(self):
+        limiter = HostRateLimiter(clock=self.clock, host_limits={"pdf.test": RateLimit(1, 3)})
+        with limiter.slot("pdf.test", RateLimit(10, 2)):
+            first = self.clock()
+        state = limiter._hosts["pdf.test"]
+        self.assertEqual(state.limit, RateLimit(1, 2))
+        with (mock.patch.object(state.condition, "wait", side_effect=self.clock.wait),
+              limiter.slot("pdf.test", RateLimit(10, 5))):
+            self.assertAlmostEqual(self.clock() - first, 1)
+        with limiter.slot("other.test", RateLimit(20, 5)):
+            self.assertEqual(limiter._hosts["other.test"].limit, RateLimit(20, 5))
+
+    def test_host_profiles_are_copied_and_apply_without_a_caller_profile(self):
+        profiles = {"pdf.test": RateLimit(1)}
+        limiter = HostRateLimiter(clock=self.clock, host_limits=profiles)
+        profiles.clear()
+        with limiter.slot("pdf.test", None):
+            self.assertEqual(limiter._hosts["pdf.test"].limit, RateLimit(1))
+
+    def test_host_wait_can_be_cancelled_or_limited_by_a_deadline(self):
+        stop = threading.Event()
+        self.clock.before_wait = stop.set
+        with self.assertRaises(CancelledError), self.limiter.slot(self.host, self.limit, cancel=stop):
+            self.fail("cancelled request admitted")
+        with self.assertRaises(TimeoutError), self.limiter.slot(self.host, self.limit, deadline=self.clock() + 0.01):
+            self.fail("expired request admitted")
+
+    def test_long_shared_pause_can_be_deferred_without_sleeping(self):
+        self.limiter.pause(self.host, 3600)
+        before = self.clock()
+        with self.assertRaises(HostPaused), self.limiter.slot(self.host, self.limit, max_wait=120):
+            self.fail("paused request admitted")
+        self.assertEqual(before, self.clock())
 
     def test_late_wakeup_does_not_allow_a_catchup_burst(self):
         self.clock.extra_sleep = 0.4

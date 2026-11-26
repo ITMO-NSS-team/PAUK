@@ -368,7 +368,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         )
         PdfStore(self.db, self.config.pdf_dir).save("W1", _pdf("https://github.com/org/cached"))
         CodeLinksStage(self.prepared, self.raw, config=self.config).run()
-        http.return_value.get_bytes.assert_not_called()
+        http.assert_not_called()
         pub = next(iter(self.prepared.read_models("publications", Publication)))
         self.assertIn("github.com/org/cached", pub.full_text)
         self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.COMPLETED)
@@ -393,8 +393,19 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.COMPLETED)
         links = next(iter(self.prepared.read_models("repo_links", RepoLink)))
         self.assertEqual([link.url for link in links.links], ["https://github.com/org/repo"])
-        self.assertEqual(http.return_value.mock_calls,
-                         [mock.call.get_bytes(publisher), mock.call.get_bytes_with_url(arxiv_url)])
+        self._assert_downloads(http, mock.call.get_bytes(publisher), mock.call.get_bytes_with_url(arxiv_url))
+
+    def _assert_downloads(self, http: mock.Mock, *expected) -> None:
+        downloads = [call for call in http.return_value.mock_calls if call[0] in {"get_bytes", "get_bytes_with_url"}]
+        self.assertEqual([(call[0], call.args) for call in downloads], [(call[0], call.args) for call in expected])
+        for call in downloads:
+            self.assertEqual(call.kwargs, {
+                "retries": self.config.pdf_retries,
+                "timeout": (self.config.pdf_connect_timeout, self.config.pdf_read_timeout),
+                "deadline": self.config.pdf_download_deadline,
+                "max_wait": self.config.pdf_max_retry_wait,
+                "state": mock.ANY,
+            })
 
     def _discover(self, identifier: str = "2201.06114") -> str:
         with mock.patch(STAGE_CLIENT) as s2:
@@ -454,7 +465,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
 
         CodeLinksStage(self.prepared, self.raw, config=self.config).run()
 
-        http.return_value.get_bytes_with_url.assert_called_once_with(preprint_url)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(preprint_url))
         store = PdfStore(self.db, self.config.pdf_dir)
         self.assertFalse(store.exists("W1"))
         self.assertEqual(store.read_with_source("W2")[1], preprint_url)
@@ -505,7 +516,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self.assertEqual(self._extract()["publications"], 0)
         self._extract(force=True)
         self.assertEqual(self._links(), links_after)
-        http.return_value.get_bytes_with_url.assert_called_once_with(source)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(source))
 
     @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_ambiguous_mismatched_and_journal_fallback_caches_are_not_borrowed(self, http: mock.Mock) -> None:
@@ -540,7 +551,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
 
                 self._extract()
 
-                http.return_value.get_bytes_with_url.assert_called_once_with(expected)
+                self._assert_downloads(http, mock.call.get_bytes_with_url(expected))
                 link, = self._links().values()
                 self.assertEqual(link.url, "https://github.com/org/true-source")
                 self.assertEqual({occurrence.pdf_id for occurrence in link.occurrences}, {expected})
@@ -602,7 +613,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         http.return_value.get_bytes_with_url.return_value = (_pdf("https://github.com/org/v2-only"), requested)
         self._extract()
 
-        http.return_value.get_bytes_with_url.assert_called_once_with(requested)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(requested))
         link, = self._links().values()
         self.assertEqual(link.url, "https://github.com/org/v2-only")
         self.assertEqual(link.occurrences[0].pdf_id, requested)
@@ -632,7 +643,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
 
         self._extract()
 
-        http.return_value.get_bytes_with_url.assert_called_once_with(requested)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(requested))
         self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.FAILED)
         self.assertIsNone(self._work().full_text)
         self.assertEqual(self._links(), {})
@@ -682,7 +693,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         self._extract()
 
         s2.return_value.papers_by_doi.assert_not_called()
-        http.return_value.get_bytes_with_url.assert_called_once_with(source)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(source))
         self.assertEqual(self._work().pdf_urls, [source])
         self.assertEqual(self._work().arxiv_sources, [])
         self.assertEqual(PdfStore(self.db, self.config.pdf_dir).read_with_source("W1")[1], actual)
@@ -854,7 +865,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
             selection=PreparedSelection("publications", frozenset({"pub_123"})),
         ).run()
 
-        http.return_value.get_bytes_with_url.assert_called_once_with(preprint_url)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(preprint_url))
         store = PdfStore(self.db, self.config.pdf_dir)
         self.assertTrue(store.exists("openalex:W2"))
         self.assertFalse(store.exists("pub_123"))
@@ -914,6 +925,33 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         reset = build_publication("pub_1", [updated_record], existing, reset_enrichment=True)
         self.assertEqual(reset.arxiv_sources, [])
         self.assertNotIn(url, reset.pdf_urls)
+
+    @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_arxiv_cache_write_failure_leaves_crawler_for_a_later_run(self, http: mock.Mock) -> None:
+        source = "https://arxiv.org/pdf/2201.06114"
+        crawler = "https://crawler.example"
+        self.prepared.write_models("publications", [Publication(
+            id="W1", title="Journal", doi="10.1/journal", arxiv_sources=[ArxivSource(url=source)],
+        )])
+        pdf = _pdf("Our code: https://github.com/org/preprint")
+        http.return_value.get_bytes.return_value = b"ok"
+        http.return_value.get_bytes_with_url.return_value = (pdf, source)
+        config = replace(self.config, pdf_crawler_url=crawler)
+        stage = CodeLinksStage(self.prepared, self.raw, config=config)
+        with mock.patch.object(PdfStore, "save_source", side_effect=OSError("cache unavailable")) as save:
+            stage.run()
+
+        self.assertEqual(save.call_args_list, [mock.call(source, pdf)] * 2)
+        self.assertEqual(http.return_value.get_bytes.call_args.args, (f"{crawler}/health",))
+        http.return_value.get_bytes.assert_called_once()
+        self.assertEqual(self._source_state(source).status, ProcessingStatus.FAILED)
+        self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.FAILED)
+        self.assertEqual(self._links(), {})
+
+        stage.run()
+        self.assertEqual(self._source_state(source).status, ProcessingStatus.COMPLETED)
+        self.assertEqual(self._work().processing["code_links"].status, ProcessingStatus.COMPLETED)
+        self.assertIn("https://github.com/org/preprint", self._links())
 
     @mock.patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_textless_arxiv_pdf_does_not_block_crawler_or_clear_primary_error(self, http: mock.Mock) -> None:
@@ -1018,6 +1056,8 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
                 self.assertTrue(kept.is_relevant)
                 self.assertEqual(kept.llm_confidence, 0.95)
                 self.assertEqual(kept.llm_reason, "author repo")
+                [occurrence] = kept.occurrences
+                self.assertEqual((occurrence.text_start, occurrence.text_end), (4, 4 + len(kept.url)))
                 if expect_reopen:
                     self.assertNotIn("link_relevance", work.processing)
                     self.assertEqual(
@@ -1073,7 +1113,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
         work = self._work()
         self.assertEqual(work.pdf_urls, [expected_url])
         self.assertEqual(work.arxiv_sources, [])
-        http.return_value.get_bytes_with_url.assert_called_once_with(expected_url)
+        self._assert_downloads(http, mock.call.get_bytes_with_url(expected_url))
         self.assertTrue(PdfStore(self.db, self.config.pdf_dir).exists("openalex:W2"))
         self.assertEqual(
             self._links()["https://github.com/org/merged-native"].occurrences[0].pdf_id,
@@ -1090,7 +1130,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
             pdf_url = f"https://arxiv.org/pdf/2201.06114{suffix}"
             with self.subTest(abs_url=abs_url), tempfile.TemporaryDirectory() as directory:
                 s2.return_value.papers_by_doi.reset_mock()
-                http.return_value.get_bytes_with_url.reset_mock()
+                http.return_value.reset_mock()
                 self.db.pdfs.drop()
                 self.prepared.write_models("repo_links", [])
                 self.prepared.write_models("publications", [Publication(
@@ -1109,7 +1149,7 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
 
                 s2.return_value.papers_by_doi.assert_not_called()
                 self.assertEqual(discovery["arxiv_looked_up"], 0)
-                http.return_value.get_bytes_with_url.assert_called_once_with(pdf_url)
+                self._assert_downloads(http, mock.call.get_bytes_with_url(pdf_url))
                 work = self._work()
                 self.assertEqual(work.processing["code_links"].status, ProcessingStatus.COMPLETED)
                 self.assertIn("Paper text", work.full_text or "")

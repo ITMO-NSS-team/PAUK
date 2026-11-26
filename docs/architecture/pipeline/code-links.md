@@ -4,7 +4,7 @@
 links: text sources, the regex and its defenses against PDF text-extraction
 artifacts, the cache, and the fallback through an external service.
 
-**Files involved:** `pauk/pipeline/stages/code_links.py`.
+**Files involved:** `pauk/pipeline/stages/code_links.py`, `pauk/sources/pdf.py`.
 
 Looks for mentions of GitHub repositories in the abstract (always), in the full
 PDF text (if a PDF could be obtained), and, for archived Zenodo deposits, in
@@ -24,14 +24,12 @@ the title.
 3. **PDF, page by page**: page text plus real PDF hyperlinks (annotations), see
    below.
 
-All sources are merged in `_collect_occurrences()`: one `CodeLink` per
-canonical URL, with `occurrences: list[LinkOccurrence]` listing every place it
-appeared. The order is stable: archive, abstract, then PDF pages.
-`code_links` itself no longer treats a found link as author code and does not
-set `has_code`/`code_url` from it; the next stage, `link_relevance`,
-recomputes those fields. A repeat `code_links` run removes its old processing
-status, because a verdict on the earlier contexts is invalid once the
-occurrence list is replaced.
+Each `CodeLink` holds one repository URL and all extracted occurrences.
+Repeated mentions in an abstract retain their own text offsets even when they
+share the same context.
+`link_relevance` computes `has_code` and `code_url` from the collected evidence.
+`code_links` clears that stage's status when it replaces links or changes
+automatic evidence.
 
 ## The regex `GITHUB_URL`
 
@@ -48,14 +46,15 @@ GITHUB_URL = re.compile(
 - **The scheme is optional**: it catches a bare `github.com/org/repo` in prose,
   not only `https://...`. The lookbehind `(?<![\w.])` stops a match inside a
   longer host (`mygithub.com` and `sub.github.com` do not match).
+- **A repeated group requires a line break**: making it optional causes
+  exponential backtracking on a long `github.com/owner` without `/repo`.
 - **A hyphenated line break is recognized, but only inside an already started
   match**: `_LINE_WRAP` is built into the pattern's segments rather than applied as
   preprocessing of the whole text. A break is handled only while the regex
   engine is still parsing `github.com/owner/repo`, not after it. The next
   line's continuation may be ordinary text, so the joined result is kept as a
-  candidate. The break is required inside the repeated segment; making it
-  optional causes exponential backtracking on a long owner without a repo.
-  The atomic owner group avoids retrying shorter prefixes when `/` is absent.
+  candidate. The atomic owner group avoids retrying shorter prefixes when
+  `/` is absent.
 - **A break after `_` is also recognized**: both the short address and the one
   with the next line's continuation are kept. Other ordinary line breaks are not
   joined; blank lines and page boundaries are not crossed.
@@ -170,8 +169,10 @@ For ordinary extraction, direct `pdf_urls` are tried in source order:
 `best_oa_location.pdf_url`, then the non-empty `locations[].pdf_url`.
 The arXiv links discovered by [`arxiv_versions`](arxiv-versions.md) are
 processed separately, even if a primary PDF was read. They are tried before
-falling back to the crawler and paced at one request every 15 seconds. If
-no PDF could be read, but the publication has a `doi` and
+falling back to the crawler and use the same download queue, with arXiv paced
+at one request every 15 seconds per host. Publications that share an arXiv
+work check the cache after the first one finishes, so a verified PDF can be
+reused. If no PDF could be read, but the publication has a `doi` and
 `PAUK_PDF_CRAWLER_URL` is set, the stage probes `GET {url}/health` once per
 stage run (not per publication, no retries); on success, for such publications
 it calls `GET {url}/download?url=<urlencoded doi>`. Service details and
@@ -179,24 +180,63 @@ configuration: [../deploy.md](../deploy.md).
 
 ## Download and cache
 
+Downloads use a sliding window: each finished task frees a slot for
+the next one. Publications are grouped by their primary host from metadata.
+The stage checks each publication's cache before queuing network work.
+Host pauses and concurrency limits apply only to network requests.
+Each source URL is queued under its own host; a failed source
+releases that host before an alternative URL or the crawler is queued.
+Sources waiting in the host queue do not occupy network workers.
+Retries and redirects waiting for host admission also release the worker.
+Each download thread has its own session. Downloads and cache writes share
+a worker pool; PDF extraction runs on the coordinating thread.
+`PDF_HOST_RPS` in `pauk/settings.py` sets request rates for specific publishers.
+
+Settings in `pauk/settings.py`:
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `PAUK_CODE_LINKS_CONCURRENCY` | `8` | Parallel download and cache-write tasks |
+| `PAUK_PDF_HOST_CONCURRENCY` | `2` | Concurrent requests per host |
+| `PAUK_PDF_CONNECT_TIMEOUT` | `5` | Connection timeout, seconds |
+| `PAUK_PDF_READ_TIMEOUT` | `15` | Socket read timeout, seconds |
+| `PAUK_PDF_DOWNLOAD_DEADLINE` | `120` | Seconds from admission of the first request through redirects, headers and body reads |
+| `PAUK_PDF_RETRIES` | `2` | Retries per direct URL after the first attempt; `0` disables retries |
+| `PAUK_PDF_MAX_RETRY_WAIT` | `120` | Maximum retry/shared-host wait, seconds |
+
+Concurrent downloaders share the lowest active per-host cap.
+Read timeout limits silence on the socket, not total download time.
+If a retry or host pause exceeds `PAUK_PDF_MAX_RETRY_WAIT`, that URL fails
+without waiting; the shared host pause remains in force. `0` rejects any
+positive pause. A failed extraction stays eligible for a later `enrich` run.
+The crawler has no retries and uses a 180-second read
+timeout and deadline.
+
+Results are saved as they finish. Before replacing links, the stage clears
+completed statuses so a partial write can be retried without `--force`.
+Stopping saves results whose cache writes have started before exiting.
+Cancellation interrupts header and body reads and retry/host waits. Connection
+setup uses its socket timeout. OS DNS lookup has no hard deadline.
+Sessions close after workers finish.
+
 `data/pdf/<sha256(source-record-key)>.pdf` (`PdfStore`, with a
 `{record_key, filename, fetched_at}` pointer plus optional `sha256` and
 `source_url` provenance in the `pdfs` collection; crawler and other unverified
 downloads do not prove an arXiv revision). Legacy `W….pdf` files remain
 readable without renaming. The write is atomic (temporary file plus `os.replace`)
 and happens only after the PDF parsed successfully, so HTML error pages never
-reach the cache. If an old cached file cannot be read, direct links and the
+reach the cache. A cache write error retries the same bytes once. If that write
+also fails, the stage records the error and stops processing that PDF.
+If an old cached file cannot be read, direct links and the
 crawler are tried, and a successful PDF replaces the corrupt file. A valid
 cache is not downloaded again. Normalized page texts are joined into
 `Publication.full_text` with `"\n\n"`.
 
 After the highest-ranked source record, the stage reads already-cached files
-from the other `source_keys`, `merged_ids` and `versions[].openalex_id`, once
-per key. If no cached record is usable, it tries the remaining source records'
-own PDF URLs/DOI in rank order. Every occurrence therefore names the record
-whose PDF supplied it. If all version caches are corrupt, the normal source
-records are still tried; the cache error remains explicit and earlier
-occurrences are not lost.
+from the other `source_keys`, `merged_ids` and `versions[].openalex_id`.
+If no cached PDF is usable, it tries the source records' URLs and DOIs in
+rank order. If a version has a usable source, the stage downloads it again
+when its cache is corrupt or its file is missing despite saved link evidence.
 
 Texts are combined in `full_text`, and every occurrence keeps its own `pdf_id`
 and local page number. Caches are read even without `pdf_urls`. Failure or
@@ -206,8 +246,8 @@ than mixed with stale evidence. URL spellings differing only by HTTP/HTTPS,
 case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
 
 During the compatibility release, `openalex:W…` and legacy `W….pdf` may resolve
-to the same file. Cached candidates are deduplicated by the resolved file path,
-so that file contributes text and occurrences only once.
+to the same file. Reading that file once replaces earlier link evidence under
+either key. Separate files keep separate evidence.
 
 ## Statuses
 
