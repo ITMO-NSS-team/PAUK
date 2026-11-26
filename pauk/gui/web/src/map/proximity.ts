@@ -49,6 +49,7 @@ export function mountNodeProximity(renderer: Sigma, store: Store<AppState>): (ke
     for (let i = lo; i < sorted.length; i++) {
       const node = sorted[i];
       if (!node || node.x > center.x + limit) break;
+      if (renderer.getNodeDisplayData(node.key)?.hidden) continue;
       const d = Math.hypot(node.x - center.x, node.y - center.y);
       if (d < distance) {
         distance = d;

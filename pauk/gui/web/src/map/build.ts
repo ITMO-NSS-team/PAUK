@@ -235,6 +235,7 @@ function applyGraphStyling(
   proximitySize: (key: string) => number | undefined,
   roots: Set<string>,
   neighborhood: Set<string>,
+  hideUnrelated: () => boolean,
 ): { setHoveredNode: (key: string | null) => void; setCameraRatio: (ratio: number) => void } {
   const graph = renderer.getGraph();
   let hoveredNode: string | null = null;
@@ -280,9 +281,16 @@ function applyGraphStyling(
     );
   }
 
+  function outsideSelection(nodeKey: string): boolean {
+    if (!hideUnrelated()) return false;
+    const selected = selectionFocusKey();
+    return selected !== null && selected !== nodeKey && !neighborhood.has(nodeKey) &&
+      !isNeighborOf(selected, nodeKey);
+  }
+
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
     // Anchors are never drawn; regions draw department names.
-    if (parseDeptNodeKey(nodeKey) !== null) {
+    if (parseDeptNodeKey(nodeKey) !== null || outsideSelection(nodeKey)) {
       return { ...data, hidden: true, label: "", forceLabel: false, highlighted: false };
     }
     const res: Partial<NodeDisplayData> = { ...data };
@@ -342,7 +350,9 @@ function applyGraphStyling(
 
   renderer.setSetting("edgeReducer", (edgeKey, data): Partial<EdgeDisplayData> => {
     const [s, t] = graph.extremities(edgeKey);
-    if (parseDeptNodeKey(s) !== null) return { ...data, hidden: true };
+    if (parseDeptNodeKey(s) !== null || outsideSelection(s) || outsideSelection(t)) {
+      return { ...data, hidden: true };
+    }
 
     if (cameraRatio > store.get().filters.edgeZoomThreshold) return { ...data, hidden: true };
 
@@ -451,6 +461,25 @@ export function mountReactiveGraph(
   const toggle = document.getElementById("expand-toggle");
   const clear = document.getElementById("expand-clear");
   const count = document.getElementById("expand-count");
+  const hideButton = document.getElementById("hide-unrelated");
+  let hideUnrelated = false;
+
+  function syncVisibility(state: AppState): void {
+    const canHide = state.screen === "app" && state.selection?.kind === "node";
+    if (!canHide) hideUnrelated = false;
+    if (!hideButton) return;
+    hideButton.hidden = !canHide;
+    hideButton.textContent = state.lang === "ru" ? "Только связи" : "Connected only";
+    hideButton.setAttribute("aria-pressed", String(hideUnrelated));
+  }
+  function toggleVisibility(): void {
+    hideUnrelated = !hideUnrelated;
+    syncVisibility(store.get());
+    renderer.refresh();
+  }
+  hideButton?.addEventListener("click", toggleVisibility);
+  syncVisibility(store.get());
+
   function syncExpansion(rebuild: boolean) {
     const { selection, expandSelection, lang } = store.get();
     if (!expandSelection || !selection) {
@@ -487,7 +516,9 @@ export function mountReactiveGraph(
   if (toggle) toggle.onclick = () => store.set({expandSelection: !store.get().expandSelection});
   if (clear) clear.onclick = () => store.set({selection:null});
   syncExpansion(false);
-  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails, proximitySize, roots, neighborhood);
+  const { setHoveredNode, setCameraRatio } = applyGraphStyling(
+    renderer, store, pubDetails, proximitySize, roots, neighborhood, () => hideUnrelated,
+  );
 
   function onEnterNode({ node }: { node: string }): void {
     // In region mode the region under the cursor is highlighted instead.
@@ -527,9 +558,15 @@ export function mountReactiveGraph(
       }
     }
 
-    if (prevTab !== state.tab) { roots.clear(); neighborhood.clear(); }
+    const wasHidden = hideUnrelated;
+    if (prevTab !== state.tab) {
+      roots.clear();
+      neighborhood.clear();
+      hideUnrelated = false;
+    }
+    syncVisibility(state);
     syncExpansion(state.filters !== prevFilters || state.tab !== prevTab);
-    if (state.expandSelection !== previousExpansion || roots.size) renderer.refresh();
+    if (state.expandSelection !== previousExpansion || roots.size || hideUnrelated !== wasHidden) renderer.refresh();
 
     if (pubDetails.size !== detailCount) {
       detailCount = pubDetails.size;
@@ -552,6 +589,7 @@ export function mountReactiveGraph(
   });
 
   return () => {
+    hideButton?.removeEventListener("click", toggleVisibility);
     renderer.off("enterNode", onEnterNode);
     renderer.off("leaveNode", onLeaveNode);
     camera.off("updated", onCameraUpdated);

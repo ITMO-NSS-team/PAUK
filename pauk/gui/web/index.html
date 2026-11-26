@@ -1020,7 +1020,7 @@
           background: rgba(0, 0, 0, 0.35);
         }
       }
-      #expansion { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px; white-space:nowrap; font-size:12px; }
+      #expansion { position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; flex-wrap:wrap; max-width:calc(100% - 64px); gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px; white-space:nowrap; font-size:12px; }
       #expansion button { border:0; border-radius:3px; color:var(--text); background:transparent; padding:5px 7px; font:inherit; cursor:pointer; }
       #expansion button[aria-pressed=true] { color:var(--accent); background:var(--accent-soft); }
       #expand-count:empty { display:none; }
@@ -1096,7 +1096,12 @@
       </aside>
       <div class="map-workspace">
         <div id="map"></div>
-        <div id="expansion"><button id="expand-toggle" type="button" aria-pressed="false"></button><span id="expand-count"></span><button id="expand-clear" type="button" hidden></button></div>
+        <div id="expansion">
+          <button id="expand-toggle" type="button" aria-pressed="false"></button>
+          <button id="hide-unrelated" type="button" aria-pressed="false" hidden></button>
+          <span id="expand-count"></span>
+          <button id="expand-clear" type="button" hidden></button>
+        </div>
         <button type="button" class="pane-toggle" aria-controls="sidebar" aria-expanded="true">‹</button>
         <button type="button" class="pane-toggle" aria-controls="panel" aria-expanded="true">›</button>
       </div>
