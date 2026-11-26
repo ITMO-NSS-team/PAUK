@@ -197,7 +197,8 @@ class ProfileFailureTest(unittest.TestCase):
             api = client.return_value
             api.contributors.return_value = [{"login": "bob", "type": "User"}]
             api.commits.return_value = []
-            api.get_user.side_effect = [{"login": "alice", "name": "Alice"}, RuntimeError("502")]
+            failure = HttpRequestError("POST", "https://api.github.com/graphql", status_code=502)
+            api.get_users.return_value = {"alice": {"login": "alice", "name": "Alice"}, "bob": failure}
             RepoPeopleStage(prepared, raw).run()
             repo = next(prepared.read_models("repositories", Repository))
             self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.FAILED)
@@ -207,15 +208,14 @@ class ProfileFailureTest(unittest.TestCase):
             self.assertFalse(profiles["bob"].profile_fetched)
             self.assertEqual(len(list(raw.read("github_user"))), 1)
 
-            api.get_user.reset_mock(side_effect=True)
-            api.get_user.return_value = {"login": "bob", "name": "Bob"}
+            api.get_users.reset_mock()
+            api.get_users.return_value = {"bob": {"login": "bob", "name": "Bob"}}
             RepoPeopleStage(prepared, raw).run()
-            api.get_user.assert_called_once_with("bob")
+            self.assertEqual(list(api.get_users.call_args.args[0]), ["bob"])
             repo = next(prepared.read_models("repositories", Repository))
             self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.COMPLETED)
 
-            api.get_user.reset_mock()
-            api.get_user.side_effect = RuntimeError("502 during refresh")
+            api.get_users.return_value = {"alice": failure, "bob": failure}
             RepoPeopleStage(prepared, raw, force=True).run()
             profiles = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
             self.assertEqual(profiles["alice"].name, "Alice")

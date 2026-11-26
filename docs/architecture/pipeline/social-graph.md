@@ -17,8 +17,10 @@ account or on a lab's account, and nothing in the publications leads to it.
 ## How the walk goes
 
 The starting point is a confirmed account or an ITMO organization. The stage
-takes that account's public repositories and collects participants from them;
-those participants become candidates like any others.
+takes that account's public repositories and uses their owner details when
+collecting participants. It fetches missing profiles in GitHub batches and
+retries incomplete profiles with a saved repository link on later runs, even
+if the repository is already in the `repositories` collection.
 
 `github_match` runs between rings: it turns a candidate of this ring into a
 starting point for the next. Without it the walk would end after the first

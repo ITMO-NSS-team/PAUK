@@ -5,6 +5,7 @@ import math
 import re
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import CancelledError
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -81,10 +82,11 @@ class HttpClient:
         return self.request_json("GET", url, params=params, retries=retries)
 
     def request_json(
-        self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None, retries: int = 3
+        self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None, retries: int = 3,
+        on_response: Callable[[requests.Response], None] | None = None,
     ) -> dict[str, Any]:
         """Send an HTTP request and retry transient failures, returning decoded JSON."""
-        return self._request(method, url, params=params, json=json, retries=retries).json()
+        return self._request(method, url, params=params, json=json, retries=retries, on_response=on_response).json()
 
     def get_bytes(self, url: str, *, retries: int = 3, timeout: int | None = None) -> bytes:
         """Send a GET request and return the raw response body."""
@@ -103,6 +105,7 @@ class HttpClient:
         self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None,
         data: dict[str, Any] | None = None, allow_redirects: bool = True,
         retries: int = 3, timeout: int | None = None,
+        on_response: Callable[[requests.Response], None] | None = None,
     ) -> requests.Response:
         method = method.upper()
         safe_url = self._safe_request_url(method, url, params)
@@ -126,6 +129,8 @@ class HttpClient:
                            cancel=self._cancel)
                 continue
 
+            if on_response is not None:
+                on_response(response)
             delay = self._retry_delay(response, attempt)
             if delay is not None and attempt < retries:
                 self._wait(delay, self._retry_reason(response), method, safe_url, attempt, retries, cancel=self._cancel)
