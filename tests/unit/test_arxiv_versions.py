@@ -1056,6 +1056,8 @@ class ArxivThenCodeLinksTest(unittest.TestCase):
                 self.assertTrue(kept.is_relevant)
                 self.assertEqual(kept.llm_confidence, 0.95)
                 self.assertEqual(kept.llm_reason, "author repo")
+                [occurrence] = kept.occurrences
+                self.assertEqual((occurrence.text_start, occurrence.text_end), (4, 4 + len(kept.url)))
                 if expect_reopen:
                     self.assertNotIn("link_relevance", work.processing)
                     self.assertEqual(

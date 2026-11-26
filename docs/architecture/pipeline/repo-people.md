@@ -23,14 +23,6 @@ the previous run, and neither a person nor the code could tell the fresh half
 from the stale one. Two stages give two statuses, and each goes stale on its
 own.
 
-A measurement on `aimclub/FEDOT` (40 contributors):
-
-| run | requests |
-|---|---:|
-| `enrich repositories --force` | 2 |
-| `enrich repo_people --force` | 44 |
-| `enrich repo_people` (row already `completed`) | 0 |
-
 ## The owner's type comes from the profile
 
 Whether the owner is a person or an organization is read from the already
@@ -40,16 +32,10 @@ attribute arrives from the API as `User`.
 
 ## A filled profile is not requested again
 
-`GET /users/{login}` is made only for a login that has not yet had this request
-answered (marked by `profile_fetched` on the profile), or under `--force`.
-Judging by `html_url` was not possible: the `repositories` stage writes that
-field into the owner's profile stub itself, so the gate would close on data the
-pipeline had just made up and the repository owner would never be requested.
-The content of the fields does not replace `profile_fetched`: name and e-mail
-may come from commits after a failed profile request. Old profiles without the
-marker are requested the next time their repository is processed. An account
-seen on a second repository learns nothing new from this request, so the marker
-avoids those calls once a profile load is confirmed.
+The stage loads up to 50 profiles per GraphQL query for each repository. Runs
+without a GitHub token use REST. `profile_fetched` distinguishes a successful
+profile lookup from an owner stub or data collected from commits.
+A successful `--force` refresh is reused for the rest of the run.
 
 ## An error is `FAILED` for this stage only
 
@@ -58,12 +44,10 @@ collection is recorded as `processing["repo_people"] = FAILED` with the reason;
 the metadata stage's status is unaffected, since another stage collects the
 metadata.
 
-This also applies to `GET /users/{login}`: an exception is not replaced by an
-empty response but reaches the repository handler. Profiles already received
-are saved; the next regular run retries the failed processing and skips
-profiles with `profile_fetched=true`. A failed refresh does not overwrite the
-old profile. Rows wrongly marked `completed` earlier are not reset
-automatically; fixing them needs a separate re-run.
+When a profile request fails, the stage still saves any profiles received and
+identities from commits. The next regular run retries the failed repository and
+requests only profiles still missing data. A failed refresh preserves the
+previous profile.
 
 ## What a publication-scoped run means here
 

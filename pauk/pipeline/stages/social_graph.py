@@ -26,12 +26,15 @@ import logging
 from collections.abc import Collection, Iterable
 
 from pauk.models import GitHubProfile, Person, Repository
+from pauk.redaction import redact_text, redact_url
+from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
 from .github_match import ITMO_IDENTITY_PATTERN, PETERSBURG_PATTERN, GitHubMatchStage
-from .repo_people import COMMIT_PAGES, _git_identities, _is_person
+from .repo_people import COMMIT_PAGES, _apply_profile_details, _git_identities, _is_person
+from .repositories import _github_owner_name
 
 logger = logging.getLogger(__name__)
 
@@ -113,57 +116,75 @@ class SocialGraphStage(EnrichmentStage):
                             login, reason)
         return sorted(confirmed | set(organizations))
 
-    def _harvest(self, client: GitHubClient, owner: str, name: str, url: str,
-                 profiles: dict[str, GitHubProfile]) -> int:
+    def _fetch_profiles(self, client: GitHubClient, profiles: Iterable[GitHubProfile],
+                        attempted: set[str]) -> bool:
+        pending = {profile.login.lower(): profile for profile in profiles
+                   if not profile.profile_fetched and profile.login.lower() not in attempted}
+        if not pending:
+            return False
+        attempted.update(pending)
+        updated = False
+        failed = 0
+        for login, payload in client.get_users(pending).items():
+            if isinstance(payload, HttpRequestError):
+                failed += 1
+                continue
+            profile = pending[login]
+            self.raw.append("github_user", payload, {"login": profile.login})
+            _apply_profile_details(profile, payload)
+            updated = True
+        if failed:
+            logger.warning("social_graph: could not fetch %d of %d GitHub profiles", failed, len(pending))
+        return updated
+
+    def _harvest(self, client: GitHubClient, owner: str, name: str, url: str, payload: dict,
+                 profiles: dict[str, GitHubProfile], attempted: set[str]) -> int:
         """Accounts behind one repository, added to the candidate pool."""
         try:
-            payload = client.get_repository(owner, name)
+            owner_data = payload.get("owner") or {}
+            if not owner_data.get("login") or not owner_data.get("type"):
+                payload = client.get_repository(owner, name)
             contributors = client.contributors(owner, name)
             identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
-        except Exception:
+        except Exception as exc:
+            logger.warning("social_graph: could not collect participants for %s: %s",
+                           redact_url(url), redact_text(exc) or type(exc).__name__)
             return 0
         self.raw.append("github", payload, {"repository": url})
 
         owner_data = payload.get("owner") or {}
-        logins = set()
+        logins: dict[str, str] = {}
         if _is_person(owner_data.get("login") or "", owner_data.get("type")):
-            logins.add(owner_data["login"])
+            login = owner_data["login"]
+            logins[login.lower()] = login
         for contributor in contributors:
             login = contributor.get("login") or ""
             if _is_person(login, contributor.get("type")):
-                logins.add(login)
+                logins.setdefault(login.lower(), login)
 
         added = 0
-        for login in sorted(logins):
-            profile_id = f"github_{login.lower()}"
-            emails, commit_names = identities.get(login, (set(), set()))
-            known = profiles.get(profile_id)
-            if known is None:
-                try:
-                    user = client.get_user(login)
-                except Exception:
-                    user = {}
-                self.raw.append("github_user", user, {"login": login})
+        candidates = []
+        for key, login in sorted(logins.items()):
+            profile_id = f"github_{key}"
+            emails, commit_names = identities.get(key, (set(), set()))
+            profile = profiles.get(profile_id)
+            if profile is None:
+                profile = profiles[profile_id] = GitHubProfile(id=profile_id, login=login)
                 added += 1
-            else:
-                user = {}
-            profile_email = (user.get("email") or "").strip().lower()
-            if profile_email and "noreply" not in profile_email:
-                emails = emails | {profile_email}
-            profiles[profile_id] = GitHubProfile(
-                id=profile_id,
-                login=login,
-                name=user.get("name") or (known.name if known else None),
-                html_url=user.get("html_url") or (known.html_url if known else None),
-                description=user.get("bio") or (known.description if known else None),
-                location=user.get("location") or (known.location if known else None),
-                company=user.get("company") or (known.company if known else None),
-                type=(user.get("type") or "").lower() or (known.type if known else None),
-                emails=sorted(set(known.emails if known else []) | emails),
-                commit_names=sorted(set(known.commit_names if known else []) | commit_names),
-                repos=sorted(set(known.repos if known else []) | {url}),
-            )
+            profile.emails = sorted(set(profile.emails) | emails)
+            profile.commit_names = sorted(set(profile.commit_names) | commit_names)
+            profile.repos = sorted(set(profile.repos) | {url})
+            candidates.append(profile)
+        self._fetch_profiles(client, candidates, attempted)
         return added
+
+    def _match_candidates(self, profiles: dict[str, GitHubProfile]) -> tuple[list[Person], dict[str, GitHubProfile]]:
+        self.prepared.write_models("github_profiles", profiles.values())
+        GitHubMatchStage(self.prepared, self.raw, self.config, force=True).run()
+        people = list(self.prepared.read_models("persons", Person))
+        profiles = {profile.id: profile
+                    for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
+        return people, profiles
 
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
@@ -177,9 +198,14 @@ class SocialGraphStage(EnrichmentStage):
         # (named on the profiles it collected). Reading only the first would
         # re-walk the same repositories on every run.
         visited = {repository.url for repository in repositories}
-        visited |= {url for profile in profiles.values() for url in profile.repos}
+        visited.update(url for profile in profiles.values() for url in profile.repos)
         walked = added_profiles = rings = 0
         walked_seeds: set[str] = set()
+        attempted_profiles: set[str] = set()
+        # The repositories are already visited even if their profile requests failed.
+        retry_profiles = (profile for profile in profiles.values() if profile.repos)
+        if self._fetch_profiles(client, retry_profiles, attempted_profiles):
+            people, profiles = self._match_candidates(profiles)
 
         for ring in range(1, MAX_RINGS + 1):
             seeds = [seed for seed in self._seeds(people, repositories, profiles)
@@ -190,7 +216,7 @@ class SocialGraphStage(EnrichmentStage):
             walked_seeds.update(seeds)
             logger.info("social_graph: ring %d, %d new seeds", ring, len(seeds))
 
-            fresh: list[tuple[str, str, str]] = []
+            fresh: list[tuple[str, str, str, dict]] = []
             for seed in seeds:
                 try:
                     owned = client.user_repositories(seed, MAX_REPOS_PER_SEED)
@@ -200,28 +226,25 @@ class SocialGraphStage(EnrichmentStage):
                     url = (repository.get("html_url") or "").rstrip("/")
                     if not url or url in visited:
                         continue
-                    parts = url.split("github.com/")[-1].split("/")
-                    if len(parts) != 2:
+                    parsed = _github_owner_name(url)
+                    if parsed is None:
                         continue
                     visited.add(url)
-                    fresh.append((parts[0], parts[1], url))
+                    owner, name = parsed
+                    fresh.append((owner, name, url, repository))
 
             if not fresh:
                 logger.info("social_graph: ring %d walked nothing new, converged", ring)
                 break
-            for owner, name, url in fresh:
-                added_profiles += self._harvest(client, owner, name, url, profiles)
+            for owner, name, url, payload in fresh:
+                added_profiles += self._harvest(client, owner, name, url, payload, profiles, attempted_profiles)
             walked += len(fresh)
             rings = ring
             logger.info("social_graph: ring %d walked %d repositories", ring, len(fresh))
 
-            self.prepared.write_models("github_profiles", profiles.values())
             # Matching is what turns this ring's candidates into the next
             # ring's seeds; without it the walk would stop here.
-            GitHubMatchStage(self.prepared, self.raw, self.config, force=True).run()
-            people = list(self.prepared.read_models("persons", Person))
-            profiles = {profile.id: profile
-                        for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
+            people, profiles = self._match_candidates(profiles)
         else:
             logger.info("social_graph: stopped at the %d-ring ceiling", MAX_RINGS)
 

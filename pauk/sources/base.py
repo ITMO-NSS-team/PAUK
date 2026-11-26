@@ -120,10 +120,11 @@ class HttpClient:
         return self.request_json("GET", url, params=params, retries=retries)
 
     def request_json(
-        self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None, retries: int = 3
+        self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None, retries: int = 3,
+        on_response: Callable[[requests.Response], None] | None = None,
     ) -> dict[str, Any]:
         """Send an HTTP request and retry transient failures, returning decoded JSON."""
-        return self._request(method, url, params=params, json=json, retries=retries).json()
+        return self._request(method, url, params=params, json=json, retries=retries, on_response=on_response).json()
 
     def get_bytes(self, url: str, *, retries: int = 3, timeout: float | tuple[float, float] | None = None,
                   deadline: float | None = None, max_wait: float | None = None,
@@ -247,6 +248,7 @@ class HttpClient:
         deadline: float | None = None, max_wait: float | None = None,
         consume: Callable[[requests.Response], bytes] | None = None,
         state: DownloadState | None = None,
+        on_response: Callable[[requests.Response], None] | None = None,
     ) -> requests.Response:
         method = method.upper()
         safe_url = self._safe_request_url(method, url, params)
@@ -280,6 +282,8 @@ class HttpClient:
                     raise HttpRequestError(method, safe_url, cause_type=cause) from None
                 reason = type(exc).__name__
             else:
+                if on_response is not None:
+                    on_response(response)
                 delay = self._retry_delay(response, attempt)
                 if delay is not None and max_wait is not None and delay > max_wait:
                     raise HttpRequestError(method, safe_url, status_code=response.status_code,

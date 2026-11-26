@@ -506,9 +506,7 @@ def _collect_occurrences(
 ) -> dict[str, list[LinkOccurrence]]:
     """Canonical URL -> every place it was found, abstract first then PDF pages in order.
 
-    page_number=None marks the abstract (it isn't paginated); PDF pages are
-    1-indexed. Insertion order keeps abstract-sourced URLs first, so
-    Publication.code_url favours the abstract.
+    Abstract occurrences have no page number. PDF page numbers start at 1.
     """
     occurrences: dict[str, list[LinkOccurrence]] = defaultdict(list)
     for url, found in _occurrences_in_text(abstract, None).items():
@@ -696,6 +694,10 @@ def _is_manual_link(link: CodeLink) -> bool:
             and link.llm_confidence is None and link.llm_reason is None)
 
 
+def _legacy_abstract(occurrence: LinkOccurrence) -> bool:
+    return occurrence.source == "abstract" and occurrence.text_start is None and occurrence.text_end is None
+
+
 def _remove_stale_evidence(
     row: RepoLink,
     fresh: dict[str, list[LinkOccurrence]],
@@ -713,11 +715,7 @@ def _remove_stale_evidence(
         for url, occurrences in fresh.items()
     }
     fresh_abstract = {
-        normalize_repo_url(url): {
-            (o.source, o.context)
-            for o in occurrences
-            if o.page_number is None and o.source in abstract_sources
-        }
+        normalize_repo_url(url): {o.context for o in occurrences if o.source == "abstract"}
         for url, occurrences in fresh.items()
     }
     retained = []
@@ -743,7 +741,7 @@ def _remove_stale_evidence(
                 and o.page_number is None
                 and o.source in abstract_sources
                 and o.model_dump_json() not in known
-                and (o.source, o.context) not in known_abstract
+                and not (_legacy_abstract(o) and o.context in known_abstract)
             )
             if not stale_pdf and not stale_abstract:
                 occurrences.append(o)
@@ -794,19 +792,21 @@ def _merge_additional_evidence(
             link.llm_reason = ARCHIVED_DEPOSIT_REASON
             reopen = True
         seen = {occ.model_dump_json() for occ in link.occurrences}
-        abstract_seen = {
-            (occ.source, occ.context) for occ in link.occurrences if occ.page_number is None
+        legacy_abstract = {
+            occ.context: index for index, occ in enumerate(link.occurrences) if _legacy_abstract(occ)
         }
         added = False
         for occurrence in occurrences:
             key = occurrence.model_dump_json()
-            if key in seen or (
-                occurrence.page_number is None and (occurrence.source, occurrence.context) in abstract_seen
-            ):
+            if key in seen:
                 continue
             seen.add(key)
-            if occurrence.page_number is None:
-                abstract_seen.add((occurrence.source, occurrence.context))
+            if occurrence.source == "abstract" and not _legacy_abstract(occurrence):
+                index = legacy_abstract.pop(occurrence.context, None)
+                if index is not None:
+                    # Fill missing offsets without reopening the verdict for the same context.
+                    link.occurrences[index] = occurrence
+                    continue
             link.occurrences.append(occurrence)
             added = True
         if added:

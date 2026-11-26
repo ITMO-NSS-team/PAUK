@@ -9,7 +9,7 @@ Reads the `repo_links` collection (every link found by `code_links`). For each
 link of the form `github.com/owner/repo` (exactly two path segments) it queries
 the GitHub API.
 
-## One request per repository per run
+## Fetching repository metadata
 
 Many publications can mention the same repository. All `cited_urls` are
 collected across mentions, and GitHub metadata is fetched for every found link
@@ -22,9 +22,12 @@ field. A third-party mention stays in `repo_links` and later becomes only
 Before the pass, the stage removes the publications being processed from
 `publication_ids` and adds back only the confirmed pairs. So a reclassification
 `true -> false/null` drops the old authorship link without touching
-publications from other groups. The GitHub request itself happens at most once
-per repository per run (`attempted_repo_ids`); otherwise `--force` on a large
-group would repeat it once per citing publication.
+publications from other groups. `attempted_repo_ids` keeps repeated citations
+from triggering separate metadata lookups, including under `--force`.
+
+With a GitHub token, the stage fetches metadata and checks common README paths
+in batches of 25 repositories. If GraphQL does not find a README, the stage
+checks the REST README endpoint. Runs without a token use REST throughout.
 
 Line-wrap alternatives go through the same metadata request. The result is
 written to `CodeLink.availability` (`available`, `not_found`, `failed`) and the
@@ -60,9 +63,9 @@ which has its own `processing` status; the reasoning is in
 stub: the nested `owner` object in the GitHub response carries a login, a type
 and a URL, and these fill in the existing `GitHubProfile` instead of replacing
 it, which would erase addresses and names the same person left on other
-repositories. For an owner of type `organization` it additionally makes one
-`GET /users/{login}` call per organization per run, filling name, description,
-location and company, which `social_graph` reads to recognize an ITMO lab.
+repositories. Organization owners are deduplicated and fetched in batches of
+50 with a token. Their profiles help `social_graph` recognize an ITMO lab.
+Incomplete profiles are retried even if repository metadata is complete.
 
 ## Two sources of work
 

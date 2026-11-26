@@ -37,6 +37,7 @@ from pauk.pipeline.stages.link_relevance import (
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
+from pauk.sources.base import HttpRequestError
 from pauk.sources.llm import SubscriptionLimitError
 from pauk.storage import PreparedStore, RawStore
 
@@ -139,6 +140,46 @@ class StagesTest(unittest.TestCase):
         link = links["W1"].links[0]
         self.assertEqual(link.classification_status, ClassificationStatus.PENDING)
         self.assertIsNone(link.is_relevant)
+
+    def test_code_links_keeps_both_positions_in_a_short_abstract(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        config = Settings(data_dir=self.root, pdf_crawler_url="")
+        url = "https://github.com/org/repo"
+        abstract = f"Implementation: {url}. Dataset: {url}."
+        prepared.write_models("publications", [Publication(id="W1", title="Paper", abstract=abstract)])
+
+        for force in (False, True, False):
+            CodeLinksStage(prepared, raw, config=config, force=force).run()
+            [link] = next(prepared.read_models("repo_links", RepoLink)).links
+            self.assertEqual(link.url, url)
+            positions = [abstract.index(url), abstract.rindex(url)]
+            self.assertEqual(
+                [(item.text_start, item.text_end) for item in link.occurrences],
+                [(start, start + len(url) + 1) for start in positions],
+            )
+            self.assertEqual([item.context for item in link.occurrences], [abstract, abstract])
+
+    def test_code_links_retry_replaces_old_abstract_positions_with_the_same_context(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        config = Settings(data_dir=self.root, pdf_crawler_url="")
+        url = "https://github.com/org/repo"
+        abstract = f"Code: {url}."
+        publication = Publication(id="W1", title="Paper", abstract=abstract)
+        prepared.write_models("publications", [publication])
+        CodeLinksStage(prepared, raw, config=config).run()
+
+        shifted = f"  {abstract}"
+        for _ in range(2):
+            publication = next(prepared.read_models("publications", Publication))
+            publication.abstract = shifted
+            publication.processing["code_links"] = ProcessingState(status=ProcessingStatus.FAILED)
+            prepared.upsert_models("publications", [publication])
+            CodeLinksStage(prepared, raw, config=config).run()
+
+            [link] = next(prepared.read_models("repo_links", RepoLink)).links
+            self.assertEqual([item.text_start for item in link.occurrences], [shifted.index(url)])
 
     def test_code_links_strips_sentence_ending_period_from_url(self):
         prepared = PreparedStore(self.db, "sample")
@@ -1031,7 +1072,9 @@ class HarvestAccountsTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = list(contributors)
         github_client.return_value.commits.return_value = list(commits)
-        github_client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        github_client.return_value.get_users.side_effect = lambda logins: {
+            login: (users or {}).get(login, {"login": login}) for login in logins
+        }
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         raw = RawStore(db, "sample")
@@ -1115,7 +1158,7 @@ class HarvestAccountsTest(unittest.TestCase):
             client.return_value.contributors.return_value = []
             client.return_value.commits.side_effect = lambda owner, name, pages: [
                 self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
-            client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
+            client.return_value.get_users.return_value = {"alice": {"name": "Alice Ivanova"}}
             RepositoriesStage(prepared, raw).run()
             RepoPeopleStage(prepared, raw).run()
         profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
@@ -1177,7 +1220,7 @@ class AccountTypeSpellingTest(unittest.TestCase):
         client = Mock()
         client.contributors.return_value = []
         client.commits.return_value = []
-        client.get_user.return_value = {"login": "alice", "type": "User"}
+        client.get_users.return_value = {"alice": {"login": "alice", "type": "User"}}
         # The type is read off the stored profile rather than passed in.
         profiles = {"github_alice": GitHubProfile(id="github_alice", login="alice",
                                                   type="user")}
@@ -1200,7 +1243,9 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = []
         github_client.return_value.commits.return_value = []
-        github_client.return_value.get_user.return_value = user_payload or {}
+        github_client.return_value.get_users.side_effect = lambda logins: {
+            login: user_payload or {} for login in logins
+        }
         db = mongomock.MongoClient()["pauk_test"]
         prepared = PreparedStore(db, "sample")
         prepared.write_models("repo_links", [
@@ -1228,15 +1273,57 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
     def test_the_organization_is_fetched_once_however_many_repositories(self, github_client):
         client, _ = self.run_stage(github_client, "Organization", repos=3,
                                    user_payload={"name": "Some Lab"})
-        self.assertEqual(client.get_user.call_count, 1)
+        client.get_users.assert_called_once()
+        self.assertEqual(list(client.get_users.call_args.args[0]), ["some-lab"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_organization_batch_retries_only_the_unfilled_owner(self, github_client):
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared, raw = PreparedStore(db, "sample"), RawStore(db, "sample")
+        owners = ["first-lab", "second-lab", "first-lab"]
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id=f"W{i}", links=[CodeLink(url=f"https://github.com/{owner}/tool{i}")])
+            for i, owner in enumerate(owners)
+        ])
+        client = github_client.return_value
+        client.get_repository.side_effect = [
+            {"html_url": f"https://github.com/{owner}/tool{i}", "name": f"tool{i}", "id": i + 1,
+             "owner": {"login": owner, "type": "Organization"}}
+            for i, owner in enumerate(owners)
+        ]
+        client.has_readme.return_value = True
+        failure = HttpRequestError("POST", "https://api.github.com/graphql", status_code=502)
+        requested = []
+
+        def profiles(logins):
+            requested.append(list(logins))
+            return ({"first-lab": {"name": "First Lab"}, "second-lab": failure}
+                    if len(requested) == 1 else {"second-lab": {"name": "Second Lab"}})
+
+        client.get_users.side_effect = profiles
+        stage = RepositoriesStage(prepared, raw)
+        with self.assertLogs("pauk.pipeline.stages.repositories", level="WARNING"):
+            stage.run()
+        before = {row.login: row for row in prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(before["first-lab"].profile_fetched)
+        self.assertFalse(before["second-lab"].profile_fetched)
+
+        stage.run()
+
+        self.assertEqual(requested, [["first-lab", "second-lab"], ["second-lab"]])
+        self.assertEqual(client.get_repository.call_count, 3)
+        after = {row.login: row for row in prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(after["second-lab"].profile_fetched)
+        self.assertEqual(after["second-lab"].name, "Second Lab")
+        self.assertEqual(len(list(raw.read("github_user"))), 2)
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
         # Only organizations are fetched here. A user owning the repository is
         # a contributor candidate, and RepoPeopleStage fetches them with
-        # everyone else - this stage does not call get_user for them at all.
+        # everyone else.
         client, _ = self.run_stage(github_client, "User")
-        self.assertEqual([call.args for call in client.get_user.call_args_list], [])
+        client.get_users.assert_not_called()
 
 
 class OwnerProfileIsFetchedTest(unittest.TestCase):
@@ -1272,9 +1359,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
-            client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.return_value = {"alice": self.USER}
             RepoPeopleStage(self.prepared, self.raw).run()
-            calls = client.return_value.get_user.call_count
+            calls = client.return_value.get_users.call_count
         return calls, {p.login: p
                        for p in self.prepared.read_models("github_profiles", GitHubProfile)}
 
@@ -1314,7 +1401,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.commits.return_value = [
                 {"author": {"login": "alice"},
                  "commit": {"author": {"name": "Alice", "email": "alice@example.org"}}}]
-            client.return_value.get_user.side_effect = RuntimeError("502")
+            client.return_value.get_users.return_value = {
+                "alice": HttpRequestError("POST", "https://api.github.com/graphql", status_code=502),
+            }
             RepoPeopleStage(self.prepared, self.raw).run()
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
@@ -1327,9 +1416,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
-            client.return_value.get_user.return_value = self.USER
+            client.return_value.get_users.return_value = {"alice": self.USER}
             RepoPeopleStage(self.prepared, self.raw).run()
-            client.return_value.get_user.assert_called_once_with("alice")
+            self.assertEqual(list(client.return_value.get_users.call_args.args[0]), ["alice"])
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertTrue(profiles["alice"].profile_fetched)
@@ -1797,6 +1886,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         selection = PreparedSelection(entity="repositories", ids={"github_org_curated"})
         RepositoriesStage(self.prepared, self.raw, selection=selection).run()
         self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+        self.assertEqual(list(github_client.return_value.prefetch_repositories.call_args.args[0]), [("org", "curated")])
 
 
 class RepoPeopleStageTest(unittest.TestCase):
@@ -1821,6 +1911,9 @@ class RepoPeopleStageTest(unittest.TestCase):
         client.return_value.contributors.return_value = [{"login": "bob", "type": "User"}]
         client.return_value.commits.return_value = []
         client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        client.return_value.get_users.side_effect = lambda logins: {
+            login: (users or {}).get(login, {"login": login}) for login in logins
+        }
         return client
 
     def _profiles(self):
@@ -1875,12 +1968,13 @@ class RepoPeopleStageTest(unittest.TestCase):
         self._client(people_client, users=users)
         RepositoriesStage(self.prepared, self.raw).run()
         RepoPeopleStage(self.prepared, self.raw).run()
-        self.assertEqual(people_client.return_value.get_user.call_count, 2)
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
+        self.assertEqual(list(people_client.return_value.get_users.call_args.args[0]), ["alice", "bob"])
         self.assertEqual(self._profiles()["bob"].name, "Bob")
 
         RepoPeopleStage(self.prepared, self.raw, force=True).run()
         # Forced: the profiles are re-read, but only because they were asked for.
-        self.assertEqual(people_client.return_value.get_user.call_count, 4)
+        self.assertEqual(people_client.return_value.get_users.call_count, 2)
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
@@ -1901,9 +1995,13 @@ class RepoPeopleStageTest(unittest.TestCase):
         RepoPeopleStage(self.prepared, self.raw).run()
         # bob is credited on both repositories; his profile is fetched once.
         self.assertEqual(people_client.return_value.contributors.call_count, 2)
-        self.assertEqual(people_client.return_value.get_user.call_count, 1)
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
         self.assertEqual(sorted(self._profiles()["bob"].repos),
                          ["https://github.com/org/first", "https://github.com/org/second"])
+        people_client.return_value.get_users.reset_mock()
+        RepoPeopleStage(self.prepared, self.raw, force=True).run()
+        self.assertEqual(people_client.return_value.get_users.call_count, 1)
+        self.assertEqual(people_client.return_value.contributors.call_count, 4)
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")

@@ -102,12 +102,21 @@ Settings:
 | `SEMANTIC_SCHOLAR_API_KEY` | empty | Semantic Scholar key; without it the shared public pool is used |
 | `PAUK_SEMANTIC_SCHOLAR_RPS` | `1` | Optional Semantic Scholar pace override: lower it or match a higher quota assigned to the key |
 
+## GitHub limits
+
+GitHub can report GraphQL throttling in an HTTP 200 response. Both APIs reuse
+the HTTP retry budget. An exhausted primary quota waits for `X-RateLimit-Reset`
+on that API. Secondary throttling pauses REST and GraphQL in the process. It
+uses `Retry-After`, the reset time if the quota is exhausted, or exponential
+backoff starting at one minute. Successful entries from a partial GraphQL
+response survive failed retries.
+
 ## Clients
 
 | File | Class | What it provides |
 |---|---|---|
 | `openalex.py` | `OpenAlexClient` | `get_work`, `iter_works` (cursor pagination by ROR and date range), `get_author`, `get_authors` |
-| `github.py` | `GitHubClient` | `get_repository`, `has_readme` (a separate call: the repository payload does not say whether a README exists), `contributors`, `commits`, `get_user`, `user_repositories`. It also retries rate limits sent as `403` or `429`: `Retry-After` first, then `X-RateLimit-Reset` for an exhausted primary limit, then at least 60 seconds for a secondary limit named only in the response body. The wait log line says which limit it was |
+| `github.py` | `GitHubClient` | `prefetch_repositories` and `get_users` batch metadata and profiles via GraphQL with a token. REST supplies individual lookups, README fallback, contributor lists, commit history and repositories of an owner. |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname; optional contact email selects polite-pool limits |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)`. Sessions with the same credentials share a `/read-public` token until expiry or HTTP 401. |
 | `semantic_scholar.py` | `SemanticScholarClient` | `papers_by_doi(dois)`: up to 500 DOIs per `POST /graph/v1/paper/batch`, one record or `None` per DOI in request order, retried up to eight times; `arxiv_id(record)` reads `externalIds.ArXiv`. Used by `ArxivVersionsStage` |

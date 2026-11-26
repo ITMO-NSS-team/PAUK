@@ -85,6 +85,9 @@ class MockGitHubClient:
         self.renamed = universe["renamed"]
         self.calls: list[tuple[str, str]] = []
 
+    def prefetch_repositories(self, pairs) -> None:
+        pass
+
     def get_repository(self, owner: str, name: str) -> dict:
         self.calls.append((owner, name))
         key = (owner.lower(), name.lower())
@@ -109,6 +112,9 @@ class MockGitHubClient:
 
     def get_user(self, login: str) -> dict:
         return {}
+
+    def get_users(self, logins) -> dict:
+        return {login: {"login": login} for login in logins}
 
 
 class MockCrossrefClient:

@@ -24,9 +24,9 @@ the title.
 3. **PDF, page by page**: page text plus real PDF hyperlinks (annotations), see
    below.
 
-All sources are merged in `_collect_occurrences()`: one `CodeLink` per
-canonical URL, with `occurrences: list[LinkOccurrence]` listing every place it
-appeared. The order is stable: archive, abstract, then PDF pages.
+Each `CodeLink` holds one repository URL and all extracted occurrences.
+Repeated mentions in an abstract retain their own text offsets even when they
+share the same context.
 `link_relevance` computes `has_code` and `code_url` from the collected evidence.
 `code_links` clears that stage's status when it replaces links or changes
 automatic evidence.
