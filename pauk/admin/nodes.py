@@ -154,7 +154,9 @@ def _form_fields(label: str, form, current: dict | None = None) -> dict:
                     normalize_fields(label, {name: previous})
                 except MutationError:
                     continue
-        if name in NODE_LIST_FIELDS[label]:
+        if label == "Repository" and name == "name":
+            fields[name] = raw.strip()
+        elif name in NODE_LIST_FIELDS[label]:
             fields[name] = raw
         else:
             fields[name] = (_parse_new_value(raw) if current is None

@@ -7,6 +7,8 @@ from neo4j import GraphDatabase
 from pauk.aliases import flatten_merges
 from pauk.pipeline.membership import ITMO_ROR_ID, POLICY_VERSION, normalize_ror, source_observed_at
 
+from .validation import CsvNodeError, validate_repository_name
+
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 2000
@@ -399,6 +401,46 @@ class Neo4jClient:
 
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
+
+    def upsert_csv_node(self, labels: str, node_id: str, properties: dict) -> None:
+        """Guard repository names, including matches through secondary labels.
+
+        An omitted name is checked under a write lock on the exact MERGE
+        labels, so a concurrent delete cannot turn an update into a creation.
+        Explicit invalid names reject the entire row before writing anything.
+        """
+        repository_requested = "Repository" in labels.split(":")
+        if repository_requested and "name" in properties:
+            validate_repository_name(properties["name"])
+            self.upsert_nodes_batch(labels, [(node_id, properties)])
+            return
+
+        clean = {key: value for key, value in properties.items()
+                 if key not in ("id", "created_at", "updated_at")}
+        match = (f"MATCH (n:{labels} {{id: $node_id}})" if repository_requested else
+                 f"MERGE (n:{labels} {{id: $node_id}}) ON CREATE SET n.created_at = datetime()")
+        lock = cast(LiteralString, f"""
+            {match}
+            SET n.__pauk_edit_lock = true
+            REMOVE n.__pauk_edit_lock
+            RETURN n.name AS name, labels(n) AS labels, elementId(n) AS element_id
+        """)
+        write = cast(LiteralString, """
+            MATCH (n) WHERE elementId(n) = $element_id
+            SET n += $properties, n.updated_at = datetime()
+        """)
+
+        def update(tx):
+            matches = tx.run(lock, node_id=node_id).fetch(2)
+            if len(matches) > 1:
+                raise CsvNodeError("CSV labels and id match more than one node")
+            existing = matches[0] if matches else None
+            if repository_requested or (existing is not None and "Repository" in existing.get("labels", [])):
+                validate_repository_name(properties.get("name", existing["name"] if existing else None))
+            tx.run(write, element_id=existing["element_id"], properties=clean).consume()
+
+        with self.driver.session() as session:
+            session.execute_write(update)
 
     def update_node_properties(self, label: str, node_id: str, properties: dict,
                                expected_updated_at: object | None = None) -> tuple[dict | None, dict | None]:

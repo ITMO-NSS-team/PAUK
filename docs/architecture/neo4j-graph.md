@@ -35,9 +35,20 @@ data; a historical snapshot cannot establish the current graph's state.
 
 Ordinary Repository creation and edits require a nonblank string `name`.
 Prepared-group publication checks every publishable repository name before
-schema or entity writes; failed repository rows remain excluded. CSV imports
-preflight repository names across all node files before importing the first
-batch; the CLI runs this check before creating schema constraints.
+schema or entity writes; failed repository rows remain excluded. Manual CSV
+imports skip individual rows with malformed JSON, unsupported property values,
+or invalid repository names,
+reporting the file, physical line, ID and reason. A repository update may omit
+`name` only if the exact matched node already has a valid name; this check and
+the update share a write transaction. Explicit invalid names reject the whole
+row, including updates addressed through a repository's secondary label.
+Ambiguous label/ID matches are rejected. Batches preserve input order across
+label changes; repeated node IDs are written in separate ordered batches.
+Correct rows and subsequent files continue; the final report counts loaded
+and skipped node/relationship rows, including edges with missing endpoints.
+Database failures abort the import rather than being hidden as bad input rows.
+Admin forms treat repository names as text, including numeric-looking strings.
+Unchanged invalid legacy fields remain untouched during unrelated edits.
 Repository merges fill a missing or blank survivor name from a nonblank
 duplicate name without replacing an existing name. Historical snapshot and
 override restoration keep stored values unchanged. These checks do not

@@ -15,7 +15,7 @@ from pauk.storage import PreparedStore
 from .alias_review import record_alias_conflict, retire_alias_conflicts
 from .audit import actor_context, audited_client
 from .client import Neo4jClient
-from .csv_loader import load_csv_dir, validate_csv_repository_names
+from .csv_loader import load_csv_dir
 from .extract import NODE_REGISTRY
 from .jsonl_loader import FILE_SPECS, Progress, load_prepared_rows, validate_prepared_repository_names
 from .overrides import apply_overrides, claimed_relationships, tombstoned_ids, tombstoned_relationships
@@ -151,7 +151,6 @@ def main() -> None:
     args = parser.parse_args()
 
     data_dir = Path(args.dir or settings.data_dir)
-    validate_csv_repository_names(data_dir)
     client = Neo4jClient(args.uri, args.user, args.password)
     try:
         create_constraints(client)
