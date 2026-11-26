@@ -31,6 +31,7 @@ export type LocaleKey =
   | "field.ownerType"
   | "field.license"
   | "field.hasReadme"
+  | "field.similarRepos"
   | "field.repoVia"
   | "field.grants"
   | "grant.kind"
@@ -41,7 +42,8 @@ export type LocaleKey =
   | "field.groupWhy"
   | `group.kind.${"org" | "field"}`
   | `group.why.${"org" | "field"}`
-  | `via.${"pub" | "person" | "coauthor" | "owner"}`
+  | `via.${"pub" | "person" | "coauthor" | "owner" | "semantic"}`
+  | "field.semanticScore"
   | "field.report"
   | "field.openalexId"
   | "field.googleScholar"
@@ -145,6 +147,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Тип владельца",
     "field.license": "Лицензия",
     "field.hasReadme": "Есть README",
+    "field.similarRepos": "Возможно похожие по описанию (косинус)",
     "field.repoVia": "Связаны через",
     "field.grants": "Гранты",
     "grant.kind": "Грант",
@@ -163,6 +166,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "via.person": "общего участника ИТМО",
     "via.coauthor": "соавтора статей",
     "via.owner": "общего владельца",
+    "via.semantic": "сходство описаний (эксперимент)",
+    "field.semanticScore": "Косинус сходства",
     "field.report": "Отчет",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
@@ -270,6 +275,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Owner type",
     "field.license": "License",
     "field.hasReadme": "Has README",
+    "field.similarRepos": "Possibly similar by description (cosine)",
     "field.repoVia": "Linked by",
     "field.grants": "Grants",
     "grant.kind": "Grant",
@@ -287,6 +293,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "via.person": "a shared ITMO member",
     "via.coauthor": "a co-author of their papers",
     "via.owner": "a shared owner",
+    "via.semantic": "similar descriptions (experimental)",
+    "field.semanticScore": "Cosine similarity",
     "field.report": "Report",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",

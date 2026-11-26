@@ -39,9 +39,14 @@ alternatives stay available for review.
 `GET /repos/{owner}/{name}` gives `html_url` (the canonical URL, which can
 differ from the cited one after a rename), `name`, `description`, `stars_num`
 and the owner (`owner_login`, which creates or updates a `GitHubProfile`).
-`has_readme(owner, name)` is a second call, `GET .../readme`: `404` gives
-`False`, anything else `True`. The main payload does not report a README at
-all.
+`has_readme(owner, name)` uses a second call, `GET .../readme`. On a 200 the
+stage records presence and saves the path, Git blob SHA and decoded inline
+bytes from the same response to `Settings.cache_dir/readmes`, keyed by the
+canonical repository URL. Files with empty or omitted contents still exist.
+A 404 records absence. Other HTTP errors follow the stage's retry/failure
+path. Failure to write the local cache logs a warning and preserves the
+observed presence flag. See [similarity collect](../cli.md#similarity-collect)
+for snapshot backfill and document preparation.
 
 `topics`, `language`, `forks_count`, `archived`, `fork` and `license.spdx_id`
 come from the same response body at no extra cost. `last_updated` is

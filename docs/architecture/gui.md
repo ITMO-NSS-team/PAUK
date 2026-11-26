@@ -38,6 +38,20 @@ files. `scripts/publish_pages.sh` validates and uploads the public data for
 GitHub Pages. The layout stages are `authorship.py`, `departments.py`,
 `layout.py`, `nodes.py` and `edges.py`.
 
+An optional `pauk gui build --similarity <neighbors.json>` adds candidate
+neighbors to repository detail cards. The input snapshot fingerprint must
+match exactly; malformed pairs and missing IDs abort the build. The public
+output keeps only neighbor IDs and cosine scores, and the card labels these
+as possible matches by description. No threshold is imposed here: choose
+the selection in `pauk similarity neighbors` and validate it before
+publishing. The candidate list by itself does not change map edges or layout.
+Adding `--similarity-layout` explicitly also adds these pairs as
+`semantic` repository edges, with an additional weight of 0.5 times the
+cosine score. The selected pairs must have positive scores. Existing
+repository edges remain after their ordinary top-K cut. The edge card shows
+the original cosine separately from the combined edge weight. This is an
+experimental layout, not a calibrated relevance classification.
+
 **External authors.** The export takes every `Person` (with `is_itmo`) and
 every `AUTHORED`. A publication reaches the map if it has at least one ITMO
 author, along with all its authors. External coauthors follow the same

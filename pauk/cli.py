@@ -171,6 +171,8 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
     p.add_argument("--out-dir", type=Path, help="public/ and private/ go inside it (default: gui_dir)")
     p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
+    p.add_argument("--similarity", type=Path, help="optional similarity neighbors manifest for this snapshot")
+    p.add_argument("--similarity-layout", action="store_true", help="include selected similarity pairs in the map")
 
 
 def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
@@ -204,6 +206,36 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
+    similarity = sub.add_parser("similarity").add_subparsers(dest="similarity_command", required=True)
+    collect = similarity.add_parser("collect", help="prepare repository README texts from a graph snapshot")
+    collect.add_argument("--snapshot", type=Path, required=True)
+    collect.add_argument("--out", type=Path, required=True)
+    collect.add_argument("--refresh", action="store_true", help="refresh cached GitHub responses")
+    index = similarity.add_parser("index", help="encode prepared repository texts into a dense index")
+    index.add_argument("--corpus", type=Path, required=True, help="corpus directory or a versioned manifest")
+    index.add_argument("--out", type=Path, required=True, help="index output directory")
+    index.add_argument("--batch-size", type=int, default=8)
+    index.add_argument("--max-tokens", type=int, default=512)
+    index.add_argument("--text-variant", choices=("cleaned", "fork"), default="cleaned")
+    neighbors = similarity.add_parser("neighbors", help="rank similar repositories from an embedding index")
+    neighbors.add_argument("--index", type=Path, required=True)
+    neighbors.add_argument("--out", type=Path, required=True)
+    neighbors.add_argument("--top-k", type=int, required=True)
+    neighbors.add_argument("--min-score", type=float, default=-1.0)
+    neighbors.add_argument("--mutual", action="store_true", help="require each repository in the other's top-k")
+    pool = similarity.add_parser("pool", help="create a blinded comparison of dense and TF-IDF neighbors")
+    pool.add_argument("--corpus", type=Path, required=True)
+    pool.add_argument("--index", type=Path, required=True)
+    pool.add_argument("--graph", type=Path, required=True)
+    pool.add_argument("--out", type=Path, required=True)
+    pool.add_argument("--sample-size", type=int, default=60)
+    pool.add_argument("--top-k", type=int, default=3)
+    pool.add_argument("--seed", type=int, default=42)
+    pool.add_argument("--fork-index", type=Path, help="optional index with fork-style inputs")
+    score = similarity.add_parser("score", help="summarize a manually judged similarity pool")
+    score.add_argument("--pool", type=Path, required=True)
+    score.add_argument("--review", type=Path, required=True)
+    score.add_argument("--out", type=Path, required=True)
     _add_gui_parsers(sub)
     _add_versions_parsers(sub)
     _add_reports_parsers(sub)
@@ -315,7 +347,11 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
 
     path = args.cache or latest_snapshot(settings.cache_dir)
     logger.info("gui build: %s", path)
-    write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
+    if args.similarity or args.similarity_layout:
+        write_site_data(path, args.out_dir or settings.gui_dir, args.seed, similarity=args.similarity,
+                        similarity_layout=args.similarity_layout)
+    else:
+        write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
 
 
 def _cmd_versions(args) -> None:
@@ -430,6 +466,54 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_dedup()
     elif args.command == "cache":
         _cmd_cache(args, parser)
+    elif args.command == "similarity" and args.similarity_command == "score":
+        from pauk.similarity.evaluation import score_pool
+
+        try:
+            result = score_pool(args.pool, args.review, args.out)
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+        _log_result("similarity score", None, result)
+    elif args.command == "similarity" and args.similarity_command == "pool":
+        from pauk.similarity.evaluation import create_pool
+
+        try:
+            result = create_pool(args.corpus, args.index, args.graph, args.out,
+                                 sample_size=args.sample_size, top_k=args.top_k, seed=args.seed,
+                                 fork_index=args.fork_index)
+        except (ValueError, OSError, RuntimeError) as exc:
+            parser.error(str(exc))
+        _log_result("similarity pool", None, result)
+    elif args.command == "similarity" and args.similarity_command == "neighbors":
+        from pauk.similarity.neighbors import build_neighbors
+
+        try:
+            result = build_neighbors(args.index, args.out, top_k=args.top_k,
+                                     min_score=args.min_score, mutual=args.mutual)
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+        _log_result("similarity neighbors", None, result)
+    elif args.command == "similarity" and args.similarity_command == "index":
+        from pauk.similarity.index import build_index
+
+        try:
+            result = build_index(args.corpus, args.out, batch_size=args.batch_size, max_tokens=args.max_tokens,
+                                 text_variant=args.text_variant)
+        except (ValueError, OSError, RuntimeError) as exc:
+            parser.error(str(exc))
+        _log_result("similarity index", None, result)
+    elif args.command == "similarity":
+        from pauk.similarity.corpus import collect
+        from pauk.sources.github import GitHubClient
+
+        client = GitHubClient(settings.request_timeout, settings.github_token)
+        try:
+            result = collect(args.snapshot, args.out, settings.cache_dir / "readmes", client, refresh=args.refresh)
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+        finally:
+            client.session.close()
+        _log_result("similarity collect", None, result)
     elif args.command == "gui":
         _cmd_gui(args, parser)
     elif args.command == "versions":

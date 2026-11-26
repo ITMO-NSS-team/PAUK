@@ -26,7 +26,7 @@ AUTHOR_FIELDS = ("key", "kind", "is_itmo", "dept", "label", "label_en", "pubs_co
 REPO_FIELDS = ("key", "kind", "dept", "group", "label", "stars", "rank", "gx", "gy")
 PUB_FIELDS = ("key", "kind", "dept", "depts", "year", "n_authors", "rank", "gx", "gy")
 AUTHOR_DETAIL_FIELDS = ("key", "pub_roles")
-REPO_DETAIL_FIELDS = ("key", "description", "url", "has_readme", "license", "contributors", "owner_type")
+REPO_DETAIL_FIELDS = ("key", "description", "url", "has_readme", "license", "contributors", "owner_type", "similar_repos")
 
 
 PUB_DETAIL_FIELDS = (

@@ -7,6 +7,7 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
+from pauk.storage.readme import store_readme
 
 from .base import EnrichmentStage
 
@@ -120,7 +121,9 @@ class RepositoriesStage(EnrichmentStage):
             # whether the code is still alive.
             repo.last_updated = _payload_date(payload.get("pushed_at"))
             repo.license = (payload.get("license") or {}).get("spdx_id")
-            repo.has_readme = client.has_readme(owner, name)
+            repo.has_readme = client.has_readme(
+                owner, name, on_result=lambda readme: store_readme(self.config.cache_dir / "readmes", repo.url, readme),
+            )
             owner_data = payload.get("owner") or {}
             repo.owner_login = owner_data.get("login")
             repo.access_date = date.today()

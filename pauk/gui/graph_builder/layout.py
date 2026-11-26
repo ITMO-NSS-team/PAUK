@@ -13,7 +13,7 @@ import random
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import combinations
 
 import networkx as nx
@@ -450,6 +450,7 @@ class Layout:
     """Repository pairs -> summed signal weight after the top-K cut (real, for repo_edges; layout adds department edges)."""
     repo_edge_via: dict[tuple[str, str], list[str]]
     """Repository pairs -> which signals linked them (`pub`/`person`/`coauthor`/`owner`)."""
+    repo_similarity: dict[tuple[str, str], float] = field(default_factory=dict)
 
 
 class GraphLayoutBuilder:
@@ -459,10 +460,12 @@ class GraphLayoutBuilder:
     `db`/`authorship`/`assignment`, which are the same across all three.
     """
 
-    def __init__(self, db: dict[str, list[dict]], authorship: Authorship, assignment: DepartmentAssignment) -> None:
+    def __init__(self, db: dict[str, list[dict]], authorship: Authorship, assignment: DepartmentAssignment,
+                 similarity: Mapping[tuple[str, str], float] | None = None) -> None:
         self.db = db
         self.authorship = authorship
         self.assignment = assignment
+        self.similarity = similarity or {}
 
     def build(self, seed: int) -> Layout:
         """Computes the three ForceAtlas2 layouts (authors/publications/repositories).
@@ -592,6 +595,9 @@ class GraphLayoutBuilder:
                 repo_edge_w[pair] += w
                 repo_edge_via[pair].append(kind)
         repo_edge_w = top_k_edges(repo_edge_w, REPO_EDGES.top_k)
+        for pair, score in self.similarity.items():
+            repo_edge_w[pair] = repo_edge_w.get(pair, 0) + 0.5 * score
+            repo_edge_via[pair].append("semantic")
 
         repo_layout_w = dict(repo_edge_w)
         for pair, w in sparse_dept_edges(
@@ -623,4 +629,5 @@ class GraphLayoutBuilder:
             pub_pair_w=dict(pub_pair_w),
             repo_edge_w=repo_edge_w,
             repo_edge_via={pair: repo_edge_via[pair] for pair in repo_edge_w},
+            repo_similarity=dict(self.similarity),
         )
