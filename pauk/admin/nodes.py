@@ -145,16 +145,18 @@ def _form_fields(label: str, form, current: dict | None = None) -> dict:
         if name not in form:
             continue
         raw = str(form[name])
-        if name in NODE_LIST_FIELDS[label]:
-            if current is not None:
-                previous = current.get(name)
-                displayed = (str(templates.env.call_filter("tojson", previous))
-                             if isinstance(previous, (list, dict)) else "" if previous is None else str(previous))
-                if raw == displayed:
-                    try:
-                        normalize_fields(label, {name: previous})
-                    except MutationError:
-                        continue
+        if current is not None:
+            previous = current.get(name)
+            displayed = (str(templates.env.call_filter("tojson", previous))
+                         if isinstance(previous, (list, dict)) else "" if previous is None else str(previous))
+            if raw == displayed:
+                try:
+                    normalize_fields(label, {name: previous})
+                except MutationError:
+                    continue
+        if label == "Repository" and name == "name":
+            fields[name] = raw.strip()
+        elif name in NODE_LIST_FIELDS[label]:
             fields[name] = raw
         else:
             fields[name] = (_parse_new_value(raw) if current is None

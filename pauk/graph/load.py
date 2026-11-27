@@ -17,7 +17,7 @@ from .audit import actor_context, audited_client
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
 from .extract import NODE_REGISTRY
-from .jsonl_loader import FILE_SPECS, Progress, load_prepared_rows
+from .jsonl_loader import FILE_SPECS, Progress, load_prepared_rows, validate_prepared_repository_names
 from .overrides import apply_overrides, claimed_relationships, tombstoned_ids, tombstoned_relationships
 from .schema import create_constraints
 
@@ -83,9 +83,10 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
     }
     client = audited_client(config, mongo_db)
     try:
-        create_constraints(client)
         rows_by_file = _github_context(prepared, client, rows_by_file)
         rows_by_file = _drop_tombstoned(rows_by_file, mongo_db)
+        validate_prepared_repository_names(rows_by_file)
+        create_constraints(client)
         with actor_context("etl-pipeline", source=f"publish:{group}"):
             # Generated LinkCandidates have no prepared rows for the tombstone filter.
             load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
@@ -149,10 +150,11 @@ def main() -> None:
     parser.add_argument("--password", default=settings.neo4j_password)
     args = parser.parse_args()
 
+    data_dir = Path(args.dir or settings.data_dir)
     client = Neo4jClient(args.uri, args.user, args.password)
     try:
         create_constraints(client)
-        load_csv_dir(client, Path(args.dir or settings.data_dir))
+        load_csv_dir(client, data_dir)
     finally:
         client.close()
 

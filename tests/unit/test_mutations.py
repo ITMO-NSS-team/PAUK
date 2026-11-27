@@ -379,6 +379,50 @@ class NodeEditTest(unittest.TestCase):
         created = create_node(self.graph, "Department", "D1", {"name_en": "New lab"})
         self.assertEqual(created["name_en"], "New lab")
 
+    def test_repository_creation_requires_a_nonblank_string_name(self):
+        for name_fields in ({}, {"name": None}, {"name": ""}, {"name": " \t\n"}, {"name": 42}):
+            with self.subTest(name_fields=name_fields):
+                self.graph = FakeGraph()
+                with self.assertRaisesRegex(MutationError, "Repository.name"):
+                    create_node(self.graph, "Repository", "R1", {
+                        "url": "https://github.com/org/repo", **name_fields,
+                    })
+                self.assertNotIn(("Repository", "R1"), self.graph.nodes)
+                self.assertEqual(self.graph.calls, [])
+
+    def test_repository_name_cannot_be_cleared_by_an_ordinary_edit(self):
+        self.graph.add("Repository", "R1", name="repo", description="old")
+        before = self.graph.fetch_node_properties("Repository", "R1")
+        for name in (None, "", " \t\n", 42):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(MutationError, "Repository.name"):
+                    update_node(self.graph, "Repository", "R1", {"name": name})
+                self.assertEqual(self.graph.fetch_node_properties("Repository", "R1"), before)
+                self.assertEqual(self.graph.calls, [])
+
+    def test_repository_valid_names_and_unrelated_partial_edits_are_preserved(self):
+        created = create_node(self.graph, "Repository", "R1", {"name": "Mixed_Case.repo"})
+        self.assertEqual(created["name"], "Mixed_Case.repo")
+        updated = update_node(self.graph, "Repository", "R1", {"description": None, "stars_num": 0})
+        self.assertEqual(updated["name"], "Mixed_Case.repo")
+        self.assertIsNone(updated["description"])
+        self.assertEqual(updated["stars_num"], 0)
+        self.graph.add("Repository", "legacy", description="old")
+        updated = update_node(self.graph, "Repository", "legacy", {"description": "new"})
+        self.assertNotIn("name", updated)
+
+    def test_repository_snapshot_restore_preserves_historical_empty_names(self):
+        for index, fields in enumerate(({}, {"name": None}, {"name": ""}, {"name": " \t"})):
+            with self.subTest(fields=fields):
+                node_id = f"R{index}"
+                restored = restore_node(self.graph, "Repository", node_id, fields)
+                self.assertEqual("name" in restored, "name" in fields)
+                self.assertEqual(restored.get("name"), fields.get("name"))
+                update_node(self.graph, "Repository", node_id, {"name": "repo"})
+                restored = update_node(self.graph, "Repository", node_id, {"name": fields.get("name")},
+                                       from_snapshot=True)
+                self.assertEqual(restored.get("name"), fields.get("name"))
+
     def test_creating_a_node_that_exists_is_refused(self):
         # Otherwise "create" would quietly become "overwrite".
         with self.assertRaises(MutationError):

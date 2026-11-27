@@ -17,6 +17,7 @@ from pauk.models import Department, GitHubProfile, LinkCandidate, Organization, 
 
 from .client import Neo4jClient
 from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
+from .validation import validate_repository_name
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,11 @@ def normalize_fields(label: str, props: dict, *, from_snapshot: bool = False) ->
         validate_snapshot_fields(label, props)
         return as_stored(props)
     validate_fields(label, props)
+    if label == "Repository" and "name" in props:
+        try:
+            validate_repository_name(props["name"])
+        except ValueError as exc:
+            raise MutationError(str(exc)) from None
     fields = dict(props)
     for name in fields:
         if label == "Publication" and name == "code_url":
@@ -415,6 +421,11 @@ def _insert_node(
     restoring: bool = False,
 ) -> dict:
     """Insert a missing node after its caller has established why it is allowed."""
+    if label == "Repository" and not restoring:
+        try:
+            validate_repository_name(props.get("name"))
+        except ValueError as exc:
+            raise MutationError(str(exc)) from None
     props = normalize_fields(label, props, from_snapshot=restoring)
     if client.fetch_node_properties(label, node_id) is not None:
         raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")

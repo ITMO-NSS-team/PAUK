@@ -3,9 +3,12 @@ import logging
 from typing import LiteralString, cast
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ConstraintError
 
 from pauk.aliases import flatten_merges
 from pauk.pipeline.membership import ITMO_ROR_ID, POLICY_VERSION, normalize_ror, source_observed_at
+
+from .validation import CsvNodeError, validate_repository_name
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +250,13 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
         if label == "Person" and key in MEMBERSHIP_FIELDS:
             continue
         canonical_value = canonical.get(key)
-        if key in bool_fields:
+        if label == "Repository" and key == "name":
+            missing = canonical_value is None or (
+                isinstance(canonical_value, str) and not canonical_value.strip()
+            )
+            if missing and isinstance(duplicate_value, str) and duplicate_value.strip():
+                updates[key] = duplicate_value
+        elif key in bool_fields:
             if canonical_value is not None or duplicate_value is not None:
                 merged = bool(canonical_value) or bool(duplicate_value)
                 if merged != canonical_value:
@@ -393,6 +402,52 @@ class Neo4jClient:
 
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
+
+    def upsert_csv_node(self, labels: str, node_id: str, properties: dict) -> None:
+        """Guard repository names, including matches through secondary labels.
+
+        An omitted name is checked under a write lock on the exact MERGE
+        labels, so a concurrent delete cannot turn an update into a creation.
+        Explicit invalid names reject the entire row before writing anything.
+        """
+        repository_requested = "Repository" in labels.split(":")
+        if repository_requested and "name" in properties:
+            validate_repository_name(properties["name"])
+            try:
+                self.upsert_nodes_batch(labels, [(node_id, properties)])
+            except ConstraintError as exc:
+                raise CsvNodeError("CSV node violates a uniqueness constraint") from exc
+            return
+
+        clean = {key: value for key, value in properties.items()
+                 if key not in ("id", "created_at", "updated_at")}
+        match = (f"MATCH (n:{labels} {{id: $node_id}})" if repository_requested else
+                 f"MERGE (n:{labels} {{id: $node_id}}) ON CREATE SET n.created_at = datetime()")
+        lock = cast(LiteralString, f"""
+            {match}
+            SET n.__pauk_edit_lock = true
+            REMOVE n.__pauk_edit_lock
+            RETURN n.name AS name, labels(n) AS labels, elementId(n) AS element_id
+        """)
+        write = cast(LiteralString, """
+            MATCH (n) WHERE elementId(n) = $element_id
+            SET n += $properties, n.updated_at = datetime()
+        """)
+
+        def update(tx):
+            matches = tx.run(lock, node_id=node_id).fetch(2)
+            if len(matches) > 1:
+                raise CsvNodeError("CSV labels and id match more than one node")
+            existing = matches[0] if matches else None
+            if repository_requested or (existing is not None and "Repository" in existing.get("labels", [])):
+                validate_repository_name(properties.get("name", existing["name"] if existing else None))
+            tx.run(write, element_id=existing["element_id"], properties=clean).consume()
+
+        try:
+            with self.driver.session() as session:
+                session.execute_write(update)
+        except ConstraintError as exc:
+            raise CsvNodeError("CSV node violates a uniqueness constraint") from exc
 
     def update_node_properties(self, label: str, node_id: str, properties: dict,
                                expected_updated_at: object | None = None) -> tuple[dict | None, dict | None]:
@@ -999,6 +1054,8 @@ class Neo4jClient:
         rel_type: str,
         relationships: list[tuple[str, str, dict]],
         tgt_match_prop: str = "id",
+        *,
+        _tx=None,
     ) -> int:
         """Create or update a batch of relationships in one query.
 
@@ -1110,14 +1167,17 @@ class Neo4jClient:
             """,
         )
 
-        with self.driver.session() as session:
-            parameters = {"batch": batch}
-            if rel_type == "AUTHORED":
-                parameters.update({
-                    "membership_policy": POLICY_VERSION,
-                    "itmo_ror_pattern": rf"(?i)(?:https?://ror\.org/)?{ITMO_ROR_ID}/?",
-                })
-            matched = session.execute_write(lambda tx: tx.run(query, **parameters).single()["matched"])
+        parameters = {"batch": batch}
+        if rel_type == "AUTHORED":
+            parameters.update({
+                "membership_policy": POLICY_VERSION,
+                "itmo_ror_pattern": rf"(?i)(?:https?://ror\.org/)?{ITMO_ROR_ID}/?",
+            })
+        if _tx is None:
+            with self.driver.session() as session:
+                matched = session.execute_write(lambda tx: tx.run(query, **parameters).single()["matched"])
+        else:
+            matched = _tx.run(query, **parameters).single()["matched"]
 
         if matched < len(relationships):
             logger.warning(
@@ -1130,6 +1190,52 @@ class Neo4jClient:
                 len(relationships) - matched,
             )
         return matched
+
+    def upsert_csv_relationships_batch(
+        self, src_label: str, tgt_label: str, rel_type: str,
+        relationships: list[tuple[str, str, dict]],
+    ) -> list[str]:
+        """Write unambiguous CSV edges and return a status for each input row.
+
+        Endpoint checks and writes share a transaction. The existing edge merge
+        logic retains duplicate AUTHORED rows' positive corresponding flag.
+        """
+        if not relationships:
+            return []
+        check_query = cast(LiteralString, f"""
+            UNWIND range(0, size($batch) - 1) AS idx
+            WITH idx, $batch[idx] AS row
+            OPTIONAL MATCH (src:{src_label} {{id: row.src_id}})
+            WITH idx, row, count(src) AS source_count
+            OPTIONAL MATCH (tgt:{tgt_label} {{id: row.tgt_id}})
+            RETURN idx, source_count, count(tgt) AS target_count
+        """)
+        indexed = [{"src_id": src, "tgt_id": tgt} for src, tgt, _ in relationships]
+
+        def apply(tx):
+            counts = tx.run(check_query, batch=indexed).data()
+            if len(counts) != len(relationships):
+                raise RuntimeError("CSV relationship endpoint check returned an incomplete result")
+            statuses = ["missing"] * len(relationships)
+            for row in counts:
+                index = row["idx"]
+                source_count, target_count = row["source_count"], row["target_count"]
+                if source_count > 1 or target_count > 1:
+                    statuses[index] = "ambiguous"
+                elif source_count == 1 and target_count == 1:
+                    statuses[index] = "loaded"
+            valid = [relation for relation, status in zip(relationships, statuses, strict=True)
+                     if status == "loaded"]
+            if valid:
+                written = self.upsert_relationships_batch(
+                    src_label, tgt_label, rel_type, valid, _tx=tx,
+                )
+                if written != len(valid):
+                    raise RuntimeError("CSV relationship endpoints changed during import")
+            return statuses
+
+        with self.driver.session() as session:
+            return session.execute_write(apply)
 
     def set_relationship_properties_batch(
         self, src_label: str, tgt_label: str, rel_type: str,

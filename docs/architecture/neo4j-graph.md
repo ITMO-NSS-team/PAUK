@@ -15,6 +15,50 @@ description of all nodes and relationships:
 
 ## Nodes and relationships
 
+**Offline display-field audit.**
+
+`python -m pauk.graph.field_audit <snapshot.json>` checks saved graph tables
+for missing IDs, repository names/URLs, publication titles and usable node
+names. It emits JSON with row IDs and observed values, without database
+connections or writes. `Untitled` publication titles are reported as
+placeholders. Optional descriptions, emails and missing translations are
+not treated as missing identities. `display_findings` separately identifies
+people with no usable GUI name fields: `name_raw` alone is not rendered.
+The frontend falls back to the available language when a translated label
+is absent; it uses the already prepared private or masked public labels.
+
+Use `--complete-properties` only for a dump containing all node properties.
+For a cache projection, an absent column is reported as `not_exported`,
+not as proof that the property is missing in Neo4j. Record the export date
+and compare flagged IDs against prepared/source records before repairing
+data; a historical snapshot cannot establish the current graph's state.
+
+Ordinary Repository creation and edits require a nonblank string `name`.
+Prepared-group publication checks every publishable repository name before
+schema or entity writes; failed repository rows remain excluded. Manual CSV
+imports skip individual rows with malformed JSON, unsupported property values,
+or invalid repository names,
+reporting the file, physical line, ID and reason. A repository update may omit
+`name` only if the exact matched node already has a valid name; this check and
+the update share a write transaction. Explicit invalid names reject the whole
+row, including updates addressed through a repository's secondary label.
+Ambiguous label/ID matches are rejected. CSV nodes are checked and written in
+input order, one row at a time, so an update through a secondary label cannot
+bypass repository validation. Relationship batches check both endpoints for
+each input row in the same transaction as their writes; missing or ambiguous
+endpoints are reported on that row.
+Correct rows and subsequent files continue; the final report counts loaded
+and skipped node/relationship rows, including edges with missing endpoints.
+Uniqueness conflicts reject only the affected node row; database failures
+abort the import rather than being hidden as bad input rows.
+Admin forms treat repository names as text, including numeric-looking strings.
+Unchanged invalid legacy fields remain untouched during unrelated edits.
+Repository merges fill a missing or blank survivor name from a nonblank
+duplicate name without replacing an existing name. Historical snapshot and
+override restoration keep stored values unchanged. These checks do not
+repair existing nodes; restoration of historical decisions can reintroduce
+historical empty values and must be audited separately.
+
 `Publication.pdf_urls` holds the ordered unique PDF links as a Neo4j string
 array. In the `versions` ledger each version has its own `pdf_urls`.
 

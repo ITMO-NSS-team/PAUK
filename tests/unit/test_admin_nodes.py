@@ -1373,6 +1373,7 @@ class FieldNormalizationTest(unittest.TestCase):
                     else:
                         response = self.submit(
                             f"/nodes/{label}/new", "Создать", id=node_id,
+                            **({"name": "Repository"} if label == "Repository" else {}),
                             **{name: json.dumps(value)},
                         )
                     self.assertEqual(response.status_code, 303)
@@ -1384,6 +1385,41 @@ class FieldNormalizationTest(unittest.TestCase):
                     response = self.submit(f"/nodes/{label}/{node_id}", **{name: invalid})
                     self.assertEqual(response.status_code, 400)
                     self.assertEqual(self.graph.nodes[label, node_id], before)
+
+    def test_unchanged_missing_repository_name_does_not_block_other_edits(self):
+        for index, value in enumerate((None, "", "   ")):
+            with self.subTest(name=value):
+                node_id = f"legacy-repo-{index}"
+                self.graph.add("Repository", node_id, name=value, description="Before")
+                response = self.submit(f"/nodes/Repository/{node_id}", description="After")
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes["Repository", node_id]["name"], value)
+                self.assertEqual(self.graph.nodes["Repository", node_id]["description"], "After")
+                decision = self.db[COLLECTION].find_one({"target_id": node_id})
+                self.assertEqual(decision["fields"], {"description": "After"})
+                response = self.submit(f"/nodes/Repository/{node_id}", name="Recovered")
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(self.graph.nodes["Repository", node_id]["name"], "Recovered")
+
+    def test_repository_form_cannot_clear_a_filled_name(self):
+        self.graph.add("Repository", "named-repo", name="Keep", description="Before")
+        before = dict(self.graph.nodes["Repository", "named-repo"])
+        for value in ("", "   "):
+            with self.subTest(name=value):
+                response = self.submit("/nodes/Repository/named-repo", name=value, description="After")
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.graph.nodes["Repository", "named-repo"], before)
+                self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_repository_form_requires_a_name_on_creation(self):
+        for index, value in enumerate(("", "   ")):
+            with self.subTest(name=value):
+                node_id = f"invalid-repo-{index}"
+                response = self.submit("/nodes/Repository/new", "Создать", id=node_id,
+                                       name=value, url="https://github.com/org/repo")
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(("Repository", node_id), self.graph.nodes)
+                self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
     def test_a_publication_cannot_be_created_manually(self):
         response = self.submit(

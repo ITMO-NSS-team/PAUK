@@ -550,8 +550,8 @@ class CandidateTombstoneTest(unittest.TestCase):
         # The url is a known Repository, so the edge goes there instead. That
         # node has its own id and its own tombstone.
         record_override(self.db, "LinkCandidate", self.URL, "delete")
-        self.graph.add("Repository", "R1", url=self.URL)
-        self.rows["repositories.jsonl"] = [{"id": "R1", "url": self.URL}]
+        self.graph.add("Repository", "R1", url=self.URL, name="repo")
+        self.rows["repositories.jsonl"] = [{"id": "R1", "url": self.URL, "name": "repo"}]
         self.publish()
         self.assertIn(("Publication", "MENTIONS_LINK", "Repository", "W1", self.URL),
                       self.graph.relationships)
