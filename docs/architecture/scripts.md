@@ -134,7 +134,59 @@ to the checkout.
 | Script | What it does | Writes |
 |---|---|---|
 | `build_department_catalog.py` | One-off generation of a draft catalog of ITMO units from the structure page: faculties, institutes, centers, laboratories | draft in `data/static/` |
+| `generate_projects_overview.py` | Builds a Markdown catalog of ITMO projects by year from a complete local graph snapshot; optionally updates a marked page in place | stdout, `--output` file, or `--template` file only; no database/network access |
 | `export_link_labels.py` | Exports links (or whole papers) to CSV for manual labelling; the only tooling in the repository for measuring precision and recall of link extraction | no |
+
+### Project overview
+
+Run from the PAUK checkout. The default input is the latest dated graph snapshot
+in `settings.cache_dir`; `--cache` selects an explicit snapshot. The generator
+never exports or refreshes the graph itself. If needed, create a snapshot
+separately with `pauk cache export` (see [cache.md](cache.md)).
+
+```bash
+# Markdown list only, without a page introduction; diagnostics go to stderr.
+uv run python -m scripts.generate_projects_overview
+uv run python -m scripts.generate_projects_overview --cache /path/snapshot.json --output /path/projects.md
+
+# Copy the starter page once, then refresh only its project list in place.
+cp scripts/templates/projects_overview.md /path/projects.md
+uv run python -m scripts.generate_projects_overview --cache /path/snapshot.json --template /path/projects.md
+```
+
+`--output` and `--template` are mutually exclusive. A template must contain
+exactly one `<!-- PAUK:PROJECTS:START -->` and one
+`<!-- PAUK:PROJECTS:END -->`, each on its own line, in that order. The script
+replaces only the text between them, preserving the rest of the page, its line
+endings and EOF newline. Repeated runs replace the previous list; an unchanged
+page is not rewritten. Malformed input/markers fail before writing. Output uses
+an atomic replacement and cannot overwrite the input snapshot.
+
+A project qualifies through `IMPLEMENTS` to a publication with an explicitly
+ITMO author, a confirmed ITMO `CONTRIBUTED_TO` owner, or `DEVELOPED_BY` to an
+existing catalog department. Mentions alone, unknown authors and contributor-only
+links do not qualify. There are no discipline, owner-organization, license,
+fork/archive, language or popularity filters. Projects without papers can
+qualify through ownership or a department.
+
+One normalized repository URL appears once. Its year is the earliest known
+publication year among its `IMPLEMENTS` edges (`publication_date` is a fallback);
+it is **not** the repository creation date. Unknown years appear under
+«Без года», after dated projects. Years descend; entries are sorted by title.
+The earliest titled paper supplies the entry title and one bibliographic link
+(DOI first, then an explicitly stored source URL, then OpenAlex). With no paper
+title, the entry uses the repository name and a short existing description.
+No new descriptions or translations are generated.
+
+The snapshot must contain `persons`, `publications`, `repositories`,
+`authorship`, `repo_pubs`, `repo_persons`, `repo_depts` and `departments`, even if
+some tables are empty. It is private input: do not publish it alongside the
+page. Output includes repository metadata and bibliographic fields only, never
+person records or raw source provenance. The starter page is intended for
+`aimclub/open-source-ops` and covers all ITMO fields, not only AIM/AI/ML.
+Publishing the generated page is a separate manual operation.
+
+### Link labelling
 
 `export_link_labels.py` has two modes: `links` measures precision over links
 already extracted, and `papers` measures recall, which cannot be seen from the
