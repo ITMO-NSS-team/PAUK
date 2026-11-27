@@ -109,7 +109,11 @@ export function mountFilters(store: Store<AppState>): () => void {
       for (const input of container.querySelectorAll<HTMLInputElement>("input[data-filter]")) {
         const key = input.dataset.filter as keyof AppState["filters"];
         const next =
-          key === "showRegions" ? state.filters.showRegions[state.tab] : state.filters[key];
+          key === "showRegions"
+            ? state.filters.showRegions[state.tab]
+            : key === "labelZoomThreshold"
+              ? state.filters.labelZoomThreshold ?? FILTER_CONFIG.labelZoom.default
+              : state.filters[key];
         if (input.dataset.syncedValue === String(next)) continue;
         input.dataset.syncedValue = String(next);
         if (input.type === "checkbox") input.checked = Boolean(next);
@@ -135,6 +139,15 @@ export function mountFilters(store: Store<AppState>): () => void {
         key: "edgeZoomThreshold",
         value: filters.edgeZoomThreshold,
         onChange: (value) => setFilter({ edgeZoomThreshold: value }),
+      }),
+      buildFilterRow({
+        label: t("filter.labelZoom", lang),
+        min: FILTER_CONFIG.labelZoom.min,
+        max: FILTER_CONFIG.labelZoom.max,
+        step: FILTER_CONFIG.labelZoom.step,
+        key: "labelZoomThreshold",
+        value: filters.labelZoomThreshold ?? FILTER_CONFIG.labelZoom.default,
+        onChange: (value) => setFilter({ labelZoomThreshold: value }),
       }),
     ];
 
@@ -232,6 +245,7 @@ export function mountFilters(store: Store<AppState>): () => void {
       const key = row.querySelector<HTMLInputElement>("input")?.dataset.filter;
       if (
         key === "edgeZoomThreshold" ||
+        key === "labelZoomThreshold" ||
         key === "regionZoomThreshold" ||
         key === "regionMinNodes"
       ) {

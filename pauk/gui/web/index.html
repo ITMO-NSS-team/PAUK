@@ -323,6 +323,67 @@
         font-weight: 600;
       }
 
+      .global-search-group + .global-search-group {
+        border-top: 1px solid var(--border);
+      }
+      .global-search-group .global-search-hint {
+        margin: 0;
+        padding: 12px 16px 4px;
+      }
+      #global-search-results .tab-list-item {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr);
+        column-gap: 12px;
+        row-gap: 2px;
+        padding-block: 7px;
+        border-bottom: 0;
+      }
+      #global-search-results .tab-list-item::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        grid-column: 1;
+        grid-row: 1;
+        align-self: center;
+        justify-self: center;
+        background: var(--accent);
+      }
+      #global-search-results [data-kind="author"]::before {
+        border-radius: 50%;
+      }
+      #global-search-results [data-kind="pub"]::before {
+        clip-path: polygon(50% 0, 100% 100%, 0 100%);
+      }
+      #global-search-results [data-kind="dept"]::before {
+        transform: rotate(45deg);
+      }
+      #global-search-results .tab-list-item__meta {
+        grid-column: 2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      .global-search-more {
+        margin: 3px 16px 5px 34px;
+      }
+      .global-search-more,
+      .panel-list__more {
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--accent);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .global-search-more:hover,
+      .panel-list__more:hover {
+        background: var(--surface-2);
+      }
+
       #tab-buttons {
         display: flex;
         border-bottom: 1px solid var(--border);
@@ -673,19 +734,6 @@
         color: var(--muted);
         font-size: 12px;
       }
-      .panel-list__more {
-        padding: 0;
-        border: none;
-        background: none;
-        color: var(--muted);
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-      }
-      .panel-list__more:hover {
-        color: var(--accent);
-      }
-
       /* No side padding of its own: #panel already has it. */
       .panel-chart {
         padding: 14px 0 0;
@@ -933,6 +981,36 @@
       }
       .map-workspace { position: relative; flex: 1; min-width: 0; }
       .map-workspace #map { width: 100%; height: 100%; }
+      .map-zoom {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        z-index: 5;
+        display: flex;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .map-zoom button {
+        min-width: 34px;
+        min-height: 34px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .map-zoom button:hover {
+        background: var(--surface-2);
+      }
+      #zoom-reset {
+        min-width: 56px;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
       .pane-toggle {
         position: absolute;
         top: 12px;
@@ -1096,6 +1174,11 @@
       </aside>
       <div class="map-workspace">
         <div id="map"></div>
+        <div class="map-zoom">
+          <button id="zoom-out" type="button">−</button>
+          <button id="zoom-reset" type="button"></button>
+          <button id="zoom-in" type="button">+</button>
+        </div>
         <div id="expansion">
           <button id="expand-toggle" type="button" aria-pressed="false"></button>
           <button id="hide-unrelated" type="button" aria-pressed="false" hidden></button>

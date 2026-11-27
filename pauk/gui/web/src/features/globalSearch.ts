@@ -2,10 +2,19 @@ import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../contract
 import type { SearchHit } from "../contracts/search";
 import { SEARCH_CONFIG } from "../core/config";
 import { requireElement } from "../core/dom";
-import { t } from "../core/i18n";
+import { t, type LocaleKey } from "../core/i18n";
 import { renderList, renderListItem } from "../core/render";
 import { TAB_FOR_KIND, type AppState, type Store } from "../core/state";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "./search";
+
+const GROUP_PREVIEW_LIMIT = 3;
+
+const GROUP_TITLES = {
+  author: "tab.authors",
+  repo: "tab.repos",
+  pub: "tab.pubs",
+  dept: "search.browseDepts",
+} satisfies Record<SearchHit["kind"], LocaleKey>;
 
 /**
  * Search over all kinds at once. It is the only way to find a department,
@@ -76,6 +85,8 @@ export function mountGlobalSearch(
     );
   }
 
+  const expandedGroups = new Set<SearchHit["kind"]>();
+
   function render(): void {
     const query = input.value;
 
@@ -110,7 +121,49 @@ export function mountGlobalSearch(
       return;
     }
 
-    renderHits(resultsEl, hits.slice(0, SEARCH_CONFIG.resultsLimit));
+    const groups = new Map<SearchHit["kind"], SearchHit[]>();
+    for (const hit of hits) {
+      const group = groups.get(hit.kind) ?? [];
+      if (group.length < SEARCH_CONFIG.resultsLimit) group.push(hit);
+      groups.set(hit.kind, group);
+    }
+
+    const lang = store.get().lang;
+    resultsEl.replaceChildren(...Array.from(groups, ([kind, group]) => {
+      const section = document.createElement("section");
+      section.className = "global-search-group";
+      const heading = document.createElement("h2");
+      heading.className = "global-search-hint";
+      heading.textContent = t(GROUP_TITLES[kind], lang);
+      const list = document.createElement("div");
+      renderHits(list, group.slice(0, GROUP_PREVIEW_LIMIT));
+      section.append(heading, list);
+      const remaining = group.slice(GROUP_PREVIEW_LIMIT);
+      if (remaining.length) {
+        const extra = document.createElement("div");
+        renderHits(extra, remaining);
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "global-search-more";
+
+        function syncGroup(): void {
+          const expanded = expandedGroups.has(kind);
+          extra.hidden = !expanded;
+          toggle.textContent = t(expanded ? "list.showLess" : "list.showMore", lang);
+          toggle.setAttribute("aria-expanded", String(expanded));
+        }
+
+        toggle.addEventListener("click", () => {
+          if (expandedGroups.has(kind)) expandedGroups.delete(kind);
+          else expandedGroups.add(kind);
+          syncGroup();
+        });
+        syncGroup();
+        section.append(extra, toggle);
+      }
+      return section;
+    }));
+    resultsEl.scrollTop = 0;
   }
 
   function open(): void {
@@ -119,6 +172,7 @@ export function mountGlobalSearch(
     input.placeholder = t("search.placeholder", lang);
     overlay.hidden = false;
     input.value = "";
+    expandedGroups.clear();
     render();
     input.focus();
   }
@@ -127,7 +181,10 @@ export function mountGlobalSearch(
     overlay.hidden = true;
   }
 
-  input.addEventListener("input", render);
+  input.addEventListener("input", () => {
+    expandedGroups.clear();
+    render();
+  });
   trigger.addEventListener("click", open);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) close();

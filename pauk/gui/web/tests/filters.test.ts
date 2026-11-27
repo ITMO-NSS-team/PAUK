@@ -86,14 +86,14 @@ describe("mountFilters", () => {
     });
   });
 
-  it("on tab 1: edge zoom (shared), coauthorship threshold, then two shared region controls", () => {
+  it("on tab 1: shared display controls and the coauthorship threshold", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       expect(container.hidden).toBe(false);
       const inputs = container.querySelectorAll("input[type='range']");
-      expect(inputs).toHaveLength(4);
+      expect(inputs).toHaveLength(5);
       expect(
         container.querySelector<HTMLInputElement>('input[data-filter="edgeZoomThreshold"]')?.value,
       ).toBe("0.2");
@@ -108,17 +108,17 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState({ tab: 3 }));
       mountFilters(store);
 
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(5);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(6);
     });
   });
 
-  it("on tab 2 (repositories) only the shared controls: edge zoom and regions, the panel is not hidden", () => {
+  it("on tab 2 (repositories) only the shared display controls, the panel is not hidden", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 2 }));
       mountFilters(store);
 
       expect(container.hidden).toBe(false);
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(4);
       expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1); // only the regions toggle
     });
   });
@@ -209,8 +209,8 @@ describe("mountFilters", () => {
       store.set({ tab: 2 });
 
       expect(container.hidden).toBe(false);
-      // Shared by all tabs: edge zoom, region zoom, region min nodes.
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
+      // Shared by all tabs: edge zoom, label zoom, region zoom, region min nodes.
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(4);
     });
   });
 

@@ -91,12 +91,11 @@ export type LocaleKey =
   | "section.general"
   | "section.private"
   | "section.service"
-  | "panel.showMore"
-  | "panel.showLess"
-  | "panel.readMore"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "search.trigger"
+  | "list.showMore"
+  | "list.showLess"
   | "search.browseDepts"
   | "tab.searchPlaceholder"
   | "tab.noResults"
@@ -109,6 +108,10 @@ export type LocaleKey =
   | "filter.showExternal"
   | "filter.showIsolated"
   | "filter.edgeZoom"
+  | "filter.labelZoom"
+  | "map.zoomIn"
+  | "map.zoomOut"
+  | "map.zoomReset"
   | "filter.showRegions"
   | "filter.regionZoom"
   | "filter.regionMinNodes"
@@ -210,9 +213,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "section.general": "Общее",
     "section.private": "Приватное",
     "section.service": "Служебное",
-    "panel.showMore": "+ ещё {n}",
-    "panel.showLess": "− свернуть",
-    "panel.readMore": "+ читать полностью",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.itmoAuthors": "Из ИТМО",
@@ -224,6 +224,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "search.trigger": "Поиск по всему",
+    "list.showMore": "Показать еще",
+    "list.showLess": "Свернуть",
     "search.browseDepts": "Департаменты",
     "tab.searchPlaceholder": "Поиск…",
     "tab.noResults": "Ничего не найдено",
@@ -236,6 +238,10 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.showExternal": "Показывать внешних авторов",
     "filter.showIsolated": "Показывать авторов без связей",
     "filter.edgeZoom": "Порог показа рёбер",
+    "filter.labelZoom": "Порог показа подписей",
+    "map.zoomIn": "Приблизить",
+    "map.zoomOut": "Отдалить",
+    "map.zoomReset": "Сбросить масштаб",
     "filter.showRegions": "Регионы департаментов",
     "filter.regionZoom": "Порог показа регионов",
     "filter.regionMinNodes": "Мин. узлов в регионе",
@@ -340,9 +346,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "section.general": "General",
     "section.private": "Private",
     "section.service": "Service",
-    "panel.showMore": "+ {n} more",
-    "panel.showLess": "− show less",
-    "panel.readMore": "+ read more",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.itmoAuthors": "From ITMO",
@@ -354,6 +357,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "search.trigger": "Search everything",
+    "list.showMore": "Show more",
+    "list.showLess": "Show less",
     "search.browseDepts": "Departments",
     "tab.searchPlaceholder": "Search…",
     "tab.noResults": "No results found",
@@ -366,6 +371,10 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.showExternal": "Show external authors",
     "filter.showIsolated": "Show authors without links",
     "filter.edgeZoom": "Edge visibility threshold",
+    "filter.labelZoom": "Label visibility threshold",
+    "map.zoomIn": "Zoom in",
+    "map.zoomOut": "Zoom out",
+    "map.zoomReset": "Reset zoom",
     "filter.showRegions": "Department regions",
     "filter.regionZoom": "Region visibility threshold",
     "filter.regionMinNodes": "Min. nodes per region",

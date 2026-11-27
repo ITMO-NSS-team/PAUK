@@ -53,6 +53,7 @@ export interface AppState {
     showExternalAuthors: boolean;
     showIsolatedAuthors: boolean;
     edgeZoomThreshold: number;
+    labelZoomThreshold?: number;
     showRegions: Record<TabId, boolean>;
     regionZoomThreshold: number;
     regionMinNodes: number;

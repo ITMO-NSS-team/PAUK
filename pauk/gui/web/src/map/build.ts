@@ -399,10 +399,15 @@ function applyGraphStyling(
     },
     setCameraRatio(ratio) {
       if (cameraRatio === ratio) return;
+      const state = store.get();
+      const threshold = state.filters.edgeZoomThreshold;
+      const edgeVisibilityChanged = (cameraRatio > threshold) !== (ratio > threshold);
       cameraRatio = ratio;
-      // Zoomed out into region mode with the cursor on a node.
-      if (isRegionMode(store.get(), ratio)) hoveredNode = null;
-      renderer.refresh();
+
+      const clearHover = hoveredNode !== null && isRegionMode(state, ratio);
+      if (clearHover) hoveredNode = null;
+      // Sigma renders camera movement itself. Reprocess the graph only when a reducer changes.
+      if (edgeVisibilityChanged || clearHover) renderer.refresh({ schedule: true });
     },
   };
 }

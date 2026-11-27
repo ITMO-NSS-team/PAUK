@@ -1097,49 +1097,47 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     return li;
   }
 
+  function disclosureButton(update: (expanded: boolean) => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "panel-list__more";
+    let expanded = false;
+
+    function renderButton(): void {
+      button.textContent = t(expanded ? "list.showLess" : "list.showMore", lang);
+      button.setAttribute("aria-expanded", String(expanded));
+    }
+
+    button.addEventListener("click", () => {
+      expanded = !expanded;
+      update(expanded);
+      renderButton();
+    });
+    renderButton();
+    return button;
+  }
+
   function listElement(value: PanelList): HTMLUListElement {
     const ul = document.createElement("ul");
     ul.className = "panel-list";
     if (value.nodeKind) ul.dataset.nodeKind = value.nodeKind;
     const limit = value.nodeKind ? 3 : PANEL_CONFIG.listLimit;
-    let shown = limit;
+    ul.append(...value.items.slice(0, limit).map(listItemElement));
+    if (value.items.length <= limit) return ul;
 
-    function button(text: string, onClick: () => void): HTMLButtonElement {
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "panel-list__more";
-      toggle.textContent = text;
-      toggle.addEventListener("click", () => {
-        onClick();
-        renderItems();
-      });
-      return toggle;
-    }
-
-    function renderItems(): void {
-      ul.replaceChildren(...value.items.slice(0, shown).map(listItemElement));
-      const buttons: HTMLButtonElement[] = [];
-      const hidden = value.items.length - shown;
-      if (hidden > 0) {
-        const next = Math.min(hidden, PANEL_CONFIG.listStep);
-        buttons.push(
-          button(t("panel.showMore", lang).replace("{n}", String(next)), () => (shown += next)),
-        );
+    const toggleItem = document.createElement("li");
+    toggleItem.className = "panel-list__toggle";
+    let extra: HTMLLIElement[] = [];
+    toggleItem.append(disclosureButton((expanded) => {
+      if (expanded) {
+        extra = value.items.slice(limit).map(listItemElement);
+        toggleItem.before(...extra);
+      } else {
+        for (const item of extra) item.remove();
+        extra = [];
       }
-      if (shown > limit && value.items.length > limit)
-        buttons.push(button(t("panel.showLess", lang), () => (shown = limit)));
-      if (buttons.length === 0) return;
-
-      const toggleItem = document.createElement("li");
-      toggleItem.className = "panel-list__toggle";
-      buttons.forEach((b, i) => {
-        if (i > 0) toggleItem.append(" · ");
-        toggleItem.appendChild(b);
-      });
-      ul.appendChild(toggleItem);
-    }
-
-    renderItems();
+    }));
+    ul.append(toggleItem);
     return ul;
   }
 
@@ -1147,26 +1145,16 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     const el = document.createElement("div");
     const words = value.text.split(/\s+/).filter(Boolean);
     const limit = PANEL_CONFIG.abstractWords;
-    let expanded = false;
-
-    function render(): void {
-      if (words.length <= limit) {
-        el.textContent = value.text;
-        return;
-      }
-      el.textContent = expanded ? value.text : `${words.slice(0, limit).join(" ")}…`;
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "panel-list__more";
-      toggle.textContent = expanded ? t("panel.showLess", lang) : t("panel.readMore", lang);
-      toggle.addEventListener("click", () => {
-        expanded = !expanded;
-        render();
-      });
-      el.append(" ", toggle);
+    if (words.length <= limit) {
+      el.textContent = value.text;
+      return el;
     }
 
-    render();
+    const preview = `${words.slice(0, limit).join(" ")}…`;
+    const text = document.createTextNode(preview);
+    el.append(text, " ", disclosureButton((expanded) => {
+      text.data = expanded ? value.text : preview;
+    }));
     return el;
   }
 

@@ -17,6 +17,7 @@ import { mountPanelToggles } from "../features/panelToggles";
 import { mountMobilePanels } from "../features/mobilePanels";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
+import { mountZoomControls } from "../features/zoomControls";
 import { mountSelection } from "../features/selection";
 import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
@@ -72,6 +73,7 @@ const store = new Store<AppState>({
     showExternalAuthors: false,
     showIsolatedAuthors: false,
     edgeZoomThreshold: FILTER_CONFIG.edgeZoom.default,
+    labelZoomThreshold: FILTER_CONFIG.labelZoom.default,
     showRegions: { ...FILTER_CONFIG.showRegions },
     regionZoomThreshold: FILTER_CONFIG.regionZoom.default,
     regionMinNodes: FILTER_CONFIG.regionMinNodes.default,
@@ -165,6 +167,8 @@ function renderApp(data: GraphData): void {
     priority.length = 0;
   });
   renderer.on("afterRender", () => {
+    const threshold = store.get().filters.labelZoomThreshold ?? FILTER_CONFIG.labelZoom.default;
+    if (renderer.getCamera().getState().ratio > threshold) return;
     const context = renderer.getCanvases().labels?.getContext("2d");
     if (context) drawNodeLabels(context, priority.concat(candidates), renderer.getSettings());
   });
@@ -202,6 +206,7 @@ function renderApp(data: GraphData): void {
     repoDetailsByKey,
   );
   mountFilters(store);
+  mountZoomControls(renderer.getCamera(), store);
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
 
   console.info("Graph rendered (lists are ready, detail files load in the background):", {

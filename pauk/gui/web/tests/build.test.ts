@@ -898,7 +898,7 @@ describe("applyGraphStyling edge visibility by camera.ratio", () => {
     const store = new Store<AppState>(
       initialState({ filters: { ...NO_FILTER, edgeZoomThreshold } }),
     );
-    const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
+    const { renderer, getReducer, fireCameraUpdated, refresh } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const edgeReducer = getReducer("edgeReducer");
@@ -910,6 +910,10 @@ describe("applyGraphStyling edge visibility by camera.ratio", () => {
 
     fireCameraUpdated(edgeZoomThreshold - 0.1);
     expect(edgeReducer(edgeKey, EDGE_BASE)).not.toMatchObject({ hidden: true });
+    fireCameraUpdated(edgeZoomThreshold - 0.2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    fireCameraUpdated(edgeZoomThreshold + 0.1);
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 });
 

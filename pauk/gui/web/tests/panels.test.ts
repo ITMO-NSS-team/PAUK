@@ -406,7 +406,7 @@ describe("mountPanel", () => {
     expect(labels).not.toContain("Email");
   });
 
-  it('long list: first 3, "+ ещё" adds 20 at a time, "свернуть" at any step returns to 3', async () => {
+  it('long list: shows three items, expands above the toggle and collapses back', async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
     if (!a1) throw new Error("the fixture must contain author A1");
@@ -432,27 +432,16 @@ describe("mountPanel", () => {
     const count = () => list?.querySelectorAll("li:not(.panel-list__toggle)").length;
 
     expect(count()).toBe(3);
-    expect(labels()).toEqual(["+ ещё 20"]);
+    expect(labels()).toEqual(["Показать еще"]);
 
     buttons()[0]?.click();
-    expect(count()).toBe(23);
-    expect(labels()).toEqual(["+ ещё 20", "− свернуть"]);
-
-    buttons()[0]?.click();
-    expect(count()).toBe(43);
-    expect(labels()).toEqual(["+ ещё 7", "− свернуть"]);
-
-    buttons()[0]?.click();
+    expect(list?.lastElementChild?.contains(buttons()[0] ?? null)).toBe(true);
     expect(count()).toBe(50);
-    expect(labels()).toEqual(["− свернуть"]);
+    expect(labels()).toEqual(["Свернуть"]);
 
     buttons()[0]?.click();
     expect(count()).toBe(3);
-    expect(labels()).toEqual(["+ ещё 20"]);
-
-    buttons()[0]?.click();
-    buttons()[1]?.click(); // collapse from a middle step
-    expect(count()).toBe(3);
+    expect(labels()).toEqual(["Показать еще"]);
   });
 
   it("an author card WITHOUT merged detail (only the short node label) shows no subtitle", async () => {
@@ -833,7 +822,7 @@ describe("mountPanel", () => {
     });
   });
 
-  it('a long abstract shows the first N words and "читать полностью"; a click expands it fully, another click collapses it again', async () => {
+  it('a long abstract shows the first N words and "Показать еще"; a click expands it fully, another click collapses it again', async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
     if (!detail) throw new Error("the fixture has no publication details");
@@ -856,11 +845,11 @@ describe("mountPanel", () => {
     const toggle = () => dd?.querySelector<HTMLButtonElement>(".panel-list__more");
     expect(dd?.textContent).toContain("w50…");
     expect(dd?.textContent).not.toContain("w51");
-    expect(toggle()?.textContent).toBe("+ читать полностью");
+    expect(toggle()?.textContent).toBe("Показать еще");
 
     toggle()?.click();
     expect(dd?.textContent).toContain("w80");
-    expect(toggle()?.textContent).toBe("− свернуть");
+    expect(toggle()?.textContent).toBe("Свернуть");
 
     toggle()?.click();
     expect(dd?.textContent).not.toContain("w51");
@@ -977,7 +966,7 @@ describe("mountPanel", () => {
 
     list()?.querySelector<HTMLButtonElement>(".panel-list__more")?.click();
     expect(grants()).toBe(4);
-    expect(list()?.querySelector(".panel-list__more")?.textContent).toBe("− свернуть");
+    expect(list()?.querySelector(".panel-list__more")?.textContent).toBe("Свернуть");
   });
 
   it("grant: the number in the publication card leads to the grant card with the article list and CSV", async () => {
