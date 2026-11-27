@@ -77,22 +77,13 @@ def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CH
                         report: CsvImportReport | None = None) -> CsvImportReport:
     """Skip malformed rows; preserve omitted properties on valid partial updates.
 
-    Repository rows are applied in order, with their resulting name validated
-    transactionally. Other labels retain the generic batch import path.
+    Every row is checked against the actual labels of the matched node. A
+    secondary-label update can otherwise bypass a repository name check.
     Database failures propagate: an unavailable graph is not a malformed row.
     """
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     report = report if report is not None else CsvImportReport()
-    batches_by_labels = defaultdict(list)
-
-    def flush(labels):
-        batch = batches_by_labels[labels]
-        if batch:
-            client.upsert_nodes_batch(labels, batch)
-            report.nodes_loaded += len(batch)
-            batch.clear()
-
     with open(csv_path, encoding="utf-8", newline="") as file:
         reader = csv.DictReader(file)
         for row in reader:
@@ -105,28 +96,12 @@ def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CH
                 report.reject("node", csv_path, line, row.get("id") or "", str(exc))
                 continue
 
-            if "Repository" in labels.split(":") or "name" in properties:
-                # Earlier generic rows may have created this same multilabel node.
-                for pending_labels in batches_by_labels:
-                    flush(pending_labels)
-                try:
-                    client.upsert_csv_node(labels, node_id, properties)
-                except CsvNodeError as exc:
-                    report.reject("node", csv_path, line, node_id, str(exc))
-                    continue
-                report.nodes_loaded += 1
-            else:
-                for pending_labels in batches_by_labels:
-                    if pending_labels != labels:
-                        flush(pending_labels)
-                if any(previous_id == node_id for previous_id, _ in batches_by_labels[labels]):
-                    flush(labels)
-                batches_by_labels[labels].append((node_id, properties))
-                if len(batches_by_labels[labels]) >= batch_size:
-                    flush(labels)
-
-    for labels in batches_by_labels:
-        flush(labels)
+            try:
+                client.upsert_csv_node(labels, node_id, properties)
+            except CsvNodeError as exc:
+                report.reject("node", csv_path, line, node_id, str(exc))
+                continue
+            report.nodes_loaded += 1
     return report
 
 
@@ -143,16 +118,20 @@ def load_relationships_from_csv(client: Neo4jClient, csv_path: str, batch_size: 
         if not batch:
             return
         src_label, tgt_label, rel_type = key
-        loaded = client.upsert_relationships_batch(
+        statuses = client.upsert_csv_relationships_batch(
             src_label, tgt_label, rel_type, [item for _, item in batch])
-        report.relationships_loaded += loaded
-        missing = len(batch) - loaded
-        if missing:
-            report.relationships_skipped += missing
-            report.issue(csv_path, batch[0][0], "",
-                         f"{missing} relationship row(s) have missing endpoints in "
-                         f"{src_label}-[{rel_type}]->{tgt_label} batch, lines "
-                         f"{batch[0][0]}-{batch[-1][0]}")
+        if len(statuses) != len(batch):
+            raise RuntimeError("CSV relationship result has the wrong row count")
+        for (line, (src_id, tgt_id, _)), status in zip(batch, statuses, strict=True):
+            if status == "loaded":
+                report.relationships_loaded += 1
+            elif status in ("missing", "ambiguous"):
+                reason = ("missing endpoints" if status == "missing"
+                          else "ambiguous endpoints")
+                report.reject("relationship", csv_path, line,
+                              f"{src_id}->{tgt_id}", reason)
+            else:
+                raise RuntimeError(f"Unknown CSV relationship result: {status!r}")
         batch.clear()
 
     with open(csv_path, encoding="utf-8", newline="") as file:

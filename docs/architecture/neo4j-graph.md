@@ -42,11 +42,15 @@ reporting the file, physical line, ID and reason. A repository update may omit
 `name` only if the exact matched node already has a valid name; this check and
 the update share a write transaction. Explicit invalid names reject the whole
 row, including updates addressed through a repository's secondary label.
-Ambiguous label/ID matches are rejected. Batches preserve input order across
-label changes; repeated node IDs are written in separate ordered batches.
+Ambiguous label/ID matches are rejected. CSV nodes are checked and written in
+input order, one row at a time, so an update through a secondary label cannot
+bypass repository validation. Relationship batches check both endpoints for
+each input row in the same transaction as their writes; missing or ambiguous
+endpoints are reported on that row.
 Correct rows and subsequent files continue; the final report counts loaded
 and skipped node/relationship rows, including edges with missing endpoints.
-Database failures abort the import rather than being hidden as bad input rows.
+Uniqueness conflicts reject only the affected node row; database failures
+abort the import rather than being hidden as bad input rows.
 Admin forms treat repository names as text, including numeric-looking strings.
 Unchanged invalid legacy fields remain untouched during unrelated edits.
 Repository merges fill a missing or blank survivor name from a nonblank

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, Mock
 
-from neo4j.exceptions import ServiceUnavailable
+from neo4j.exceptions import ConstraintError, ServiceUnavailable
 
 from pauk.graph.client import Neo4jClient
 
@@ -31,6 +31,70 @@ class CsvRepositoryClientTest(unittest.TestCase):
             "Reviewed:Repository", [("R1", properties)],
         )
         self.client.driver.session.assert_not_called()
+
+    def test_constraint_error_is_a_row_rejection(self):
+        self.client.upsert_nodes_batch = Mock(side_effect=ConstraintError("duplicate id"))
+        with self.assertRaisesRegex(ValueError, "uniqueness constraint"):
+            self.client.upsert_csv_node("Repository:Reviewed", "R1", {"name": "Valid"})
+
+    def test_constraint_error_on_secondary_label_is_a_row_rejection(self):
+        self.session.execute_write.side_effect = ConstraintError("duplicate id")
+        with self.assertRaisesRegex(ValueError, "uniqueness constraint"):
+            self.client.upsert_csv_node("Reviewed", "R1", {"description": "Valid"})
+
+    def test_database_outage_on_fast_path_still_propagates(self):
+        self.client.upsert_nodes_batch = Mock(side_effect=ServiceUnavailable("offline"))
+        with self.assertRaises(ServiceUnavailable):
+            self.client.upsert_csv_node("Repository", "R1", {"name": "Valid"})
+
+    def test_csv_relationship_results_are_per_input_row(self):
+        checks = [
+            {"idx": 0, "source_count": 2, "target_count": 1},
+            {"idx": 1, "source_count": 0, "target_count": 1},
+            {"idx": 2, "source_count": 1, "target_count": 1},
+        ]
+
+        def query(sql, **parameters):
+            result = Mock()
+            if "source_count" in sql:
+                result.data.return_value = checks
+            else:
+                self.assertEqual(len(parameters["batch"]), 1)
+                result.single.return_value = {"matched": 1}
+            return result
+
+        self.tx.run.side_effect = query
+        rows = [("same", "R1", {}), ("gone", "R1", {}), ("ok", "R1", {})]
+        self.assertEqual(
+            self.client.upsert_csv_relationships_batch("Reviewed", "Repository", "LINKS", rows),
+            ["ambiguous", "missing", "loaded"],
+        )
+        self.session.execute_write.assert_called_once()
+        self.assertEqual(self.tx.run.call_count, 2)
+
+    def test_csv_duplicate_authorship_keeps_positive_flag(self):
+        checks = [
+            {"idx": 0, "source_count": 1, "target_count": 1},
+            {"idx": 1, "source_count": 1, "target_count": 1},
+        ]
+
+        def query(sql, **parameters):
+            result = Mock()
+            if "source_count" in sql:
+                result.data.return_value = checks
+            else:
+                self.assertEqual(len(parameters["batch"]), 1)
+                self.assertTrue(parameters["batch"][0]["rel_properties"]["is_corresponding"])
+                result.single.return_value = {"matched": 2}
+            return result
+
+        self.tx.run.side_effect = query
+        rows = [("A", "W", {"is_corresponding": True}),
+                ("A", "W", {"is_corresponding": False})]
+        self.assertEqual(
+            self.client.upsert_csv_relationships_batch("Person", "Publication", "AUTHORED", rows),
+            ["loaded", "loaded"],
+        )
 
     def test_missing_name_updates_under_one_transaction_and_exact_labels(self):
         self.client.upsert_csv_node("Repository:Reviewed", "R1", {"description": "Changed"})

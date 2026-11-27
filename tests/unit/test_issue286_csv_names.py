@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from pauk.graph.csv_loader import load_csv_dir, load_nodes_from_csv, load_relationships_from_csv
 from pauk.graph.load import main
-from pauk.graph.validation import validate_repository_name
+from pauk.graph.validation import CsvNodeError, validate_repository_name
 
 
 class MemoryGraph:
@@ -57,6 +57,24 @@ class MemoryGraph:
         for key, props in combined.items():
             self.edges.setdefault(key, {}).update(props)
         return count
+
+    def upsert_csv_relationships_batch(self, src_label, tgt_label, rel_type, rows):
+        statuses = []
+        accepted = []
+        for source, target, props in rows:
+            sources = [key for key in self.nodes
+                       if key[1] == source and set(src_label.split(":")) <= key[0]]
+            targets = [key for key in self.nodes
+                       if key[1] == target and set(tgt_label.split(":")) <= key[0]]
+            if not sources or not targets:
+                statuses.append("missing")
+            elif len(sources) != 1 or len(targets) != 1:
+                statuses.append("ambiguous")
+            else:
+                statuses.append("loaded")
+                accepted.append((source, target, props))
+        self.upsert_relationships_batch(src_label, tgt_label, rel_type, accepted)
+        return statuses
 
     def node(self, node_id, labels="Repository"):
         return self.nodes[self.key(labels, node_id)]
@@ -220,6 +238,72 @@ class CsvRepositoryNamesTest(unittest.TestCase):
         self.assertEqual((report.relationships_loaded, report.relationships_skipped), (3, 2))
         self.assertTrue(self.client.edges["Person", "P1", "AUTHORED", "Publication", "W1"]["is_corresponding"])
 
+    def test_ambiguous_edge_does_not_mask_missing_or_valid_row(self):
+        self.client.upsert_nodes_batch("Person:Reviewed", [("shared", {"name_raw": "First"})])
+        self.client.upsert_nodes_batch("Organization:Reviewed", [("shared", {"name_en": "Second"})])
+        self.client.upsert_nodes_batch("Person", [("P1", {"name_raw": "Valid"})])
+        self.client.upsert_nodes_batch("Publication", [("W1", {"title": "Work"})])
+        path = self.write_edges([
+            ("shared", "W1", "Reviewed", "Publication", "AUTHORED", {}),
+            ("absent", "W1", "Reviewed", "Publication", "AUTHORED", {}),
+            ("P1", "W1", "Person", "Publication", "AUTHORED", {}),
+        ])
+        report = load_relationships_from_csv(self.client, str(path))
+        self.assertEqual((report.relationships_loaded, report.relationships_skipped), (1, 2))
+        self.assertEqual([item["line"] for item in report.issues], [2, 3])
+        self.assertEqual([item["id"] for item in report.issues],
+                         ["shared->W1", "absent->W1"])
+        self.assertEqual({item["reason"] for item in report.issues},
+                         {"ambiguous endpoints", "missing endpoints"})
+        self.assertEqual(len(self.client.edges), 1)
+
+    def test_repeated_valid_edge_rows_count_as_two_loaded_rows(self):
+        self.client.upsert_nodes_batch("Person", [("P1", {})])
+        self.client.upsert_nodes_batch("Publication", [("W1", {})])
+        path = self.write_edges([
+            ("P1", "W1", "Person", "Publication", "AUTHORED", {"is_corresponding": True}),
+            ("P1", "W1", "Person", "Publication", "AUTHORED", {"is_corresponding": False}),
+        ])
+        report = load_relationships_from_csv(self.client, str(path))
+        self.assertEqual((report.relationships_loaded, report.relationships_skipped), (2, 0))
+        self.assertEqual(len(self.client.edges), 1)
+        self.assertTrue(self.client.edges["Person", "P1", "AUTHORED", "Publication", "W1"]["is_corresponding"])
+
+    def test_secondary_label_partial_update_rejects_unnamed_repository(self):
+        self.client.upsert_nodes_batch("Repository:Reviewed", [("R1", {"description": "Before"})])
+        path = self.write_nodes("repositories_nodes.csv", [
+            ("R1", "Reviewed", {"description": "Rejected"}),
+            ("R1", "Reviewed", {"name": "Repaired"}),
+            ("R1", "Reviewed", {"description": "After"}),
+        ])
+        report = load_nodes_from_csv(self.client, str(path))
+        self.assertEqual((report.nodes_loaded, report.nodes_skipped), (2, 1))
+        self.assertEqual(self.client.node("R1")["name"], "Repaired")
+        self.assertEqual(self.client.node("R1")["description"], "After")
+
+    def test_constraint_conflict_skips_only_one_node_and_next_file_loads(self):
+        first = self.write_nodes("a_nodes.csv", [
+            ("R1", "Repository:Reviewed", {"name": "Conflicting"}),
+        ])
+        self.write_nodes("z_nodes.csv", [
+            ("R2", "Repository", {"name": "Valid"}),
+        ])
+        original = self.client.upsert_csv_node
+
+        def insert(labels, node_id, properties):
+            if node_id == "R1":
+                raise CsvNodeError("uniqueness constraint conflict")
+            return original(labels, node_id, properties)
+
+        with patch.object(self.client, "upsert_csv_node", side_effect=insert):
+            report = load_csv_dir(self.client, self.directory)
+        self.assertEqual((report.nodes_loaded, report.nodes_skipped), (1, 1))
+        self.assertEqual(report.issues[0]["file"], str(first))
+        self.assertEqual(report.issues[0]["line"], 2)
+        self.assertEqual(report.issues[0]["id"], "R1")
+        self.assertIn("uniqueness", report.issues[0]["reason"])
+        self.assertEqual(self.client.node("R2")["name"], "Valid")
+
     def test_diagnostics_use_physical_line_numbers_for_multiline_csv(self):
         path = self.write_nodes("repos_nodes.csv", [
             ("R1", "Repository", '{\n"name": "Valid"\n}'),
@@ -249,7 +333,7 @@ class CsvRepositoryNamesTest(unittest.TestCase):
             load_csv_dir(self.client, self.directory)
         path = self.write_edges([("P1", "R1", "Person", "Repository", "CONTRIBUTED_TO", {})])
         with (
-            patch.object(self.client, "upsert_relationships_batch", side_effect=RuntimeError("database unavailable")),
+            patch.object(self.client, "upsert_csv_relationships_batch", side_effect=RuntimeError("database unavailable")),
             self.assertRaisesRegex(RuntimeError, "database unavailable"),
         ):
             load_relationships_from_csv(self.client, str(path))

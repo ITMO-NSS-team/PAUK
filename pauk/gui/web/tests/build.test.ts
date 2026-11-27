@@ -222,6 +222,17 @@ function fakeRenderer(graph: Graph): {
 }
 
 describe("populateGraph on fixture data", () => {
+  it("builds the repository tab with a legacy non-string stored name", async () => {
+    const data = structuredClone(await loadSampleGraphData());
+    const repository = data.repos[0];
+    if (!repository) throw new Error("the fixture must contain a repository");
+    data.repos[0] = { ...repository, label: true } as unknown as typeof repository;
+
+    const graph = new Graph();
+    expect(() => populateGraph(graph, data, "ru", 2, NO_FILTER, NO_PUB_DETAILS)).not.toThrow();
+    expect(graph.getNodeAttribute(repository.key, "label")).toBe(repository.key);
+  });
+
   it("returns only the tab's nodes, not all entities at once", async () => {
     const data = await loadSampleGraphData();
 

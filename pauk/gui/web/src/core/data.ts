@@ -208,7 +208,7 @@ export function githubProfileUrl(username: string): string {
 export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, PubDetail>): string {
   if (!("label" in node)) return pubDetails?.get(node.key)?.label ?? node.key;
   const labelEn = "label_en" in node ? node.label_en : undefined;
-  return localize(node.label, labelEn, lang);
+  return localize(node.label, labelEn, lang) || node.key;
 }
 
 export interface GrantInfo {

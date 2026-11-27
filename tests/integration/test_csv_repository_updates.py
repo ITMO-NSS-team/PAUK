@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pauk.graph.client import Neo4jClient
 from pauk.graph.csv_loader import load_csv_dir
+from pauk.graph.schema import create_constraints
 
 try:
     from testcontainers.community.neo4j import Neo4jContainer
@@ -33,6 +34,7 @@ class CsvRepositoryUpdatesTest(unittest.TestCase):
             cls.container.get_connection_url(), cls.container.username, "csv-integration-password",
         )
         cls.addClassCleanup(cls.client.close)
+        create_constraints(cls.client)
 
     def setUp(self):
         with self.client.driver.session() as session:
@@ -157,6 +159,64 @@ class CsvRepositoryUpdatesTest(unittest.TestCase):
         self.assertIsNone(self.client.fetch_node_properties("Repository", "R-bad-json"))
         self.assertIsNone(self.client.fetch_node_properties("Repository", "R-missing"))
         self.assertEqual(len(self.client.fetch_node_relationships("Publication", "W1")), 2)
+
+    def test_secondary_label_import_checks_existing_repository_name(self):
+        self.client.upsert_nodes_batch("Repository:Reviewed", [("R1", {"description": "Before"})])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            with (directory / "a_nodes.csv").open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.writer(stream)
+                writer.writerow(["id", "labels", "properties"])
+                writer.writerows([
+                    ("R1", "Reviewed", json.dumps({"description": "Rejected"})),
+                    ("R1", "Reviewed", json.dumps({"name": "Repaired"})),
+                    ("R1", "Reviewed", json.dumps({"description": "After"})),
+                ])
+            report = load_csv_dir(self.client, directory)
+        self.assertEqual((report.nodes_loaded, report.nodes_skipped), (2, 1))
+        self.assertEqual(report.issues[0]["line"], 2)
+        self.assertEqual(report.issues[0]["id"], "R1")
+        stored = self.client.fetch_node_properties("Repository", "R1")
+        self.assertEqual((stored["name"], stored["description"]), ("Repaired", "After"))
+
+    def test_edge_import_reports_ambiguous_missing_and_valid_rows_separately(self):
+        self.client.upsert_nodes_batch("Person:Reviewed", [("shared", {})])
+        self.client.upsert_nodes_batch("Organization:Reviewed", [("shared", {})])
+        self.client.upsert_nodes_batch("Person", [("P1", {})])
+        self.client.upsert_nodes_batch("Publication", [("W1", {})])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            with (directory / "a_rels.csv").open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.writer(stream)
+                writer.writerow(["start_id", "end_id", "src_label", "tgt_label", "type", "properties"])
+                writer.writerows([
+                    ("shared", "W1", "Reviewed", "Publication", "AUTHORED", "{}"),
+                    ("missing", "W1", "Reviewed", "Publication", "AUTHORED", "{}"),
+                    ("P1", "W1", "Person", "Publication", "AUTHORED", "{}"),
+                ])
+            report = load_csv_dir(self.client, directory)
+        self.assertEqual((report.relationships_loaded, report.relationships_skipped), (1, 2))
+        self.assertEqual([(row["line"], row["id"]) for row in report.issues],
+                         [(2, "shared->W1"), (3, "missing->W1")])
+        self.assertEqual(len(self.client.fetch_node_relationships("Publication", "W1")), 1)
+
+    def test_constraint_conflict_does_not_block_next_csv_file(self):
+        self.client.upsert_nodes_batch("Repository", [("R1", {"name": "Before"})])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for filename, rows in (
+                ("a_nodes.csv", [("R1", "Repository:Reviewed", json.dumps({"name": "Conflict"}))]),
+                ("z_nodes.csv", [("R2", "Repository", json.dumps({"name": "Valid"}))]),
+            ):
+                with (directory / filename).open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.writer(stream)
+                    writer.writerow(["id", "labels", "properties"])
+                    writer.writerows(rows)
+            report = load_csv_dir(self.client, directory)
+        self.assertEqual((report.nodes_loaded, report.nodes_skipped), (1, 1))
+        self.assertEqual((report.issues[0]["line"], report.issues[0]["id"]), (2, "R1"))
+        self.assertEqual(self.client.fetch_node_properties("Repository", "R1")["name"], "Before")
+        self.assertEqual(self.client.fetch_node_properties("Repository", "R2")["name"], "Valid")
 
 
 if __name__ == "__main__":

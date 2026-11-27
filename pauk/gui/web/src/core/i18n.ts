@@ -5,11 +5,12 @@ import type { NodeKind } from "../contracts/graph";
 
 export type Lang = "ru" | "en";
 
-/** Uses the other language when the preferred variant is absent or blank. */
-export function localize(ru: string, en: string | undefined, lang: Lang): string {
+/** Uses the other language when the preferred variant is absent or invalid. */
+export function localize(ru: unknown, en: unknown, lang: Lang): string {
   const preferred = lang === "en" ? en : ru;
   const fallback = lang === "en" ? ru : en;
-  return preferred?.trim() ? preferred : fallback?.trim() ? fallback : "";
+  if (typeof preferred === "string" && preferred.trim()) return preferred;
+  return typeof fallback === "string" && fallback.trim() ? fallback : "";
 }
 
 export type LocaleKey =

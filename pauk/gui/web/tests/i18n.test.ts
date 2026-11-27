@@ -41,6 +41,12 @@ describe("localize", () => {
   it("keeps a masked en fallback masked", () => {
     expect(localize("", "Iv… I.", "ru")).toBe("Iv… I.");
   });
+
+  it("ignores legacy non-string labels and uses an available string", () => {
+    expect(localize(true, "Valid name", "ru")).toBe("Valid name");
+    expect(localize("Русское имя", 123, "en")).toBe("Русское имя");
+    expect(localize(false, 123, "ru")).toBe("");
+  });
 });
 
 describe("t", () => {
