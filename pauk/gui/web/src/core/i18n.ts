@@ -1,11 +1,7 @@
-// localize() picks a language from bilingual data fields; t() returns
-// static UI strings.
-
 import type { NodeKind } from "../contracts/graph";
 
 export type Lang = "ru" | "en";
 
-/** Falls back to `ru` when there is no `en` variant (e.g. repo names). */
 export function localize(ru: string, en: string | undefined, lang: Lang): string {
   return lang === "en" && en ? en : ru;
 }
@@ -107,6 +103,7 @@ export type LocaleKey =
   | "filter.showNoDept"
   | "filter.showExternal"
   | "filter.showIsolated"
+  | "filter.showIsolatedHint"
   | "filter.edgeZoom"
   | "filter.labelZoom"
   | "map.zoomIn"
@@ -236,7 +233,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "До года",
     "filter.showNoDept": "Показывать без департамента",
     "filter.showExternal": "Показывать внешних авторов",
-    "filter.showIsolated": "Показывать авторов без связей",
+    "filter.showIsolated": "Показывать изолированных авторов",
+    "filter.showIsolatedHint": "Не больше одной публикации, без соавторов и репозиториев. Внешние соавторы учитываются, если включен их показ.",
     "filter.edgeZoom": "Порог показа рёбер",
     "filter.labelZoom": "Порог показа подписей",
     "map.zoomIn": "Приблизить",
@@ -255,8 +253,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.cta": "Смотреть карту",
     "start.loading": "Загрузка данных…",
     "start.rendering": "Отрисовка графа…",
-    // Deliberately neutral: the boot screen hides at once and the banner
-    // below shows the real cause.
     "start.error": "Ошибка загрузки.",
     "start.errorFetch": "Не удалось загрузить данные графа",
     "start.errorFetchHint":
@@ -369,7 +365,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "Up to year",
     "filter.showNoDept": "Show without department",
     "filter.showExternal": "Show external authors",
-    "filter.showIsolated": "Show authors without links",
+    "filter.showIsolated": "Show isolated authors",
+    "filter.showIsolatedHint": "At most one publication, no co-authors or repositories. External co-authors count when shown.",
     "filter.edgeZoom": "Edge visibility threshold",
     "filter.labelZoom": "Label visibility threshold",
     "map.zoomIn": "Zoom in",

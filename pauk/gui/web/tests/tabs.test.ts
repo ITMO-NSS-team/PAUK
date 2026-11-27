@@ -12,7 +12,6 @@ import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
-/** List tabs do not use the renderer; the camera is moved by map/build.ts. */
 function fakeRenderer(): Sigma {
   return {} as unknown as Sigma;
 }
@@ -41,15 +40,10 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Rows are the second child; the first is the search input. */
 function listItems(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll<HTMLButtonElement>(".tab-list-item"));
 }
 
-/**
- * More authors than one page. `pubs_count` falls with the index, so the
- * sorted order equals the index order.
- */
 function manyAuthorsData(count: number): GraphData {
   return {
     departments: [],
@@ -180,7 +174,7 @@ describe("authorsTab", () => {
     const search = container.querySelector<HTMLInputElement>(".tab-search");
     if (!search) throw new Error("the tab must contain a search field");
 
-    search.value = "лщывалщыв"; // matches no fixture label
+    search.value = "лщывалщыв";
     search.dispatchEvent(new Event("input"));
 
     expect(listItems(container)).toHaveLength(0);
@@ -267,7 +261,6 @@ describe("pubsTab", () => {
     pubsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const years = listItems(container).map((el) => el.textContent?.includes("неизвестен"));
-    // After the first unknown year, all the rest are unknown too.
     const firstUnknownIndex = years.indexOf(true);
     if (firstUnknownIndex !== -1) {
       expect(years.slice(firstUnknownIndex).every(Boolean)).toBe(true);
@@ -349,7 +342,6 @@ describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
 
     const search = container.querySelector<HTMLInputElement>(".tab-search");
     if (!search) throw new Error("the tab must contain a search field");
-    // Ten matching authors span two pages.
     search.value = "Автор 1";
     search.dispatchEvent(new Event("input"));
 

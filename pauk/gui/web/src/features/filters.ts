@@ -10,10 +10,8 @@ interface FilterRowOptions {
   label: string;
   min: number;
   max: number;
-  /** Defaults to 1; fractional for continuous values like camera ratio. */
   step?: number;
   value: number;
-  /** Debounced: applying a filter rebuilds the whole graph. */
   onChange: (value: number) => void;
 }
 
@@ -41,7 +39,6 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   // The value label updates on every tick, onChange is debounced: a graph
   // rebuild per pixel of dragging lags.
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  // The thumb tilts toward the drag direction, see index.html.
   let lastValue = options.value;
   input.addEventListener("filter-sync", () => {
     clearTimeout(debounceTimer);
@@ -65,6 +62,7 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
 interface CheckboxRowOptions {
   key: keyof AppState["filters"];
   label: string;
+  hint?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }
@@ -85,14 +83,24 @@ function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
   label.textContent = options.label;
 
   row.append(input, label);
+  if (options.hint) {
+    const description = document.createElement("span");
+    description.id = `filter-hint-${options.key}`;
+    description.className = "filter-row__hint";
+    description.textContent = options.hint;
+    label.id = `filter-label-${options.key}`;
+    input.setAttribute("aria-labelledby", label.id);
+    input.setAttribute("aria-describedby", description.id);
+
+    row.classList.add("filter-row--has-hint");
+    const control = document.createElement("span");
+    control.className = "filter-row__control";
+    input.replaceWith(control);
+    control.append(input, description);
+  }
   return row;
 }
 
-/**
- * Rebuilds the rows only on tab or language change, not on every store update.
- *
- * @returns Unmount function.
- */
 export function mountFilters(store: Store<AppState>): () => void {
   const container = requireElement("filter-bar");
   const sectionLabel = requireElement("filters-section-label");
@@ -175,6 +183,7 @@ export function mountFilters(store: Store<AppState>): () => void {
         }),
         buildCheckboxRow({
           label: t("filter.showIsolated", lang),
+          hint: t("filter.showIsolatedHint", lang),
           key: "showIsolatedAuthors",
           checked: filters.showIsolatedAuthors,
           onChange: (checked) => setFilter({ showIsolatedAuthors: checked }),
@@ -207,7 +216,6 @@ export function mountFilters(store: Store<AppState>): () => void {
       );
     }
 
-    // Region toggle is per tab, region thresholds are shared.
     rows.push(
       buildCheckboxRow({
         label: t("filter.showRegions", lang),
@@ -265,8 +273,6 @@ export function mountFilters(store: Store<AppState>): () => void {
  * Reveals a selected author/publication hidden by node filters,
  * e.g. after a global search or a link from another card. Must subscribe before
  * map/build.ts::mountReactiveGraph, which drops selections missing from the graph.
- *
- * @returns Unmount function.
  */
 export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
   const authors = new Map(data.authors.map((node) => [node.key, node]));

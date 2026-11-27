@@ -188,9 +188,3 @@ export function renderOperations(state: OperationsState): string {
 export function operationDetails(operation: Operation): string {
   return `<div class="ops-operation-meta">${stateBadge(operation.state)}<span class="ops-mono ops-muted">${operation.id}</span><span class="ops-muted">${escape(operation.actor)}</span></div><ol class="ops-stages">${operation.stages.map((stage, index) => `<li class="${index < operation.step ? "is-done" : index === operation.step && operation.state === "running" ? "is-current" : operation.state === "failed" && index === operation.step ? "is-failed" : ""}"><span>${index < operation.step ? icon("check") : index + 1}</span><div>${escape(stage)}${index === operation.step && operation.state === "running" ? "<small>Выполняется…</small>" : ""}</div></li>`).join("")}</ol><div class="ops-log-head"><h3>Логи</h3>${button("Скачать", "download-log", operation.id, "ops-button--text", "download")}</div><pre class="ops-log">${operation.logs.map((line, index) => `<span class="ops-log-number">${String(index + 1).padStart(2, "0")}</span> ${escape(line)}`).join("\n") || "Ожидание запуска…"}</pre>${operation.state === "failed" ? '<div class="ops-notice">Проверьте причину ошибки перед повторным запуском.</div>' : ""}`;
 }
-
-export function backupDescription(backup: Backup): string {
-  return `<div class="ops-selection-card">${icon("database")}<div><strong>${escape(backup.name)}</strong><span>${escape(backup.id)} · ${backupTime(backup)} · ${escape(backup.size)}</span></div></div>`;
-}
-
-export { graphPreview };

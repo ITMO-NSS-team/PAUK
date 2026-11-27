@@ -2,7 +2,6 @@ import { requireElement } from "../core/dom";
 import type { AppState, Store } from "../core/state";
 import { THEMES } from "../core/themes";
 
-/** @returns Unsubscribe function. */
 export function mountThemePicker(store: Store<AppState>): () => void {
   const container = requireElement("menu-theme");
   const buttons = THEMES.map((theme) => {

@@ -29,7 +29,6 @@ export interface Affiliation {
   name: string;
   ror: string;
   years: number[];
-  // "openalex" or "orcid".
   source: string;
 }
 

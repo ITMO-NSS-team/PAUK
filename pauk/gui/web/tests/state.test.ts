@@ -91,15 +91,15 @@ describe("Store", () => {
     store.subscribe((state) => {
       if (!nested && state.a === 10) {
         nested = true;
-        store.set({ b: 99 }); // nested set() inside the early subscriber
+        store.set({ b: 99 });
       }
     });
     store.subscribe((state) => {
-      lastSeenByLateSubscriber = state; // late subscriber, no idempotency guard
+      lastSeenByLateSubscriber = state;
     });
 
     store.set({ a: 10 });
 
-    expect(lastSeenByLateSubscriber).toEqual({ a: 10, b: 99 }); // not the stale { a: 10, b: 2 }
+    expect(lastSeenByLateSubscriber).toEqual({ a: 10, b: 99 });
   });
 });

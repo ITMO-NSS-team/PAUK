@@ -28,10 +28,12 @@ file is written atomically through `AtomicWriter` (`pauk.storage`).
 - `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
   fields that the site loads lazily after the map.
 
-Both folders contain all four files. `private/` keeps full names and personal
-fields. `public.py::to_public` rewrites the public variant: masked labels,
-sequential author keys, consistent remapped edges, whitelisted fields and
-abstracts without emails or scraped author blocks. The source snapshot and
+Both folders contain all four files. The private map uses surnames and initials
+when structured name fields are available. A single unparsed name is kept as
+provided. Full names and alternate spellings remain in the private author
+details for cards and global search. `public.py::to_public` masks labels and
+assigns sequential author keys. It remaps edges, whitelists fields and strips
+emails and scraped author blocks from abstracts. The source snapshot and
 private output remain intact. `npm run build:public` selects `data/gui/public`
 and emits `dist-public` with relative URLs; the default build uses private
 files. `scripts/publish_pages.sh` validates and uploads the public data for
@@ -149,7 +151,7 @@ picked up both by `npm run dev` and by the build.
 
 ```bash
 cd pauk/gui/web
-npm install
+npm ci
 npm run dev        # local
 npm run build      # dist/: static files together with the data
 npm test && npm run typecheck && npm run lint
@@ -161,14 +163,40 @@ mirroring the generator) then `core` (the `Store` state, config, i18n, data
 loading) then `map` (graph population, department regions) then `features`
 (tabs, panel, filters, search, selection) then `app` (entry point).
 
-There are three tabs (Authors, Publications, Repositories) plus a global
-search across all kinds. There is no database health tab on the site: the
-graph checks (`pauk/admin/checks.py`, run and statistics in
-`pauk/admin/graph_stats.py`) are shown by the "Здоровье БД" (database
-health) page of the admin panel (`pauk/admin/health.py`); see
-[../admin-panel.md](../admin-panel.md). In those queries an ITMO employee is
-`p.is_itmo`, not a label; `tests/unit/test_checks.py` checks every label and
-relationship type in the queries against the schema.
+### Navigation and search
+
+- The three tabs share the same map renderer and camera. Quick Search shows five
+  matching rows per page within the active tab and respects its node filters.
+- Global search opens with the sidebar button or `/`. An empty query lists the
+  largest departments. Matches are grouped by entity type with distinct shapes.
+  Each group previews three results and expands with **Show more**. Enter in the
+  search field selects the first result and Escape closes the search.
+- Selection opens a detail card. Longer lists and abstracts expand in place,
+  with **Show less** below the expanded content. The toolbar back button
+  restores the previous tab's selection, filters and camera after a tab jump.
+
+### Graph display
+
+- **Keep branches** accumulates the neighborhoods of nodes on the same
+  explored branch. Selecting a node outside the accumulated neighborhood
+  starts a new branch. **Connected only** hides nodes outside the active
+  neighborhoods. Clearing the node selection, switching tabs or returning to
+  the menu turns off **Connected only**.
+- **Show isolated authors** includes authors with at most one publication,
+  no counted coauthors and no repository links. External coauthors count
+  when **Show external authors** is enabled.
+- **Display settings** has shared edge, label and region visibility thresholds.
+  Edges and node labels are eligible at or below their thresholds
+  (`0.01–0.25`, default `0.25`). Labels that would overlap are suppressed.
+  Regions are enabled by default on each tab and become interactive above
+  the region threshold (`0.25–1.00`, default `0.25`).
+- The controls at the bottom left zoom out, show the camera ratio, and zoom
+  in. A smaller ratio means a closer view. Clicking the ratio resets the
+  camera. Camera movement redraws the viewport, with graph processing on
+  edge-threshold crossings or when entering region mode clears node hover.
+
+Database checks are available on the admin panel's database health page.
+See [the admin panel guide](../admin-panel.md).
 
 On the server, the worker writes these files under `~/pauk/gui/itmo/`, while
 nginx reads a separate built site at `~/pauk/site/itmo/main/`. A data rebuild

@@ -30,7 +30,7 @@ describe("buildRegions", () => {
     expect(regions.map((r) => r.dept)).toEqual([1, 2]);
     for (const p of a) expect(regionDeptAt(regions, p)).toBe(1);
     for (const p of b) expect(regionDeptAt(regions, p)).toBe(2);
-    expect(regionDeptAt(regions, { x: 100, y: 0 })).toBeNull(); // the gap between clusters stays empty
+    expect(regionDeptAt(regions, { x: 100, y: 0 })).toBeNull();
   });
 
   it("neighbouring departments do not overlap: a point does not lie in two regions at once", () => {
@@ -69,7 +69,7 @@ describe("buildRegions", () => {
   });
 
   it("the label point is the centre of the nodes of the largest island, not of all department nodes", () => {
-    const big = cluster(0, 0, 20, 1); // 4 rows of 5: x 0..8, y 0..6 -> center (4, 3)
+    const big = cluster(0, 0, 20, 1);
     const regions = buildRegions([...big, ...cluster(300, 0, 12, 1)], 10);
 
     expect(regions[0]?.label.x).toBeCloseTo(4);
@@ -100,7 +100,6 @@ function department(id: number, name: string, color: string): Department {
   return { id, name, name_en: name, color, n: 16, n_authors: 16, n_pubs: 0, n_repos: 0 };
 }
 
-/** Department 0 clusters at (0, 0); "no department" (9) at (200, 0). */
 function sampleData(): GraphData {
   return {
     departments: [
@@ -147,7 +146,6 @@ function initialState(overrides: Partial<AppState["filters"]> = {}): AppState {
   };
 }
 
-/** Canvas with a stubbed 2d context (jsdom does not draw); layout coords equal screen coords. */
 function fakeRenderer(ratio: { value: number }) {
   const context = {
     setTransform: vi.fn(),
@@ -170,7 +168,6 @@ function fakeRenderer(ratio: { value: number }) {
     globalAlpha: 1,
     lineWidth: 1,
   };
-  // Both canvases (fill and labels) share one fake context.
   const createCanvas = vi.fn(() => {
     const canvas = document.createElement("canvas");
     canvas.getContext = (() => context) as unknown as HTMLCanvasElement["getContext"];
@@ -236,16 +233,15 @@ describe("mountRegions", () => {
     expect(renderer.createCanvas).toHaveBeenCalledWith("regions", { beforeLayer: "edges" });
     expect(renderer.createCanvas).toHaveBeenCalledWith("region-labels", { afterLayer: "labels" });
     render();
-    // Label at the island center (4x4 grid, step 2, at (0, 0) -> (3, 3)), in the current language.
     expect(context.fillText).toHaveBeenCalledWith("Кафедра", 3, 3);
     expect(context.fill).toHaveBeenCalledWith("evenodd");
-    expect(context.fillStyle).toBe("#ff0000"); // real department only, not "no department"
+    expect(context.fillStyle).toBe("#ff0000");
     expect(context.fill).toHaveBeenCalledTimes(1);
 
     context.fill.mockClear();
     context.fillText.mockClear();
     context.stroke.mockClear();
-    ratio.value = 0.2; // below the 0.25 threshold: stroke only
+    ratio.value = 0.2;
     render();
     expect(context.clearRect).toHaveBeenCalled();
     expect(context.stroke).toHaveBeenCalled();
@@ -269,7 +265,7 @@ describe("mountRegions", () => {
     expect(context.fill).toHaveBeenCalledTimes(1);
 
     context.fill.mockClear();
-    store.set({ filters: { ...store.get().filters, regionMinNodes: 50 } }); // more than the department has
+    store.set({ filters: { ...store.get().filters, regionMinNodes: 50 } });
     render();
     expect(context.fill).not.toHaveBeenCalled();
   });
@@ -280,7 +276,7 @@ describe("mountRegions", () => {
     const regions = mountRegions(renderer, new Store<AppState>(initialState()), sampleData());
 
     expect(regions.deptAtViewport({ x: 2, y: 2 })).toBe(0);
-    expect(regions.deptAtViewport({ x: 202, y: 2 })).toBeNull(); // "no department" gets no region
+    expect(regions.deptAtViewport({ x: 202, y: 2 })).toBeNull();
 
     ratio.value = 0.1;
     expect(regions.deptAtViewport({ x: 2, y: 2 })).toBeNull();
@@ -309,7 +305,6 @@ describe("mountRegions", () => {
   it("overlapping labels are not drawn: the label of the larger region stays", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const data = sampleData();
-    // A larger second department right next to the first: their labels overlap on screen.
     data.authors.push(...cluster(10, 0, 30, 1).map((p, i) => authorNode(`B${i}`, p)));
     data.departments.push(department(1, "Лаборатория", "#00ff00"));
     mountRegions(renderer, new Store<AppState>(initialState()), data);
@@ -329,7 +324,7 @@ describe("mountRegions", () => {
     mountRegions(renderer, store, data);
 
     render();
-    expect(context.fillText).toHaveBeenCalledTimes(2); // far apart: both labels
+    expect(context.fillText).toHaveBeenCalledTimes(2);
 
     context.fillText.mockClear();
     store.set({ selection: { kind: "dept", id: 1 } });
@@ -348,7 +343,7 @@ describe("mountRegions", () => {
     expect(container.style.cursor).toBe("pointer");
     expect(alphas.at(-1)).toBe(REGION_CONFIG.hoverFillAlpha);
 
-    moveMouse(150, 150); // empty spot
+    moveMouse(150, 150);
     expect(container.style.cursor).toBe("");
     expect(alphas.at(-1)).toBe(REGION_CONFIG.fillAlpha);
 
@@ -366,7 +361,7 @@ describe("mountRegions", () => {
     mountRegions(renderer, store, sampleData());
 
     render();
-    expect(context.fill).toHaveBeenCalled(); // regions themselves are drawn
+    expect(context.fill).toHaveBeenCalled();
     expect(context.fillText).not.toHaveBeenCalled();
 
     store.set({ selection: { kind: "edge", s: "A0", t: "A1", w: 1 } });
@@ -386,11 +381,11 @@ describe("mountRegions", () => {
     const filled: string[] = [];
     context.fill.mockImplementation(() => filled.push(context.fillStyle));
 
-    ratio.value = 0.1; // node mode
+    ratio.value = 0.1;
     render();
 
     expect(filled).toEqual(["#00ff00"]);
     expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(["Лаборатория"]);
-    expect(context.stroke).toHaveBeenCalledTimes(2); // both regions stroked
+    expect(context.stroke).toHaveBeenCalledTimes(2);
   });
 });

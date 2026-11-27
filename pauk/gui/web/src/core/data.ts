@@ -12,19 +12,16 @@ import { localize, type Lang } from "./i18n";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
-/** Repos are colored by `group` (department, GitHub org or field), others by `dept`. */
 export function groupIdOf(node: GraphNode): number {
   return node.kind === "repo" ? (node.group ?? node.dept) : node.dept;
 }
 
-/** Departments and repo groups in one index; their ids never overlap. */
 export function groupsById(data: GraphData): Map<number, Department | RepoGroup> {
   return new Map<number, Department | RepoGroup>(
     [...data.departments, ...(data.repo_groups ?? [])].map((group) => [group.id, group]),
   );
 }
 
-/** Checks the shape in dev mode only. */
 export async function loadGraphData(url: string): Promise<GraphData> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -36,7 +33,6 @@ export async function loadGraphData(url: string): Promise<GraphData> {
   return data;
 }
 
-/** Throws on a missing file; app/main.ts catches it (e.g. no authors-detail.json in public/). */
 export async function loadDetails<T>(url: string): Promise<T[]> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -98,7 +94,6 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
   return index;
 }
 
-/** Author <-> pub lists from `all_edges`, the only direct link between them. */
 export function buildAuthorPubIndex(data: GraphData): {
   authorPubs: Map<string, string[]>;
   pubAuthors: Map<string, string[]>;
@@ -119,7 +114,6 @@ export function buildAuthorPubIndex(data: GraphData): {
   return { authorPubs, pubAuthors };
 }
 
-/** Author -> co-author -> shared pub count. Edges are undirected. */
 export function buildCoauthIndex(data: GraphData): Map<string, Map<string, number>> {
   const index = new Map<string, Map<string, number>>();
 
@@ -137,7 +131,6 @@ export function buildCoauthIndex(data: GraphData): Map<string, Map<string, numbe
   return index;
 }
 
-/** Same as {@link buildCoauthIndex}, keyed by department id. */
 export function buildDeptEdgeIndex(data: GraphData): Map<number, Map<number, number>> {
   const index = new Map<number, Map<number, number>>();
 
@@ -195,7 +188,6 @@ export function buildRepoPubIndex(data: GraphData): { repoPubs: Map<string, stri
 
 const GITHUB_URL_PREFIX = "https://github.com/";
 
-/** `https://github.com/owner/repo` -> `owner/repo`; other strings pass through. */
 export function githubShortPath(url: string): string {
   return url.replace(GITHUB_URL_PREFIX, "");
 }
@@ -204,7 +196,6 @@ export function githubProfileUrl(username: string): string {
   return `${GITHUB_URL_PREFIX}${username}`;
 }
 
-/** PubNode has no label: the title comes from `pubDetails`, falling back to the key. */
 export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, PubDetail>): string {
   if (!("label" in node)) return pubDetails?.get(node.key)?.label ?? node.key;
   const labelEn = "label_en" in node ? node.label_en : undefined;
@@ -213,7 +204,6 @@ export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, 
 
 export interface GrantInfo {
   key: string;
-  /** The spelling authors used most often. */
   name: string;
   funder: string;
   pubs: string[];

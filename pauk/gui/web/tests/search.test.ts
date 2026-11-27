@@ -90,11 +90,9 @@ describe("search by all spellings", () => {
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS, authorDetails);
 
-    // A1: name_en "Ivan Ivanov", OpenAlex "Ivanov Ivan", ORCID "I. Ivanov".
     for (const query of ["ivan ivanov", "ivanov ivan", "i. ivanov", "иванов иван иванович"]) {
       expect(searchHits(index, query).map((hit) => hit.key)).toContain("A1");
     }
-    // Spellings are searched only; the label stays in the UI language.
     expect(searchHits(index, "ivan ivanov").find((hit) => hit.key === "A1")?.label).not.toContain(
       "Ivan",
     );

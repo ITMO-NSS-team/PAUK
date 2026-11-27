@@ -68,7 +68,6 @@
         outline-offset: 2px;
       }
 
-      /* Keep the sprite at its native size so the body and legs stay distinct. */
       input[type="checkbox"] {
         appearance: none;
         -webkit-appearance: none;
@@ -86,10 +85,9 @@
         content: "";
         display: block;
         height: 100%;
-        background: var(--filter-spider) center no-repeat;
+        background: var(--filter-spider) center / 17px auto no-repeat;
         filter: hue-rotate(235deg);
       }
-      /* Accent spider thumb; -webkit- and -moz- pseudo-elements cannot be merged. */
       input[type="range"] {
         appearance: none;
         -webkit-appearance: none;
@@ -106,10 +104,10 @@
       input[type="range"]::-webkit-slider-thumb {
         appearance: none;
         -webkit-appearance: none;
-        width: 21px;
-        height: 19px;
-        margin-top: -7.5px; /* (4px track - 19px thumb) / 2 */
-        background: var(--filter-spider) center no-repeat;
+        width: 17px;
+        height: 15px;
+        margin-top: -5.5px; /* (4px track - 15px thumb) / 2 */
+        background: var(--filter-spider) center / contain no-repeat;
         filter: hue-rotate(235deg);
         transition: transform 0.15s ease;
       }
@@ -125,11 +123,11 @@
         background: var(--border);
       }
       input[type="range"]::-moz-range-thumb {
-        width: 21px;
-        height: 19px;
+        width: 17px;
+        height: 15px;
         border: none;
         border-radius: 0;
-        background: var(--filter-spider) center no-repeat;
+        background: var(--filter-spider) center / contain no-repeat;
         filter: hue-rotate(235deg);
         transition: transform 0.15s ease;
       }
@@ -158,7 +156,6 @@
         padding-top: 68px;
         position: relative;
       }
-      /* Safety net for a flex child without min-width: 0. */
       #sidebar {
         width: 312px;
         flex-shrink: 0;
@@ -177,7 +174,6 @@
         font-size: 12px;
         font-weight: 600;
       }
-      /* Anchor for the zoom debug readout. */
       /* Fade the composited layer so overlapping edges stay subdued at hubs. */
       #map .sigma-edges { opacity: 0.46; }
 
@@ -278,7 +274,6 @@
         font-size: 11px;
       }
 
-      /* Above everything, including the menu. */
       #global-search {
         position: fixed;
         inset: 0;
@@ -425,6 +420,36 @@
         color: var(--muted);
         min-width: 0;
       }
+      .filter-row--has-hint {
+        position: relative;
+      }
+      .filter-row__control {
+        display: flex;
+        flex: none;
+      }
+      .filter-row__hint {
+        position: absolute;
+        z-index: 8;
+        top: calc(100% + 5px);
+        left: 0;
+        box-sizing: border-box;
+        width: min(250px, 100%);
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+        font-size: 11px;
+        line-height: 1.4;
+        pointer-events: none;
+        visibility: hidden;
+      }
+      .filter-row__control:hover .filter-row__hint,
+      .filter-row__control input:focus-visible + .filter-row__hint {
+        visibility: visible;
+        transition: visibility 0s 0.5s;
+      }
       /* Without min-width: 0 the slider pushes the row out of the sidebar. */
       .filter-row input[type="range"] {
         flex: 1;
@@ -460,7 +485,6 @@
         top: 0;
         width: 100%;
         box-sizing: border-box;
-        /* Same top padding as #filter-bar. */
         padding: 12px 16px;
         border: none;
         border-bottom: 1px solid var(--border);
@@ -494,7 +518,6 @@
         background: var(--accent-soft);
         box-shadow: inset 2px 0 var(--accent);
       }
-      /* Lets nowrap text shrink instead of overflowing the row. */
       .tab-list-item__label {
         min-width: 0;
         overflow: hidden;
@@ -511,7 +534,6 @@
         color: var(--muted);
         font-size: 13px;
       }
-      /* Stays in the DOM when empty, so the list height does not jump. */
       .tab-pagination {
         display: flex;
         align-items: center;
@@ -546,17 +568,8 @@
         font-size: 12px;
       }
 
-      /* Search meta is a long line, so label and meta stack instead of sharing a row. */
-      .search-results .tab-list-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 2px;
-      }
-      .search-results .tab-list-item__label {
+      #global-search-results .tab-list-item__label {
         white-space: normal;
-      }
-      .search-results .tab-list-item__meta {
-        font-size: 12px;
       }
 
       #panel {
@@ -596,7 +609,6 @@
       .panel-card__titles {
         min-width: 0;
       }
-      /* Lets a long title wrap instead of pushing out the kind badge. */
       #panel h3 {
         margin: 0;
         min-width: 0;
@@ -647,12 +659,10 @@
       #panel dd:last-of-type {
         border-bottom: none;
       }
-      /* External links are always underlined, entity refs only on hover. */
       #panel a {
         color: var(--accent);
         text-decoration: underline;
       }
-      /* A <button> that selects the entity; inherits font and color from dd. */
       .panel-entity-ref {
         font: inherit;
         color: var(--accent);
@@ -734,7 +744,6 @@
         color: var(--muted);
         font-size: 12px;
       }
-      /* No side padding of its own: #panel already has it. */
       .panel-chart {
         padding: 14px 0 0;
       }
@@ -819,7 +828,6 @@
         display: none;
       }
 
-      /* Boot screen and menu (features/start.ts). */
       #boot-screen {
         position: fixed;
         inset: 0;
@@ -1110,7 +1118,6 @@
       <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
       <div class="boot-status" id="boot-status"></div>
     </div>
-    <!-- hidden only until JS runs; features/start.ts drives it. -->
     <div id="menu" hidden>
       <div class="menu-hero">
         <span class="menu-mark" aria-hidden="true"></span>
@@ -1120,7 +1127,7 @@
           target="_blank"
           rel="noopener noreferrer"
         >
-          <strong>PAUK</strong><span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
+          <strong>PAUK</strong><span id="menu-badge-text"></span> <span>›</span>
         </a>
         <h1 class="menu-title" id="menu-title"></h1>
         <p class="menu-subtitle" id="menu-subtitle"></p>
@@ -1135,7 +1142,6 @@
       </div>
     </div>
 
-    <!-- [hidden] has no visual effect here, see #app in <style>. -->
     <div id="app" hidden>
       <header class="map-header">
         <div class="map-brand">
@@ -1190,11 +1196,10 @@
       </div>
       <aside id="panel" hidden></aside>
     </div>
-    <!-- Outside #app and #menu, so "/" opens it from any screen. -->
     <div id="global-search" hidden>
       <div class="global-search-box">
         <input type="search" id="global-search-input" class="global-search-input" />
-        <div id="global-search-results" class="search-results"></div>
+        <div id="global-search-results"></div>
       </div>
     </div>
     <div id="filter-notice" role="status" hidden></div>

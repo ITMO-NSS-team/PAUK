@@ -1,7 +1,6 @@
 import { requireElement } from "../core/dom";
 import type { AppState, Store } from "../core/state";
 
-/** Each handle stays at the map edge when its desktop panel is closed. */
 export function mountPanelToggles(store: Store<AppState>): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>(".pane-toggle")) {
     const id = button.getAttribute("aria-controls");

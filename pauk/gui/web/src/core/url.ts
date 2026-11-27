@@ -28,7 +28,6 @@ function tabEdges(data: GraphData, tab: TabId): Edge[] {
   }
 }
 
-/** Edge weight is not written: parsing takes it from `data`. */
 export function serializeUrlState(state: { screen: Screen; tab: TabId; selection: Selection }): string {
   if (state.screen === "menu") return new URLSearchParams({ tab: MENU_SLUG }).toString();
 
@@ -53,10 +52,6 @@ export function serializeUrlState(state: { screen: Screen; tab: TabId; selection
   return params.toString();
 }
 
-/**
- * Unknown or missing `tab` opens the menu. A selection missing from `data`
- * (stale link) becomes `null`. Edge endpoints match in either order.
- */
 export function parseUrlState(search: string, data: GraphData): { screen: Screen; tab: TabId; selection: Selection } {
   const params = new URLSearchParams(search);
   const rawTab = params.get("tab");
@@ -70,7 +65,6 @@ export function parseUrlState(search: string, data: GraphData): { screen: Screen
   if (kind === "node") {
     const key = params.get("key");
     const node = key !== null ? indexByKey(data).get(key) : undefined;
-    // The node must belong to the tab being drawn.
     if (key !== null && node && node.kind === TAB_KIND[tab]) {
       return { screen: "app", tab, selection: { kind: "node", key } };
     }

@@ -13,24 +13,17 @@ interface NodeLike {
 
 interface NodeListTabConfig<T extends NodeLike> {
   items(data: GraphData): T[];
-  /** Defaults to every item. */
   visible?(item: T, state: AppState, data: GraphData): boolean;
   compare(a: T, b: T): number;
   label(item: T, state: AppState, pubDetails: Map<string, PubDetail>): string;
-  /** Right-hand text: pub count, stars, year. */
   meta(item: T, state: AppState): string | undefined;
 }
 
-/**
- * Shared list tab for authors, repos and pubs. A row click only sets
- * `store.selection`; map/build.ts flies the camera to it.
- */
 export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<T>): TabModule {
   return {
     mount(container, store, _renderer, data, pubDetails) {
       const sorted = [...config.items(data)].sort(config.compare);
 
-      // #tab-content is shared by all tabs and not cleared between switches.
       container.replaceChildren();
 
       const sectionLabel = document.createElement("div");
@@ -51,7 +44,6 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
       container.append(paginationEl);
 
       let query = "";
-      // Reset on every new query, or the page could point past the end.
       let page = 0;
 
       function renderPagination(pageCount: number, lang: AppState["lang"]): void {

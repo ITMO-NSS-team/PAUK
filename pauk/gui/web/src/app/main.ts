@@ -29,7 +29,6 @@ import { mountRegions } from "../map/regions";
 
 type LabelNode = PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">;
 
-/** Draw each frame in priority order, using viewport pixels at the current zoom. */
 function drawNodeLabels(
   context: CanvasRenderingContext2D,
   nodes: LabelNode[],
@@ -80,7 +79,6 @@ const store = new Store<AppState>({
   },
 });
 
-// Before the data loads, so the menu and boot screen already use the theme.
 themeById(store.get().theme).apply(document.documentElement);
 let appliedTheme = store.get().theme;
 store.subscribe((state) => {
@@ -89,12 +87,10 @@ store.subscribe((state) => {
   themeById(state.theme).apply(document.documentElement);
 });
 
-// Mounted before the first fetch, so the boot screen shows from the first frame.
 const start = mountStart(store);
 mountThemePicker(store);
 start.setBootStage("loading");
 
-// graph-data.json first; detail files load in the background after the first render.
 loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
   .then((data) => {
     start.setBootStage("rendering");
@@ -119,8 +115,6 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
   });
 
 function renderApp(data: GraphData): void {
-  // Empty maps are shared with all features and filled in place when the
-  // detail files arrive, followed by store.notify().
   const pubDetailsByKey = new Map<string, PubDetail>();
   const authorDetailsByKey = new Map<string, AuthorDetail>();
   const repoDetailsByKey = new Map<string, RepoDetail>();
@@ -131,9 +125,6 @@ function renderApp(data: GraphData): void {
     pub: new DetailLoader(DATA_CONFIG.pubDetailsUrl, pubDetailsByKey, () => store.notify()),
     repo: new DetailLoader(DATA_CONFIG.repoDetailsUrl, repoDetailsByKey, () => store.notify()),
   };
-
-  // A page load always opens the menu and ignores the URL; parseUrlState
-  // is used only for back/forward in urlSync.
 
   const container = requireElement("map");
   container.style.background = themeById(store.get().theme).map.background;
@@ -149,14 +140,14 @@ function renderApp(data: GraphData): void {
     enableEdgeEvents: true,
     enableCameraRotation: false,
     defaultDrawNodeHover: (_context, nodeData) => {
-      // In region mode the hovered node is not labelled; the selected one is.
       const ratio = renderer.getCamera().getState().ratio;
       if (nodeData.highlighted || !isRegionMode(store.get(), ratio)) {
         priority.push(nodeData);
       }
     },
     defaultDrawNodeLabel: (_context, node) => candidates.push(node),
-    labelRenderedSizeThreshold: MAP_CONFIG.node.labelVisibleAtSize,
+    // The camera threshold and collision check decide which candidate labels fit.
+    labelRenderedSizeThreshold: 0,
     labelDensity: MAP_CONFIG.node.labelDensity,
     zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
     maxCameraRatio: MAP_CONFIG.camera.maxRatio,
@@ -178,8 +169,6 @@ function renderApp(data: GraphData): void {
   mountHiddenAuthorReveal(store, data);
   const proximitySize = mountNodeProximity(renderer, store);
   mountReactiveGraph(renderer, store, data, pubDetailsByKey, proximitySize);
-  // Map colors are read from the theme on every render, so a theme change
-  // needs only the container background and a refresh.
   let mapTheme = initial.theme;
   store.subscribe((state) => {
     if (state.theme === mapTheme) return;
@@ -188,7 +177,6 @@ function renderApp(data: GraphData): void {
     renderer.refresh();
   });
 
-  // Features talk only through the Store and live for the whole page.
   const regions = mountRegions(renderer, store, data);
   mountSelection(renderer, store, regions.deptAtViewport);
   mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey, resources);
@@ -216,8 +204,6 @@ function renderApp(data: GraphData): void {
     pubs: data.pubs.length,
   });
 
-  // Each detail file merges as soon as it arrives. The panel shows a loading
-  // indicator until then.
   for (const resource of Object.values(resources)) void resource.load();
 
   start.finishBoot();

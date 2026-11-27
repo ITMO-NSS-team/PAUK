@@ -21,18 +21,13 @@ export interface RegionPoint {
   dept: number;
 }
 
-/** Rings in layout coordinates. */
 export interface Region {
   dept: number;
-  /** Even-odd rule: a nested ring is a hole. */
   rings: [number, number][][];
-  /** Center of the largest island. */
   label: Coordinates;
-  /** Node count of the largest island; label priority on overlap. */
   weight: number;
 }
 
-/** @returns One region per department with at least one island, sorted by `dept`. */
 export function buildRegions(points: RegionPoint[], minNodes: number): Region[] {
   const byDept = new Map<number, RegionPoint[]>();
   for (const point of points) {
@@ -82,7 +77,6 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
     }
   }
 
-  // 1-2. Density per department and the owner of each cell.
   const size = width * height;
   const best = new Float32Array(size);
   const owner = new Int32Array(size).fill(-1);
@@ -107,7 +101,6 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
     }
   });
 
-  // 3. Islands: 4-connected cells of one owner.
   const component = new Int32Array(size).fill(-1);
   let componentCount = 0;
   for (let start = 0; start < size; start++) {
@@ -142,7 +135,6 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
       sumY[comp] = (sumY[comp] ?? 0) + point.y;
     }
   });
-  // Largest island per department, for the label.
   const biggest = depts.map(([, list], deptIndex) => {
     let best = -1;
     for (const point of list) {
@@ -217,7 +209,6 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
   return regions.sort((a, b) => a.dept - b.dept);
 }
 
-/** Grid contours are mostly collinear points. */
 function dropCollinear(ring: [number, number][]): [number, number][] {
   return ring.filter((point, i) => {
     const prev = ring[(i - 1 + ring.length) % ring.length] ?? point;
@@ -264,7 +255,6 @@ export function regionDeptAt(regions: Region[], point: Coordinates): number | nu
   return null;
 }
 
-/** Word wrap; a word wider than `maxWidth` stays whole, the last line ends with an ellipsis. */
 export function wrapLabel(
   text: string,
   measure: (line: string) => number,
@@ -293,8 +283,6 @@ export function wrapLabel(
  * In region mode: fill, stroke and labels, hover highlight, click selects.
  * Closer in: stroke only. A selected region keeps its fill and label at any
  * zoom; with a node or edge selected there are no region labels.
- *
- * @returns `deptAtViewport` for clicks (features/selection.ts) and an unmount function.
  */
 export function mountRegions(
   renderer: Sigma,

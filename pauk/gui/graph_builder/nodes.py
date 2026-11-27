@@ -57,19 +57,6 @@ def _mask_surname(surname: str) -> str:
     return f"{letters[: 1 if len(letters) <= 3 else 2]}…"
 
 
-def _fmt_part(value: str, *, force_initial: bool) -> str:
-    """Formats one part of a name (given name or patronymic) for the label.
-
-    Collapses to an initial when the part sits next to another part. Otherwise
-    left as the author gave it, except that a bare initial (some LLM/catalog
-    data) always gets a period.
-    """
-    stripped = value.rstrip(".")
-    if force_initial or len(stripped) == 1:
-        return _initial(stripped)
-    return value
-
-
 def author_label(
     surname: str | None, first: str | None, second: str | None, *, public: bool = False
 ) -> str:
@@ -86,16 +73,11 @@ def author_label(
     surname, first, second = surname or "", first or "", second or ""
     if not surname:
         return ""
+    initials = [_initial(part) for part in (first.strip(" ."), second.strip(" .")) if part]
     if public:
-        initials = " ".join(_initial(part.strip(".")) for part in (first, second) if part.strip("."))
-        return f"{_mask_surname(surname)} {initials}" if initials else _mask_surname(surname)
-    if first and second:
-        return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
-    if second:  # only the patronymic survived - treat it as the initial
-        return f"{surname} {_fmt_part(second, force_initial=True)}"
-    if first:
-        return f"{surname} {_fmt_part(first, force_initial=False)}"
-    return surname
+        surname = _mask_surname(surname)
+    formatted = (" " if public else "").join(initials)
+    return f"{surname} {formatted}" if formatted else surname
 
 
 def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[str]]:

@@ -35,7 +35,6 @@ export function mountSelection(
     store.set({ selection: { kind: "node", key: node } });
   }
 
-  /** `edge` is a graphology key, so the endpoints come from the graph. */
   function onClickEdge({ edge, event }: SigmaEdgeEventPayload): void {
     if (regionMode()) return selectRegionAt(event);
     const [s, t] = graph.extremities(edge);
@@ -66,7 +65,6 @@ export function mountSelection(
     selectRegionAt(event);
   }
 
-  /** In region mode the regions own the cursor. */
   function onEnterInteractive(): void {
     if (!regionMode()) renderer.getContainer().style.cursor = "pointer";
   }

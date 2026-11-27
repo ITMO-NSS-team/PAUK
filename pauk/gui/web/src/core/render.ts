@@ -1,9 +1,3 @@
-/**
- * Replaces all children of `container`.
- *
- * TODO: a full rebuild resets the scroll position on every render; switch to
- * a keyed diff if that becomes noticeable.
- */
 export function renderList<T>(container: HTMLElement, items: T[], renderItem: (item: T) => HTMLElement): void {
   container.replaceChildren(...items.map(renderItem));
 }
@@ -12,7 +6,6 @@ export interface ListItemOptions {
   label: string;
   meta?: string;
   selected?: boolean;
-  /** Result kind for CSS and tests (search results only). */
   dataKind?: string;
   onClick: () => void;
 }

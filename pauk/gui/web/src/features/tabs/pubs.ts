@@ -4,7 +4,6 @@ import { t } from "../../core/i18n";
 import { isNodeShown } from "../../map/build";
 import { createNodeListTab } from "./nodeListTab";
 
-/** Newest first, publications without a year last. */
 export const pubsTab = createNodeListTab<PubNode>({
   items: (data) => data.pubs,
   visible: (pub, state, data) => isNodeShown(data, pub, state.filters),

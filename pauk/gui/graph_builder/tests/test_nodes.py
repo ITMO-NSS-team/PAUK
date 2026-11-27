@@ -40,10 +40,9 @@ class AuthorLabelTest(unittest.TestCase):
     def test_patronymic_only_is_used_as_the_initial(self):
         self.assertEqual(author_label("Иванов", None, "Иванович"), "Иванов И.")
 
-    def test_private_build_writes_out_a_lone_given_name(self):
-        # With no patronymic, the given name is written out in full in the
-        # private build; only public=True reduces it to an initial.
-        self.assertEqual(author_label("Иванов", "Пётр", None), "Иванов Пётр")
+    def test_private_build_initials_a_lone_given_name(self):
+        self.assertEqual(author_label("Иванов", "Пётр", None), "Иванов П.")
+        self.assertEqual(author_label("Morozov", "Alexey", None), "Morozov A.")
 
     def test_a_bare_initial_given_name_gets_its_period_even_in_private(self):
         # The data says "only the initial is known", so the period is correct either way.

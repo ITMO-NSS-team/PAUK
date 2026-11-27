@@ -4,7 +4,6 @@ import { requireElement } from "../core/dom";
 import { kindLabel, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
-/** Errors stay visible even when no card is selected. */
 export function mountDetailErrors(
   store: Store<AppState>,
   resources: Record<NodeKind, DetailResource>,

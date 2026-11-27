@@ -11,12 +11,10 @@ import {
   deptNodeKey,
   isolatedAuthors,
   mountReactiveGraph,
-  mountZoomDebug,
   parseDeptNodeKey,
   populateGraph,
 } from "../src/map/build";
 
-// Thresholds that filter nothing; edgeZoomThreshold 10 is above any test camera ratio.
 const NO_FILTER = {
   minCoauth: 1,
   minSharedAuthors: 1,
@@ -30,7 +28,6 @@ const NO_FILTER = {
   regionZoomThreshold: 0.25,
   regionMinNodes: 10,
 };
-// Empty map: nodeLabel() falls back to the pub key.
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 
 const NODE_BASE = {
@@ -63,12 +60,10 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Without department anchor nodes. */
 function realNodeKeys(graph: Graph): string[] {
   return graph.nodes().filter((key) => parseDeptNodeKey(key) === null);
 }
 
-/** Without department edges. */
 function realEdgeKeys(graph: Graph): string[] {
   return graph
     .edges()
@@ -164,10 +159,8 @@ type Reducer = (...args: any[]) => unknown;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventHandler = (...args: any[]) => void;
 
-/** Offset proving flyToSelection reads getNodeDisplayData, not graph attributes. */
 const FRAMED_COORD_OFFSET = 1000;
 
-/** Keeps a real graph and stores settings and event callbacks so tests can call them; real Sigma needs WebGL. */
 function fakeRenderer(graph: Graph): {
   renderer: Sigma;
   refresh: ReturnType<typeof vi.fn>;
@@ -196,7 +189,6 @@ function fakeRenderer(graph: Graph): {
     on: (event: string, cb: EventHandler) => handlers.set(event, cb),
     off: vi.fn(),
     refresh,
-    // Differs from the raw attributes, like Sigma's normalized display data.
     getNodeDisplayData: (key: string) => {
       if (!graph.hasNode(key)) return undefined;
       const attrs = graph.getNodeAttributes(key);
@@ -225,7 +217,6 @@ describe("populateGraph on fixture data", () => {
   it("returns only the tab's nodes, not all entities at once", async () => {
     const data = await loadSampleGraphData();
 
-    // Three separate graphs: kinds never mix in one tab.
     const authorsGraph = new Graph();
     populateGraph(authorsGraph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     expect(realNodeKeys(authorsGraph)).toHaveLength(data.authors.length);
@@ -304,7 +295,7 @@ describe("populateGraph on fixture data", () => {
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, { ...NO_FILTER, minCoauth: 2 }, NO_PUB_DETAILS);
     expect(realEdgeKeys(graph)).toHaveLength(strong);
-    expect(strong).toBeLessThan(data.coauth_edges.length); // the fixture has a spread of weights
+    expect(strong).toBeLessThan(data.coauth_edges.length);
   });
 
   it("filters.minSharedAuthors hides weak publication links on tab 3", async () => {
@@ -324,9 +315,8 @@ describe("populateGraph on fixture data", () => {
     const graph = new Graph();
     populateGraph(graph, data, "ru", 3, filters, NO_PUB_DETAILS);
     expect(realNodeKeys(graph).sort()).toEqual(expectedPubs.map((p) => p.key).sort());
-    expect(expectedPubs.some((p) => p.year === null)).toBe(true); // the fixture has a pub without a year
+    expect(expectedPubs.some((p) => p.year === null)).toBe(true);
 
-    // Edges to a pub hidden by the year filter disappear too.
     for (const edgeKey of realEdgeKeys(graph)) {
       const [s, t] = graph.extremities(edgeKey);
       expect(realNodeKeys(graph)).toContain(s);
@@ -350,7 +340,7 @@ describe("populateGraph on fixture data", () => {
     );
 
     expect(realNodeKeys(shown)).toEqual(["A1", "A2"]);
-    expect(realNodeKeys(hidden)).toEqual(["A1"]); // A2 is in "no department"
+    expect(realNodeKeys(hidden)).toEqual(["A1"]);
   });
 
   it("external authors (is_itmo: false) are hidden while filters.showExternalAuthors is off", () => {
@@ -395,9 +385,7 @@ describe("populateGraph on fixture data", () => {
       repo_author_edges: [{ s: "R1", t: "A4", role: "owner" }],
     } as unknown as GraphData;
 
-    // External hidden: A1's only co-author is external E1, so A1 is isolated; E1 is not on the map.
     expect([...isolatedAuthors(data, false)]).toEqual(["A1"]);
-    // External shown: A1 and E1 are co-authors.
     expect([...isolatedAuthors(data, true)]).toEqual([]);
   });
 
@@ -471,7 +459,7 @@ describe("populateGraph on fixture data", () => {
     populateGraph(hidden, data, "ru", 3, { ...NO_FILTER, showNoDeptPubs: false }, NO_PUB_DETAILS);
 
     expect(realNodeKeys(shown)).toEqual(["P1", "P2"]);
-    expect(realNodeKeys(hidden)).toEqual(["P1"]); // P2 is in "no department"
+    expect(realNodeKeys(hidden)).toEqual(["P1"]);
   });
 });
 
@@ -589,7 +577,6 @@ describe("applyGraphStyling (via mountReactiveGraph) grant selection", () => {
 
     mountReactiveGraph(renderer, store, data, pubDetails);
 
-    // A pub of the grant is bright and labelled at any zoom.
     expect(getReducer("nodeReducer")("P1", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       forceLabel: true,
@@ -619,7 +606,6 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
       highlighted: true,
       size: MAP_CONFIG.node.radiusSelected,
     });
-    // Neighbour: same color and size, but a forced label.
     expect(nodeReducer("A2", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       label: NODE_BASE.label,
@@ -629,7 +615,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // not a neighbour: dimmed
+    });
   });
 
   it("selection on a key that is not in the CURRENT graph (e.g. after a tab change) does not crash the reducer", async () => {
@@ -638,7 +624,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A2", { x: 1, y: 1 });
-    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } })); // "A1" is not in the graph
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
     const { renderer, getReducer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
@@ -665,34 +651,33 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     graph.addNode("A2", { x: 1, y: 1 });
     graph.addNode("A3", { x: 2, y: 2 });
     graph.addEdge("A2", "A3");
-    const store = new Store<AppState>(initialState()); // nothing selected
+    const store = new Store<AppState>(initialState());
     const { renderer, getReducer, fire } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const nodeReducer = getReducer("nodeReducer");
 
     fire("enterNode", { node: "A2" });
-    // Hover neighbour: not dimmed, not enlarged, no forced label.
     const a3 = nodeReducer("A3", NODE_BASE);
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
     expect(a3).not.toHaveProperty("forceLabel", true);
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // not a neighbour: dimmed
+    });
 
     fire("leaveNode", {});
-    expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE); // hover gone: no focus
+    expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE);
   });
 
   it("the selection stays the focus when hovering ANOTHER node, AND hover highlights ITS neighbours at the same time, both focus sources work independently", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
-    graph.addNode("A2", { x: 1, y: 1 }); // neighbour of A1 (selected)
-    graph.addNode("A3", { x: 2, y: 2 }); // neighbour of A4 (hovered), not of A1
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A3", { x: 2, y: 2 });
     graph.addNode("A4", { x: 3, y: 3 });
-    graph.addNode("A5", { x: 4, y: 4 }); // neither: stays dimmed
+    graph.addNode("A5", { x: 4, y: 4 });
     graph.addEdge("A1", "A2");
     graph.addEdge("A3", "A4");
     const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
@@ -705,7 +690,6 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const [edgeA3A4] = graph.edges("A3", "A4");
     if (!edgeA1A2 || !edgeA3A4) throw new Error("the graph must contain both edges");
 
-    // Hover A4 while A1 is selected: both focus sources stay active.
     fire("enterNode", { node: "A4" });
 
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
@@ -714,20 +698,20 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     });
     expect(nodeReducer("A2", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
-      size: NODE_BASE.size, // neighbours never grow
-      forceLabel: true, // selection neighbour: forced label
+      size: NODE_BASE.size,
+      forceLabel: true,
     });
-    expect(edgeReducer(edgeA1A2, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // selection edge still visible
+    expect(edgeReducer(edgeA1A2, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
     expect(nodeReducer("A4", NODE_BASE)).toMatchObject({ label: NODE_BASE.label });
-    const a3 = nodeReducer("A3", NODE_BASE); // hover neighbour (A4) is lit too
+    const a3 = nodeReducer("A3", NODE_BASE);
     expect(a3).toMatchObject({ label: "" });
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
-    expect(a3).not.toHaveProperty("forceLabel", true); // no forced label for a hover neighbour
-    expect(edgeReducer(edgeA3A4, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // hover edge visible too
+    expect(a3).not.toHaveProperty("forceLabel", true);
+    expect(edgeReducer(edgeA3A4, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
     expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // neither: dimmed
+    });
   });
 
   it("selecting a department keeps its nodes bright, dims the rest, shows no edges, a region has no node of its own", async () => {
@@ -759,9 +743,9 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     });
 
     const edgeKey = (s: string, t: string) => graph.edge(s, t) ?? "";
-    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: true }); // both ends in the department
+    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: true });
     expect(edgeReducer(edgeKey("A2", "A3"), EDGE_BASE)).toMatchObject({ hidden: true });
-    expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // both ends outside
+    expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true });
   });
 
   it("selecting an EDGE highlights both its endpoints with labels, like neighbours of a node selection, but does not enlarge them or mark them highlighted", async () => {
@@ -769,7 +753,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
     graph.addNode("A2", { x: 1, y: 1 });
-    graph.addNode("A3", { x: 2, y: 2 }); // not on the selected edge: stays dimmed
+    graph.addNode("A3", { x: 2, y: 2 });
     graph.addEdge("A1", "A2", { weight: 2 });
     const store = new Store<AppState>(
       initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
@@ -782,7 +766,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     for (const key of ["A1", "A2"]) {
       const res = nodeReducer(key, NODE_BASE);
       expect(res).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size, forceLabel: true });
-      expect(res).not.toHaveProperty("highlighted", true); // edge endpoints, not the selected node
+      expect(res).not.toHaveProperty("highlighted", true);
     }
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
@@ -795,12 +779,12 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
     graph.addNode("A2", { x: 1, y: 1 });
-    graph.addNode("A5", { x: 4, y: 4 }); // neighbour of A1 via another edge
+    graph.addNode("A5", { x: 4, y: 4 });
     graph.addNode("A6", { x: 5, y: 5 });
     graph.addNode("A7", { x: 6, y: 6 });
-    graph.addEdge("A1", "A2", { weight: 2 }); // selected edge
-    graph.addEdge("A1", "A5", { weight: 1 }); // another edge of the same endpoint: stays visible
-    graph.addEdge("A6", "A7", { weight: 1 }); // unrelated to A1 and A2: hidden
+    graph.addEdge("A1", "A2", { weight: 2 });
+    graph.addEdge("A1", "A5", { weight: 1 });
+    graph.addEdge("A6", "A7", { weight: 1 });
     const store = new Store<AppState>(
       initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
     );
@@ -813,14 +797,11 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const [edgeA6A7] = graph.edges("A6", "A7");
     if (!edgeA1A5 || !edgeA6A7) throw new Error("the graph must contain both helper edges");
 
-    // Other edges of the selected edge's endpoints stay visible.
     expect(edgeReducer(edgeA1A5, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
-    // And their far ends are not dimmed.
     expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       size: NODE_BASE.size,
     });
-    // Unrelated edges are still hidden.
     expect(edgeReducer(edgeA6A7, EDGE_BASE)).toMatchObject({ hidden: true });
   });
 
@@ -843,7 +824,7 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     if (!touchingFocus || !notTouchingFocus) throw new Error("the graph must contain both edges");
 
     expect(edgeReducer(touchingFocus, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
-    expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ hidden: true }); // hidden, not dimmed
+    expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ hidden: true });
   });
 
   it("edgeReducer highlights the selected edge regardless of the s/t order", async () => {
@@ -878,7 +859,6 @@ describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbo
     const store = new Store<AppState>(initialState());
     const { renderer, getReducer } = fakeRenderer(graph);
 
-    // Real edges would be visible at this zoom; department edges still are not.
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const [edgeKey] = graph.edges();
     if (!edgeKey) throw new Error("the graph must contain an edge");
@@ -917,36 +897,6 @@ describe("applyGraphStyling edge visibility by camera.ratio", () => {
   });
 });
 
-describe("mountZoomDebug", () => {
-  it("draws the indicator INSIDE the map container (not document.body), shows camera.ratio, updates, unmount removes the element", () => {
-    let ratioHandler: ((state: { ratio: number }) => void) | undefined;
-    let ratio = 1.234;
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const renderer = {
-      getContainer: () => container,
-      getCamera: () => ({
-        getState: () => ({ ratio, x: 0, y: 0, angle: 0 }),
-        on: (event: string, cb: (state: { ratio: number }) => void) => {
-          if (event === "updated") ratioHandler = cb;
-        },
-        off: vi.fn(),
-      }),
-    } as unknown as Sigma;
-
-    const unmount = mountZoomDebug(renderer);
-    const el = container.lastElementChild as HTMLElement;
-    expect(el.textContent).toContain("1.234");
-
-    ratio = 5.678;
-    ratioHandler?.({ ratio });
-    expect(el.textContent).toContain("5.678");
-
-    unmount();
-    expect(container.contains(el)).toBe(false);
-  });
-});
-
 describe("mountReactiveGraph", () => {
   it("does not rebuild the graph on mount (it is already populated outside), rebuilds on tab/lang/filters change, but not on selection change", async () => {
     const data = await loadSampleGraphData();
@@ -960,20 +910,19 @@ describe("mountReactiveGraph", () => {
     expect(realNodeKeys(graph)).toHaveLength(authorsRealCount);
 
     store.set({ selection: { kind: "node", key: "A1" } });
-    expect(refresh).toHaveBeenCalledTimes(1); // selection only refreshes, no rebuild
-    expect(realNodeKeys(graph)).toHaveLength(authorsRealCount); // graph not rebuilt
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(realNodeKeys(graph)).toHaveLength(authorsRealCount);
 
     store.set({ tab: 2 });
-    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // rebuilt for the new tab
-    // A1 does not exist in the repos graph, so the selection is cleared; that causes the second refresh().
+    expect(realNodeKeys(graph)).toHaveLength(data.repos.length);
     expect(store.get().selection).toBeNull();
     expect(refresh).toHaveBeenCalledTimes(2);
 
     store.set({ lang: "en" });
-    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // same tab, rebuilt without crashing
+    expect(realNodeKeys(graph)).toHaveLength(data.repos.length);
 
     store.set({ filters: { ...store.get().filters, minCoauth: 5 } });
-    expect(refresh).toHaveBeenCalledTimes(2); // rebuilds alone never call refresh()
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
   it("changing a filter that hides the selected publication (filters.yearMax) also clears the stale selection", async () => {
@@ -988,9 +937,9 @@ describe("mountReactiveGraph", () => {
     const { renderer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ filters: { ...store.get().filters, yearMax: 2022 } }); // hides pub2024
+    store.set({ filters: { ...store.get().filters, yearMax: 2022 } });
 
-    expect(graph.hasNode(pub2024.key)).toBe(false); // the pub is really gone
+    expect(graph.hasNode(pub2024.key)).toBe(false);
     expect(store.get().selection).toBeNull();
   });
 
@@ -1004,7 +953,6 @@ describe("mountReactiveGraph", () => {
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     store.set({ selection: { kind: "node", key: "A1" } });
 
-    // Display coordinates are offset from raw ones; raw coordinates sent the camera off screen.
     expect(cameraAnimate).toHaveBeenCalledWith(
       {
         x: 12 + FRAMED_COORD_OFFSET,
@@ -1019,14 +967,14 @@ describe("mountReactiveGraph", () => {
     // Regression: a tab change returned early, so the camera ignored a selection in the same patch.
     const data = await loadSampleGraphData();
     const graph = new Graph();
-    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS); // starts on tab 1
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const store = new Store<AppState>(initialState({ tab: 1 }));
     const { renderer, cameraAnimate } = fakeRenderer(graph);
     const repo = data.repos[0];
     if (!repo) throw new Error("the fixture must contain at least one repository");
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ tab: 2, selection: { kind: "node", key: repo.key } }); // one patch, like global search
+    store.set({ tab: 2, selection: { kind: "node", key: repo.key } });
 
     expect(cameraAnimate).toHaveBeenCalledWith(
       {
@@ -1073,7 +1021,6 @@ describe("mountReactiveGraph", () => {
   });
 
   it("an edge selection survives a graph rebuild (lang change) regardless of the s/t order, graph.hasEdge() is direction-sensitive, the selected edge is not", async () => {
-    // mergeEdge on a mixed graph makes a directed edge, so selectionExistsIn() must check both orders.
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -1085,7 +1032,7 @@ describe("mountReactiveGraph", () => {
     const { renderer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ lang: "en" }); // harmless rebuild that still runs selectionExistsIn()
+    store.set({ lang: "en" });
 
     expect(store.get().selection).not.toBeNull();
   });

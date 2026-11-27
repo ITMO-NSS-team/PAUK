@@ -27,7 +27,6 @@ function initialState(): AppState {
   };
 }
 
-/** Keeps a real graph and stores `on()` callbacks so tests can fire them; real Sigma needs WebGL. */
 function fakeRenderer(
   graph: Graph,
   ratio = 1,
@@ -103,7 +102,7 @@ describe("mountSelection", () => {
     expect(deptAtViewport).toHaveBeenCalledWith({ x: 10, y: 20 });
     expect(store.get().selection).toEqual({ kind: "dept", id: 7 });
 
-    fire("clickStage", { event: { x: 90, y: 20 } }); // outside regions: selection cleared
+    fire("clickStage", { event: { x: 90, y: 20 } });
     expect(store.get().selection).toBeNull();
   });
   it("in region mode (regions on, camera beyond the threshold) clicking a node or edge selects the region under the cursor, not the node", () => {
@@ -116,7 +115,7 @@ describe("mountSelection", () => {
       ...state,
       filters: { ...state.filters, showRegions: { 1: true, 2: false, 3: true } },
     });
-    const { renderer, container, fire } = fakeRenderer(graph, 1); // ratio 1 > regionZoomThreshold 0.25
+    const { renderer, container, fire } = fakeRenderer(graph, 1);
 
     mountSelection(renderer, store, () => 4);
 
@@ -126,7 +125,7 @@ describe("mountSelection", () => {
     fire("clickEdge", { edge: graph.edges()[0], event: { x: 1, y: 1 } });
     expect(store.get().selection).toEqual({ kind: "dept", id: 4 });
 
-    fire("enterNode", { node: "A1" }); // regions own the cursor in region mode
+    fire("enterNode", { node: "A1" });
     expect(container.style.cursor).toBeUndefined();
   });
 

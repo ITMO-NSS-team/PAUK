@@ -5,7 +5,6 @@ import { localize, t, type Lang } from "../../core/i18n";
 
 const DEPT_KEY_PREFIX = "dept:";
 
-/** Departments have only a numeric id, while SearchHit.key is a string. */
 export function deptHitKey(deptId: number): string {
   return `${DEPT_KEY_PREFIX}${deptId}`;
 }
@@ -77,7 +76,6 @@ export function buildSearchIndex(
   return [...authorHits, ...repoHits, ...pubHits, ...deptHits];
 }
 
-/** An empty query returns nothing, not everything. */
 export function searchHits(index: SearchHit[], query: string): SearchHit[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];

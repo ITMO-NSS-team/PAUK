@@ -1,5 +1,3 @@
-// The menu is shown on every page load, even when the URL points to a node.
-
 import { requireElement } from "../core/dom";
 import { t, type LocaleKey } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -19,10 +17,8 @@ const STAGE_PROGRESS: Record<"loading" | "rendering", number> = {
   rendering: 70,
 };
 
-/** @returns Boot callbacks for app/main.ts. */
 export function mountStart(store: Store<AppState>): {
   setBootStage: (stage: BootStage) => void;
-  /** What comes next (menu or app) is already decided by `store.screen`. */
   finishBoot: () => void;
   /**
    * Hides the boot screen at once. Call before `showLoadError()`: the boot
@@ -49,7 +45,6 @@ export function mountStart(store: Store<AppState>): {
 
   function finishBoot(): void {
     bar.style.width = "100%";
-    // Let the bar reach 100% before it disappears.
     setTimeout(() => {
       boot.hidden = true;
     }, 200);

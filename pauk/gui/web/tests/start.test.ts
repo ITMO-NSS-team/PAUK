@@ -93,7 +93,6 @@ describe("mountStart", () => {
     setBootStage("rendering");
     hideBootOnError();
 
-    // Synchronous, unlike finishBoot(): the error banner below must show at once.
     expect(boot.hidden).toBe(true);
     expect(bar.style.width).toBe("70%"); // does not jump to 100% like finishBoot()
   });

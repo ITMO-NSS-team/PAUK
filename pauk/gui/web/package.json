@@ -15,9 +15,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run",
-    "build:public": "vite build --mode public",
-    "dev:public": "vite --mode public"
+    "test": "vitest run"
   },
   "keywords": [],
   "type": "module",

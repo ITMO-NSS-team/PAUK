@@ -119,7 +119,7 @@ describe("mountFilters", () => {
 
       expect(container.hidden).toBe(false);
       expect(container.querySelectorAll("input[type='range']")).toHaveLength(4);
-      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1); // only the regions toggle
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
     });
   });
 
@@ -128,22 +128,20 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      // [0] is the shared edge zoom slider.
       const input = container.querySelector('input[data-filter="minCoauth"]') as HTMLInputElement;
       input.value = "7";
       input.dispatchEvent(new Event("input"));
 
-      // The value label updates at once, without waiting for the debounce.
       expect(input.closest(".filter-row")?.querySelector(".filter-row__value")?.textContent).toBe(
         "7",
       );
-      expect(store.get().filters.minCoauth).toBe(1); // not applied yet
+      expect(store.get().filters.minCoauth).toBe(1);
 
       vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
-      expect(store.get().filters.minCoauth).toBe(1); // still not applied
+      expect(store.get().filters.minCoauth).toBe(1);
 
       vi.advanceTimersByTime(1);
-      expect(store.get().filters.minCoauth).toBe(7); // applied after debounceMs
+      expect(store.get().filters.minCoauth).toBe(7);
     });
   });
 
@@ -174,22 +172,21 @@ describe("mountFilters", () => {
       mountFilters(store);
 
       const input = container.querySelector('input[data-filter="minCoauth"]') as HTMLInputElement;
-      // Each input restarts the timer; only the value the user stopped on is applied.
       for (const value of [2, 3, 4, 5, 6, 7]) {
         input.value = String(value);
         input.dispatchEvent(new Event("input"));
         vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
       }
-      expect(store.get().filters.minCoauth).toBe(1); // no intermediate tick applied
+      expect(store.get().filters.minCoauth).toBe(1);
 
       vi.advanceTimersByTime(1);
-      expect(store.get().filters.minCoauth).toBe(7); // only the last value applied
+      expect(store.get().filters.minCoauth).toBe(7);
     });
   });
 
   it("moving the shared edge zoom slider writes edgeZoomThreshold regardless of the tab", () => {
     withContainer(() => {
-      const store = new Store<AppState>(initialState({ tab: 2 })); // a tab without its own filters
+      const store = new Store<AppState>(initialState({ tab: 2 }));
       mountFilters(store);
 
       const input = container.querySelector("input[type='range']") as HTMLInputElement;
@@ -209,7 +206,6 @@ describe("mountFilters", () => {
       store.set({ tab: 2 });
 
       expect(container.hidden).toBe(false);
-      // Shared by all tabs: edge zoom, label zoom, region zoom, region min nodes.
       expect(container.querySelectorAll("input[type='range']")).toHaveLength(4);
     });
   });
@@ -279,15 +275,19 @@ describe("mountFilters", () => {
     });
   });
 
-  it("region sliders write regionZoomThreshold and regionMinNodes, the edge zoom range does not overlap the region range", () => {
+  it("region sliders write regionZoomThreshold and regionMinNodes, edge and label zoom ranges do not overlap the region range", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       const ranges = [...container.querySelectorAll<HTMLInputElement>("input[type='range']")];
       const edgeZoom = ranges.find((input) => input.dataset.filter === "edgeZoomThreshold");
-      const [regionZoom, minNodes] = ranges.slice(-2); // region rows come last
-      expect(Number(edgeZoom?.max)).toBeLessThanOrEqual(Number(regionZoom?.min));
+      const [regionZoom, minNodes] = ranges.slice(-2);
+      const labelZoom = ranges.find((input) => input.dataset.filter === "labelZoomThreshold");
+      expect([edgeZoom?.min, labelZoom?.min]).toEqual(["0.01", "0.01"]);
+      expect([edgeZoom?.max, labelZoom?.max, regionZoom?.min]).toEqual(["0.25", "0.25", "0.25"]);
+      expect([FILTER_CONFIG.edgeZoom.default, FILTER_CONFIG.labelZoom.default, FILTER_CONFIG.regionZoom.default])
+        .toEqual([0.25, 0.25, 0.25]);
 
       if (!regionZoom || !minNodes) throw new Error("the region sliders must be in the filters");
       regionZoom.value = "0.4";
@@ -303,7 +303,6 @@ describe("mountFilters", () => {
 });
 
 describe("mountHiddenAuthorReveal", () => {
-  // A1, A2: ITMO co-authors of P1; A3: alone on P2, no repos (isolated); E1: external.
   const data = {
     pubs: [],
     departments: [],

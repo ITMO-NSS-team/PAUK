@@ -16,13 +16,6 @@ const GROUP_TITLES = {
   dept: "search.browseDepts",
 } satisfies Record<SearchHit["kind"], LocaleKey>;
 
-/**
- * Search over all kinds at once. It is the only way to find a department,
- * which has no tab and no clickable node. Opens with the button or "/",
- * works from any screen.
- *
- * @returns Unmount function.
- */
 export function mountGlobalSearch(
   store: Store<AppState>,
   data: GraphData,
@@ -35,7 +28,6 @@ export function mountGlobalSearch(
   const input = requireElement("global-search-input") as HTMLInputElement;
   const resultsEl = requireElement("global-search-results");
 
-  // Search covers all data; selecting a hidden result reveals it on the map.
   function buildIndex(): SearchHit[] {
     return buildSearchIndex(data, store.get().lang, pubDetails, repoDetails, authorDetails);
   }
@@ -61,7 +53,6 @@ export function mountGlobalSearch(
     }
   });
 
-  /** @param container - A separate element when a heading must stay above the list. */
   function renderHits(container: HTMLElement, hits: SearchHit[]): void {
     renderList(container, hits, (hit) =>
       renderListItem({
@@ -69,7 +60,6 @@ export function mountGlobalSearch(
         meta: hit.sub ?? undefined,
         dataKind: hit.kind,
         onClick: () => {
-          // Search is also open on the menu, so always switch to the app.
           if (hit.kind === "dept") {
             store.set({ screen: "app", selection: { kind: "dept", id: parseDeptHitKey(hit.key) } });
           } else {
@@ -190,10 +180,6 @@ export function mountGlobalSearch(
     if (event.target === overlay) close();
   });
 
-  /**
-   * Enter picks the first result only when focus is in the input; on a result
-   * button it clicks that button as usual.
-   */
   function onKeydown(event: KeyboardEvent): void {
     if (!overlay.hidden && event.key === "Escape") {
       close();

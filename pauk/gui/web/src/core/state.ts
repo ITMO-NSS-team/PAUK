@@ -1,6 +1,5 @@
 import type { NodeKind } from "../contracts/graph";
 
-/** 1 authors, 2 repos, 3 pubs. Internal only, URLs use slugs. */
 export type TabId = 1 | 2 | 3;
 
 export const TAB_KIND: Record<TabId, NodeKind> = {
@@ -28,22 +27,10 @@ export type Screen = "menu" | "app";
 export interface AppState {
   expandSelection?: boolean;
   screen: Screen;
-  /** Meaningful only when `screen === "app"`. */
   tab: TabId;
   lang: "ru" | "en";
   theme: string;
   selection: Selection;
-  /**
-   * Defaults live in app/main.ts.
-   * - `minSharedAuthors`: minimum shared authors on a pub-pub edge, not the
-   *   author count of one pub.
-   * - `showExternalAuthors`, `showIsolatedAuthors`: selecting such an author
-   *   turns the filter on, see features/filters.ts::mountHiddenAuthorReveal.
-   * - `edgeZoomThreshold`: edges hide above this camera ratio.
-   * - `regionZoomThreshold`: regions show above this ratio. Its range does not
-   *   overlap `edgeZoomThreshold`, so one of the two is always visible.
-   * - `regionMinNodes`: smaller region islands are not drawn.
-   */
   filters: {
     minCoauth: number;
     minSharedAuthors: number;
@@ -60,15 +47,10 @@ export interface AppState {
   };
 }
 
-/**
- * Regions are on for the tab and the camera is past the zoom threshold. Then
- * hover and click act on regions, not on nodes and edges.
- */
 export function isRegionMode(state: Readonly<AppState>, cameraRatio: number): boolean {
   return state.filters.showRegions[state.tab] && cameraRatio > state.filters.regionZoomThreshold;
 }
 
-/** Minimal observable store, no actions or reducers. */
 export class Store<S extends object> {
   private state: S;
   private listeners = new Set<(state: Readonly<S>) => void>();
@@ -81,16 +63,11 @@ export class Store<S extends object> {
     return this.state;
   }
 
-  /** Shallow merge, then notifies listeners synchronously. */
   set(patch: Partial<S>): void {
     this.state = { ...this.state, ...patch };
     this.notify();
   }
 
-  /**
-   * For data kept outside the state, e.g. detail maps filled in place after a
-   * lazy load.
-   */
   notify(): void {
     // Read this.state per listener: a listener may call set() and start a
     // nested round, and the rest must not overwrite its result with a stale

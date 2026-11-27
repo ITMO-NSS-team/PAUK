@@ -13,19 +13,12 @@ const TAB_MODULES: Record<TabId, TabModule> = {
   3: pubsTab,
 };
 
-/** Buttons in index.html carry only `data-tab`, the text comes from i18n. */
 export const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
   1: "tab.authors",
   2: "tab.repos",
   3: "tab.pubs",
 };
 
-/**
- * Mounts the list of the active tab; the map follows `store.tab` on its own
- * in map/build.ts.
- *
- * @returns Unmount function.
- */
 export function mountTabs(
   tabButtonsEl: HTMLElement,
   tabContentEl: HTMLElement,
@@ -41,10 +34,6 @@ export function mountTabs(
   let activeTab: TabId | null = null;
   let activeLang: Lang | null = null;
 
-  /**
-   * Stale selection is cleared by map/build.ts::mountReactiveGraph, which
-   * also covers filter changes.
-   */
   function activateTab(tabId: TabId): void {
     if (tabId === activeTab) return;
 

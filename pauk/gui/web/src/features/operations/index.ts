@@ -15,7 +15,6 @@ import {
 
 const unsupported = "(max-width: 1023px), (hover: none) and (pointer: coarse)";
 
-/** Mounts the operations client on desktop devices. */
 export function mountOperations(): void {
   const root = document.getElementById("ops-app");
   const dialog = document.getElementById("ops-dialog");

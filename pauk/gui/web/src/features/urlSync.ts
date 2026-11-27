@@ -9,8 +9,6 @@ import type { AppState, Store, TabId } from "../core/state";
  * Two-way sync of `{screen, tab, selection}` with the address bar. Only a
  * screen or tab change adds a history entry; selection changes replace the
  * current one, so "back" does not step through every click.
- *
- * @returns Unmount function.
  */
 export function mountUrlSync(
   store: Store<AppState>,

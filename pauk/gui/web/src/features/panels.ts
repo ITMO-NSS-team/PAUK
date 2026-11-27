@@ -35,10 +35,6 @@ import { TAB_FOR_KIND, type AppState, type Selection, type Store } from "../core
 /** The detail file has not arrived yet; differs from an empty value. */
 const LOADING: unique symbol = Symbol("panel-row-loading");
 
-/**
- * Plain text, external links (open in a new tab), refs to other graph
- * entities (a click selects them), or {@link LOADING}.
- */
 type PanelRowValue =
   | string
   | PanelLink[]
@@ -50,38 +46,30 @@ interface PanelLink {
   kind: "link";
   href: string;
   text: string;
-  /** Non-clickable suffix, e.g. affiliation years. */
   meta?: string;
-  /** File name: the link downloads instead of opening (grant CSV). */
   download?: string;
 }
-/** Numbered full-width list with the first {@link PANEL_CONFIG.listLimit} items and a "N more" toggle. */
 interface PanelList {
   nodeKind?: NodeKind;
   kind: "list";
   items: (string | PanelText | PanelLink | PanelEntityRef)[];
 }
-/** First {@link PANEL_CONFIG.abstractWords} words, the rest on click. */
 interface PanelLongText {
   kind: "longText";
   text: string;
 }
-/** Non-clickable {@link PanelList} item styled like {@link PanelLink}. */
 interface PanelText {
   kind: "text";
   text: string;
   meta?: string;
 }
-/** Link to another node, department or grant; a click selects it. */
 interface PanelEntityRef {
   kind: "ref";
   selection: Extract<Selection, { kind: "node" } | { kind: "dept" } | { kind: "grant" }>;
   label: string;
-  /** Non-clickable suffix, e.g. a repo role. */
   meta?: string;
 }
 type PanelRow = [label: string, value: PanelRowValue];
-/** `null` title means no heading. */
 interface PanelSection {
   title: string | null;
   rows: PanelRow[];
@@ -95,7 +83,6 @@ function untitled(rows: PanelRow[]): PanelSection[] {
   return [{ title: null, rows }];
 }
 
-/** Accepts a bare DOI or a full https://doi.org/ URL. */
 function doiLink(doi: string): PanelLink {
   return {
     kind: "link",
@@ -112,10 +99,6 @@ function orcidLink(id: string): PanelLink {
   return { kind: "link", href: `https://orcid.org/${id}`, text: id };
 }
 
-/**
- * For URLs from harvested data: anything but http/https (e.g. `javascript:`)
- * becomes `about:blank`, with a console warning.
- */
 function safeHref(url: string, context: string): string {
   try {
     const parsed = new URL(url);
@@ -131,7 +114,6 @@ function codeLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "codeLink"), text: githubShortPath(url) };
 }
 
-/** The URL is long and full of query params, so the text is fixed. */
 function googleScholarLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "googleScholarLink"), text: "Google Scholar" };
 }
@@ -150,10 +132,6 @@ function emailLink(email: string): PanelLink {
 
 const AFFILIATION_SOURCE_LABELS: Record<string, string> = { openalex: "OpenAlex", orcid: "ORCID" };
 
-/**
- * Merges OpenAlex and ORCID entries with the same name into one item: name
- * (linked to ror.org when known), year range and sources. Newest first.
- */
 function affiliationItems(affiliations: Affiliation[]): (PanelLink | PanelText)[] {
   const byName = new Map<string, { ror: string; years: number[]; sources: Set<string> }>();
   for (const aff of affiliations) {
@@ -182,7 +160,6 @@ function affiliationItems(affiliations: Affiliation[]): (PanelLink | PanelText)[
     });
 }
 
-/** Unparseable strings are returned as is. */
 function formatTimestamp(value: string, lang: AppState["lang"]): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -195,7 +172,6 @@ function formatTimestamp(value: string, lang: AppState["lang"]): string {
   });
 }
 
-/** @returns Unmount function. */
 export function mountPanel(
   store: Store<AppState>,
   data: GraphData,
@@ -216,7 +192,6 @@ export function mountPanel(
     })
     .catch((error: unknown) => console.warn("reports/index.json:", error));
 
-  // TODO: static file from paper_analysis run.json; move onto the IMPLEMENTS edge if this stays.
   const implementationRates = new Map<
     string,
     { implemented: number; total: number; pct: number }
@@ -236,7 +211,6 @@ export function mountPanel(
     })
     .catch((error: unknown) => console.warn("implementation-rates.json:", error));
 
-  /** Repo/pub refs with the implementation rate in `meta`: "implemented 32/57 · 56%". */
   function withImplementationRate(
     refs: PanelEntityRef[],
     pairKeyOf: (ref: PanelEntityRef) => string,
@@ -253,7 +227,6 @@ export function mountPanel(
     });
   }
 
-  /** The number is clickable only when it was normalized (grant_key). */
   function fundingItem(entry: PubDetail["funding"][number]): PanelEntityRef | PanelText {
     if (entry.grant_key)
       return {
@@ -268,7 +241,6 @@ export function mountPanel(
       : { kind: "text", text: entry.funder };
   }
 
-  /** One CSV row per publication, newest first. */
   function grantCsvLink(grant: GrantInfo, pubKeys: string[], lang: AppState["lang"]): PanelLink {
     const rows = [
       ["OpenAlex ID", "Title", "Year", "DOI", "Journal", "Type", "Authors", "Funder", "Grant"],
@@ -339,7 +311,6 @@ export function mountPanel(
     });
   }
 
-  /** An unknown key keeps its raw text as the label. */
   function entityRefsOf(keys: string[], lang: AppState["lang"]): PanelEntityRef[] {
     return keys.map((key) => {
       const node = index.get(key);
@@ -370,7 +341,6 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
-  /** Clickable name with the role as a suffix, e.g. "Ivanov I.I. (maintainer)". */
   function repoContributorRefsOf(repoKey: string, lang: AppState["lang"]): PanelEntityRef[] {
     return (repoAuthorIndex.get(repoKey) ?? []).map((edge) => {
       const author = index.get(edge.t);
@@ -393,11 +363,6 @@ export function mountPanel(
     container.replaceChildren();
   }
 
-  /**
-   * @param kind - Badge next to the title, so the user sees what kind of
-   *   entity they jumped to.
-   * @param showBack - Every card but the overview gets a back button.
-   */
   function show(
     title: string,
     kind: string,
@@ -472,14 +437,12 @@ export function mountPanel(
     return total === 0 ? LOADING : `${Math.round((count / total) * 100)}%`;
   }
 
-  /** Overview of the active tab, shown when nothing is selected. */
   function renderOverview(state: AppState): void {
     const { tab, lang } = state;
     const tabKind =
       tab === 1 ? t("tab.authors", lang) : tab === 2 ? t("tab.repos", lang) : t("tab.pubs", lang);
 
     if (tab === 1) {
-      // All authors, ITMO and external, regardless of the map filter.
       const authors: AuthorNode[] = data.authors;
       const external = authors.filter((a) => a.is_itmo === false).length;
       const avgPubs =
@@ -598,7 +561,6 @@ export function mountPanel(
     return buildBarChart(t("chart.authorsByDept", lang), bars);
   }
 
-  /** Chronological and not truncated: it is a time series. Unknown years are left out. */
   function pubsByYearChart(pubs: PubNode[], lang: AppState["lang"]): HTMLElement | null {
     const countByYear = new Map<number, number>();
     for (const pub of pubs) {
@@ -613,7 +575,6 @@ export function mountPanel(
     return buildBarChart(t("chart.pubsByYear", lang), bars);
   }
 
-  /** Roughly logarithmic: a few repos have thousands of stars, most have a handful. */
   const STAR_BUCKETS: { max: number; label: string }[] = [
     { max: 0, label: "0" },
     { max: 9, label: "1–9" },
@@ -636,7 +597,6 @@ export function mountPanel(
     return buildBarChart(t("chart.reposByStars", lang), bars);
   }
 
-  /** A selection missing from `data` hides the panel instead of showing an empty card. */
   function render(state: AppState): void {
     const { selection, lang } = state;
     if (selection === null) return renderOverview(state);
@@ -656,8 +616,6 @@ export function mountPanel(
       ];
       const rows: PanelRow[] = [deptRow];
       if (node.kind === "author") {
-        // Sections follow the field tags in pauk/cache/export.py: public and
-        // graph links, private, service fields.
         const general: PanelRow[] = [
           deptRow,
           [t("field.pubsCount", lang), String(node.pubs_count)],
@@ -665,8 +623,6 @@ export function mountPanel(
         const privateRows: PanelRow[] = [];
         const service: PanelRow[] = [keyRow, kindRow];
 
-        // Every author has a record, even with empty fields, so a missing
-        // record means the file has not arrived yet.
         const authorDetail = authorDetails.get(node.key);
         if (authorDetail) {
           const nameRu = authorDetail.name_ru ?? "";
@@ -699,7 +655,6 @@ export function mountPanel(
               { kind: "list", items: affiliationItems(authorDetail.affiliations) },
             ]);
           }
-          // Per source, see author_variants() in pauk/gui/graph_builder/nodes.py.
           if (authorDetail.name_variants?.openalex.length) {
             privateRows.push([
               t("field.nameVariantsOpenalex", lang),
@@ -780,7 +735,6 @@ export function mountPanel(
         rows.push([t("field.stars", lang), String(node.stars)]);
         const group = node.group === undefined ? undefined : repoGroupById.get(node.group);
         if (group) rows.push([t(`group.kind.${group.kind}`, lang), deptRefsOf([group.id], lang)]);
-        // Every repo has a record, see the author card above.
         if (repoDetails.has(node.key)) {
           const repoDetail = repoDetails.get(node.key);
           if (repoDetail?.url) rows.push([t("field.github", lang), [codeLink(repoDetail.url)]]);
@@ -920,7 +874,6 @@ export function mountPanel(
     if (selection.kind === "grant") {
       const grant = grantIndex(pubDetails).get(selection.key);
       if (!grant) {
-        // Grants come from pubs-detail.json; wait for it instead of hiding.
         if (pubDetails.size > 0) return hide();
         return show(
           selection.key,
@@ -1006,16 +959,12 @@ interface PanelCardOptions {
   loading: () => HTMLElement;
   title: string;
   kind: string;
-  /** Empty sections are not drawn. */
   sections: PanelSection[];
   lang: AppState["lang"];
-  /** `null` hides the back button. */
   backLabel: string | null;
   onSelectRef: (selection: Selection) => void;
   onBack: () => void;
-  /** Name in the other language, small and grey under the title. */
   subtitle?: string | null;
-  /** Appended after the `<dl>`, e.g. overview charts. */
   extra?: HTMLElement | null;
 }
 
@@ -1034,7 +983,6 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     card.appendChild(back);
   }
 
-  // One block, so the subtitle sits right under the name.
   const head = document.createElement("div");
   head.className = "panel-card__head";
   const titles = document.createElement("div");
@@ -1066,7 +1014,6 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     return a;
   }
 
-  // <button>, not <a>: a click changes store.selection instead of navigating.
   function refElement(ref: PanelEntityRef): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
@@ -1078,7 +1025,6 @@ function buildCard(options: PanelCardOptions): HTMLElement {
 
   function listItemElement(item: PanelList["items"][number]): HTMLLIElement {
     const li = document.createElement("li");
-    // Own column next to the number, so wrapped text does not drop below it.
     const body = document.createElement("span");
     body.className = "panel-list__body";
     li.appendChild(body);
@@ -1218,18 +1164,11 @@ function buildCard(options: PanelCardOptions): HTMLElement {
   return card;
 }
 
-/**
- * Plain DOM bar chart, widths in percent of the maximum.
- *
- * @param bars - Already sorted and truncated by the caller.
- * @returns `null` for no bars.
- */
 function buildBarChart(
   title: string,
   bars: { label: string; value: number }[],
 ): HTMLElement | null {
   if (bars.length === 0) return null;
-  // Avoids division by zero when every bar is 0.
   const max = Math.max(...bars.map((bar) => bar.value), 1);
 
   const container = document.createElement("div");

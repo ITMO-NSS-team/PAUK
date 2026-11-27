@@ -1,6 +1,3 @@
-// GraphData -> graphology graph for Sigma. Each tab draws its own graph:
-// authors, repos or pubs, never all at once.
-
 import type Graph from "graphology";
 import type Sigma from "sigma";
 import type { EdgeDisplayData, NodeDisplayData } from "sigma/types";
@@ -17,15 +14,10 @@ type PubDetailsByKey = Map<string, PubDetail>;
 
 const DEPT_NODE_PREFIX = "dept:";
 
-/**
- * Key of an invisible department anchor node (size 0), used for camera
- * targets and department neighbourhood.
- */
 export function deptNodeKey(deptId: number): string {
   return `${DEPT_NODE_PREFIX}${deptId}`;
 }
 
-/** @returns Department id for an anchor key, otherwise `null`. */
 export function parseDeptNodeKey(key: string): number | null {
   if (!key.startsWith(DEPT_NODE_PREFIX)) return null;
   const id = Number(key.slice(DEPT_NODE_PREFIX.length));
@@ -84,7 +76,6 @@ export function isolatedAuthors(data: GraphData, withExternal: boolean): Set<str
   return isolated;
 }
 
-/** Shared by the map, the tab list and search. */
 export function isAuthorShown(data: GraphData, author: AuthorNode, filters: Filters): boolean {
   if (author.is_itmo === false && !filters.showExternalAuthors) return false;
   return (
@@ -93,11 +84,6 @@ export function isAuthorShown(data: GraphData, author: AuthorNode, filters: Filt
   );
 }
 
-export function visibleAuthors(data: GraphData, filters: Filters): AuthorNode[] {
-  return data.authors.filter((author) => isAuthorShown(data, author, filters));
-}
-
-/** The same node filters drive the map and its sidebar list. */
 export function isNodeShown(data: GraphData, node: GraphNode, filters: Filters): boolean {
   const excludedDept = noDeptId(data);
   if (node.kind === "author") {
@@ -115,13 +101,11 @@ export function isNodeShown(data: GraphData, node: GraphNode, filters: Filters):
   return true;
 }
 
-/** Pubs with an unknown year are never hidden by yearMax. */
 export function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
   const nodes = tab === 1 ? data.authors : tab === 2 ? data.repos : data.pubs;
   return nodes.filter((node) => isNodeShown(data, node, filters));
 }
 
-/** Repos have no weight threshold. */
 function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
   switch (tab) {
     case 1:
@@ -156,7 +140,6 @@ export function populateGraph(
     });
   }
 
-  // hasNode() already reflects the node filters above.
   for (const edge of tabGraphEdges(data, tab, filters)) {
     if (!graph.hasNode(edge.s) || !graph.hasNode(edge.t)) continue;
     // mergeEdge: addEdge throws on a repeated pair.
@@ -215,19 +198,6 @@ function addDeptLabelAnchors(
   }
 }
 
-/**
- * The single node/edge reducer pair: `setSetting` replaces, so two separate
- * reducers would overwrite each other.
- *
- * Selection and hover are independent focus sources: hovering another node
- * does not cancel the selection, and a selection does not block hover
- * previews. Only the selected node grows. Neighbours of the selection, the
- * endpoints of a selected edge and their neighbours get forced labels.
- * Everything else is dimmed, unrelated edges are hidden. Edges also hide above
- * the `edgeZoomThreshold` camera ratio.
- *
- * @returns Setters for hover and camera ratio, called from mountReactiveGraph.
- */
 function applyGraphStyling(
   renderer: Sigma,
   store: Store<AppState>,
@@ -289,7 +259,6 @@ function applyGraphStyling(
   }
 
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
-    // Anchors are never drawn; regions draw department names.
     if (parseDeptNodeKey(nodeKey) !== null || outsideSelection(nodeKey)) {
       return { ...data, hidden: true, label: "", forceLabel: false, highlighted: false };
     }
@@ -311,12 +280,9 @@ function applyGraphStyling(
     const isNeighborOfSelection = neighborhood.has(nodeKey) || isNeighborOf(selKey, nodeKey);
     const isHoveredNode = hoveredNode !== null && hoveredNode === nodeKey;
     const isNeighborOfHover = isNeighborOf(hoveredNode, nodeKey);
-    // Neighbours of either endpoint of the selected edge stay bright, since
-    // their edges stay visible.
     const isNeighborOfEdgeSelection =
       edgeEndpoints !== null &&
       (isNeighborOf(edgeEndpoints[0], nodeKey) || isNeighborOf(edgeEndpoints[1], nodeKey));
-    // Global: any focus dims every other node.
     const anyFocusActive =
       roots.size > 0 ||
       selKey !== null ||
@@ -369,14 +335,12 @@ function applyGraphStyling(
       };
     }
 
-    // A selected edge also shows all other edges of its endpoints.
     const selKey = selectionFocusKey();
     const edgeEndpoints = selectionEdgeEndpoints();
     const touchesSelection = roots.has(s) || roots.has(t) || (selKey !== null && (s === selKey || t === selKey));
     const touchesEdgeSelectionEndpoint =
       edgeEndpoints !== null && (edgeEndpoints.includes(s) || edgeEndpoints.includes(t));
     const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
-    // A selected department has no node whose edges could be highlighted.
     const anyFocusActive =
       roots.size > 0 ||
       selKey !== null ||
@@ -412,7 +376,6 @@ function applyGraphStyling(
   };
 }
 
-/** Used after a rebuild to drop a selection the new graph no longer has. */
 function selectionExistsIn(graph: Graph, selection: Selection): boolean {
   if (selection === null) return true;
   if (selection.kind === "node") return graph.hasNode(selection.key);
@@ -446,13 +409,6 @@ function flyToSelection(renderer: Sigma, selection: Selection): void {
   });
 }
 
-/**
- * Rebuilds the graph on tab, language or filter change and restyles it on
- * selection change. The renderer is passed in so tests can use a fake: Sigma
- * needs WebGL, which jsdom lacks.
- *
- * @returns Unmount function.
- */
 export function mountReactiveGraph(
   renderer: Sigma,
   store: Store<AppState>,
@@ -526,7 +482,6 @@ export function mountReactiveGraph(
   );
 
   function onEnterNode({ node }: { node: string }): void {
-    // In region mode the region under the cursor is highlighted instead.
     if (isRegionMode(store.get(), renderer.getCamera().getState().ratio)) return;
     setHoveredNode(node);
   }
@@ -536,7 +491,6 @@ export function mountReactiveGraph(
   renderer.on("enterNode", onEnterNode);
   renderer.on("leaveNode", onLeaveNode);
 
-  // Read now, not only on the first camera move, so the initial mode is right.
   const camera = renderer.getCamera();
   function onCameraUpdated(state: { ratio: number }): void {
     setCameraRatio(state.ratio);
@@ -599,37 +553,5 @@ export function mountReactiveGraph(
     renderer.off("leaveNode", onLeaveNode);
     camera.off("updated", onCameraUpdated);
     unsubscribe();
-  };
-}
-
-/** Debug readout of `camera.ratio` for tuning zoom thresholds. */
-export function mountZoomDebug(renderer: Sigma): () => void {
-  const el = document.createElement("div");
-  Object.assign(el.style, {
-    position: "absolute",
-    bottom: "12px",
-    left: "12px",
-    // Below #menu (z-index 26), which must cover it.
-    zIndex: "5",
-    padding: "4px 8px",
-    background: "rgba(0, 0, 0, 0.6)",
-    color: "#fff",
-    fontSize: "11px",
-    fontFamily: "monospace",
-    borderRadius: "4px",
-    pointerEvents: "none",
-  });
-  renderer.getContainer().appendChild(el);
-
-  const camera = renderer.getCamera();
-  function render(): void {
-    el.textContent = `zoom ratio: ${camera.getState().ratio.toFixed(3)}`;
-  }
-  camera.on("updated", render);
-  render();
-
-  return () => {
-    camera.off("updated", render);
-    el.remove();
   };
 }

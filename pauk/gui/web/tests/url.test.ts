@@ -54,7 +54,7 @@ describe("parseUrlState", () => {
   it("an unknown tab slug also falls back to the menu, it is safer to show the choice than to guess from a broken link", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=nope", data)).toEqual({ screen: "menu", tab: 1, selection: null });
-    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // numeric tab ids are not recognized
+    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null });
   });
 
   it("restores the node selection by a key that really exists in data", async () => {
@@ -142,7 +142,6 @@ describe("parseUrlState", () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("the fixture must contain at least one author");
-    // tab 1, not 3: the node must belong to its tab (see the next test).
     const original = {
       screen: "app" as const,
       tab: 1 as const,
@@ -157,7 +156,6 @@ describe("parseUrlState", () => {
     const author = data.authors[0];
     if (!author) throw new Error("the fixture must contain at least one author");
 
-    // author.key exists, but not as a pub, so tab=pubs drops it.
     expect(parseUrlState(`?tab=pubs&sel=node&key=${author.key}`, data)).toEqual({
       screen: "app",
       tab: 3,
@@ -167,7 +165,6 @@ describe("parseUrlState", () => {
 
   it("an edge from another tab falls back to null, only the edges of its own tab are searched", async () => {
     const data = await loadSampleGraphData();
-    // A1-A2 is a co-authorship edge, not among pub_edges.
     expect(parseUrlState("?tab=pubs&sel=edge&s=A1&t=A2", data)).toEqual({
       screen: "app",
       tab: 3,

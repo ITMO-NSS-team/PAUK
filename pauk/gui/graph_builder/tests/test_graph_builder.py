@@ -112,13 +112,9 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertCountEqual(summary["all_edges"], [{"s": "A1", "t": "P1"}, {"s": "E1", "t": "P1"}])
         self.assertEqual({a["key"] for a in detail["authors"]}, {"A1", "E1"})
 
-    def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
-        # GraphDataBuilder builds the private variant; the map label uses
-        # author_label(..., public=False): the full surname ("Иванов") and, with
-        # no patronymic in this fixture, the full first name too. The public
-        # one is masked afterwards, see tests/unit/test_gui_public.py.
+    def test_private_summary_uses_surname_and_initial(self):
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
-        self.assertEqual(summary["authors"][0]["label"], "Иванов Иван")
+        self.assertEqual(summary["authors"][0]["label"], "Иванов И.")
 
     def test_summary_label_en_falls_back_to_name_en_when_split_en_name_parts_are_missing(self):
         # The real snapshot has surname_en/first_name_en/second_name_en as None

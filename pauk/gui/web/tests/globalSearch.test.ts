@@ -113,7 +113,7 @@ describe("mountGlobalSearch", () => {
 
   it("Enter in the input selects the first result", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState({ tab: 2 })); // deliberately not the authors tab
+    const store = new Store<AppState>(initialState({ tab: 2 }));
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     document
@@ -164,7 +164,7 @@ describe("mountGlobalSearch", () => {
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
-    input.value = "П"; // matches more than one author
+    input.value = "П";
     input.dispatchEvent(new Event("input"));
 
     const items = [
@@ -203,14 +203,14 @@ describe("mountGlobalSearch", () => {
     document
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true })); // target is the overlay itself
+    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(overlay.hidden).toBe(true);
   });
 
   it("selecting an author from the results switches to tab 1 and writes selection", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState({ tab: 2 })); // deliberately not the authors tab
+    const store = new Store<AppState>(initialState({ tab: 2 }));
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     document
@@ -227,7 +227,7 @@ describe("mountGlobalSearch", () => {
     expect(store.get().screen).toBe("app");
     expect(store.get().tab).toBe(1);
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
-    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true); // closed after the pick
+    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
   });
 
   it("the search dialog closes after selection, even if another Store subscriber failed on the new selection", async () => {
@@ -275,7 +275,7 @@ describe("mountGlobalSearch", () => {
     if (!hit) throw new Error(`department "${dept.name}" must be among the results`);
     hit.click();
 
-    expect(store.get().tab).toBe(3); // unchanged
+    expect(store.get().tab).toBe(3);
     expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
   });
 
@@ -288,7 +288,7 @@ describe("mountGlobalSearch", () => {
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
-    input.value = "лщывалщыв"; // matches no fixture label
+    input.value = "лщывалщыв";
     input.dispatchEvent(new Event("input"));
 
     expect(document.querySelectorAll("#global-search-results .tab-list-item")).toHaveLength(0);
@@ -299,7 +299,6 @@ describe("mountGlobalSearch", () => {
 
   it("an empty query (right after opening) shows departments to browse, largest first, not 'Ничего не найдено' and not an empty list", async () => {
     const data = await loadSampleGraphData();
-    // Department 0 (n=7) is larger than department 2 (n=5), so it comes first.
     const dept0 = data.departments.find((d) => d.id === 0);
     const dept1 = data.departments.find((d) => d.id === 2);
     if (!dept0 || !dept1) throw new Error("the fixture must contain departments 0 and 2");

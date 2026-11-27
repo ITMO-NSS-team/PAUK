@@ -1,6 +1,3 @@
-// Synthetic data, not a real snapshot slice: the real one holds personal
-// data. Keep in sync with contracts/graph.ts.
-
 import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../src/contracts/graph";
 import { assertGraphData } from "../src/core/data";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
