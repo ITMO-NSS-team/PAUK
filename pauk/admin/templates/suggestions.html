@@ -10,6 +10,10 @@
 <p class="note">Предложение одобрено и записано в граф и ручные решения.</p>
 {% elif done == "rejected" %}
 <p class="note">Предложение отклонено. Граф не изменён.</p>
+{% elif done == "recovered_approved" %}
+<p class="note">Статус восстановлен: изменение уже в графе, предложение отмечено одобренным.</p>
+{% elif done == "recovered_pending" %}
+<p class="note">Статус восстановлен: изменений в графе не найдено, предложение возвращено в ожидание.</p>
 {% endif %}
 
 {% if not graph_up %}
@@ -45,11 +49,11 @@
     {% for row in rows %}
     <tr>
       <td>
-        <div class="kind kind-bulk" style="margin-bottom:6px">от агента · требует проверки</div>
+        <div class="kind kind-bulk" style="margin-bottom:6px">от агента (требует проверки)</div>
         <div><b>{{ row.relation_label }}</b></div>
         <div style="margin-top:6px">
           <a href="{{ row.pub_href }}">{{ row.pub_title or row.pub_id_display }}</a>
-          <br><span class="muted val">{{ row.pub_id_display }}{% if row.pub_doi %} · {{ row.pub_doi }}{% endif %}{% if row.pub_year %} · {{ row.pub_year }}{% endif %}</span>
+          <br><span class="muted val">{{ row.pub_id_display }}{% if row.pub_doi %} / {{ row.pub_doi }}{% endif %}{% if row.pub_year %} ({{ row.pub_year }}){% endif %}</span>
         </div>
         {% if row.proposed_relation != "full_text" %}
         <div style="margin-top:8px">
@@ -97,7 +101,7 @@
         {% if row.prior %}
         <div class="muted" style="margin-top:8px">
           ранее {{ "одобрено" if row.prior.status == "approved" else "отклонено" }}
-          ({{ row.prior.reviewed_by }}{% if row.prior.reviewed_at %} · {{ row.prior.reviewed_at|moment }}{% endif %})
+          ({{ row.prior.reviewed_by }}{% if row.prior.reviewed_at %}, {{ row.prior.reviewed_at|moment }}{% endif %})
         </div>
         {% endif %}
       </td>
@@ -117,22 +121,37 @@
         <div class="val muted" style="margin-top:6px">{{ row.evidence_url }}</div>
         {% endif %}
         <div class="muted" style="margin-top:6px">
-          источник: {{ row.submitted_by }} · {{ row.submitted_at|moment }}
+          источник: {{ row.submitted_by }}{% if row.submitted_at %} ({{ row.submitted_at|moment }}){% endif %}
         </div>
       </td>
       <td>
         {% if row.status == "approved" %}
           <span class="kind kind-created">одобрено</span>
-          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} · {{ row.reviewed_at|moment }}{% endif %}</span>
+          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} ({{ row.reviewed_at|moment }}){% endif %}</span>
           {% if row.review_note %}<div class="muted">{{ row.review_note }}</div>{% endif %}
         {% elif row.status == "rejected" %}
           <span class="kind kind-deleted">отклонено</span>
-          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} · {{ row.reviewed_at|moment }}{% endif %}</span>
+          <br><span class="muted">{{ row.reviewed_by }}{% if row.reviewed_at %} ({{ row.reviewed_at|moment }}){% endif %}</span>
           {% if row.review_note %}<div class="muted">{{ row.review_note }}</div>{% endif %}
         {% elif user.can_write %}
           {% if row.status == "applying" %}
-          <div class="muted" style="margin-bottom:6px">обрабатывается ({{ row.applying_by }})</div>
+          <div class="{% if row.can_recover %}kind kind-deleted{% else %}muted{% endif %}" style="margin-bottom:6px">
+            {% if row.can_recover %}обработка зависла{% else %}обрабатывается{% endif %} ({{ row.applying_by }})
+          </div>
+          {% if row.recovery_reason %}<div class="muted" style="margin-bottom:6px">{{ row.recovery_reason }}</div>{% endif %}
+          {% if row.can_recover %}
+          <form method="post" action="/suggestions/{{ row.id }}/recover" class="verdicts">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <input type="text" name="note" placeholder="комментарий" aria-label="комментарий">
+            <div class="row" style="margin:0">
+              <button type="submit">Проверить и восстановить</button>
+            </div>
+          </form>
+          {% else %}
+          <div class="muted">дождитесь завершения текущей операции или истечения блокировки</div>
           {% endif %}
+          {% else %}
           <form method="post" action="/suggestions/{{ row.id }}/approve" class="verdicts">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="tab" value="{{ tab }}">
@@ -142,6 +161,7 @@
               <button type="submit" formaction="/suggestions/{{ row.id }}/reject" class="ghost">Отклонить</button>
             </div>
           </form>
+          {% endif %}
         {% else %}
           <span class="muted">только просмотр</span>
         {% endif %}

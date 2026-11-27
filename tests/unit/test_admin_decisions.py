@@ -568,3 +568,58 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
     def test_the_record_is_no_longer_tombstoned(self):
         self.take_it_back("undo")
         self.assertEqual(tombstoned_ids(self.db, "Person"), set())
+
+
+class AdditiveDecisionDisplayAndUndoTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.db = mongomock.MongoClient()["pauk_additive_ui_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add(
+            "Publication",
+            "W1",
+            title="Paper One",
+            pdf_urls=[
+                "https://example.org/pipeline1.pdf",
+                "https://arxiv.org/pdf/2501.00001.pdf",
+                "https://example.org/pipeline2.pdf",
+            ],
+        )
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            "set",
+            actor="user:roman",
+            note="предложение sug_1",
+            append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.addCleanup(self.client.close)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    def test_additive_override_renders_and_undo_strips_only_added_url(self) -> None:
+        rows = decisions.in_force(self.db)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["pairs"], [("pdf_urls (+)", None, ["https://arxiv.org/pdf/2501.00001.pdf"])])
+        self.assertEqual(decisions.conflicts(self.db), [])
+
+        resp = self.client.post(
+            "/overrides/undo",
+            data={
+                "csrf": self.csrf,
+                "kind": "node",
+                "op": "set",
+                "label": "Publication",
+                "target_id": "W1",
+            },
+        )
+        self.assertEqual(resp.status_code, 303)
+        self.assertEqual(
+            self.graph.nodes[("Publication", "W1")]["pdf_urls"],
+            ["https://example.org/pipeline1.pdf", "https://example.org/pipeline2.pdf"],
+        )
+        self.assertEqual(active_overrides(self.db), [])

@@ -21,6 +21,7 @@ from pauk.graph.mutations import (
     MutationError,
     create_node,
     create_relationship,
+    read_node,
     update_node,
 )
 from pauk.graph.overrides import (
@@ -69,6 +70,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
     # Read before withdrawing: it rewrites the decision both are read from.
     snapshot: dict = {}
     back: dict = {}
+    appended: dict = {}
     try:
         if kind == "rel":
             if op == LINK:
@@ -90,6 +92,7 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                 snapshot = decisions.deleted_fields(db, label, node_id)
             elif op == SET:
                 back = decisions.source_of_truth(db, label, node_id)
+                appended = decisions.appended_fields(db, label, node_id)
             # Only the decision the page showed: it may be another one by now.
             dropped = deactivate_override(db, label, node_id, only_op=op or None)
     except KeyError:
@@ -101,9 +104,21 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
     restored = ""
     try:
         if op == SET and kind == "node":
+            restore_fields = dict(back)
+            if appended:
+                remaining_keys = [name for name in appended if name not in restore_fields]
+                if remaining_keys:
+                    current = read_node(graph, label, node_id)
+                    for name in remaining_keys:
+                        existing_list = current.get(name)
+                        if isinstance(existing_list, list):
+                            added_items = appended[name]
+                            restore_fields[name] = [
+                                item for item in existing_list if item not in added_items
+                            ]
             # The same for a field: nothing else would put it back.
-            if back:
-                update_node(graph, label, node_id, back)
+            if restore_fields:
+                update_node(graph, label, node_id, restore_fields)
                 restored = "field"
         elif op == DELETE and kind == "rel":
             create_relationship(graph, *triple, src_id, tgt_id, snapshot)

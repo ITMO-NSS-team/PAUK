@@ -454,4 +454,9 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        self.assertIsNotNone(db[OVERRIDES].find_one({"_id": "node:Publication:p-e2e-submit", "op": SET}))
+        ft_ov = db[OVERRIDES].find_one({"_id": "node:Publication:p-e2e-submit", "op": SET})
+        self.assertIsNotNone(ft_ov)
+        self.assertEqual(
+            (ft_ov.get("append_fields") or {}).get("pdf_urls"),
+            ["https://arxiv.org/pdf/2501.12345.pdf"],
+        )

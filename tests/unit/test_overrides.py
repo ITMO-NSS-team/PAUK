@@ -757,3 +757,67 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
         record_override(self.db, "Department", "D1", SET, {"name_ru": "Кафедра"},
                         actor="user:roman")
         self.assertEqual(self.document("D1")["op"], SET)
+
+
+class AdditiveListOverridesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.db = mongomock.MongoClient()["pauk_append_test"]
+        self.graph = FakeGraph()
+        self.graph.add("Publication", "W1", title="Original", pdf_urls=["https://example.org/p1.pdf"])
+
+    def test_append_fields_merge_with_pipeline_values_and_stay_idempotent(self) -> None:
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            SET,
+            actor="user:roman",
+            append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        # Pipeline publishes a brand-new pdf_url and updates title; reapplying keeps both PDFs.
+        self.graph.nodes[("Publication", "W1")]["pdf_urls"] = [
+            "https://example.org/p1.pdf",
+            "https://example.org/p2.pdf",
+        ]
+        first = apply_overrides(self.graph, self.db)
+        self.assertEqual(first["overrides_applied"], 1)
+        self.assertEqual(
+            self.graph.nodes[("Publication", "W1")]["pdf_urls"],
+            [
+                "https://example.org/p1.pdf",
+                "https://example.org/p2.pdf",
+                "https://arxiv.org/pdf/2501.00001.pdf",
+            ],
+        )
+        second = apply_overrides(self.graph, self.db)
+        self.assertEqual(second["overrides_applied"], 0)
+        self.assertEqual(second["overrides_unchanged"], 1)
+        self.assertEqual(
+            overrides.appended_field_values(self.db, "Publication", "pdf_urls"),
+            {"W1": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+
+        # Scalar field edits on the same node keep additive list overrides intact.
+        record_override(self.db, "Publication", "W1", SET, {"title": "Edited Title"}, actor="user:roman")
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes[("Publication", "W1")]["title"], "Edited Title")
+        self.assertIn(
+            "https://arxiv.org/pdf/2501.00001.pdf",
+            self.graph.nodes[("Publication", "W1")]["pdf_urls"],
+        )
+
+    def test_delete_and_undo_preserves_append_fields(self) -> None:
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            SET,
+            actor="user:roman",
+            append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        record_override(self.db, "Publication", "W1", DELETE, actor="user:roman")
+        self.assertTrue(deactivate_override(self.db, "Publication", "W1", only_op=DELETE))
+        doc = self.db[COLLECTION].find_one({"_id": "node:Publication:W1"})
+        self.assertTrue(doc["active"])
+        self.assertEqual(doc["op"], SET)
+        self.assertEqual(doc["append_fields"], {"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]})

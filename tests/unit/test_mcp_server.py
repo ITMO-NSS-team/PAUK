@@ -546,3 +546,36 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
                 mcp_mongo_db="pauk_isolated",
             )
         )
+
+    async def test_submission_store_refuses_writes_when_index_creation_fails(self) -> None:
+        import mongomock
+        from pymongo.errors import OperationFailure
+
+        from pauk.mcp.contracts import MCPError
+        from pauk.mcp.submissions import MongoSuggestionStore
+        from pauk.storage import link_suggestions
+
+        db = mongomock.MongoClient()["pauk_mcp_index_fail"]
+        store = MongoSuggestionStore(db)
+        with (
+            mock.patch("pauk.storage.link_suggestions.ensure_indexes", side_effect=OperationFailure("index error")),
+            self.assertRaises(MCPError) as ctx,
+        ):
+            await store.submit(
+                publication_id="p-paper",
+                proposed_relation="implements",
+                repository_url="https://github.com/org/repo",
+                rationale="Index initialization must gate writes.",
+            )
+        self.assertEqual(ctx.exception.code, "BACKEND")
+        self.assertEqual(db[link_suggestions.COLLECTION].count_documents({}), 0)
+
+        # Once index initialization succeeds, subsequent submissions persist cleanly.
+        sid, state = await store.submit(
+            publication_id="p-paper",
+            proposed_relation="implements",
+            repository_url="https://github.com/org/repo",
+            rationale="Index initialization must gate writes.",
+        )
+        self.assertTrue(sid.startswith("sug_"))
+        self.assertEqual(state, "queued")

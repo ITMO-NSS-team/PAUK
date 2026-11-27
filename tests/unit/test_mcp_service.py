@@ -965,27 +965,34 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(backend_err.exception.code, "BACKEND")
 
-        # MongoSuggestionStore does not permanently latch _indexed=True when ensure_indexes fails.
+        # MongoSuggestionStore refuses writes cleanly (BACKEND) when ensure_indexes fails and retries next call.
         from pymongo.errors import AutoReconnect
+
+        from pauk.storage import link_suggestions
 
         retry_db = mongomock.MongoClient()["pauk_mcp_retry_index"]
         retry_store = MongoSuggestionStore(retry_db)
-        with unittest.mock.patch(
-            "pauk.storage.link_suggestions.ensure_indexes", side_effect=AutoReconnect("temp down")
+        with (
+            unittest.mock.patch(
+                "pauk.storage.link_suggestions.ensure_indexes", side_effect=AutoReconnect("temp down")
+            ),
+            self.assertRaises(MCPError) as index_err,
         ):
-            sid_first, status_first = await retry_store.submit(
+            await retry_store.submit(
                 publication_id="p-paper",
                 proposed_relation="full_text",
                 evidence_url="https://arxiv.org/pdf/2501.11111.pdf",
                 rationale="Index initialization failed on first try.",
             )
-        self.assertEqual(status_first, "queued")
-        self.assertTrue(sid_first.startswith("sug_"))
+        self.assertEqual(index_err.exception.code, "BACKEND")
+        self.assertEqual(retry_db[link_suggestions.COLLECTION].count_documents({}), 0)
         self.assertFalse(retry_store._indexed)
-        await retry_store.submit(
+        sid_second, status_second = await retry_store.submit(
             publication_id="p-paper",
             proposed_relation="full_text",
             evidence_url="https://arxiv.org/pdf/2501.22222.pdf",
             rationale="Index initialization succeeds on second try.",
         )
+        self.assertEqual(status_second, "queued")
+        self.assertTrue(sid_second.startswith("sug_"))
         self.assertTrue(retry_store._indexed)

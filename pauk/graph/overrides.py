@@ -166,11 +166,29 @@ def _field_updates(existing: dict, fields: dict, auto_value: dict, version: str 
             "field_versions": versions, "auto_value_versions": first_versions}
 
 
+def _merge_append_fields(existing: dict, append_fields: dict[str, list[Any]]) -> dict[str, list[Any]]:
+    """Merge additive list items onto existing append_fields, preserving order without duplicates."""
+    merged: dict[str, list[Any]] = {
+        name: list(items)
+        for name, items in (existing.get("append_fields") or {}).items()
+        if isinstance(items, list) and items
+    }
+    for name, additions in append_fields.items():
+        if not additions:
+            continue
+        target = merged.setdefault(name, [])
+        for item in additions:
+            if item not in target:
+                target.append(item)
+    return merged
+
+
 def record_override(db: Database, label: str, target_id: str, op: str,
                     fields: dict | None = None, actor: str = "unknown",
                     note: str = "", auto_value: dict | None = None,
                     snapshot: dict | None = None, graph_updated_at: object | None = None,
-                    expected_generation: int | None = None) -> dict:
+                    expected_generation: int | None = None,
+                    append_fields: dict[str, list[Any]] | None = None) -> dict:
     """Write down a manual decision about one node.
 
     Fields are merged into whatever the document already holds rather than
@@ -206,9 +224,20 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         raise UnknownEntity(f"unknown override operation: {op!r} (known: {', '.join(OPERATIONS)})")
     validate_label(label)
     fields = dict(fields or {})
+    normalized_append: dict[str, list[Any]] = {}
+    for name, value in (append_fields or {}).items():
+        if not isinstance(value, list):
+            raise MutationError(f"append_fields[{name!r}] must be a list")
+        if value:
+            normalized_append[name] = list(dict.fromkeys(value)) if all(
+                isinstance(item, (str, int, float, bool)) for item in value
+            ) else [item for i, item in enumerate(value) if item not in value[:i]]
     if op in (SET, CREATE):
-        validate_fields(label, fields)
-        if op == SET and not fields:
+        if fields:
+            validate_fields(label, fields)
+        if normalized_append:
+            validate_fields(label, normalized_append)
+        if op == SET and not fields and not normalized_append:
             raise MutationError("a 'set' override with no fields changes nothing")
 
     document_id = override_id(label, target_id)
@@ -221,6 +250,10 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         fresh = op == SET and not existing.get("active")
         base = {} if fresh else existing
         latest = version is None or version >= base.get("graph_version", "")
+        merged_append = _merge_append_fields(
+            {} if op == CREATE else base,
+            {} if op == DELETE else normalized_append,
+        )
         update: dict = {
             "$set": {
                 "kind": "node", "label": label, "target_id": target_id,
@@ -229,6 +262,10 @@ def record_override(db: Database, label: str, target_id: str, op: str,
             },
             "$setOnInsert": {"created_at": _now()},
         }
+        if merged_append:
+            update["$set"]["append_fields"] = merged_append
+        elif fresh or op == CREATE:
+            update.setdefault("$unset", {})["append_fields"] = ""
         if fresh:
             update["$set"]["source_value"] = {}
         if latest:
@@ -254,7 +291,8 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         return update
 
     stored = _write_decision(db, document_id, build)
-    logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(fields)))
+    changed_names = sorted({*fields, *(f"{name}+" for name in normalized_append)})
+    logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(changed_names))
     return cast(dict, stored)
 
 
@@ -373,7 +411,7 @@ def deactivate_override(db: Database, label: str, target_id: str,
         update: dict = {"$set": {"generation": row.get("generation", 0) + 1,
                            "field_versions": {}, "auto_value_versions": {}},
                   "$unset": {"graph_version": ""}}
-        if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
+        if row.get("op") == DELETE and (row.get("fields") or row.get("append_fields") or _made_by_hand(row)):
             update["$set"]["op"] = CREATE if _made_by_hand(row) else SET
             update["$unset"]["snapshot"] = ""
         else:
@@ -385,6 +423,22 @@ def deactivate_override(db: Database, label: str, target_id: str,
 
 def active_overrides(db: Database) -> list[dict]:
     return list(db[COLLECTION].find({"active": True}))
+
+
+def appended_field_values(db: Database, label: str, field: str) -> dict[str, list[Any]]:
+    """Return active additive list values per target_id for stage input enrichment."""
+    validate_label(label)
+    validate_fields(label, {field: []})
+    result: dict[str, list[Any]] = {}
+    cursor = db[COLLECTION].find(
+        {"active": True, "kind": "node", "label": label, f"append_fields.{field}": {"$exists": True}},
+        {"target_id": True, f"append_fields.{field}": True},
+    )
+    for row in cursor:
+        items = (row.get("append_fields") or {}).get(field)
+        if isinstance(items, list) and items:
+            result[str(row["target_id"])] = list(items)
+    return result
 
 
 def tombstoned_ids(db: Database, label: str) -> set[str]:
@@ -459,7 +513,22 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
 
             # A hand-made record carries the same kind of row as a hand edit.
             fields = override.get("fields") or {}
-            if not fields or not _needs_write(current, fields):
+            append_fields = override.get("append_fields") or {}
+            desired = dict(fields)
+            for name, additions in append_fields.items():
+                if not isinstance(additions, list) or not additions:
+                    continue
+                if name in desired and isinstance(desired[name], list):
+                    base_list = list(desired[name])
+                elif isinstance(current.get(name), list):
+                    base_list = list(current[name])
+                else:
+                    base_list = []
+                for item in additions:
+                    if item not in base_list:
+                        base_list.append(item)
+                desired[name] = base_list
+            if not desired or not _needs_write(current, desired):
                 unchanged += 1
                 continue
             covered = {name: current.get(name) for name, value in fields.items()
@@ -468,7 +537,7 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 db[COLLECTION].update_one(
                     {"_id": override["_id"]},
                     {"$set": {f"source_value.{name}": value for name, value in covered.items()}})
-            update_node(client, label, target_id, fields)
+            update_node(client, label, target_id, desired)
             applied += 1
         except MutationError as error:
             logger.warning("override %s skipped: %s", override["_id"], error)

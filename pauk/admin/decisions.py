@@ -71,9 +71,13 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
         row["what"] = WORDS.get((row.get("kind") == "rel", row.get("op")), "решение")
         # A claim is taken back by removing the thing, not by undoing.
         row["undoable"] = row.get("op") not in (CREATE, LINK)
-        row["pairs"] = sorted(
+        pairs = sorted(
             (name, (row.get("auto_value") or {}).get(name), value)
             for name, value in (row.get("fields") or {}).items())
+        for name, additions in sorted((row.get("append_fields") or {}).items()):
+            if additions:
+                pairs.append((f"{name} (+)", None, additions))
+        row["pairs"] = pairs
     return rows
 
 
@@ -211,3 +215,15 @@ def source_of_truth(db: Database, label: str, node_id: str) -> dict:
     return {name: stated.get(name, before.get(name))
             for name in (row.get("fields") or {})
             if name in stated or name in before}
+
+
+def appended_fields(db: Database, label: str, node_id: str) -> dict[str, list]:
+    """Read active additive list overrides so undo can strip only added items."""
+    row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}"})
+    if not row or not row.get("active"):
+        return {}
+    return {
+        name: list(items)
+        for name, items in (row.get("append_fields") or {}).items()
+        if isinstance(items, list) and items
+    }

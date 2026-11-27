@@ -69,9 +69,9 @@ class MongoSuggestionStore:
                     try:
                         link_suggestions.ensure_indexes(self.db)
                     except PyMongoError as exc:
-                        logger.warning("suggestion index initialization failed, will retry: %s", exc)
-                    else:
-                        self._indexed = True
+                        logger.warning("suggestion index initialization failed: %s", exc)
+                        raise
+                    self._indexed = True
         return link_suggestions.submit(
             self.db,
             publication_id=publication_id,

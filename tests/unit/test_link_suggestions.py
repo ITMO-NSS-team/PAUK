@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import mongomock
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from pauk.storage import link_suggestions
 
@@ -148,20 +148,27 @@ class LinkSuggestionsStoreTest(unittest.TestCase):
         claimed = link_suggestions.claim_for_apply(self.db, s1["suggestion_id"], "user:editor")
         self.assertIsNotNone(claimed)
         self.assertEqual(claimed["status"], link_suggestions.APPLYING)
+        self.assertTrue(claimed["active"])
         self.assertIsNone(link_suggestions.claim_for_apply(self.db, s1["suggestion_id"], "user:other"))
         self.assertIsNone(link_suggestions.reject(self.db, s1["suggestion_id"], actor="user:other"))
+        self.assertFalse(link_suggestions.is_recoverable(claimed))
+        self.assertIsNone(link_suggestions.claim_for_recovery(self.db, s1["suggestion_id"], "user:other"))
 
-        # Expire lease manually and verify reclaim works.
+        # Expire lease manually: claim_for_apply and reject still refuse APPLYING; claim_for_recovery works.
         self.db[link_suggestions.COLLECTION].update_one(
             {"_id": s1["suggestion_id"]},
             {"$set": {"applying_at": claimed["applying_at"] - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)}},
         )
-        reclaimed = link_suggestions.claim_for_apply(self.db, s1["suggestion_id"], "user:editor2")
+        self.assertIsNone(link_suggestions.claim_for_apply(self.db, s1["suggestion_id"], "user:editor2"))
+        self.assertIsNone(link_suggestions.reject(self.db, s1["suggestion_id"], actor="user:editor2"))
+        reclaimed = link_suggestions.claim_for_recovery(self.db, s1["suggestion_id"], "user:editor2")
         self.assertIsNotNone(reclaimed)
         self.assertNotEqual(reclaimed["apply_token"], claimed["apply_token"])
 
         self.assertTrue(link_suggestions.release_claim(self.db, s1["suggestion_id"], reclaimed["apply_token"]))
-        self.assertEqual(link_suggestions.get(self.db, s1["suggestion_id"])["status"], link_suggestions.PENDING)
+        released_doc = link_suggestions.get(self.db, s1["suggestion_id"])
+        self.assertEqual(released_doc["status"], link_suggestions.PENDING)
+        self.assertTrue(released_doc["active"])
 
         final_claim = link_suggestions.claim_for_apply(self.db, s1["suggestion_id"], "user:editor")
         approved = link_suggestions.complete_approval(
@@ -173,22 +180,43 @@ class LinkSuggestionsStoreTest(unittest.TestCase):
             applied_effect={"action": "implements"},
         )
         self.assertEqual(approved["status"], link_suggestions.APPROVED)
+        self.assertFalse(approved["active"])
         self.assertEqual(link_suggestions.count(self.db, status=link_suggestions.APPROVED), 1)
 
-        # reject() can also reclaim an expired APPLYING lease and clear lease metadata.
+        # reject() also refuses expired or recovery-flagged APPLYING rows, and marks active=False on rejection.
         c2 = link_suggestions.claim_for_apply(self.db, s2["suggestion_id"], "user:crashed")
         self.assertIsNotNone(c2)
+        self.assertTrue(link_suggestions.mark_needs_recovery(self.db, s2["suggestion_id"], c2["apply_token"], reason="uncertain"))
+        self.assertTrue(link_suggestions.is_recoverable(link_suggestions.get(self.db, s2["suggestion_id"])))
         self.assertIsNone(link_suggestions.reject(self.db, s2["suggestion_id"], actor="user:editor"))
         self.db[link_suggestions.COLLECTION].update_one(
             {"_id": s2["suggestion_id"]},
             {"$set": {"applying_at": c2["applying_at"] - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)}},
         )
-        rejected_after_lease = link_suggestions.reject(
-            self.db, s2["suggestion_id"], actor="user:editor", note="Lease expired reject"
+        self.assertIsNone(link_suggestions.reject(self.db, s2["suggestion_id"], actor="user:editor"))
+        recovered_c2 = link_suggestions.claim_for_recovery(self.db, s2["suggestion_id"], "user:editor")
+        self.assertIsNotNone(recovered_c2)
+        self.assertTrue(link_suggestions.release_claim(self.db, s2["suggestion_id"], recovered_c2["apply_token"]))
+        rejected_after_recover = link_suggestions.reject(
+            self.db, s2["suggestion_id"], actor="user:editor", note="Recovered then rejected"
         )
-        self.assertIsNotNone(rejected_after_lease)
-        self.assertEqual(rejected_after_lease["status"], link_suggestions.REJECTED)
-        self.assertNotIn("apply_token", rejected_after_lease)
+        self.assertIsNotNone(rejected_after_recover)
+        self.assertEqual(rejected_after_recover["status"], link_suggestions.REJECTED)
+        self.assertFalse(rejected_after_recover["active"])
+        self.assertNotIn("apply_token", rejected_after_recover)
+
+    def test_ensure_indexes_uses_active_boolean_filter_and_fails_loudly(self) -> None:
+        link_suggestions.ensure_indexes(self.db)
+        indexes = self.db[link_suggestions.COLLECTION].index_information()
+        self.assertEqual(indexes["uniq_active_dedup_key"]["partialFilterExpression"], {"active": True})
+        self.assertTrue(indexes["uniq_active_dedup_key"]["unique"])
+
+        collection = self.db[link_suggestions.COLLECTION]
+        with (
+            patch.object(collection, "create_index", side_effect=OperationFailure("index failed")),
+            self.assertRaises(OperationFailure),
+        ):
+            link_suggestions.ensure_indexes(self.db)
 
     def test_submit_handles_concurrent_duplicate_key_error(self) -> None:
         s = link_suggestions.submit(

@@ -52,11 +52,13 @@ from pauk.graph.overrides import (
     CREATE,
     DELETE,
     LINK,
+    SET,
     deactivate_override,
     override_generation,
     override_id,
     record_override,
     record_relationship_override,
+    relationship_override_id,
 )
 from pauk.mcp.contracts import normalize_repo_url_query, safe_evidence_url, safe_url
 from pauk.storage import link_suggestions
@@ -269,6 +271,8 @@ def _describe_row(
         "implements_exists": implements_exists,
         "graph_up": graph_up,
         "prior": _safe_prior(prior),
+        "can_recover": link_suggestions.is_recoverable(row),
+        "recovery_reason": _safe_str(row.get("recovery_reason")),
     }
 
 
@@ -333,15 +337,35 @@ def queue(
     )
 
 
-def _compensate_created_node(graph, db, label: str, node_id: str) -> None:
+class _UncertainGraphState(Exception):
+    """Graph mutation outcome could not be verified or post-failure compensation failed."""
+
+
+def _compensate_created_node(graph, db, label: str, node_id: str) -> bool:
+    """Undo a newly created node and its CREATE override; False if cleanup could not finish."""
+    ok = True
     try:
         delete_node(graph, label, node_id)
+    except NotFound:
+        pass
     except (MutationError, Neo4jError, DriverError) as error:
         logger.warning("could not delete compensated %s %s: %s", label, node_id, error)
+        ok = False
     try:
         deactivate_override(db, label, node_id, only_op=CREATE)
     except PyMongoError as error:
         logger.warning("could not deactivate compensated CREATE override for %s %s: %s", label, node_id, error)
+        ok = False
+    return ok
+
+
+def _compensate_claimed_override(db, label: str, node_id: str) -> bool:
+    try:
+        deactivate_override(db, label, node_id, only_op=CREATE)
+        return True
+    except PyMongoError as error:
+        logger.warning("could not deactivate compensated %s claim %s: %s", label, node_id, error)
+        return False
 
 
 def _safe_release_claim(db, suggestion_id: str, apply_token: str) -> None:
@@ -349,6 +373,13 @@ def _safe_release_claim(db, suggestion_id: str, apply_token: str) -> None:
         link_suggestions.release_claim(db, suggestion_id, apply_token)
     except PyMongoError as error:
         logger.warning("could not release apply claim for %s: %s", suggestion_id, error)
+
+
+def _safe_mark_needs_recovery(db, suggestion_id: str, apply_token: str, reason: str = "") -> None:
+    try:
+        link_suggestions.mark_needs_recovery(db, suggestion_id, apply_token, reason=reason)
+    except PyMongoError as error:
+        logger.warning("could not mark recovery flag for %s: %s", suggestion_id, error)
 
 
 def _apply_implements(
@@ -381,27 +412,56 @@ def _apply_implements(
         )
         created_repo = True
 
-    existed = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id) is not None
+    try:
+        existed = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id) is not None
+    except (MutationError, Neo4jError, DriverError):
+        if created_repo and not _compensate_created_node(graph, db, "Repository", repo_id):
+            raise _UncertainGraphState(
+                "Не удалось откатить созданный репозиторий после сбоя проверки связи IMPLEMENTS."
+            ) from None
+        raise
     if not existed:
+        created_edge = False
         try:
             create_relationship(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+            created_edge = True
         except (MutationError, Neo4jError):
-            if created_repo:
-                _compensate_created_node(graph, db, "Repository", repo_id)
+            if created_repo and not _compensate_created_node(graph, db, "Repository", repo_id):
+                raise _UncertainGraphState(
+                    "Не удалось откатить созданный репозиторий после сбоя создания связи IMPLEMENTS."
+                ) from None
             raise
+        except DriverError as error:
+            try:
+                probed = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+            except (MutationError, Neo4jError, DriverError):
+                raise _UncertainGraphState(
+                    "Связь с Neo4j оборвалась во время создания IMPLEMENTS; "
+                    "проверьте и восстановите предложение после восстановления графа."
+                ) from error
+            if probed is not None:
+                created_edge = True
+            else:
+                if created_repo and not _compensate_created_node(graph, db, "Repository", repo_id):
+                    raise _UncertainGraphState(
+                        "Связь IMPLEMENTS не создалась, но откат нового репозитория не завершился; "
+                        "проверьте и восстановите предложение."
+                    ) from error
+                raise
 
-        def _undo_implements() -> None:
-            delete_relationship(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
-            if created_repo:
-                _compensate_created_node(graph, db, "Repository", repo_id)
+        if created_edge:
+            def _undo_implements() -> None:
+                delete_relationship(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+                if created_repo:
+                    _compensate_created_node(graph, db, "Repository", repo_id)
 
-        _record(
-            undo=_undo_implements,
-            write=lambda: record_relationship_override(
-                db, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id,
-                op=LINK, actor=actor, note=note,
-            ),
-        )
+            _record(
+                undo=_undo_implements,
+                write=lambda: record_relationship_override(
+                    db, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id,
+                    op=LINK, actor=actor, note=note,
+                ),
+            )
     else:
         _record(
             undo=lambda: None,
@@ -437,7 +497,18 @@ def _apply_not_implements(
         return {"action": "noop_repo_absent", "publication_id": pub_id}
     snapshot = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
     if snapshot is not None:
-        delete_relationship(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+        try:
+            delete_relationship(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+        except DriverError as error:
+            try:
+                still_there = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+            except (MutationError, Neo4jError, DriverError):
+                raise _UncertainGraphState(
+                    "Связь с Neo4j оборвалась при снятии IMPLEMENTS; "
+                    "проверьте и восстановите предложение после восстановления графа."
+                ) from error
+            if still_there is not None:
+                raise
         _record(
             undo=lambda: create_relationship(
                 graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id, snapshot
@@ -496,9 +567,22 @@ def _apply_mentions(
             graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url
         ) is not None
         if not existed:
-            create_relationship(
-                graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url, edge_props
-            )
+            try:
+                create_relationship(
+                    graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url, edge_props
+                )
+            except DriverError as error:
+                try:
+                    probed = _edge_exists(
+                        graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url
+                    )
+                except (MutationError, Neo4jError, DriverError):
+                    raise _UncertainGraphState(
+                        "Связь с Neo4j оборвалась при добавлении MENTIONS_LINK; "
+                        "проверьте и восстановите предложение после восстановления графа."
+                    ) from error
+                if probed is None:
+                    raise
             _record(
                 undo=lambda: delete_relationship(
                     graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url
@@ -552,33 +636,56 @@ def _apply_mentions(
                 ),
             )
             claimed_candidate = True
-    existed = _edge_exists(
-        graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url
-    ) is not None
+
+    def _cleanup_candidate() -> bool:
+        if created_candidate:
+            return _compensate_created_node(graph, db, "LinkCandidate", normalized_url)
+        if claimed_candidate:
+            return _compensate_claimed_override(db, "LinkCandidate", normalized_url)
+        return True
+
+    try:
+        existed = _edge_exists(
+            graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url
+        ) is not None
+    except (MutationError, Neo4jError, DriverError):
+        if not _cleanup_candidate():
+            raise _UncertainGraphState(
+                "Не удалось откатить LinkCandidate после сбоя проверки связи MENTIONS_LINK."
+            ) from None
+        raise
     if not existed:
         try:
             create_relationship(
                 graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url, edge_props
             )
-        except (MutationError, Neo4jError, DriverError):
-            if created_candidate:
-                _compensate_created_node(graph, db, "LinkCandidate", normalized_url)
-            elif claimed_candidate:
-                try:
-                    deactivate_override(db, "LinkCandidate", normalized_url, only_op=CREATE)
-                except PyMongoError as error:
-                    logger.warning("could not deactivate compensated LinkCandidate claim %s: %s", normalized_url, error)
+        except (MutationError, Neo4jError):
+            if not _cleanup_candidate():
+                raise _UncertainGraphState(
+                    "Не удалось откатить LinkCandidate после сбоя создания связи MENTIONS_LINK."
+                ) from None
             raise
+        except DriverError as error:
+            try:
+                probed = _edge_exists(
+                    graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url
+                )
+            except (MutationError, Neo4jError, DriverError):
+                raise _UncertainGraphState(
+                    "Связь с Neo4j оборвалась при добавлении MENTIONS_LINK для кандидата; "
+                    "проверьте и восстановите предложение после восстановления графа."
+                ) from error
+            if probed is None:
+                if not _cleanup_candidate():
+                    raise _UncertainGraphState(
+                        "Связь MENTIONS_LINK не создалась, но откат LinkCandidate не завершился; "
+                        "проверьте и восстановите предложение."
+                    ) from error
+                raise
 
         def _undo_mentions_candidate() -> None:
             delete_relationship(graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url)
-            if created_candidate:
-                _compensate_created_node(graph, db, "LinkCandidate", normalized_url)
-            elif claimed_candidate:
-                try:
-                    deactivate_override(db, "LinkCandidate", normalized_url, only_op=CREATE)
-                except PyMongoError as error:
-                    logger.warning("could not deactivate compensated LinkCandidate claim %s: %s", normalized_url, error)
+            _cleanup_candidate()
 
         _record(
             undo=_undo_mentions_candidate,
@@ -619,39 +726,258 @@ def _apply_full_text(
         raise ValueError("Некорректный URL полного текста.")
     previous = pub_props.get("pdf_urls")
     existing = [item for item in previous if isinstance(item, str)] if isinstance(previous, list) else []
+    generation = override_generation(db, "Publication", pub_id)
     if evidence_url in existing:
+        _record(
+            undo=lambda: None,
+            write=lambda: record_override(
+                db,
+                "Publication",
+                pub_id,
+                SET,
+                actor=actor,
+                note=note,
+                expected_generation=generation,
+                append_fields={"pdf_urls": [evidence_url]},
+            ),
+        )
         return {"action": "full_text_already_present", "publication_id": pub_id, "evidence_url": evidence_url}
     new_pdfs = [*existing, evidence_url]
-    generation = override_generation(db, "Publication", pub_id)
-    updated = update_node(
-        graph,
-        "Publication",
-        pub_id,
-        {"pdf_urls": new_pdfs},
-        expected_updated_at=pub_props.get("updated_at"),
-    )
+    try:
+        updated = update_node(
+            graph,
+            "Publication",
+            pub_id,
+            {"pdf_urls": new_pdfs},
+            expected_updated_at=pub_props.get("updated_at"),
+        )
+    except DriverError as error:
+        try:
+            probed = read_node(graph, "Publication", pub_id)
+        except (MutationError, Neo4jError, DriverError):
+            raise _UncertainGraphState(
+                "Связь с Neo4j оборвалась при добавлении ссылки PDF; "
+                "проверьте и восстановите предложение после восстановления графа."
+            ) from error
+        probed_urls = probed.get("pdf_urls")
+        if isinstance(probed_urls, list) and evidence_url in probed_urls:
+            updated = probed
+        else:
+            raise
     _record(
         undo=lambda: update_node(
             graph,
             "Publication",
             pub_id,
             {"pdf_urls": previous},
-            expected_updated_at=updated["updated_at"],
+            expected_updated_at=updated.get("updated_at"),
         ),
         write=lambda: record_override(
             db,
             "Publication",
             pub_id,
-            "set",
-            {"pdf_urls": new_pdfs},
+            SET,
             actor=actor,
             note=note,
-            auto_value={"pdf_urls": previous},
-            graph_updated_at=updated["updated_at"],
+            graph_updated_at=updated.get("updated_at"),
             expected_generation=generation,
+            append_fields={"pdf_urls": [evidence_url]},
         ),
     )
     return {"action": "full_text_added", "publication_id": pub_id, "evidence_url": evidence_url}
+
+
+def _matches_suggestion_note(override_doc: dict[str, Any] | None, suggestion_id: str) -> bool:
+    note = (override_doc or {}).get("note")
+    if not isinstance(note, str):
+        return False
+    prefix = f"предложение {suggestion_id}"
+    return note == prefix or note.startswith(f"{prefix}:")
+
+
+def _active_rel_override(
+    db,
+    src_label: str,
+    rel_type: str,
+    tgt_label: str,
+    src_id: str,
+    tgt_id: str,
+    *,
+    op: str,
+) -> dict[str, Any] | None:
+    return db[OVERRIDES].find_one(
+        {
+            "_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id),
+            "active": True,
+            "op": op,
+        }
+    )
+
+
+def _inspect_applied_state(
+    graph,
+    db,
+    suggestion: dict[str, Any],
+) -> tuple[str, dict[str, Any] | str | None]:
+    """Check Neo4j + `graph_overrides` to decide whether a stuck `applying` row succeeded."""
+    sid = str(suggestion.get("_id") or "")
+    pub_raw = suggestion.get("publication_id")
+    if not isinstance(pub_raw, str) or not pub_raw:
+        return "not_applied", None
+    pub = _resolve_publication(graph, pub_raw)
+    if pub is None:
+        return "not_applied", None
+    pub_id, pub_props = pub
+    relation = suggestion.get("proposed_relation")
+
+    if relation == link_suggestions.IMPLEMENTS:
+        repo_id, _repo_props, ambiguous = _resolve_repository(
+            graph, suggestion.get("repository_id"), suggestion.get("repository_url")
+        )
+        if ambiguous:
+            return "partial", "По этому адресу найдено несколько репозиториев в графе; свяжите вручную."
+        if repo_id is None:
+            normalized_url = normalize_repo_url_query(suggestion.get("repository_url"))
+            if normalized_url:
+                cand_id, _ = _new_repository_id(graph, normalized_url)
+                orphan_ov = db[OVERRIDES].find_one(
+                    {"_id": override_id("Repository", cand_id), "active": True, "op": CREATE}
+                )
+                if _matches_suggestion_note(orphan_ov, sid):
+                    return (
+                        "partial",
+                        "В ручных решениях осталось создание репозитория без узла в графе; проверьте и разберите вручную.",
+                    )
+            return "not_applied", None
+        edge = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+        rel_ov = _active_rel_override(
+            db, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id, op=LINK
+        )
+        node_ov = db[OVERRIDES].find_one(
+            {"_id": override_id("Repository", repo_id), "active": True, "op": CREATE}
+        )
+        created_by_this = _matches_suggestion_note(node_ov, sid)
+        if edge is not None and rel_ov is not None:
+            return (
+                "applied",
+                {
+                    "action": "implements",
+                    "publication_id": pub_id,
+                    "repository_id": repo_id,
+                    "created_repository": created_by_this,
+                    "created_edge": True,
+                },
+            )
+        if edge is None and rel_ov is None and not created_by_this:
+            return "not_applied", None
+        return (
+            "partial",
+            "В графе или ручных решениях осталась незавершённая правка IMPLEMENTS; проверьте карточку.",
+        )
+
+    if relation == link_suggestions.NOT_IMPLEMENTS:
+        repo_id, _repo_props, ambiguous = _resolve_repository(
+            graph, suggestion.get("repository_id"), suggestion.get("repository_url")
+        )
+        if ambiguous:
+            return "partial", "По этому адресу найдено несколько репозиториев в графе; проверьте связь вручную."
+        if repo_id is None:
+            return "not_applied", None
+        edge = _edge_exists(graph, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id)
+        del_ov = _active_rel_override(
+            db, "Repository", "IMPLEMENTS", "Publication", repo_id, pub_id, op=DELETE
+        )
+        if edge is None and del_ov is not None:
+            return (
+                "applied",
+                {"action": "removed_implements", "publication_id": pub_id, "repository_id": repo_id},
+            )
+        if edge is not None and del_ov is None:
+            return "not_applied", None
+        return (
+            "partial",
+            "Состояние снятия IMPLEMENTS между графом и ручными решениями расходится; проверьте карточку.",
+        )
+
+    if relation == link_suggestions.MENTIONS:
+        repo_id, repo_props, ambiguous = _resolve_repository(
+            graph, suggestion.get("repository_id"), suggestion.get("repository_url")
+        )
+        if ambiguous:
+            return "partial", "По этому адресу найдено несколько репозиториев в графе; свяжите вручную."
+        if repo_id is not None and repo_props is not None:
+            repo_url = repo_props.get("url")
+            if not isinstance(repo_url, str) or not repo_url:
+                return "not_applied", None
+            edge = _edge_exists(graph, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url)
+            rel_ov = _active_rel_override(
+                db, "Publication", "MENTIONS_LINK", "Repository", pub_id, repo_url, op=LINK
+            )
+            if edge is not None and rel_ov is not None:
+                return (
+                    "applied",
+                    {"action": "mentions_repository", "publication_id": pub_id, "repository_id": repo_id, "created_edge": True},
+                )
+            if edge is None and rel_ov is None:
+                return "not_applied", None
+            return (
+                "partial",
+                "В графе или ручных решениях осталась незавершённая правка MENTIONS_LINK; проверьте карточку.",
+            )
+        normalized_url = normalize_repo_url_query(suggestion.get("repository_url"))
+        if normalized_url is None:
+            return "not_applied", None
+        cand = graph.fetch_node_properties("LinkCandidate", normalized_url)
+        cand_ov = db[OVERRIDES].find_one(
+            {"_id": override_id("LinkCandidate", normalized_url), "active": True, "op": CREATE}
+        )
+        edge = _edge_exists(
+            graph, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url
+        )
+        rel_ov = _active_rel_override(
+            db, "Publication", "MENTIONS_LINK", "LinkCandidate", pub_id, normalized_url, op=LINK
+        )
+        created_by_this = _matches_suggestion_note(cand_ov, sid)
+        if cand is not None and edge is not None and rel_ov is not None and cand_ov is not None:
+            return (
+                "applied",
+                {
+                    "action": "mentions_candidate",
+                    "publication_id": pub_id,
+                    "candidate_id": normalized_url,
+                    "created_candidate": created_by_this,
+                    "created_edge": True,
+                },
+            )
+        if edge is None and rel_ov is None and not created_by_this:
+            return "not_applied", None
+        return (
+            "partial",
+            "В графе или ручных решениях осталась незавершённая правка LinkCandidate; проверьте карточку.",
+        )
+
+    if relation == link_suggestions.FULL_TEXT:
+        evidence_url = safe_evidence_url(suggestion.get("evidence_url"))
+        if evidence_url is None:
+            return "not_applied", None
+        existing = pub_props.get("pdf_urls")
+        pdf_list = [item for item in existing if isinstance(item, str)] if isinstance(existing, list) else []
+        node_ov = db[OVERRIDES].find_one({"_id": override_id("Publication", pub_id), "active": True})
+        appended = ((node_ov or {}).get("append_fields") or {}).get("pdf_urls") or []
+        has_ov = bool(node_ov and isinstance(appended, list) and evidence_url in appended)
+        if evidence_url in pdf_list and has_ov:
+            return (
+                "applied",
+                {"action": "full_text_added", "publication_id": pub_id, "evidence_url": evidence_url},
+            )
+        if not has_ov and not _matches_suggestion_note(node_ov, sid) and evidence_url not in pdf_list:
+            return "not_applied", None
+        return (
+            "partial",
+            "Состояние pdf_urls в графе и ручных решениях расходится; проверьте карточку публикации.",
+        )
+
+    return "not_applied", None
 
 
 @router.post("/suggestions/{suggestion_id}/approve")
@@ -669,13 +995,20 @@ async def approve(
     note = str(form.get("note", "")).strip()[:500]
     tab = _tab(form.get("tab"), link_suggestions.PENDING)
     try:
-        if link_suggestions.get(db, suggestion_id) is None:
+        current = link_suggestions.get(db, suggestion_id)
+        if current is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "такого предложения нет")
         claimed = link_suggestions.claim_for_apply(db, suggestion_id, user.actor)
     except PyMongoError as error:
         logger.warning("mongo failed before applying suggestion %s: %s", suggestion_id, error)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
     if claimed is None:
+        latest = link_suggestions.get(db, suggestion_id) or current
+        if latest.get("status") == link_suggestions.APPLYING:
+            return _redirect(
+                tab,
+                problem="Предложение в статусе обработки; при зависании используйте проверку и восстановление.",
+            )
         return _redirect(tab, problem="Это предложение уже рассмотрено или обрабатывается.")
 
     token = claimed["apply_token"]
@@ -699,6 +1032,9 @@ async def approve(
             )
         else:
             raise ValueError(f"Неизвестный тип предложения: {relation}")
+    except _UncertainGraphState as error:
+        _safe_mark_needs_recovery(db, suggestion_id, token, reason=str(error))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from None
     except ValueError as error:
         _safe_release_claim(db, suggestion_id, token)
         return _redirect(tab, problem=str(error))
@@ -726,7 +1062,9 @@ async def approve(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
     except HTTPException as exc:
         detail = str(exc.detail)
-        if "не откатывали" not in detail and "не откатилась" not in detail:
+        if "не откатывали" in detail or "не откатилась" in detail:
+            _safe_mark_needs_recovery(db, suggestion_id, token, reason=detail)
+        else:
             _safe_release_claim(db, suggestion_id, token)
         raise
 
@@ -741,11 +1079,12 @@ async def approve(
         )
     except PyMongoError as error:
         logger.exception("mongo failed completing approval of %s after graph commit: %s", suggestion_id, error)
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
+        msg = (
             "Изменение записано в граф и ручные решения, но статус предложения в MongoDB не обновился; "
-            "проверьте страницу после восстановления соединения.",
-        ) from None
+            "восстановите статус на странице предложений после восстановления соединения."
+        )
+        _safe_mark_needs_recovery(db, suggestion_id, token, reason=msg)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, msg) from None
     if completed is None:
         logger.warning("%s applied suggestion %s, but claim token expired before completion", user.actor, suggestion_id)
         return _redirect(
@@ -754,6 +1093,74 @@ async def approve(
         )
     logger.info("%s approved suggestion %s (%s)", user.actor, suggestion_id, effect.get("action"))
     return _redirect(tab, done="approved")
+
+
+@router.post("/suggestions/{suggestion_id}/recover")
+async def recover(
+    suggestion_id: str,
+    request: Request,
+    user: Editor,
+    db: Db,
+    graph: Graph,
+    _: CsrfChecked,
+    __: StoresReady,
+):
+    """Reconcile a stuck `applying` suggestion against Neo4j and `graph_overrides`."""
+    form = await request.form()
+    note = str(form.get("note", "")).strip()[:500]
+    tab = _tab(form.get("tab"), link_suggestions.PENDING)
+    try:
+        if link_suggestions.get(db, suggestion_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "такого предложения нет")
+        claimed = link_suggestions.claim_for_recovery(db, suggestion_id, user.actor)
+    except PyMongoError as error:
+        logger.warning("mongo failed before recovering suggestion %s: %s", suggestion_id, error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
+    if claimed is None:
+        return _redirect(
+            tab,
+            problem="Восстановление сейчас недоступно: предложение уже завершено или ещё активно обрабатывается.",
+        )
+
+    token = claimed["apply_token"]
+    try:
+        state, detail = _inspect_applied_state(graph, db, claimed)
+    except (ServiceUnavailable, AuthError, DriverError, Neo4jError) as error:
+        _safe_mark_needs_recovery(db, suggestion_id, token)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"Граф Neo4j недоступен; проверить состояние предложения не удалось ({error}).",
+        ) from None
+    except PyMongoError as error:
+        logger.warning("mongo failed while inspecting suggestion %s: %s", suggestion_id, error)
+        _safe_mark_needs_recovery(db, suggestion_id, token)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
+
+    try:
+        if state == "applied":
+            completed = link_suggestions.complete_approval(
+                db,
+                suggestion_id,
+                token,
+                actor=user.actor,
+                note=note or "восстановлено после сбоя",
+                applied_effect=detail if isinstance(detail, dict) else {},
+            )
+            if completed is None:
+                return _redirect(tab, problem="Предложение обновилось параллельно; обновите страницу.")
+            logger.info("%s recovered suggestion %s as approved", user.actor, suggestion_id)
+            return _redirect(tab, done="recovered_approved")
+        if state == "not_applied":
+            if not link_suggestions.release_claim(db, suggestion_id, token):
+                return _redirect(tab, problem="Предложение обновилось параллельно; обновите страницу.")
+            logger.info("%s recovered suggestion %s back to pending", user.actor, suggestion_id)
+            return _redirect(tab, done="recovered_pending")
+        diag = str(detail or "Состояние в графе частично применено; проверьте и разберите вручную.")
+        link_suggestions.mark_needs_recovery(db, suggestion_id, token, reason=diag)
+        return _redirect(tab, problem=diag)
+    except PyMongoError as error:
+        logger.warning("mongo failed while finalizing recovery for %s: %s", suggestion_id, error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
 
 
 @router.post("/suggestions/{suggestion_id}/reject")
@@ -770,13 +1177,20 @@ async def reject(
     note = str(form.get("note", "")).strip()[:500]
     tab = _tab(form.get("tab"), link_suggestions.PENDING)
     try:
-        if link_suggestions.get(db, suggestion_id) is None:
+        current = link_suggestions.get(db, suggestion_id)
+        if current is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "такого предложения нет")
         updated = link_suggestions.reject(db, suggestion_id, actor=user.actor, note=note)
     except PyMongoError as error:
         logger.warning("mongo failed while rejecting suggestion %s: %s", suggestion_id, error)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
     if updated is None:
+        latest = link_suggestions.get(db, suggestion_id) or current
+        if latest.get("status") == link_suggestions.APPLYING:
+            return _redirect(
+                tab,
+                problem="Предложение находится в статусе обработки; отклонить напрямую нельзя — сначала проверьте и восстановите статус.",
+            )
         return _redirect(tab, problem="Это предложение уже рассмотрено или обрабатывается.")
     logger.info("%s rejected suggestion %s", user.actor, suggestion_id)
     return _redirect(tab, done="rejected")

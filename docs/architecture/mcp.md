@@ -100,12 +100,19 @@ repository APIs. They do not imply a current snapshot/access-check timestamp.
     literals or credentials) and forbids `repository_id`/`repository_url`.
   - `rationale` is 10–1,000 characters; optional `quote` is 1–1,000 characters;
     disallowed control characters are rejected (`INPUT`).
+  - Active uniqueness (`pending` and `applying`) is enforced by a partial
+    unique index on `{"active": true}` (compatible with MongoDB 4.4+); index
+    initialization failures refuse queuing (`BACKEND`) rather than dropping the
+    uniqueness guarantee.
   - Duplicate active claims return `status="already_queued"`, identical
     previously reviewed submissions return `status="already_reviewed"`, and queue
     saturation returns `QUEUE_FULL`.
   - **Never mutates Neo4j**: submissions land solely in MongoDB
     (`link_suggestions`) and take effect only after explicit human approval on the
-    admin panel's `/suggestions` page.
+    admin panel's `/suggestions` page. Approving `full_text` records an additive
+    `append_fields.pdf_urls` override merged at graph publish and read by
+    `code_links`; stuck `applying` entries cannot be rejected directly and are
+    reconciled against Neo4j + `graph_overrides` via `/suggestions/<id>/recover`.
 
 Repository `metadata_note` and `verification_note` describe this call's limits:
 `last_updated` is a cached upstream update date, not an access check or proof

@@ -97,26 +97,24 @@ def content_hash(
 
 def ensure_indexes(db: Database) -> None:
     """Create indexes used by MCP submission dedup and admin moderation queues."""
-    db[COLLECTION].create_index([("status", 1), ("submitted_at", 1)])
-    db[COLLECTION].create_index([("status", 1), ("reviewed_at", -1)])
-    db[COLLECTION].create_index([("dedup_key", 1), ("status", 1)])
-    db[COLLECTION].create_index([("publication_id", 1), ("status", 1)])
-    db[COLLECTION].create_index([("content_hash", 1)])
-    try:
-        db[COLLECTION].create_index(
-            [("dedup_key", 1)],
-            unique=True,
-            name="uniq_active_dedup_key",
-            partialFilterExpression={"status": {"$in": [PENDING, APPLYING]}},
-        )
-    except Exception as error:
-        logger.info("link_suggestions partial unique index skipped: %s", error)
+    collection = db[COLLECTION]
+    collection.create_index([("status", 1), ("submitted_at", 1)])
+    collection.create_index([("status", 1), ("reviewed_at", -1)])
+    collection.create_index([("dedup_key", 1), ("status", 1)])
+    collection.create_index([("publication_id", 1), ("status", 1)])
+    collection.create_index([("content_hash", 1)])
+    collection.create_index(
+        [("dedup_key", 1)],
+        unique=True,
+        name="uniq_active_dedup_key",
+        partialFilterExpression={"active": True},
+    )
 
 
 def _bump_active(collection, key: str, moment: datetime) -> dict[str, Any] | None:
     return collection.find_one_and_update(
         {"dedup_key": key, "status": {"$in": [PENDING, APPLYING]}},
-        {"$inc": {"submission_count": 1}, "$set": {"last_submitted_at": moment}},
+        {"$inc": {"submission_count": 1}, "$set": {"last_submitted_at": moment, "active": True}},
         return_document=ReturnDocument.AFTER,
     )
 
@@ -183,6 +181,7 @@ def submit(
         "dedup_key": key,
         "content_hash": digest,
         "status": PENDING,
+        "active": True,
         "publication_id": publication_id,
         "proposed_relation": proposed_relation,
         "repository_id": repository_id,
@@ -259,41 +258,106 @@ def prior_decisions(db: Database, dedup_keys: list[str]) -> dict[str, dict[str, 
     return decisions
 
 
-def _claimable_filter(suggestion_id: str, moment: datetime) -> dict[str, Any]:
-    """Match a pending row or one whose active applying lease has expired."""
-    stale_before = moment - timedelta(seconds=APPLYING_LEASE_SECONDS)
-    return {
-        "_id": suggestion_id,
-        "$or": [
-            {"status": PENDING},
-            {"status": APPLYING, "applying_at": {"$lt": stale_before}},
-        ],
-    }
+def _as_utc(moment: datetime) -> datetime:
+    """Normalize naive datetimes (as returned by mongomock) to UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def is_recoverable(row: dict[str, Any], *, moment: datetime | None = None) -> bool:
+    """True when an `applying` suggestion is flagged for recovery or its lease expired."""
+    if row.get("status") != APPLYING:
+        return False
+    if row.get("needs_recovery"):
+        return True
+    applying_at = row.get("applying_at")
+    if not isinstance(applying_at, datetime):
+        return False
+    now = _as_utc(moment or _now())
+    return _as_utc(applying_at) < now - timedelta(seconds=APPLYING_LEASE_SECONDS)
 
 
 def claim_for_apply(db: Database, suggestion_id: str, actor: str) -> dict[str, Any] | None:
-    """Atomically claim a pending suggestion (or reclaim an expired apply lease)."""
+    """Atomically claim a pending suggestion; stuck `applying` rows use recovery."""
     moment = _now()
     token = uuid4().hex
     return db[COLLECTION].find_one_and_update(
-        _claimable_filter(suggestion_id, moment),
+        {"_id": suggestion_id, "status": PENDING},
         {
             "$set": {
                 "status": APPLYING,
+                "active": True,
                 "applying_by": actor,
                 "applying_at": moment,
                 "apply_token": token,
+            },
+            "$unset": {"needs_recovery": "", "recovery_reason": ""},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def mark_needs_recovery(
+    db: Database,
+    suggestion_id: str,
+    apply_token: str,
+    *,
+    reason: str = "",
+) -> bool:
+    """Flag an `applying` suggestion for immediate recovery when graph state is uncertain."""
+    result = db[COLLECTION].update_one(
+        {"_id": suggestion_id, "status": APPLYING, "apply_token": apply_token},
+        {
+            "$set": {
+                "active": True,
+                "needs_recovery": True,
+                "recovery_reason": reason,
             }
+        },
+    )
+    return result.matched_count > 0
+
+
+def claim_for_recovery(db: Database, suggestion_id: str, actor: str) -> dict[str, Any] | None:
+    """Atomically reclaim a stuck `applying` suggestion after lease expiry or uncertainty."""
+    moment = _now()
+    stale_before = moment - timedelta(seconds=APPLYING_LEASE_SECONDS)
+    token = uuid4().hex
+    return db[COLLECTION].find_one_and_update(
+        {
+            "_id": suggestion_id,
+            "status": APPLYING,
+            "$or": [
+                {"needs_recovery": True},
+                {"applying_at": {"$lt": stale_before}},
+            ],
+        },
+        {
+            "$set": {
+                "active": True,
+                "applying_by": actor,
+                "applying_at": moment,
+                "apply_token": token,
+            },
+            "$unset": {"needs_recovery": "", "recovery_reason": ""},
         },
         return_document=ReturnDocument.AFTER,
     )
 
 
 def release_claim(db: Database, suggestion_id: str, apply_token: str) -> bool:
-    """Return a claimed suggestion back to pending when validation or graph write aborts."""
+    """Return a claimed suggestion back to pending when validation or confirmed non-write aborts."""
     result = db[COLLECTION].update_one(
         {"_id": suggestion_id, "status": APPLYING, "apply_token": apply_token},
-        {"$set": {"status": PENDING}, "$unset": {"applying_by": "", "applying_at": "", "apply_token": ""}},
+        {
+            "$set": {"status": PENDING, "active": True},
+            "$unset": {
+                "applying_by": "",
+                "applying_at": "",
+                "apply_token": "",
+                "needs_recovery": "",
+                "recovery_reason": "",
+            },
+        },
     )
     return result.matched_count > 0
 
@@ -313,12 +377,19 @@ def complete_approval(
         {
             "$set": {
                 "status": APPROVED,
+                "active": False,
                 "reviewed_by": actor,
                 "reviewed_at": _now(),
                 "review_note": note,
                 "applied_effect": dict(applied_effect or {}),
             },
-            "$unset": {"applying_by": "", "applying_at": "", "apply_token": ""},
+            "$unset": {
+                "applying_by": "",
+                "applying_at": "",
+                "apply_token": "",
+                "needs_recovery": "",
+                "recovery_reason": "",
+            },
         },
         return_document=ReturnDocument.AFTER,
     )
@@ -331,18 +402,25 @@ def reject(
     actor: str,
     note: str = "",
 ) -> dict[str, Any] | None:
-    """Reject a pending or lease-expired suggestion without touching Neo4j."""
+    """Reject a pending suggestion without touching Neo4j (`applying` rows must recover first)."""
     moment = _now()
     return db[COLLECTION].find_one_and_update(
-        _claimable_filter(suggestion_id, moment),
+        {"_id": suggestion_id, "status": PENDING},
         {
             "$set": {
                 "status": REJECTED,
+                "active": False,
                 "reviewed_by": actor,
                 "reviewed_at": moment,
                 "review_note": note,
             },
-            "$unset": {"applying_by": "", "applying_at": "", "apply_token": ""},
+            "$unset": {
+                "applying_by": "",
+                "applying_at": "",
+                "apply_token": "",
+                "needs_recovery": "",
+                "recovery_reason": "",
+            },
         },
         return_document=ReturnDocument.AFTER,
     )

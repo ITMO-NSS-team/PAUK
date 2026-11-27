@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlparse
 
 import pymupdf as fitz
 
+from pauk.graph.overrides import appended_field_values
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
@@ -586,6 +587,23 @@ class CodeLinksStage(EnrichmentStage):
 
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
+        mongo_db = getattr(self.prepared, "db", None)
+        approved_pdfs = (
+            appended_field_values(mongo_db, "Publication", "pdf_urls")
+            if mongo_db is not None
+            else {}
+        )
+        publications_with_new_pdfs: set[str] = set()
+        if approved_pdfs:
+            for publication in publications:
+                extra_urls: list[str] = []
+                for key in (publication.id, *publication.merged_ids):
+                    for url in approved_pdfs.get(key, ()):
+                        if isinstance(url, str) and url not in publication.pdf_urls and url not in extra_urls:
+                            extra_urls.append(url)
+                if extra_urls:
+                    publication.pdf_urls.extend(extra_urls)
+                    publications_with_new_pdfs.add(publication.id)
         links_by_publication = {
             row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
@@ -596,7 +614,10 @@ class CodeLinksStage(EnrichmentStage):
             publication
             for publication in publications
             if self.selected("publications", publication.id)
-            and self.needs_attempt(publication.processing.get(self.name))
+            and (
+                self.needs_attempt(publication.processing.get(self.name))
+                or (publication.id in publications_with_new_pdfs and not self.pdf_store.exists(publication.id))
+            )
         ]
         changed = 0
         for pub in self.progress(candidates, total=len(candidates)):

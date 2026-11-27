@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import fitz
 
-from pauk.models import CodeLink, LinkOccurrence, RepoLink
+from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.pipeline.stages.code_links import (
     _collect_occurrences,
     _extract_pdf,
@@ -400,6 +400,59 @@ class ExtractPdfTest(unittest.TestCase):
             [occurrence.source for occurrence in preserved[url]],
             ["pdf_text", "pdf_annotation"],
         )
+
+
+class CodeLinksApprovedPdfOverrideTest(unittest.TestCase):
+    def test_approved_pdf_url_override_triggers_download_and_does_not_repeat(self):
+        import tempfile
+        from pathlib import Path
+
+        import mongomock
+
+        from pauk.graph.overrides import SET, record_override
+        from pauk.models.processing import ProcessingState, ProcessingStatus
+        from pauk.pipeline.stages.code_links import CodeLinksStage
+        from pauk.settings import Settings
+        from pauk.storage import PreparedStore, RawStore
+
+        db = mongomock.MongoClient()["pauk_code_links_override_test"]
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Settings(data_dir=Path(tmp) / "data", pdf_crawler_url="")
+            prepared = PreparedStore(db, "sample")
+            prepared.write_models(
+                "publications",
+                [
+                    Publication(
+                        id="W1",
+                        title="No PDF initially",
+                        processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
+                    )
+                ],
+            )
+            record_override(
+                db,
+                "Publication",
+                "W1",
+                SET,
+                actor="user:roman",
+                append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+            )
+            pdf_bytes = _make_pdf_bytes("Code released at https://github.com/org/override-repo")
+            with patch("pauk.pipeline.stages.code_links.HttpClient") as http_client:
+                http_client.return_value.get_bytes.return_value = pdf_bytes
+                first = CodeLinksStage(prepared, RawStore(db, "sample"), config=config).run()
+                self.assertEqual(first["publications"], 1)
+                http_client.return_value.get_bytes.assert_called_once_with("https://arxiv.org/pdf/2501.00001.pdf")
+                stored_pub = list(prepared.read_models("publications", Publication))[0]
+                self.assertEqual(stored_pub.pdf_urls, ["https://arxiv.org/pdf/2501.00001.pdf"])
+                stored_links = list(prepared.read_models("repo_links", RepoLink))[0]
+                self.assertEqual([link.url for link in stored_links.links], ["https://github.com/org/override-repo"])
+
+                # Second run sees cached PDF and already-merged pdf_urls -> no re-download.
+                http_client.return_value.get_bytes.reset_mock()
+                second = CodeLinksStage(prepared, RawStore(db, "sample"), config=config).run()
+                self.assertEqual(second["publications"], 0)
+                http_client.return_value.get_bytes.assert_not_called()
 
 
 if __name__ == "__main__":

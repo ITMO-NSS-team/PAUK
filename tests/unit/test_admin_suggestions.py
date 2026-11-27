@@ -12,7 +12,15 @@ from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.overrides import COLLECTION as OVERRIDES
-from pauk.graph.overrides import CREATE, DELETE, LINK, SET, active_overrides, record_relationship_override
+from pauk.graph.overrides import (
+    CREATE,
+    DELETE,
+    LINK,
+    SET,
+    active_overrides,
+    apply_overrides,
+    record_relationship_override,
+)
 from pauk.settings import Settings
 from pauk.storage import link_suggestions
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -59,7 +67,8 @@ class AdminSuggestionsTest(unittest.TestCase):
         guest_csrf = self.sign_in("guest")
         page = self.client.get("/suggestions")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("от агента · требует проверки", page.text)
+        self.assertIn("от агента (требует проверки)", page.text)
+        self.assertNotIn("·", page.text)
         self.assertNotIn("/approve", page.text)
         self.assertEqual(
             self.client.post(f"/suggestions/{s['suggestion_id']}/approve", data={"csrf": guest_csrf}).status_code,
@@ -269,7 +278,16 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn("done=approved", r1.headers["location"])
         self.assertEqual(self.graph.nodes[("Publication", "W1")]["pdf_urls"], ["https://arxiv.org/pdf/2501.00001.pdf"])
         ov = self.db[OVERRIDES].find_one({"_id": "node:Publication:W1", "op": SET})
-        self.assertEqual(ov["fields"]["pdf_urls"], ["https://arxiv.org/pdf/2501.00001.pdf"])
+        self.assertIsNone((ov.get("fields") or {}).get("pdf_urls"))
+        self.assertEqual(ov["append_fields"]["pdf_urls"], ["https://arxiv.org/pdf/2501.00001.pdf"])
+
+        # Subsequent pipeline publish with a new pdf_url keeps both URLs when overrides reapply.
+        self.graph.nodes[("Publication", "W1")]["pdf_urls"] = ["https://example.org/pipeline-found.pdf"]
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(
+            self.graph.nodes[("Publication", "W1")]["pdf_urls"],
+            ["https://example.org/pipeline-found.pdf", "https://arxiv.org/pdf/2501.00001.pdf"],
+        )
 
         # Already present URL is an idempotent noop without duplicating pdf_urls.
         s_dup = link_suggestions.submit(
@@ -536,3 +554,167 @@ class AdminSuggestionsTest(unittest.TestCase):
         )
         resp = self.client.get("/suggestions")
         self.assertEqual(resp.status_code, 200)
+
+    def test_implements_compensation_and_recovery_flows(self) -> None:
+        from datetime import timedelta
+
+        csrf = self.sign_in()
+
+        # 1. No interpuncts across approved, rejected, or prior-decision views.
+        s_reopen = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/ui/no-dots",
+            rationale="First rejection for prior display check.",
+        )["suggestion_id"]
+        self.client.post(f"/suggestions/{s_reopen}/reject", data={"csrf": csrf, "note": "first"})
+        link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/ui/no-dots",
+            rationale="Reopened with new rationale for prior banner.",
+        )
+        for tab in ("pending", "rejected"):
+            html = self.client.get(f"/suggestions?tab={tab}").text
+            self.assertNotIn("·", html)
+
+        # 2. _edge_exists failing with DriverError after creating Repository rolls back node + CREATE override.
+        s_probe_err = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/edge-exists-down",
+            rationale="Failure right after node creation.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes._edge_exists", side_effect=ServiceUnavailable("down")):
+            resp = self.client.post(f"/suggestions/{s_probe_err}/approve", data={"csrf": csrf})
+        self.assertEqual(resp.status_code, 503)
+        self.assertNotIn(("Repository", "github_err_edge-exists-down"), self.graph.nodes)
+        self.assertIsNone(self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_edge-exists-down", "active": True}))
+        self.assertEqual(link_suggestions.get(self.db, s_probe_err)["status"], link_suggestions.PENDING)
+
+        # 3. create_relationship raises DriverError and probe confirms edge absent -> rolls back Repository + CREATE.
+        s_create_err = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/create-edge-down",
+            rationale="Confirmed non-write during DriverError.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes.create_relationship", side_effect=ServiceUnavailable("timeout")):
+            resp = self.client.post(f"/suggestions/{s_create_err}/approve", data={"csrf": csrf})
+        self.assertEqual(resp.status_code, 503)
+        self.assertNotIn(("Repository", "github_err_create-edge-down"), self.graph.nodes)
+        self.assertIsNone(self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_create-edge-down", "active": True}))
+        self.assertEqual(link_suggestions.get(self.db, s_create_err)["status"], link_suggestions.PENDING)
+
+        # 4. create_relationship commits before raising DriverError; probe finds edge -> completes approval!
+        s_committed_err = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/commit-lost-reply",
+            rationale="Edge committed despite lost DriverError reply.",
+        )["suggestion_id"]
+        from pauk.admin import suggestion_routes
+
+        orig_create_rel = suggestion_routes.create_relationship
+
+        def commit_then_drop(*args, **kwargs):
+            orig_create_rel(*args, **kwargs)
+            raise SessionExpired("reply lost")
+
+        with patch("pauk.admin.suggestion_routes.create_relationship", side_effect=commit_then_drop):
+            resp = self.client.post(f"/suggestions/{s_committed_err}/approve", data={"csrf": csrf})
+        self.assertEqual(resp.status_code, 303)
+        self.assertIn("done=approved", resp.headers["location"])
+        self.assertIn(("Repository", "github_err_commit-lost-reply"), self.graph.nodes)
+        self.assertIn(("Repository", "IMPLEMENTS", "Publication", "github_err_commit-lost-reply", "W1"), self.graph.relationships)
+        self.assertIsNotNone(
+            self.db[OVERRIDES].find_one(
+                {"kind": "rel", "op": LINK, "src_id": "github_err_commit-lost-reply", "target_id": "W1", "active": True}
+            )
+        )
+
+        # 5. create_relationship raises DriverError and probe also fails -> stays APPLYING + needs_recovery, then recovers as approved/pending.
+        s_uncertain = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/uncertain-outcome",
+            rationale="Both write and probe drop connection.",
+        )["suggestion_id"]
+        orig_edge_exists = suggestion_routes._edge_exists
+        fetch_calls = {"n": 0}
+
+        def drop_on_second_fetch(*args, **kwargs):
+            fetch_calls["n"] += 1
+            if fetch_calls["n"] == 1:
+                return orig_edge_exists(*args, **kwargs)
+            raise ServiceUnavailable("probe failed too")
+
+        with (
+            patch("pauk.admin.suggestion_routes.create_relationship", side_effect=commit_then_drop),
+            patch("pauk.admin.suggestion_routes._edge_exists", side_effect=drop_on_second_fetch),
+        ):
+            resp = self.client.post(f"/suggestions/{s_uncertain}/approve", data={"csrf": csrf})
+        self.assertEqual(resp.status_code, 503)
+        stuck_doc = link_suggestions.get(self.db, s_uncertain)
+        self.assertEqual(stuck_doc["status"], link_suggestions.APPLYING)
+        self.assertTrue(stuck_doc["needs_recovery"])
+        # Direct reject is refused while stuck in APPLYING.
+        reject_stuck = self.client.post(f"/suggestions/{s_uncertain}/reject", data={"csrf": csrf})
+        self.assertEqual(reject_stuck.status_code, 303)
+        self.assertIn("problem=", reject_stuck.headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_uncertain)["status"], link_suggestions.APPLYING)
+        # Recover detects edge without LINK override -> stays APPLYING (partial) with diagnostic.
+        rec_partial = self.client.post(f"/suggestions/{s_uncertain}/recover", data={"csrf": csrf})
+        self.assertEqual(rec_partial.status_code, 303)
+        self.assertIn("problem=", rec_partial.headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_uncertain)["status"], link_suggestions.APPLYING)
+
+        # 6. Recover completes approval cleanly when graph + overrides match (e.g. after complete_approval failed),
+        #    and returns to pending when confirmed unapplied (even after lease expiration; reject still blocked until recovered).
+        s_rec_ok = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/complete-approval-down",
+            rationale="Recovery completes committed approval.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes.link_suggestions.complete_approval", side_effect=AutoReconnect("down")):
+            self.assertEqual(
+                self.client.post(f"/suggestions/{s_rec_ok}/approve", data={"csrf": csrf}).status_code,
+                503,
+            )
+        rec_page = self.client.get("/suggestions").text
+        self.assertIn(f"/suggestions/{s_rec_ok}/recover", rec_page)
+        self.assertIn("Проверить и восстановить", rec_page)
+        rec_ok_resp = self.client.post(f"/suggestions/{s_rec_ok}/recover", data={"csrf": csrf})
+        self.assertEqual(rec_ok_resp.status_code, 303)
+        self.assertIn("done=recovered_approved", rec_ok_resp.headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_rec_ok)["status"], link_suggestions.APPROVED)
+        self.assertFalse(link_suggestions.get(self.db, s_rec_ok)["active"])
+
+        # Expired APPLYING row with zero graph changes -> reject still refused, recover returns to PENDING, then reject succeeds.
+        s_rec_none = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/never-wrote",
+            rationale="Lease expired before any graph write.",
+        )["suggestion_id"]
+        claimed_none = link_suggestions.claim_for_apply(self.db, s_rec_none, "user:crashed")
+        self.db[link_suggestions.COLLECTION].update_one(
+            {"_id": s_rec_none},
+            {"$set": {"applying_at": claimed_none["applying_at"] - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)}},
+        )
+        self.assertIn("problem=", self.client.post(f"/suggestions/{s_rec_none}/reject", data={"csrf": csrf}).headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.APPLYING)
+        rec_none_resp = self.client.post(f"/suggestions/{s_rec_none}/recover", data={"csrf": csrf})
+        self.assertIn("done=recovered_pending", rec_none_resp.headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.PENDING)
+        self.assertIn("done=rejected", self.client.post(f"/suggestions/{s_rec_none}/reject", data={"csrf": csrf}).headers["location"])
+        self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.REJECTED)
