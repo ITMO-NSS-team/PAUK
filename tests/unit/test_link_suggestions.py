@@ -154,7 +154,6 @@ class LinkSuggestionsStoreTest(unittest.TestCase):
         self.assertFalse(link_suggestions.is_recoverable(claimed))
         self.assertIsNone(link_suggestions.claim_for_recovery(self.db, s1["suggestion_id"], "user:other"))
 
-        # Expire lease manually: claim_for_apply and reject still refuse APPLYING; claim_for_recovery works.
         self.db[link_suggestions.COLLECTION].update_one(
             {"_id": s1["suggestion_id"]},
             {"$set": {"applying_at": claimed["applying_at"] - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)}},
@@ -183,7 +182,6 @@ class LinkSuggestionsStoreTest(unittest.TestCase):
         self.assertFalse(approved["active"])
         self.assertEqual(link_suggestions.count(self.db, status=link_suggestions.APPROVED), 1)
 
-        # reject() also refuses expired or recovery-flagged APPLYING rows, and marks active=False on rejection.
         c2 = link_suggestions.claim_for_apply(self.db, s2["suggestion_id"], "user:crashed")
         self.assertIsNotNone(c2)
         self.assertTrue(link_suggestions.mark_needs_recovery(self.db, s2["suggestion_id"], c2["apply_token"], reason="uncertain"))

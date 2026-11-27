@@ -5,6 +5,7 @@ import re
 import unicodedata
 from bisect import bisect_right
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 from urllib.parse import urlencode, urlparse
@@ -593,37 +594,42 @@ class CodeLinksStage(EnrichmentStage):
             if mongo_db is not None
             else {}
         )
-        publications_with_new_pdfs: set[str] = set()
-        if approved_pdfs:
-            for publication in publications:
-                extra_urls: list[str] = []
-                for key in (publication.id, *publication.merged_ids):
-                    for url in approved_pdfs.get(key, ()):
-                        if isinstance(url, str) and url not in publication.pdf_urls and url not in extra_urls:
-                            extra_urls.append(url)
-                if extra_urls:
-                    publication.pdf_urls.extend(extra_urls)
-                    publications_with_new_pdfs.add(publication.id)
-        links_by_publication = {
-            row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
-        }
         self.http = HttpClient(self.config.request_timeout)
         self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
         self.crawler_available = self._crawler_available()
+        # Keep PreparedStore clean so an editor's undo is not re-published.
+        extra_pdf_urls_by_pub: dict[str, list[str]] = {}
+        if approved_pdfs:
+            for publication in publications:
+                if not self.selected("publications", publication.id):
+                    continue
+                extra = list(dict.fromkeys(
+                    url
+                    for key in (publication.id, *publication.merged_ids)
+                    for url in approved_pdfs.get(key, ())
+                    if isinstance(url, str) and url not in publication.pdf_urls
+                ))
+                if extra:
+                    extra_pdf_urls_by_pub[publication.id] = extra
+        links_by_publication = {
+            row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
+        }
         candidates = [
             publication
             for publication in publications
             if self.selected("publications", publication.id)
             and (
                 self.needs_attempt(publication.processing.get(self.name))
-                or (publication.id in publications_with_new_pdfs and not self.pdf_store.exists(publication.id))
+                or (publication.id in extra_pdf_urls_by_pub and not self._has_cached_pdf(publication))
             )
         ]
         changed = 0
         for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
+            pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(
+                pub, extra_pdf_urls=extra_pdf_urls_by_pub.get(pub.id, ())
+            )
             previous = links_by_publication.get(pub.id)
             missing_pdf_ids = {
                 occ.pdf_id for link in previous.links for occ in link.occurrences
@@ -706,9 +712,18 @@ class CodeLinksStage(EnrichmentStage):
             )
             return False
 
+    def _has_cached_pdf(self, pub: Publication) -> bool:
+        """Whether this publication or any of its cached versions already has a local PDF."""
+        if self.pdf_store.exists(pub.id):
+            return True
+        version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
+        return any(pdf_id != pub.id and self.pdf_store.exists(pdf_id) for pdf_id in version_ids)
+
     def _pdf_pages(
         self,
         pub: Publication,
+        *,
+        extra_pdf_urls: Sequence[str] = (),
     ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
         version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
         cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
@@ -716,7 +731,7 @@ class CodeLinksStage(EnrichmentStage):
         if cached_versions and not self.pdf_store.exists(pub.id):
             pages, occurrences, error = [], [], None
         else:
-            pages, occurrences, error = self._primary_pdf_pages(pub)
+            pages, occurrences, error = self._primary_pdf_pages(pub, extra_pdf_urls=extra_pdf_urls)
         self.parsed_pdf_ids = {pub.id} if pages else set()
         self.failed_pdf_ids = {pub.id} if error else set()
         for page_found in occurrences:
@@ -741,7 +756,9 @@ class CodeLinksStage(EnrichmentStage):
             occurrences.extend(version_occurrences)
         if cached_versions and not pages and not self.pdf_store.exists(pub.id):
             # Broken version caches must not prevent recovery from the primary sources.
-            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub)
+            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(
+                pub, extra_pdf_urls=extra_pdf_urls
+            )
             if primary_error:
                 self.failed_pdf_ids.add(pub.id)
                 errors.append(primary_error)
@@ -758,6 +775,8 @@ class CodeLinksStage(EnrichmentStage):
     def _primary_pdf_pages(
         self,
         pub: Publication,
+        *,
+        extra_pdf_urls: Sequence[str] = (),
     ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
@@ -777,7 +796,7 @@ class CodeLinksStage(EnrichmentStage):
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        sources = [(url, {}) for url in pub.pdf_urls]
+        sources = [(url, {}) for url in dict.fromkeys([*pub.pdf_urls, *extra_pdf_urls])]
         if self.crawler_available and pub.doi:
             sources.append((
                 f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),

@@ -403,17 +403,18 @@ class ExtractPdfTest(unittest.TestCase):
 
 
 class CodeLinksApprovedPdfOverrideTest(unittest.TestCase):
-    def test_approved_pdf_url_override_triggers_download_and_does_not_repeat(self):
+    def test_approved_pdf_url_override_triggers_download_without_mutating_prepared_store(self):
         import tempfile
         from pathlib import Path
 
         import mongomock
 
-        from pauk.graph.overrides import SET, record_override
+        from pauk.graph.overrides import DELETE, SET, record_override
         from pauk.models.processing import ProcessingState, ProcessingStatus
+        from pauk.pipeline.stages.base import PreparedSelection
         from pauk.pipeline.stages.code_links import CodeLinksStage
         from pauk.settings import Settings
-        from pauk.storage import PreparedStore, RawStore
+        from pauk.storage import PdfStore, PreparedStore, RawStore
 
         db = mongomock.MongoClient()["pauk_code_links_override_test"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,9 +427,37 @@ class CodeLinksApprovedPdfOverrideTest(unittest.TestCase):
                         id="W1",
                         title="No PDF initially",
                         processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
-                    )
+                    ),
+                    Publication(
+                        id="W2",
+                        title="Scoped peer",
+                        processing={"code_links": ProcessingState(status=ProcessingStatus.NOT_STARTED)},
+                    ),
+                    Publication(
+                        id="W3",
+                        title="Merged alias pub",
+                        merged_ids=["W3_OLD"],
+                        processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
+                    ),
+                    Publication(
+                        id="W4",
+                        title="Cached version pub",
+                        merged_ids=["W4_VER"],
+                        processing={
+                            "code_links": ProcessingState(status=ProcessingStatus.COMPLETED),
+                            "link_relevance": ProcessingState(status=ProcessingStatus.COMPLETED),
+                        },
+                    ),
+                    Publication(
+                        id="W5_DEL",
+                        title="Deleted pub with override",
+                        processing={"code_links": ProcessingState(status=ProcessingStatus.COMPLETED_EMPTY)},
+                    ),
                 ],
             )
+            pdf_store = PdfStore(db, config.pdf_dir)
+            pdf_store.save("W4_VER", _make_pdf_bytes("Cached version text"))
+
             record_override(
                 db,
                 "Publication",
@@ -437,18 +466,71 @@ class CodeLinksApprovedPdfOverrideTest(unittest.TestCase):
                 actor="user:roman",
                 append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
             )
-            pdf_bytes = _make_pdf_bytes("Code released at https://github.com/org/override-repo")
-            with patch("pauk.pipeline.stages.code_links.HttpClient") as http_client:
-                http_client.return_value.get_bytes.return_value = pdf_bytes
-                first = CodeLinksStage(prepared, RawStore(db, "sample"), config=config).run()
-                self.assertEqual(first["publications"], 1)
-                http_client.return_value.get_bytes.assert_called_once_with("https://arxiv.org/pdf/2501.00001.pdf")
-                stored_pub = list(prepared.read_models("publications", Publication))[0]
-                self.assertEqual(stored_pub.pdf_urls, ["https://arxiv.org/pdf/2501.00001.pdf"])
-                stored_links = list(prepared.read_models("repo_links", RepoLink))[0]
-                self.assertEqual([link.url for link in stored_links.links], ["https://github.com/org/override-repo"])
+            record_override(
+                db,
+                "Publication",
+                "W3_OLD",
+                SET,
+                actor="user:roman",
+                append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00003.pdf"]},
+            )
+            record_override(
+                db,
+                "Publication",
+                "W4",
+                SET,
+                actor="user:roman",
+                append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00004.pdf"]},
+            )
+            record_override(
+                db,
+                "Publication",
+                "W5_DEL",
+                SET,
+                actor="user:roman",
+                append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00005.pdf"]},
+            )
+            record_override(db, "Publication", "W5_DEL", DELETE, actor="user:roman")
 
-                # Second run sees cached PDF and already-merged pdf_urls -> no re-download.
+            pdf_w1 = _make_pdf_bytes("Code released at https://github.com/org/override-repo")
+            pdf_w3 = _make_pdf_bytes("Merged code at https://github.com/org/merged-repo")
+            with patch("pauk.pipeline.stages.code_links.HttpClient") as http_client:
+                http_client.return_value.get_bytes.side_effect = lambda url, **kw: (
+                    pdf_w1 if "00001" in url else pdf_w3
+                )
+                CodeLinksStage(
+                    prepared,
+                    RawStore(db, "sample"),
+                    config=config,
+                    selection=PreparedSelection("publications", frozenset({"W2"})),
+                ).run()
+                self.assertFalse(pdf_store.exists("W1"))
+                pubs_after_scoped = {p.id: p for p in prepared.read_models("publications", Publication)}
+                self.assertEqual(pubs_after_scoped["W1"].pdf_urls, [])
+
+                http_client.return_value.get_bytes.reset_mock()
+                first = CodeLinksStage(prepared, RawStore(db, "sample"), config=config).run()
+                self.assertEqual(first["publications"], 2)
+                called_urls = [c.args[0] for c in http_client.return_value.get_bytes.call_args_list]
+                self.assertEqual(
+                    called_urls,
+                    ["https://arxiv.org/pdf/2501.00001.pdf", "https://arxiv.org/pdf/2501.00003.pdf"],
+                )
+                self.assertTrue(pdf_store.exists("W1"))
+                self.assertTrue(pdf_store.exists("W3"))
+                pubs_after_full = {p.id: p for p in prepared.read_models("publications", Publication)}
+                self.assertEqual(pubs_after_full["W1"].pdf_urls, [])
+                self.assertIn("link_relevance", pubs_after_full["W4"].processing)
+                links_by_pub = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
+                self.assertEqual(
+                    [link.url for link in links_by_pub["W1"].links],
+                    ["https://github.com/org/override-repo"],
+                )
+                self.assertEqual(
+                    [link.url for link in links_by_pub["W3"].links],
+                    ["https://github.com/org/merged-repo"],
+                )
+
                 http_client.return_value.get_bytes.reset_mock()
                 second = CodeLinksStage(prepared, RawStore(db, "sample"), config=config).run()
                 self.assertEqual(second["publications"], 0)

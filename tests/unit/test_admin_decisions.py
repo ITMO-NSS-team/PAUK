@@ -623,3 +623,31 @@ class AdditiveDecisionDisplayAndUndoTest(unittest.TestCase):
             ["https://example.org/pipeline1.pdf", "https://example.org/pipeline2.pdf"],
         )
         self.assertEqual(active_overrides(self.db), [])
+
+    def test_undo_when_fields_and_append_fields_coexist_restores_both(self) -> None:
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            "set",
+            {"title": "Manual Title"},
+            actor="user:roman",
+            auto_value={"title": "Original Title"},
+        )
+        self.graph.nodes[("Publication", "W1")]["title"] = "Manual Title"
+        resp = self.client.post(
+            "/overrides/undo",
+            data={
+                "csrf": self.csrf,
+                "kind": "node",
+                "op": "set",
+                "label": "Publication",
+                "target_id": "W1",
+            },
+        )
+        self.assertEqual(resp.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Publication", "W1")]["title"], "Original Title")
+        self.assertEqual(
+            self.graph.nodes[("Publication", "W1")]["pdf_urls"],
+            ["https://example.org/pipeline1.pdf", "https://example.org/pipeline2.pdf"],
+        )

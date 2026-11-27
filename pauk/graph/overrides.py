@@ -254,6 +254,11 @@ def record_override(db: Database, label: str, target_id: str, op: str,
             {} if op == CREATE else base,
             {} if op == DELETE else normalized_append,
         )
+        if op == SET:
+            # Explicit full-field edit on the node card supersedes earlier additive appends.
+            for name in fields:
+                if name not in normalized_append:
+                    merged_append.pop(name, None)
         update: dict = {
             "$set": {
                 "kind": "node", "label": label, "target_id": target_id,
@@ -264,7 +269,7 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         }
         if merged_append:
             update["$set"]["append_fields"] = merged_append
-        elif fresh or op == CREATE:
+        elif fresh or op == CREATE or base.get("append_fields"):
             update.setdefault("$unset", {})["append_fields"] = ""
         if fresh:
             update["$set"]["source_value"] = {}
@@ -431,7 +436,13 @@ def appended_field_values(db: Database, label: str, field: str) -> dict[str, lis
     validate_fields(label, {field: []})
     result: dict[str, list[Any]] = {}
     cursor = db[COLLECTION].find(
-        {"active": True, "kind": "node", "label": label, f"append_fields.{field}": {"$exists": True}},
+        {
+            "active": True,
+            "kind": "node",
+            "label": label,
+            "op": {"$ne": DELETE},
+            f"append_fields.{field}": {"$exists": True},
+        },
         {"target_id": True, f"append_fields.{field}": True},
     )
     for row in cursor:

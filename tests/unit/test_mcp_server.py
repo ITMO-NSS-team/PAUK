@@ -431,7 +431,6 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
         from pauk.settings import Settings
         from pauk.storage import link_suggestions
 
-        # SafeMCP directly (without Boundary) refuses submit_link_evidence when disabled.
         disabled_service = Service(SyntheticReader(), b"key")
         safe_mcp = SafeMCP(disabled_service, name="disabled-test")
         register_tools(safe_mcp, disabled_service)
@@ -447,7 +446,6 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(str(direct_err.exception), "INPUT")
 
-        # Default server refuses submit_link_evidence cleanly at the boundary with INPUT.
         async with httpx.AsyncClient(headers={"Authorization": "Bearer " + TEST_TOKEN}, timeout=5) as http:
             with live_server(create_app(Service(SyntheticReader(), b"key"), TEST_TOKEN)) as url:
                 disabled_resp = await http.post(
@@ -473,7 +471,6 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
                     {"content": [{"type": "text", "text": "INPUT"}], "isError": True},
                 )
 
-            # With suggestion_store enabled, 7 tools are exposed and calls persist into Mongo.
             db = mongomock.MongoClient()["pauk_mcp_server_submit"]
             app = create_app(
                 Service(SyntheticReader(), b"key", suggestion_store=MongoSuggestionStore(db)),
@@ -511,7 +508,7 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
             "mcp_dataset_policy": "isolated",
             "mcp_token": TEST_TOKEN,
         }
-        _check_configuration(Settings(**base_kwargs))  # Disabled submissions needs no Mongo settings.
+        _check_configuration(Settings(**base_kwargs))
 
         for bad_mongo in (
             {},
@@ -570,7 +567,6 @@ class SubmissionProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.code, "BACKEND")
         self.assertEqual(db[link_suggestions.COLLECTION].count_documents({}), 0)
 
-        # Once index initialization succeeds, subsequent submissions persist cleanly.
         sid, state = await store.submit(
             publication_id="p-paper",
             proposed_relation="implements",

@@ -865,7 +865,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(receipt.repository_url, "https://github.com/pauk-test/code")
         self.assertNotIn("PRIVATE_CANARY", receipt.model_dump_json())
 
-        # Alias + brand new repository URL stays queued with repository_id=None.
         new_repo = await service.submit_link_evidence(
             SubmitLinkEvidenceRequest(
                 publication_id="p-paper",
@@ -878,7 +877,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(new_repo.repository_id)
         self.assertEqual(new_repo.repository_url, "https://github.com/neworg/freshrepo")
 
-        # Duplicate active submission bumps counter and returns already_queued even if cap reached.
         dup = await service.submit_link_evidence(
             SubmitLinkEvidenceRequest(
                 publication_id="p-paper",
@@ -890,7 +888,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dup.status, "already_queued")
         self.assertEqual(dup.suggestion_id, new_repo.suggestion_id)
 
-        # Third distinct submission hits QUEUE_FULL.
         with self.assertRaises(MCPError) as full_err:
             await service.submit_link_evidence(
                 SubmitLinkEvidenceRequest(
@@ -902,7 +899,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(full_err.exception.code, "QUEUE_FULL")
 
-        # Mismatched repository_id and repository_url (including URL-less repository_id) yields INPUT.
         with self.assertRaises(MCPError) as mismatch_err:
             await service.submit_link_evidence(
                 SubmitLinkEvidenceRequest(
@@ -926,7 +922,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(null_url_mismatch_err.exception.code, "INPUT")
 
-        # Missing or ambiguous targets propagate NOT_FOUND / AMBIGUOUS_ID.
         with self.assertRaises(MCPError) as not_found_err:
             await service.submit_link_evidence(
                 SubmitLinkEvidenceRequest(
@@ -948,7 +943,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(amb_err.exception.code, "AMBIGUOUS_ID")
 
-        # Mongo errors map cleanly to BACKEND.
         class FailingStore:
             async def submit(self, **kwargs: object) -> tuple[str, str]:
                 raise MCPError("BACKEND")
@@ -965,7 +959,6 @@ class SubmissionTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(backend_err.exception.code, "BACKEND")
 
-        # MongoSuggestionStore refuses writes cleanly (BACKEND) when ensure_indexes fails and retries next call.
         from pymongo.errors import AutoReconnect
 
         from pauk.storage import link_suggestions

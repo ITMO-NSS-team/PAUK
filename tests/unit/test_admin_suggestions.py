@@ -111,12 +111,10 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIsNotNone(rel_claims)
         self.assertTrue(rel_claims["active"])
 
-        # Re-submitting approve on an already-approved suggestion does nothing.
         r1_dup = self.client.post(f"/suggestions/{s_existing}/approve", data={"csrf": csrf})
         self.assertEqual(r1_dup.status_code, 303)
         self.assertIn("problem=", r1_dup.headers["location"])
 
-        # Admin role can also approve suggestions and >20 substring matches still find exact URL repo.
         for i in range(25):
             self.graph.add("Repository", f"r-sub-{i:02d}", url=f"https://github.com/org/target-{i:02d}")
         self.graph.add("Repository", "r-sub-exact", url="https://github.com/org/target")
@@ -134,7 +132,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn(("Repository", "IMPLEMENTS", "Publication", "r-sub-exact", "W1"), self.graph.relationships)
         csrf = self.sign_in("roman")
 
-        # Brand-new GitHub repo creates Repository node + CREATE override + IMPLEMENTS edge + LINK claim.
         s_new = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -171,7 +168,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         )
         self.assertIsNotNone(tombstone)
 
-        # Absent repo is an idempotent noop approval without creating a node.
         s_noop = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -183,7 +179,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(resp_noop.status_code, 303)
         self.assertIn("done=approved", resp_noop.headers["location"])
 
-        # Existing DELETE snapshot from an earlier unlink is preserved when tombstoning absent edge.
         self.graph.add("Repository", "r-tomb", url="https://github.com/org/tomb")
         record_relationship_override(
             self.db, "Repository", "IMPLEMENTS", "Publication", "r-tomb", "W1",
@@ -241,7 +236,6 @@ class AdminSuggestionsTest(unittest.TestCase):
             self.db[OVERRIDES].find_one({"_id": "node:LinkCandidate:https://github.com/other/baseline", "op": CREATE})
         )
 
-        # Pre-existing pipeline LinkCandidate also gets a protecting CREATE claim so prune keeps it.
         self.graph.add(
             "LinkCandidate",
             "https://github.com/other/preexisting",
@@ -281,7 +275,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIsNone((ov.get("fields") or {}).get("pdf_urls"))
         self.assertEqual(ov["append_fields"]["pdf_urls"], ["https://arxiv.org/pdf/2501.00001.pdf"])
 
-        # Subsequent pipeline publish with a new pdf_url keeps both URLs when overrides reapply.
         self.graph.nodes[("Publication", "W1")]["pdf_urls"] = ["https://example.org/pipeline-found.pdf"]
         apply_overrides(self.graph, self.db)
         self.assertEqual(
@@ -289,7 +282,6 @@ class AdminSuggestionsTest(unittest.TestCase):
             ["https://example.org/pipeline-found.pdf", "https://arxiv.org/pdf/2501.00001.pdf"],
         )
 
-        # Already present URL is an idempotent noop without duplicating pdf_urls.
         s_dup = link_suggestions.submit(
             self.db,
             publication_id="W2",
@@ -333,7 +325,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn("problem=", resp_missing.headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_missing_pub)["status"], link_suggestions.PENDING)
 
-        # Ambiguous URL in graph releases claim and refuses mutation.
         self.graph.add("Repository", "r-dup1", url="https://github.com/dup/repo")
         self.graph.add("Repository", "r-dup2", cited_urls=["https://github.com/dup/repo/"])
         s_amb = link_suggestions.submit(
@@ -348,7 +339,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn("problem=", resp_amb.headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_amb)["status"], link_suggestions.PENDING)
 
-        # Mongo override write failure rolls back graph and releases claim.
         s_rollback = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -362,7 +352,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertNotIn(("Repository", "IMPLEMENTS", "Publication", "r-existing", "W1"), self.graph.relationships)
         self.assertEqual(link_suggestions.get(self.db, s_rollback)["status"], link_suggestions.PENDING)
 
-        # Untrusted text and tampered URL are safely neutralized when rendering /suggestions.
         link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -409,7 +398,6 @@ class AdminSuggestionsTest(unittest.TestCase):
     def test_two_step_compensation_version_conflict_neo4j_error_and_expired_claim(self) -> None:
         csrf = self.sign_in()
 
-        # 2-step failure in _apply_implements (Mongo LINK override fails -> cleans up Step 1 Repository + CREATE).
         s_step2_impl = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -426,7 +414,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         )
         self.assertEqual(link_suggestions.get(self.db, s_step2_impl)["status"], link_suggestions.PENDING)
 
-        # 2-step failure in _apply_mentions (Mongo LINK override fails -> cleans up Step 1 LinkCandidate + CREATE).
         s_step2_ment = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -445,7 +432,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         )
         self.assertEqual(link_suggestions.get(self.db, s_step2_ment)["status"], link_suggestions.PENDING)
 
-        # VersionConflict on full_text releases claim and redirects cleanly.
         s_ft_vc = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -463,7 +449,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn("problem=", resp_vc.headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_ft_vc)["status"], link_suggestions.PENDING)
 
-        # ServiceUnavailable during approve releases claim and returns 503.
         s_neo_down = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -476,7 +461,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(resp_down.status_code, 503)
         self.assertEqual(link_suggestions.get(self.db, s_neo_down)["status"], link_suggestions.PENDING)
 
-        # Expired claim token at complete_approval reports problem rather than done=approved.
         s_expired = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -490,7 +474,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertIn("problem=", resp_exp.headers["location"])
         self.assertNotIn("done=approved", resp_exp.headers["location"])
 
-        # Pre-existing pipeline LinkCandidate does NOT leak a newly created CREATE claim on Step 2 failure.
         self.graph.add(
             "LinkCandidate",
             "https://github.com/step2/preexisting-cand",
@@ -514,7 +497,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         )
         self.assertEqual(link_suggestions.get(self.db, s_pre_fail)["status"], link_suggestions.PENDING)
 
-        # SessionExpired (a DriverError, not ServiceUnavailable) releases claim and returns 503.
         self.graph.add("Repository", "r-sess", url="https://github.com/org/session-expired")
         s_sess = link_suggestions.submit(
             self.db,
@@ -528,7 +510,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(resp_sess.status_code, 503)
         self.assertEqual(link_suggestions.get(self.db, s_sess)["status"], link_suggestions.PENDING)
 
-        # PyMongoError during complete_approval returns clean 503 rather than 500.
         s_mongo_done = link_suggestions.submit(
             self.db,
             publication_id="W2",
@@ -555,12 +536,8 @@ class AdminSuggestionsTest(unittest.TestCase):
         resp = self.client.get("/suggestions")
         self.assertEqual(resp.status_code, 200)
 
-    def test_implements_compensation_and_recovery_flows(self) -> None:
-        from datetime import timedelta
-
+    def test_suggestions_templates_have_no_interpuncts_and_sanitize_applying_by(self) -> None:
         csrf = self.sign_in()
-
-        # 1. No interpuncts across approved, rejected, or prior-decision views.
         s_reopen = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -577,10 +554,36 @@ class AdminSuggestionsTest(unittest.TestCase):
             rationale="Reopened with new rationale for prior banner.",
         )
         for tab in ("pending", "rejected"):
-            html = self.client.get(f"/suggestions?tab={tab}").text
-            self.assertNotIn("·", html)
+            self.assertNotIn("·", self.client.get(f"/suggestions?tab={tab}").text)
 
-        # 2. _edge_exists failing with DriverError after creating Repository rolls back node + CREATE override.
+        self.db[link_suggestions.COLLECTION].insert_one(
+            {
+                "_id": "sug_missing_applying_by",
+                "dedup_key": "k_missing_applying_by",
+                "content_hash": "c_missing_applying_by",
+                "status": link_suggestions.APPLYING,
+                "active": True,
+                "needs_recovery": True,
+                "recovery_reason": "Earlier probe warning",
+                "publication_id": "W1",
+                "proposed_relation": link_suggestions.IMPLEMENTS,
+                "repository_id": "r-existing",
+                "rationale": "Missing applying_by display check.",
+                "submitted_by": "mcp",
+                "submitted_at": link_suggestions._now(),
+                "submission_count": 1,
+            }
+        )
+        page_html = self.client.get("/suggestions").text
+        self.assertIn("обработка зависла (?)", page_html)
+        self.assertNotIn("(None)", page_html)
+        self.assertIn("Вернуть в ожидание", page_html)
+
+    def test_implements_driver_error_probing_and_compensation(self) -> None:
+        from pauk.admin import suggestion_routes
+
+        csrf = self.sign_in()
+
         s_probe_err = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -592,10 +595,11 @@ class AdminSuggestionsTest(unittest.TestCase):
             resp = self.client.post(f"/suggestions/{s_probe_err}/approve", data={"csrf": csrf})
         self.assertEqual(resp.status_code, 503)
         self.assertNotIn(("Repository", "github_err_edge-exists-down"), self.graph.nodes)
-        self.assertIsNone(self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_edge-exists-down", "active": True}))
+        self.assertIsNone(
+            self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_edge-exists-down", "active": True})
+        )
         self.assertEqual(link_suggestions.get(self.db, s_probe_err)["status"], link_suggestions.PENDING)
 
-        # 3. create_relationship raises DriverError and probe confirms edge absent -> rolls back Repository + CREATE.
         s_create_err = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -607,10 +611,11 @@ class AdminSuggestionsTest(unittest.TestCase):
             resp = self.client.post(f"/suggestions/{s_create_err}/approve", data={"csrf": csrf})
         self.assertEqual(resp.status_code, 503)
         self.assertNotIn(("Repository", "github_err_create-edge-down"), self.graph.nodes)
-        self.assertIsNone(self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_create-edge-down", "active": True}))
+        self.assertIsNone(
+            self.db[OVERRIDES].find_one({"_id": "node:Repository:github_err_create-edge-down", "active": True})
+        )
         self.assertEqual(link_suggestions.get(self.db, s_create_err)["status"], link_suggestions.PENDING)
 
-        # 4. create_relationship commits before raising DriverError; probe finds edge -> completes approval!
         s_committed_err = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -618,8 +623,6 @@ class AdminSuggestionsTest(unittest.TestCase):
             repository_url="https://github.com/err/commit-lost-reply",
             rationale="Edge committed despite lost DriverError reply.",
         )["suggestion_id"]
-        from pauk.admin import suggestion_routes
-
         orig_create_rel = suggestion_routes.create_relationship
 
         def commit_then_drop(*args, **kwargs):
@@ -631,14 +634,22 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 303)
         self.assertIn("done=approved", resp.headers["location"])
         self.assertIn(("Repository", "github_err_commit-lost-reply"), self.graph.nodes)
-        self.assertIn(("Repository", "IMPLEMENTS", "Publication", "github_err_commit-lost-reply", "W1"), self.graph.relationships)
+        self.assertIn(
+            ("Repository", "IMPLEMENTS", "Publication", "github_err_commit-lost-reply", "W1"),
+            self.graph.relationships,
+        )
         self.assertIsNotNone(
             self.db[OVERRIDES].find_one(
-                {"kind": "rel", "op": LINK, "src_id": "github_err_commit-lost-reply", "target_id": "W1", "active": True}
+                {
+                    "kind": "rel",
+                    "op": LINK,
+                    "src_id": "github_err_commit-lost-reply",
+                    "target_id": "W1",
+                    "active": True,
+                }
             )
         )
 
-        # 5. create_relationship raises DriverError and probe also fails -> stays APPLYING + needs_recovery, then recovers as approved/pending.
         s_uncertain = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -664,19 +675,119 @@ class AdminSuggestionsTest(unittest.TestCase):
         stuck_doc = link_suggestions.get(self.db, s_uncertain)
         self.assertEqual(stuck_doc["status"], link_suggestions.APPLYING)
         self.assertTrue(stuck_doc["needs_recovery"])
-        # Direct reject is refused while stuck in APPLYING.
         reject_stuck = self.client.post(f"/suggestions/{s_uncertain}/reject", data={"csrf": csrf})
         self.assertEqual(reject_stuck.status_code, 303)
         self.assertIn("problem=", reject_stuck.headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_uncertain)["status"], link_suggestions.APPLYING)
-        # Recover detects edge without LINK override -> stays APPLYING (partial) with diagnostic.
         rec_partial = self.client.post(f"/suggestions/{s_uncertain}/recover", data={"csrf": csrf})
         self.assertEqual(rec_partial.status_code, 303)
         self.assertIn("problem=", rec_partial.headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_uncertain)["status"], link_suggestions.APPLYING)
 
-        # 6. Recover completes approval cleanly when graph + overrides match (e.g. after complete_approval failed),
-        #    and returns to pending when confirmed unapplied (even after lease expiration; reject still blocked until recovered).
+    def test_create_node_driver_error_probing_and_recovery(self) -> None:
+        from pauk.admin import suggestion_routes
+
+        csrf = self.sign_in()
+
+        s_cn_absent = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/cn/absent",
+            rationale="create_node absent on DriverError.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes.create_node", side_effect=ServiceUnavailable("down")):
+            r_abs = self.client.post(f"/suggestions/{s_cn_absent}/approve", data={"csrf": csrf})
+        self.assertEqual(r_abs.status_code, 503)
+        self.assertEqual(link_suggestions.get(self.db, s_cn_absent)["status"], link_suggestions.PENDING)
+
+        s_cn_commit = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/cn/committed",
+            rationale="create_node committed despite DriverError.",
+        )["suggestion_id"]
+        orig_create_node = suggestion_routes.create_node
+
+        def create_node_then_drop(*args, **kwargs):
+            orig_create_node(*args, **kwargs)
+            raise SessionExpired("lost reply")
+
+        with patch("pauk.admin.suggestion_routes.create_node", side_effect=create_node_then_drop):
+            r_com = self.client.post(f"/suggestions/{s_cn_commit}/approve", data={"csrf": csrf})
+        self.assertEqual(r_com.status_code, 303)
+        self.assertIn("done=approved", r_com.headers["location"])
+        self.assertIsNotNone(self.db[OVERRIDES].find_one({"_id": "node:Repository:github_cn_committed", "op": CREATE}))
+
+        s_cn_uncertain = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/cn/uncertain",
+            rationale="create_node and probe both fail.",
+        )["suggestion_id"]
+        orig_fetch = self.graph.fetch_node_properties
+        probe_calls = {"n": 0}
+
+        def fail_on_cn_probe(label, node_id):
+            if label == "Repository" and node_id == "github_cn_uncertain":
+                probe_calls["n"] += 1
+                if probe_calls["n"] >= 2:
+                    raise ServiceUnavailable("probe down")
+            return orig_fetch(label, node_id)
+
+        with (
+            patch("pauk.admin.suggestion_routes.create_node", side_effect=ServiceUnavailable("drop")),
+            patch.object(self.graph, "fetch_node_properties", side_effect=fail_on_cn_probe),
+        ):
+            r_unc = self.client.post(f"/suggestions/{s_cn_uncertain}/approve", data={"csrf": csrf})
+        self.assertEqual(r_unc.status_code, 503)
+        unc_doc = link_suggestions.get(self.db, s_cn_uncertain)
+        self.assertEqual(unc_doc["status"], link_suggestions.APPLYING)
+        self.assertTrue(unc_doc["needs_recovery"])
+
+    def test_undo_failure_during_record_marks_needs_recovery(self) -> None:
+        csrf = self.sign_in()
+
+        s_undo_drv = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/undo/driver-err",
+            rationale="undo fails with DriverError.",
+        )["suggestion_id"]
+        with (
+            patch("pauk.admin.suggestion_routes.record_relationship_override", side_effect=AutoReconnect("mongo")),
+            patch("pauk.admin.suggestion_routes.delete_relationship", side_effect=ServiceUnavailable("neo4j")),
+        ):
+            self.assertEqual(self.client.post(f"/suggestions/{s_undo_drv}/approve", data={"csrf": csrf}).status_code, 503)
+        self.assertEqual(link_suggestions.get(self.db, s_undo_drv)["status"], link_suggestions.APPLYING)
+        self.assertTrue(link_suggestions.get(self.db, s_undo_drv)["needs_recovery"])
+
+        s_undo_false = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/undo/comp-false",
+            rationale="compensation returns False during _record rollback.",
+        )["suggestion_id"]
+        with (
+            patch("pauk.admin.suggestion_routes.record_relationship_override", side_effect=AutoReconnect("mongo")),
+            patch("pauk.admin.suggestion_routes._compensate_created_node", return_value=False),
+        ):
+            self.assertEqual(
+                self.client.post(f"/suggestions/{s_undo_false}/approve", data={"csrf": csrf}).status_code,
+                503,
+            )
+        self.assertEqual(link_suggestions.get(self.db, s_undo_false)["status"], link_suggestions.APPLYING)
+        self.assertTrue(link_suggestions.get(self.db, s_undo_false)["needs_recovery"])
+
+    def test_recover_reconciles_applied_unapplied_partial_and_force_reset(self) -> None:
+        from datetime import timedelta
+
+        csrf = self.sign_in()
+
         s_rec_ok = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -698,7 +809,6 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(link_suggestions.get(self.db, s_rec_ok)["status"], link_suggestions.APPROVED)
         self.assertFalse(link_suggestions.get(self.db, s_rec_ok)["active"])
 
-        # Expired APPLYING row with zero graph changes -> reject still refused, recover returns to PENDING, then reject succeeds.
         s_rec_none = link_suggestions.submit(
             self.db,
             publication_id="W1",
@@ -709,7 +819,12 @@ class AdminSuggestionsTest(unittest.TestCase):
         claimed_none = link_suggestions.claim_for_apply(self.db, s_rec_none, "user:crashed")
         self.db[link_suggestions.COLLECTION].update_one(
             {"_id": s_rec_none},
-            {"$set": {"applying_at": claimed_none["applying_at"] - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)}},
+            {
+                "$set": {
+                    "applying_at": claimed_none["applying_at"]
+                    - timedelta(seconds=link_suggestions.APPLYING_LEASE_SECONDS + 10)
+                }
+            },
         )
         self.assertIn("problem=", self.client.post(f"/suggestions/{s_rec_none}/reject", data={"csrf": csrf}).headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.APPLYING)
@@ -718,3 +833,115 @@ class AdminSuggestionsTest(unittest.TestCase):
         self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.PENDING)
         self.assertIn("done=rejected", self.client.post(f"/suggestions/{s_rec_none}/reject", data={"csrf": csrf}).headers["location"])
         self.assertEqual(link_suggestions.get(self.db, s_rec_none)["status"], link_suggestions.REJECTED)
+
+        s_partial = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.IMPLEMENTS,
+            repository_url="https://github.com/err/force-reset",
+            rationale="Partial diagnosis permits explicit force reset.",
+        )["suggestion_id"]
+        partial_claim = link_suggestions.claim_for_apply(self.db, s_partial, "user:roman")
+        link_suggestions.mark_needs_recovery(
+            self.db, s_partial, partial_claim["apply_token"], reason="Verified partial edge manually"
+        )
+        self.assertIn(
+            "done=recovered_pending",
+            self.client.post(
+                f"/suggestions/{s_partial}/recover",
+                data={"csrf": csrf, "force_reset": "1"},
+            ).headers["location"],
+        )
+        self.assertEqual(link_suggestions.get(self.db, s_partial)["status"], link_suggestions.PENDING)
+
+    def test_recover_auth_csrf_errors_and_relation_types(self) -> None:
+        from pauk.graph.overrides import record_override
+
+        csrf = self.sign_in()
+        self.assertEqual(self.client.post("/suggestions/sug_missing/recover", data={"csrf": csrf}).status_code, 404)
+        self.assertEqual(self.client.post("/suggestions/sug_missing/recover", data={"csrf": "bad"}).status_code, 403)
+        guest_csrf = self.sign_in("guest")
+        self.assertEqual(self.client.post("/suggestions/sug_missing/recover", data={"csrf": guest_csrf}).status_code, 403)
+        csrf = self.sign_in("roman")
+
+        cand_url = "https://github.com/other/set-candidate"
+        self.graph.add("LinkCandidate", cand_url, url=cand_url, host="github.com")
+        record_override(self.db, "LinkCandidate", cand_url, SET, {"host": "github.com"}, actor="user:roman")
+        s_ment_rec = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.MENTIONS,
+            repository_url=cand_url,
+            rationale="LinkCandidate with SET override recovery.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes.link_suggestions.complete_approval", side_effect=AutoReconnect("down")):
+            self.assertEqual(self.client.post(f"/suggestions/{s_ment_rec}/approve", data={"csrf": csrf}).status_code, 503)
+        self.assertIn(
+            "done=recovered_approved",
+            self.client.post(f"/suggestions/{s_ment_rec}/recover", data={"csrf": csrf}).headers["location"],
+        )
+
+        self.graph.relationships[("Repository", "IMPLEMENTS", "Publication", "r-existing", "W1")] = {}
+        s_ni_rec = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.NOT_IMPLEMENTS,
+            repository_id="r-existing",
+            rationale="NOT_IMPLEMENTS recovery.",
+        )["suggestion_id"]
+        with patch("pauk.admin.suggestion_routes.link_suggestions.complete_approval", side_effect=AutoReconnect("down")):
+            self.assertEqual(self.client.post(f"/suggestions/{s_ni_rec}/approve", data={"csrf": csrf}).status_code, 503)
+        self.assertIn(
+            "done=recovered_approved",
+            self.client.post(f"/suggestions/{s_ni_rec}/recover", data={"csrf": csrf}).headers["location"],
+        )
+
+        s_ft_rec = link_suggestions.submit(
+            self.db,
+            publication_id="W1",
+            proposed_relation=link_suggestions.FULL_TEXT,
+            evidence_url="https://arxiv.org/pdf/2501.55555.pdf",
+            rationale="FULL_TEXT recovery and failure reason preservation.",
+        )["suggestion_id"]
+        ft_claim = link_suggestions.claim_for_apply(self.db, s_ft_rec, "user:roman")
+        link_suggestions.mark_needs_recovery(self.db, s_ft_rec, ft_claim["apply_token"], reason="Keep my reason")
+        with patch("pauk.admin.suggestion_routes._inspect_applied_state", side_effect=ServiceUnavailable("neo down")):
+            self.assertEqual(self.client.post(f"/suggestions/{s_ft_rec}/recover", data={"csrf": csrf}).status_code, 503)
+        kept = link_suggestions.get(self.db, s_ft_rec)
+        self.assertTrue(kept["needs_recovery"])
+        self.assertEqual(kept["recovery_reason"], "Keep my reason")
+        self.assertIn(
+            "done=recovered_pending",
+            self.client.post(f"/suggestions/{s_ft_rec}/recover", data={"csrf": csrf}).headers["location"],
+        )
+        self.assertEqual(link_suggestions.get(self.db, s_ft_rec)["status"], link_suggestions.PENDING)
+
+    def test_full_text_already_present_preserves_graph_version(self) -> None:
+        from neo4j.time import DateTime
+
+        from pauk.graph.overrides import override_id, record_override
+
+        csrf = self.sign_in()
+        self.graph.nodes[("Publication", "W2")]["updated_at"] = DateTime(2026, 11, 27, 9, 0, 0)
+        record_override(
+            self.db,
+            "Publication",
+            "W2",
+            SET,
+            {"title": "Paper Two"},
+            actor="user:roman",
+            graph_updated_at=DateTime(2026, 11, 27, 9, 0, 0),
+        )
+        s_ft_keep = link_suggestions.submit(
+            self.db,
+            publication_id="W2",
+            proposed_relation=link_suggestions.FULL_TEXT,
+            evidence_url="https://example.org/already.pdf",
+            rationale="Preserve existing graph_version.",
+        )["suggestion_id"]
+        self.assertIn(
+            "done=approved",
+            self.client.post(f"/suggestions/{s_ft_keep}/approve", data={"csrf": csrf}).headers["location"],
+        )
+        w2_ov = self.db[OVERRIDES].find_one({"_id": override_id("Publication", "W2")})
+        self.assertIn("graph_version", w2_ov)

@@ -386,7 +386,6 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        # Before human approval, Neo4j remains completely unmodified.
         before_repos = await submit_service.get_publication_repositories(
             PublicationRequest(publication_id="p-e2e-submit")
         )
@@ -396,7 +395,6 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(before_search.items, [])
 
-        # Human editor reviews and approves all three suggestions via admin TestClient against live Neo4j.
         neo_client = Neo4jClient(self.uri, self.username, SYNTHETIC_PASSWORD)
         self.addCleanup(neo_client.close)
         app = build(Settings(), db)
@@ -413,7 +411,6 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(resp.status_code, 303)
                 self.assertIn("done=approved", resp.headers["location"])
 
-        # Subsequent MCP reads reflect approved links & evidence, and overrides protect them.
         after_repos = await submit_service.get_publication_repositories(
             PublicationRequest(publication_id="p-e2e-submit")
         )

@@ -529,12 +529,17 @@ without modifying Neo4j. Editors review each submission against live graph state
 - **`mentions`**: adds `(:Publication)-[:MENTIONS_LINK]->(:Repository)` (or
   creates a `LinkCandidate` when no repository exists yet) with a protecting
   `LINK` claim.
-- **`full_text`**: appends the validated public PDF URL to
-  `Publication.pdf_urls` as a manual `set` override.
+- **`full_text`**: adds the validated public PDF URL to
+  `Publication.pdf_urls` in Neo4j and stores an additive
+  `append_fields.pdf_urls` decision in `graph_overrides` (merged on publish and
+  consumed by the `code_links` stage).
 
-Rejecting a suggestion marks it rejected in Mongo without writing to Neo4j or
-`graph_overrides`. Both viewers and editors can browse the queue (`pending`,
-`approved`, `rejected`); only `editor` or `admin` accounts can approve or reject.
+Rejecting a suggestion works only from `pending` (marking it rejected in Mongo
+without writing to Neo4j or `graph_overrides`). Stuck `applying` rows cannot be
+rejected directly and are reconciled against live graph state via
+`/suggestions/<id>/recover`. Both viewers and editors can browse the queue
+(`pending`, `approved`, `rejected`); only `editor` or `admin` accounts can
+approve, recover, or reject.
 
 ### Mongo compression
 

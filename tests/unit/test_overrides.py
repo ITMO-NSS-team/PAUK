@@ -774,7 +774,6 @@ class AdditiveListOverridesTest(unittest.TestCase):
             actor="user:roman",
             append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
         )
-        # Pipeline publishes a brand-new pdf_url and updates title; reapplying keeps both PDFs.
         self.graph.nodes[("Publication", "W1")]["pdf_urls"] = [
             "https://example.org/p1.pdf",
             "https://example.org/p2.pdf",
@@ -797,7 +796,6 @@ class AdditiveListOverridesTest(unittest.TestCase):
             {"W1": ["https://arxiv.org/pdf/2501.00001.pdf"]},
         )
 
-        # Scalar field edits on the same node keep additive list overrides intact.
         record_override(self.db, "Publication", "W1", SET, {"title": "Edited Title"}, actor="user:roman")
         apply_overrides(self.graph, self.db)
         self.assertEqual(self.graph.nodes[("Publication", "W1")]["title"], "Edited Title")
@@ -816,8 +814,38 @@ class AdditiveListOverridesTest(unittest.TestCase):
             append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
         )
         record_override(self.db, "Publication", "W1", DELETE, actor="user:roman")
+        self.assertEqual(overrides.appended_field_values(self.db, "Publication", "pdf_urls"), {})
         self.assertTrue(deactivate_override(self.db, "Publication", "W1", only_op=DELETE))
         doc = self.db[COLLECTION].find_one({"_id": "node:Publication:W1"})
         self.assertTrue(doc["active"])
         self.assertEqual(doc["op"], SET)
         self.assertEqual(doc["append_fields"], {"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]})
+        self.assertEqual(
+            overrides.appended_field_values(self.db, "Publication", "pdf_urls"),
+            {"W1": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+
+    def test_manual_full_field_set_supersedes_earlier_append_fields(self) -> None:
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            SET,
+            actor="user:roman",
+            append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        self.graph.nodes[("Publication", "W1")]["pdf_urls"] = ["https://example.org/p1.pdf"]
+        record_override(
+            self.db,
+            "Publication",
+            "W1",
+            SET,
+            {"pdf_urls": ["https://example.org/p1.pdf"]},
+            actor="user:roman",
+            auto_value={"pdf_urls": ["https://example.org/p1.pdf", "https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        doc = self.db[COLLECTION].find_one({"_id": "node:Publication:W1"})
+        self.assertNotIn("append_fields", doc)
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes[("Publication", "W1")]["pdf_urls"], ["https://example.org/p1.pdf"])
+        self.assertNotIn("source_value", {k: v for k, v in doc.items() if v})

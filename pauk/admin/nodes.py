@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import DriverError, Neo4jError
 from pymongo.errors import PyMongoError
 
 from pauk.admin import decisions, feed, source
@@ -135,7 +135,7 @@ def _record(undo, write) -> None:
         logger.error("could not record the decision: %s", error)
         try:
             undo()
-        except (MutationError, Neo4jError) as failure:
+        except (MutationError, Neo4jError, DriverError) as failure:
             logger.exception("and the graph could not be put back")
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

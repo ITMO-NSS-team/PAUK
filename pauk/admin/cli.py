@@ -453,8 +453,9 @@ def _run_overrides(args, client, db) -> None:
                 what = (f"unlink ({row['src_label']} {row['src_id']})-[:{row['rel_type']}]->"
                         f"({row['tgt_label']} {row['target_id']})")
             else:
-                fields = ", ".join(f"{k}={v!r}" for k, v in (row.get("fields") or {}).items())
-                what = f"{row['op']}  {fields}"
+                parts = [f"{k}={v!r}" for k, v in (row.get("fields") or {}).items()]
+                parts.extend(f"{k}+={v!r}" for k, v in (row.get("append_fields") or {}).items() if v)
+                what = f"{row['op']}  {', '.join(parts)}"
             print(f"{row['_id']}  {what}  by {row['actor']}"
                   f"{'  — ' + row['note'] if row.get('note') else ''}")
     elif args.overrides_command == "undo":

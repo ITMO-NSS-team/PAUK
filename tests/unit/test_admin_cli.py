@@ -428,3 +428,23 @@ class TrimCommandTest(unittest.TestCase):
                           side_effect=AssertionError("the graph was opened")):
             self.run_trim("--keep-days", "30", "--apply")
         self.assertEqual(feed.count(self.db), 1)
+
+
+class AdditiveOverridesCliTest(unittest.TestCase):
+    def test_overrides_list_formats_append_fields(self) -> None:
+        from pauk.graph.overrides import SET, record_override
+
+        db = mongomock.MongoClient()["pauk_cli_append_test"]
+        record_override(
+            db,
+            "Publication",
+            "W1",
+            SET,
+            actor="user:roman",
+            append_fields={"pdf_urls": ["https://arxiv.org/pdf/2501.00001.pdf"]},
+        )
+        printed = []
+        with patch("builtins.print", lambda *words: printed.append(" ".join(map(str, words)))):
+            admin_cli._run_overrides(parse("overrides", "list"), None, db)
+        output = "\n".join(printed)
+        self.assertIn("pdf_urls+=['https://arxiv.org/pdf/2501.00001.pdf']", output)

@@ -146,6 +146,9 @@
             <input type="text" name="note" placeholder="комментарий" aria-label="комментарий">
             <div class="row" style="margin:0">
               <button type="submit">Проверить и восстановить</button>
+              {% if row.recovery_reason %}
+              <button type="submit" name="force_reset" value="1" class="ghost">Вернуть в ожидание</button>
+              {% endif %}
             </div>
           </form>
           {% else %}
